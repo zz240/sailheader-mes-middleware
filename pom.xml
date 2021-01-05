@@ -93,6 +93,54 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                    <outputDirectory>${basedir}/target/dockerfile</outputDirectory>
+                </configuration>
+            </plugin>
+
+            <!-- 复制 dockerfile 文件到编译后指定的目录 -->
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.0.2</version>
+                <executions>
+                    <execution>
+                        <id>copy-resources</id>
+                        <!-- here the phase you need -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${basedir}/target/dockerfile</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/docker</directory>
+                                    <filtering>true</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- package 时打包镜像 -->
+            <plugin>
+                <groupId>com.spotify</groupId>
+                <artifactId>dockerfile-maven-plugin</artifactId>
+                <version>1.4.13</version>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>push</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <repository>swr.cn-south-1.myhuaweicloud.com/cloud-sailheader/${project.artifactId}</repository>
+                    <tag>${project.version}</tag>
+                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>
+                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>
                 </configuration>
             </plugin>
         </plugins>
