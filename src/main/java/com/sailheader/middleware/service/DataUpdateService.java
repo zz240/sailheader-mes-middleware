@@ -1,36 +1,28 @@
 package com.sailheader.middleware.service;
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.sailheader.middleware.common.helper.JsonObjectHelper;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
-import com.sailheader.middleware.model.ClassConfig;
-import lombok.Data;
+import com.sailheader.middleware.model.AddressRestMapping;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 
 import static org.springframework.http.HttpHeaders.ACCEPT_ENCODING;
 
 @Slf4j
 @Service
-public class DataExportService {
+public class DataUpdateService {
     @Autowired
     private RestTemplate restTemplate;
     @Autowired
@@ -41,24 +33,27 @@ public class DataExportService {
 
     /**
      * 执行同步REST
-     * @param classConfig
+     * @param addressRestMapping
      * @return
      * @throws Exception
      */
-    public OperationResult executeImportJobClassConfigRestApi(ClassConfig classConfig) throws Exception {
+    public OperationResult executeImportJobClassConfigRestApi(AddressRestMapping addressRestMapping) throws Exception {
         OperationResult operationResult = new OperationResult();
-        if (classConfig != null && StringUtils.hasText(classConfig.getRestUrl())) {
-            Response response = requestConnection(classConfig.getRestUrl());
+        if (addressRestMapping != null && StringUtils.hasText(addressRestMapping.getRestUrl()) && StringUtils.hasText(addressRestMapping.getTargetAddress())) {
+            Response response = requestConnection(addressRestMapping.getRestUrl());
             if (response.isSuccessful()) {
 //                log.info("开始获取body内容！");
                 String result = response.body().string();
                 response.close();
                 // 转换成json
-                JSONObject data = (JSONObject) JSONObject.parse(result);
-                String url = "http://localhost:3360/test";
+                JSONArray data = JSONArray.parseArray(result);
+                System.out.println("jsonArray :" + data);
+//                JSONObject data = (JSONObject) JSONObject.parse(result);
+                // 目标地址
+                String url = addressRestMapping.getTargetAddress();
                 log.info("开始同步REST：" + url);
                 updateByClassConfigRestApi(url,data);
-                return operationResult.setData(null).setMessage("启动" + classConfig.getZhCnName() + "成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+                return operationResult.setData(null).setMessage("启动" + addressRestMapping.getZhCnName() + "成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
             }
             else {
                 throw new IOException("Unexpected code " + response);
@@ -74,7 +69,6 @@ public class DataExportService {
      * @throws IOException
      */
     private Response requestConnection(String url) throws IOException {
-        url = "http://www.kuaidi100.com/query?type=zhongtong&postid=75427719786230";
         log.info("请求REST地址："+url+"");
         final Request request = new Request.Builder()
                 .url(url)
@@ -90,7 +84,7 @@ public class DataExportService {
      * @param url
      * @param data
      */
-    public void updateByClassConfigRestApi(String url,JSONObject data){
+    public void updateByClassConfigRestApi(String url,JSONArray data){
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.CONTENT_TYPE,JSON_CONTENT_TYPE);
         headers.add(HttpHeaders.ACCEPT_CHARSET, UTF_8);

@@ -1,59 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.sailheader.middleware.mapper.ClassConfigDAO">
-  <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.ClassConfig">
+<mapper namespace="com.sailheader.middleware.mapper.AddressRestMappingDAO">
+  <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.AddressRestMapping">
     <id column="id" jdbcType="BIGINT" property="id" />
-    <result column="class_name" jdbcType="VARCHAR" property="className" />
-    <result column="code" jdbcType="VARCHAR" property="code" />
-    <result column="soap_wsdl_url" jdbcType="VARCHAR" property="soapWsdlUrl" />
-    <result column="soap_name_space" jdbcType="VARCHAR" property="soapNameSpace" />
-    <result column="soap_service_name" jdbcType="VARCHAR" property="soapServiceName" />
-    <result column="soap_response_name" jdbcType="VARCHAR" property="soapResponseName" />
-    <result column="soap_parameter_json" jdbcType="VARCHAR" property="soapParameterJson" />
-    <result column="soap_parameter_last_sync_date_time" jdbcType="VARCHAR" property="soapParameterLastSyncDateTime" />
     <result column="rest_url" jdbcType="VARCHAR" property="restUrl" />
-    <result column="rest_data_field" jdbcType="VARCHAR" property="restDataField" />
-    <result column="type" jdbcType="VARCHAR" property="type" />
-    <result column="cron_expression" jdbcType="VARCHAR" property="cronExpression" />
-    <result column="sequence" jdbcType="BIGINT" property="sequence" />
-    <result column="last_sync_start_date" jdbcType="TIMESTAMP" property="lastSyncStartDate" />
-    <result column="last_sync_end_date" jdbcType="TIMESTAMP" property="lastSyncEndDate" />
-    <result column="last_sync_status" jdbcType="VARCHAR" property="lastSyncStatus" />
-    <result column="is_execute_delete" jdbcType="BIT" property="isExecuteDelete" />
-    <result column="init_sql_string" jdbcType="VARCHAR" property="initSqlString" />
-    <result column="delta_sql_string" jdbcType="VARCHAR" property="deltaSqlString" />
-    <result column="primary_key_sql_string" jdbcType="VARCHAR" property="primaryKeySqlString" />
-    <result column="back_minutes" jdbcType="INTEGER" property="backMinutes" />
-    <result column="enabled" jdbcType="BIT" property="enabled" />
-    <result column="pinyin" jdbcType="VARCHAR" property="pinyin" />
-    <result column="en_us_name" jdbcType="VARCHAR" property="enUsName" />
+    <result column="rest_data_fleid" jdbcType="VARCHAR" property="restDataFleid" />
     <result column="zh_cn_name" jdbcType="VARCHAR" property="zhCnName" />
-    <result column="en_us_content" jdbcType="VARCHAR" property="enUsContent" />
-    <result column="zh_cn_content" jdbcType="VARCHAR" property="zhCnContent" />
+    <result column="cron_expression" jdbcType="VARCHAR" property="cronExpression" />
+    <result column="enabled" jdbcType="BOOLEAN" property="enabled" />
     <result column="status" jdbcType="VARCHAR" property="status" />
-    <result column="orientdb_id" jdbcType="VARCHAR" property="orientdbId" />
-    <result column="created_by" jdbcType="BIGINT" property="createdBy" />
-    <result column="created_name_by" jdbcType="VARCHAR" property="createdNameBy" />
-    <result column="created_date" jdbcType="TIMESTAMP" property="createdDate" />
-    <result column="last_modified_by" jdbcType="BIGINT" property="lastModifiedBy" />
-    <result column="last_modified_name_by" jdbcType="VARCHAR" property="lastModifiedNameBy" />
-    <result column="last_modified_date" jdbcType="TIMESTAMP" property="lastModifiedDate" />
-    <result column="basic_data_source_id" jdbcType="BIGINT" property="basicDataSourceId" />
-    <result column="write_in_basic_data_source_id" jdbcType="BIGINT" property="writeInBasicDataSourceId" />
+    <result column="target_address" jdbcType="VARCHAR" property="targetAddress" />
+    <result column="last_sync_date" jdbcType="TIMESTAMP" property="lastSyncDate" />
+    <result column="last_sync_status" jdbcType="BIT" property="lastSyncStatus" />
   </resultMap>
   <sql id="Base_Column_List">
-    id, class_name, code, soap_wsdl_url, soap_name_space, soap_service_name, soap_response_name,
-    soap_parameter_json, soap_parameter_last_sync_date_time, rest_url, rest_data_field,
-    "type", cron_expression, "sequence", last_sync_start_date, last_sync_end_date, last_sync_status,
-    is_execute_delete, init_sql_string, delta_sql_string, primary_key_sql_string, back_minutes,
-    enabled, pinyin, en_us_name, zh_cn_name, en_us_content, zh_cn_content, "status",
-    orientdb_id, created_by, created_name_by, created_date, last_modified_by, last_modified_name_by,
-    last_modified_date, basic_data_source_id, write_in_basic_data_source_id
+    id, rest_url ,rest_data_fleid ,zh_cn_name ,cron_expression ,enabled ,status ,target_address ,last_sync_date ,last_sync_status
   </sql>
   <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
     select
     <include refid="Base_Column_List" />
-    from "class_config"
+    from "address_rest_mapping"
     where id = #{id,jdbcType=BIGINT}
   </select>
 
