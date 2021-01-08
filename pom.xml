@@ -17,6 +17,7 @@
     <properties>
         <java.version>1.8</java.version>
         <spring-mybatis.version>2.1.4</spring-mybatis.version>
+        <huawei-swr-repository.name>swr.cn-north-4.myhuaweicloud.com/cloud-sailheader</huawei-swr-repository.name>
     </properties>
 
     <dependencies>
@@ -78,6 +79,23 @@
             <version>1.12.0</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.huawei.iot</groupId>
+            <artifactId>iot-module-client</artifactId>
+            <version>1.2.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>4.4.5</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.5.13</version>
+        </dependency>
 
     </dependencies>
 
@@ -86,7 +104,17 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${parent.version}</version>
+                <!-- 打包第三方lib配置-->
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
+                    <!-- lombok -->
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
@@ -95,12 +123,14 @@
                     </excludes>
                     <outputDirectory>${basedir}/target/dockerfile</outputDirectory>
                 </configuration>
+
             </plugin>
 
             <!-- 复制 dockerfile 文件到编译后指定的目录 -->
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>3.0.2</version>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
                         <id>copy-resources</id>
@@ -123,26 +153,26 @@
             </plugin>
 
             <!-- package 时打包镜像 -->
-            <plugin>
-                <groupId>com.spotify</groupId>
-                <artifactId>dockerfile-maven-plugin</artifactId>
-                <version>1.4.13</version>
-                <executions>
-                    <execution>
-                        <id>default</id>
-                        <goals>
-                            <goal>build</goal>
-                            <goal>push</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <repository>swr.cn-south-1.myhuaweicloud.com/cloud-sailheader/${project.artifactId}</repository>
-                    <tag>${project.version}</tag>
-                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>
-                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>
-                </configuration>
-            </plugin>
+            <!--            <plugin>-->
+            <!--                <groupId>com.spotify</groupId>-->
+            <!--                <artifactId>dockerfile-maven-plugin</artifactId>-->
+            <!--                <version>1.4.13</version>-->
+            <!--                <executions>-->
+            <!--                    <execution>-->
+            <!--                        <id>default</id>-->
+            <!--                        <goals>-->
+            <!--                            <goal>build</goal>-->
+            <!--                            <goal>push</goal>-->
+            <!--                        </goals>-->
+            <!--                    </execution>-->
+            <!--                </executions>-->
+            <!--                <configuration>-->
+            <!--                    <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>-->
+            <!--                    <tag>${project.version}</tag>-->
+            <!--                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>-->
+            <!--                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>-->
+            <!--                </configuration>-->
+            <!--            </plugin>-->
         </plugins>
     </build>
 

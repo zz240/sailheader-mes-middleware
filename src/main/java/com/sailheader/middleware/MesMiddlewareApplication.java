@@ -1,14 +1,31 @@
 package com.sailheader.middleware;
 
+import com.huaweicloud.sdk.iot.module.ItClient;
+import com.huaweicloud.sdk.iot.module.exception.GeneraException;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.servlet.ServletComponentScan;
+import org.springframework.context.annotation.Bean;
 
+@ServletComponentScan
 @SpringBootApplication
-@MapperScan(basePackages ="com.sailheader.middleware.mapper")
+@MapperScan(basePackages = "com.sailheader.middleware.mapper")
 public class MesMiddlewareApplication {
+    private static ItClient itClient;
+
+    @Bean
+    public ItClient getItClient() {
+        return itClient;
+    }
 
     public static void main(String[] args) {
+        try {
+            itClient = ItClient.createFromEnv();
+            itClient.open();
+        } catch (GeneraException e) {
+            e.printStackTrace();
+        }
         SpringApplication.run(MesMiddlewareApplication.class, args);
     }
 
