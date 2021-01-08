@@ -44,7 +44,7 @@ public class RouteForwardService {
      * @param routeMapping  路由映射对象
      * @return
      */
-    public RequestEntity routeForwardUrl(HttpServletRequest request, EnterpriseRouteMapping routeMapping,HttpMethod requestMethod) throws IOException, URISyntaxException {
+    public RequestEntity routeForwardUrl(HttpServletRequest request, EnterpriseRouteMapping routeMapping,HttpMethod requestMethod) throws URISyntaxException {
         String queryString = request.getQueryString();
         String url = routeMapping.getTargetAddress()+(queryString != null ? "?" + queryString : "");
         MultiValueMap<String, String> headers = parseRequestHeader(request);
@@ -58,7 +58,8 @@ public class RouteForwardService {
      * @param routeMapping  路由映射对象
      * @return
      */
-    public RequestEntity routeRediectUrl(HttpServletRequest request,EnterpriseRouteMapping routeMapping,HttpMethod requestMethod,JSONObject body) throws IOException, URISyntaxException {
+    public RequestEntity routeRediectUrl(HttpServletRequest request,EnterpriseRouteMapping routeMapping,HttpMethod requestMethod) throws IOException, URISyntaxException {
+        JSONObject body = parsePostBody(request);
         String url = routeMapping.getTargetAddress();
         MultiValueMap<String, String> headers = parseRequestHeader(request);
         RequestEntity requestEntity = new RequestEntity<>(body, headers, requestMethod, new URI(url));
@@ -77,7 +78,7 @@ public class RouteForwardService {
         return headers;
     }
 
-    // 获取请求体
+    // 解析请求体
     public JSONObject parsePostBody(HttpServletRequest request) throws IOException {
         RequestWrapper requestWrapper = new RequestWrapper(request);
         String body = requestWrapper.getBody();
