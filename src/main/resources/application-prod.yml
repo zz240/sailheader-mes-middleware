@@ -1,6 +1,6 @@
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://192.168.1.202:5432/mesdb?currentSchema=public
+    url: jdbc:postgresql://127.0.0.1:5432/middleware?currentSchema=public
     username: postgres
     password: Sailheader@2018

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sailheader.middleware.mapper.EnterpriseRouteMappingDAO">
+  <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.EnterpriseRouteMapping">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="code" jdbcType="VARCHAR" property="code" />
+    <result column="enterprise_name" jdbcType="VARCHAR" property="enterpriseName" />
+    <result column="target_address" jdbcType="VARCHAR" property="targetAddress" />
+  </resultMap>
+  <sql id="Base_Column_List">
+    id, code ,enterprise_name ,target_address
+  </sql>
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
+    select
+    <include refid="Base_Column_List" />
+    from "enterprise_route_mapping"
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+
+  <insert id="insert" parameterType="com.sailheader.middleware.model.EnterpriseRouteMapping">
+    insert into "enterprise_route_mapping" (code, enterprise_name,target_address)
+    values
+    (#{code,jdbcType=VARCHAR}, #{enterpriseName,jdbcType=VARCHAR},
+    #{targetAddress,jdbcType=VARCHAR})
+  </insert>
+
+  <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
+    delete from "enterprise_route_mapping"
+    where id = #{id,jdbcType=BIGINT}
+  </delete>
+
+  <update id="updateByPrimaryKey" parameterType="com.sailheader.middleware.model.EnterpriseRouteMapping">
+    update "enterprise_route_mapping"
+    set "code" = #{code,jdbcType=VARCHAR},
+      "enterprise_name" = #{enterpriseName,jdbcType=VARCHAR},
+      target_address = #{targetAddress,jdbcType=VARCHAR}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <select id="selectByEnterpriseCode" parameterType="java.lang.String" resultMap="BaseResultMap">
+    select
+    <include refid="Base_Column_List" />
+    from "enterprise_route_mapping"
+    where code = #{code,jdbcType=VARCHAR}
+  </select>
+
+
+
+
+
+
+
+</mapper>
