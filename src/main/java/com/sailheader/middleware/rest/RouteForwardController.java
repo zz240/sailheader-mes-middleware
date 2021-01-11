@@ -1,7 +1,5 @@
 package com.sailheader.middleware.rest;
 
-import com.alibaba.fastjson.JSONObject;
-import com.sailheader.middleware.common.helper.RequestWrapper;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.EnterpriseRouteMapping;
@@ -22,12 +20,14 @@ import javax.servlet.http.HttpServletRequest;
 @RestController
 public class RouteForwardController {
     private final String GET = "GET";
+    private final String POST = "POST";
+
     @Autowired
     private RouteForwardService routeForwardService;
     @Autowired
     private EnterpriseRouteMappingService enterpriseRouteMappingService;
 
-    @RequestMapping(value = "/mes/{enterpriseCode}/api/route/enterprise/url", method = {RequestMethod.GET, RequestMethod.POST})
+    @RequestMapping(value = "/mes/{enterpriseCode}/api/route/enterprise/url")
     public OperationResult createRouteUrl(HttpServletRequest request, @PathVariable("enterpriseCode") String enterpriseCode) {
         RequestEntity requestEntity = null;
         HttpMethod requestMethod = HttpMethod.resolve(request.getMethod());
@@ -36,7 +36,7 @@ public class RouteForwardController {
             if (requestMethod.matches(GET)) {
                 log.info("获取到" + routeMapping.getEnterpriseName() + "的GET请求...");
                 requestEntity = routeForwardService.routeForwardUrl(request, routeMapping, requestMethod);
-            } else {
+            } else if (requestMethod.matches(POST)){
                 log.info("获取到" + routeMapping.getEnterpriseName() + "的POST请求...");
                 requestEntity = routeForwardService.routeRediectUrl(request, routeMapping, requestMethod);
             }
@@ -52,13 +52,8 @@ public class RouteForwardController {
         return new OperationResult().setMessage("转发失败！请检查您的企业编号！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
 
-//    @RequestMapping(value = "/test",method = RequestMethod.GET)
-//    public void test(HttpServletRequest request) {
-//        System.out.println("success ");
-//    }
-//
-//    @PostMapping(value = "/string/test")
-//    public void getHttpBodyByStr(HttpServletRequest request){
-//        System.out.println("SUCCESS");
-//    }
+    @PostMapping(value = "/string/test")
+    public void getHttpBodyByStr(HttpServletRequest request){
+        System.out.println("SUCCESS");
+    }
 }

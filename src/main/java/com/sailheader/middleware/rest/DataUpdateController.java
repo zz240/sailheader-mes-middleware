@@ -1,12 +1,11 @@
 package com.sailheader.middleware.rest;
 
-import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
-import com.sailheader.middleware.model.AddressRestMapping;
-import com.sailheader.middleware.service.AddressRestMappingService;
+import com.sailheader.middleware.model.ImportJob;
 import com.sailheader.middleware.service.DataUpdateService;
+import com.sailheader.middleware.service.ImportJobService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
@@ -16,46 +15,28 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class DataUpdateController {
     @Autowired
-    private AddressRestMappingService addressRestMappingService;
+    private ImportJobService importJobService;
 
     @Autowired
     private DataUpdateService dataUpdateService;
 
     /**
-     * 通过id执行数据同步,手动执行同步
-     * @param id 同步任务id
+     * 通过名称 执行数据同步（用户请求传参，前端调用传参）
+     * @param name 同步任务的名称
      * @return
      */
-    @GetMapping("/api/data/import/execute/{id}")
-    public OperationResult executeDataSync(@PathVariable Long id){
-        AddressRestMapping addressRestMapping = addressRestMappingService.findAddressRestMappingById(id);
+    @GetMapping("/api/data/import/execute/{name}")
+    public OperationResult executeDataSync(@PathVariable String name){
+        ImportJob job = importJobService.findImportJobByName(name);
         try {
-            if (addressRestMapping != null && StringUtils.hasText(addressRestMapping.getRestUrl())) {
-                log.info("开始同步REST：" + JSONObject.toJSONString(addressRestMapping));
-                return dataUpdateService.executeImportJobClassConfigRestApi(addressRestMapping);
+            if (job != null && StringUtils.hasText(job.getRestUrl())) {
+                log.info("启动数据同步,开始同步REST：" + JSONObject.toJSONString(job));
+                return dataUpdateService.executeImportJobClassConfigRestApi(job);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+//            e.printStackTrace();
         }
         return new OperationResult().setData(null).setMessage("启动数据同步失败！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
 
-    /**
-     * 开启同步任务
-     * @return
-     */
-    public OperationResult startSyncJob(){
-
-        return new OperationResult().setData(null).setMessage("开启同步任务失败！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
-    }
-
-
-//    /**
-//     * 测试
-//     * @param jsonParam
-//     */
-//    @PostMapping("/test")
-//    public void test(@RequestBody JSONArray jsonParam){
-//        System.out.println("接收到数据： :"+jsonParam);
-//    }
 }

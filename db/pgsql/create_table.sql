@@ -1,32 +1,4 @@
-drop table if exists address_rest_mapping;
-create table address_rest_mapping
-(
-  id bigserial primary key,
-  rest_url varchar,
-  rest_data_fleid varchar,
-  zh_cn_name varchar,
-  cron_expression varchar ,
-  enabled boolean DEFAULT true,
-  status varchar DEFAULT 'ACTIVE',
-  target_address varchar,
-  last_sync_date timestamp ,
-  last_sync_status varchar
-);
-alter table address_rest_mapping owner to postgres;
-comment on table address_rest_mapping is 'REST同步映射表';
-comment on column address_rest_mapping.id is 'id';
-comment on column address_rest_mapping.rest_url is '源地址';
-comment on column address_rest_mapping.rest_data_fleid is '数据源';
-comment on column address_rest_mapping.zh_cn_name is '中文名';
-comment on column address_rest_mapping.cron_expression is 'cron表达式';
-comment on column address_rest_mapping.enabled is '是否启用';
-comment on column address_rest_mapping.status is '状态';
-comment on column address_rest_mapping.target_address is '目标地址';
-comment on column address_rest_mapping.last_sync_date is '最后同步时间';
-comment on column address_rest_mapping.last_sync_status is '最后同步状态';
-
 --
-
 drop table if exists import_job;
 create table import_job
 (

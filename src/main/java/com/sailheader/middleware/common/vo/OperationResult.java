@@ -16,7 +16,6 @@ public class OperationResult<T> {
     //状态码
     private String stateCode;
 
-
     public OperationResult(){
 
     }

@@ -24,17 +24,25 @@ public class EnterpriseRouteMappingController {
         return new OperationResult().setData(null).setMessage("删除成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
-    @GetMapping("/api/enterprise/route/data/{id}/update")
-    public OperationResult updateByPrimaryKey(@PathVariable Long id,/*@RequestBody */EnterpriseRouteMapping enterpriseRouteMapping){
-        EnterpriseRouteMapping data = enterpriseRouteMapping.setEnterpriseName("abctest").setTargetAddress("http://dsa.dsada.com").setCode("hdsdfqtestcode");
-
+    @PutMapping("/api/enterprise/route/data/{id}/update")
+    public OperationResult updateByPrimaryKey(@PathVariable Long id,@RequestBody EnterpriseRouteMapping enterpriseRouteMapping){
         EnterpriseRouteMapping result = enterpriseRouteMappingService.selectByPrimaryKey(id);
         if (result != null){
-            Integer integer = enterpriseRouteMappingService.updateByPrimaryKey(data);
+            Integer integer = enterpriseRouteMappingService.updateByPrimaryKey(enterpriseRouteMapping);
             return new OperationResult().setData(result).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
         return new OperationResult().setData(null).setMessage("更新失败！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
+
+    @GetMapping("/api/enterprise/route/data/{name}/query")
+    public OperationResult selectByEnterpriseCode(@PathVariable String name){
+        if (name != null){
+            EnterpriseRouteMapping enterpriseRouteMapping = enterpriseRouteMappingService.selectByEnterpriseCode(name);
+            return new OperationResult().setData(enterpriseRouteMapping).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        }
+        return new OperationResult().setData(null).setMessage("查询失败！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
+    }
+
 
 
 

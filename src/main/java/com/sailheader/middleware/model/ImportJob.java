@@ -10,7 +10,7 @@ import java.io.Serializable;
 import java.util.Date;
 
 /**
- * 定时任务表
+ * REST定时任务表
  */
 @Data
 @Accessors(chain = true)
@@ -27,7 +27,7 @@ public class ImportJob implements Serializable {
     private String restUrl;
 
     //中文名
-    private String zhCnName;
+    private String name;
 
     //CRON表达式
     private String cronExpression;

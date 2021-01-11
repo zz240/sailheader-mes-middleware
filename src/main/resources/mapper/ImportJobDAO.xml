@@ -4,7 +4,7 @@
   <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.ImportJob">
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="rest_url" jdbcType="VARCHAR" property="restUrl" />
-    <result column="zh_cn_name" jdbcType="VARCHAR" property="zhCnName" />
+    <result column="name" jdbcType="VARCHAR" property="name" />
     <result column="cron_expression" jdbcType="VARCHAR" property="cronExpression" />
     <result column="target_address" jdbcType="VARCHAR" property="targetAddress" />
     <result column="remarks" jdbcType="BOOLEAN" property="remarks" />
@@ -14,14 +14,77 @@
     <result column="last_sync_date" jdbcType="TIMESTAMP" property="lastSyncDate" />
     <result column="last_sync_status" jdbcType="BIT" property="lastSyncStatus" />
   </resultMap>
-  <sql id="Base_Column_List">
-    id, rest_url ,zh_cn_name,cron_expression ,target_address ,remarks ,enabled ,status ,create_date ,last_sync_date ,last_sync_status
+
+  <sql id="Example_Where_Clause">
+    <where>
+      <foreach collection="oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
   </sql>
+
+  <select id="selectByExample" parameterType="com.sailheader.middleware.model.ImportJob" resultMap="BaseResultMap">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    from "import_job"
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+    <if test="limit != null">
+      <if test="offset != null">
+        limit ${offset}, ${limit}
+      </if>
+      <if test="offset == null">
+        limit ${limit}
+      </if>
+    </if>
+  </select>
+
+
+  <sql id="Base_Column_List">
+    id, rest_url ,name,cron_expression ,target_address ,remarks ,enabled ,status ,create_date ,last_sync_date ,last_sync_status
+  </sql>
+
   <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
     select
     <include refid="Base_Column_List" />
     from "import_job"
     where id = #{id,jdbcType=BIGINT}
+  </select>
+
+  <select id="selectByName" parameterType="java.lang.String" resultMap="BaseResultMap">
+    select
+    <include refid="Base_Column_List" />
+    from "import_job"
+    where name = #{name,jdbcType=VARCHAR}
   </select>
 
 
@@ -34,8 +97,8 @@
       <if test="restUrl != null">
         rest_url,
       </if>
-      <if test="zhCnName != null">
-        "zh_cn_name",
+      <if test="name != null">
+        "name",
       </if>
       <if test="cronExpression != null">
         cron_expression,
@@ -69,8 +132,8 @@
       <if test="restUrl != null">
         #{restUrl,jdbcType=VARCHAR},
       </if>
-      <if test="zhCnName != null">
-        #{zhCnName,jdbcType=VARCHAR},
+      <if test="name != null">
+        #{name,jdbcType=VARCHAR},
       </if>
       <if test="cronExpression != null">
         #{cronExpression,jdbcType=VARCHAR},
@@ -98,4 +161,44 @@
       </if>
     </trim>
   </insert>
+
+  <update id="updateByPrimaryKey" parameterType="com.sailheader.middleware.model.ImportJob">
+    update "import_job"
+    set "rest_url" = #{restUrl,jdbcType=VARCHAR},
+      "name" = #{name,jdbcType=VARCHAR},
+      cron_expression = #{cronExpression,jdbcType=VARCHAR},
+      target_address = #{targetAddress,jdbcType=VARCHAR},
+      remarks = #{remarks,jdbcType=VARCHAR},
+      enabled = #{enabled,jdbcType=BOOLEAN},
+      status = #{status,jdbcType=VARCHAR}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <update id="updateByPrimaryKeySelective" parameterType="com.sailheader.middleware.model.ImportJob">
+    update "import_job"
+    <set>
+      <if test="restUrl != null">
+        "rest_url" = #{restUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="name != null">
+        "name" = #{name,jdbcType=VARCHAR},
+      </if>
+      <if test="cronExpression != null">
+        cron_expression = #{cronExpression,jdbcType=VARCHAR},
+      </if>
+      <if test="targetAddress != null">
+        target_address = #{targetAddress,jdbcType=VARCHAR},
+      </if>
+      <if test="remarks != null">
+        remarks = #{remarks,jdbcType=VARCHAR},
+      </if>
+      <if test="enabled != null">
+        enabled = #{enabled,jdbcType=BOOLEAN},
+      </if>
+      <if test="status != null">
+        status = #{status,jdbcType=VARCHAR}
+      </if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
 </mapper>
