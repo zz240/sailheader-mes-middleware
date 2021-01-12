@@ -2,7 +2,7 @@ package com.sailheader.middleware.chain.strategy;
 
 import com.sailheader.middleware.chain.ActionTempData;
 
-public class StringPrintActionExecute implements ActionExecute{
+public class StringPrintActionExecute extends ActionExecuteAdapter<String, String>{
 
     private String name;
 
@@ -11,7 +11,7 @@ public class StringPrintActionExecute implements ActionExecute{
     }
 
     @Override
-    public ActionTempData<?> dataHandler(ActionTempData<?> object) throws Exception {
+    public ActionTempData<String> execute(ActionTempData<String> object) {
         String str = (String) object.getBody();
         System.out.println(name + str);
         return new ActionTempData<>(1, name + str);
