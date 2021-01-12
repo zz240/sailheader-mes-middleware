@@ -15,7 +15,7 @@ create table job
         name        varchar unique,
         crontab     varchar,
         remarks     varchar,
-        status      varchar DEFAULT 'ACTIVE',
+        status      smallint,
         created_by  integer,
         created_on  timestamp,
         modified_by integer,
@@ -32,7 +32,7 @@ comment
 comment
     on column job.remarks is '备注';
 comment
-    on column job.status is '状态 ACTIVE:启用,NONACTIVE:未启用';
+    on column job.status is '状态 1:启用,2:未启用,-1:删除';
 comment
     on column job.created_on is '创建时间';
 comment
@@ -90,7 +90,8 @@ create table action_stream
         id          bigserial primary key,
         job_id      bigint,
         name        varchar,
-        type        varchar,
+        type        smallint,
+        status      smallint,
         index       integer,
         temp_data   json,
         addition    json,
@@ -109,6 +110,8 @@ comment
     on column action_stream.name is '动作名称';
 comment
     on column action_stream.type is '动作类型';
+comment
+    on column action_stream.status is '状态,1:启用,-1:删除';
 comment
     on column action_stream.index is '动作序号';
 comment
@@ -174,7 +177,8 @@ create table data_source
     (
         id          bigserial primary key,
         name        varchar,
-        type        varchar,
+        type        smallint,
+        status      smallint,
         address     varchar,
         addition    json,
         created_by  integer,
@@ -190,6 +194,8 @@ comment
     on column data_source.name is '数据源名称';
 comment
     on column data_source.type is '数据源类型';
+comment
+    on column data_source.status is '状态,1:启用,-1:删除';
 comment
     on column data_source.address is '数据源地址';
 comment
