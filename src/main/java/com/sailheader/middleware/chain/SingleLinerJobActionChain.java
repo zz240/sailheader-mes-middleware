@@ -40,8 +40,8 @@ public class SingleLinerJobActionChain implements JobActionChain, ActionExecute 
             // 获取动作数据
             ActionTempData<?> tempData = actionExecute.dataHandler(actionTempData);
 
-            if (tempData.getStatus() == ActionStatusEnum.SUCCESS.getStatus()) {
-                tempData.setStatus(ActionStatusEnum.INITIAL.getStatus());
+            if (tempData.getStatus() == ActionStatusEnum.SUCCESS) {
+                tempData.setStatus(ActionStatusEnum.INITIAL);
                 actionTempData = tempData;
             } else {
                 throw new Exception("执行失败!");
