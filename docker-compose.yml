@@ -1,12 +1,13 @@
 version: "3.7"
 services:
   middleware-postgresql:
-    image: postgres:10.15-alpine
+    image: postgres:12-alpine
     container_name: middleware-postgresql
     restart: always
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: middleware
     volumes:
     - /data/sailheader/middleware/postgresql:/var/lib/postgresql/data
     - ./db/pgsql/:/docker-entrypoint-initdb.d/
