@@ -33,7 +33,7 @@ public class DataSourceService {
 
     public List<DataSource> findJobByStatus(Short status){
         DataSourceExample dataSourceExample = new DataSourceExample();
-        dataSourceExample.createCriteria().andStatusEqualTo(status);
+        dataSourceExample.createCriteria().andStatusNotEqualTo(status);
         return dataSourceDAO.selectByExample(dataSourceExample);
     }
 

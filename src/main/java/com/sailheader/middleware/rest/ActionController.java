@@ -17,18 +17,18 @@ public class ActionController {
     private ActionService actionService;
 
     @PostMapping("/wm/api/action/stream/create")
-    public OperationResult createActionStream(@RequestBody Action action){
+    public OperationResult createAction(@RequestBody Action action){
         action.setCreatedOn(new Date());
         int i = actionService.insertSelective(action);
         return new OperationResult(action).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
     }
 
     @DeleteMapping("/wm/api/action/stream/delete/{id}")
-    public OperationResult deleteDataSource(@PathVariable Long id){
-        System.out.println(id);
+    public OperationResult deleteAction(@PathVariable Long id){
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
             action.setStatus(GeneralStatus.DELETED.getIntLabel());
+            action.setModifiedOn(new Date());
             actionService.updateByActionStreamSelective(action);
             return new OperationResult(id).setMessage("删除成功").setStateCode(StateCode.DELETE_SUCCESS.getValue());
         }
@@ -36,7 +36,7 @@ public class ActionController {
     }
 
     @GetMapping("/wm/api/action/stream/query/{id}")
-    public OperationResult findDataSourceById(@PathVariable Long id){
+    public OperationResult findActionById(@PathVariable Long id){
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
             return new OperationResult().setData(action).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
@@ -46,9 +46,9 @@ public class ActionController {
 
     @Transactional(rollbackFor = Exception.class)
     @PutMapping("/wm/api/action/stream/update/{id}")
-    public OperationResult updateJob(@PathVariable Long id,@RequestBody Action action){
+    public OperationResult updateActionById(@PathVariable Long id,@RequestBody Action action){
         Action actionStream = actionService.selectByPrimaryKey(id);
-        if (actionStream != null){
+        if (actionStream != null && !actionStream.getStatus().equals(GeneralStatus.DELETED.getIntLabel()) ){
             actionStream.setName(action.getName());
             actionStream.setJobId(action.getJobId());
             actionStream.setType(action.getType());
@@ -61,6 +61,11 @@ public class ActionController {
             return new OperationResult(actionStream).setMessage("更新成功！").setStateCode(StateCode.EDIT_SUCCESS.getValue());
         }
         return new OperationResult().setData(null).setMessage("更新失败！").setStateCode(StateCode.EDIT_FAIL.getValue());
+    }
+
+    @GetMapping("/wm/api/action/stream/query/all")
+    public OperationResult findAllActions(){
+        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
     }
 
 }

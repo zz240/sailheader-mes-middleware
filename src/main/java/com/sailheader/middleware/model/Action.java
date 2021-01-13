@@ -33,7 +33,7 @@ public class Action implements Serializable {
     //动作类型
     private Short type;
 
-    //状态（1：启用 -1：删除）
+    //状态（1:启用,2:未启用,-1:已删除';）
     private Short status;
 
     //动作序列

@@ -61,7 +61,7 @@ public class DataSourceController {
 
     @GetMapping("/wm/api/data/source/query/all")
     public OperationResult findDatasourcesByStatus(){
-        return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.ACTIVE.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
     }
 
 

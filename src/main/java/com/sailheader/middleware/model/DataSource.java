@@ -31,7 +31,7 @@ public class DataSource implements Serializable {
     //数据源类型
     private Integer type;
 
-    //状态
+    //状态   1:启用,2:未启用,-1:已删除';
     private Short status;
 
     //数据源地址

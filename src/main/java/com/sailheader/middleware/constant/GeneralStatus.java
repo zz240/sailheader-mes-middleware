@@ -1,7 +1,7 @@
 package com.sailheader.middleware.constant;
 
 public enum GeneralStatus {
-    ACTIVE((short) 1, "正常"),
+    ACTIVE((short) 1, "启用"),
     DELETED((short) -1, "已删除"),
     DISABLE((short) 2, "未启用");
 

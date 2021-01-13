@@ -740,7 +740,7 @@ public class DataSourceExample {
             return (DataSourceExample.Criteria) this;
         }
 
-        public DataSourceExample.Criteria andStatusNotEqualTo(String value) {
+        public DataSourceExample.Criteria andStatusNotEqualTo(Short value) {
             addCriterion("\"status\" <>", value, "status");
             return (DataSourceExample.Criteria) this;
         }

@@ -10,10 +10,10 @@ import java.util.List;
 public class Main {
     public static void main(String[] args) throws Exception {
         List<Action> actionList = new ArrayList<>();
-        actionList.add(new StringPrintAction("steven"));
-        actionList.add(new StringPrintAction("elizer"));
+//        actionList.add(new StringPrintAction("steven"));
+//        actionList.add(new StringPrintAction("elizer"));
 
-        Action action = new SingleLinerJobActionChain(actionList);
-        action.dataHandler(new ActionTempData<>(ActionStatusEnum.INITIAL, "输出内容!"));
+//        Action action = new SingleLinerJobActionChain(actionList);
+//        action.dataHandler(new ActionTempData<>(ActionStatusEnum.INITIAL, "输出内容!"));
     }
 }
