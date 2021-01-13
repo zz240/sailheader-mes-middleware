@@ -10,6 +10,8 @@ import okhttp3.Request;
 import okhttp3.Response;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -64,7 +66,7 @@ public class DataUpdateService {
                 .addHeader(HttpHeaders.CONTENT_TYPE, JSON_CONTENT_TYPE)
                 .addHeader(HttpHeaders.ACCEPT_CHARSET, UTF_8)
                 .addHeader(ACCEPT_ENCODING, "identity")
-                .get().build();
+                .method(HttpMethod.GET.toString(),null).build();
         return new OkHttpClient().newCall(request).execute();
     }
 

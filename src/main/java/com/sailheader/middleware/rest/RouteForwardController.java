@@ -51,9 +51,4 @@ public class RouteForwardController {
         }
         return new OperationResult().setMessage("转发失败！请检查您的企业编号！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
-
-    @PostMapping(value = "/string/test")
-    public void getHttpBodyByStr(HttpServletRequest request){
-        System.out.println("SUCCESS");
-    }
 }

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sailheader.middleware.mapper.ActionDAO">
+    <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.Action">
+        <id column="id" jdbcType="BIGINT" property="id"/>
+        <result column="job_id" jdbcType="VARCHAR" property="jobId"/>
+        <result column="name" jdbcType="VARCHAR" property="name"/>
+        <result column="type" jdbcType="SMALLINT" property="type"/>
+        <result column="status" jdbcType="SMALLINT" property="status"/>
+        <result column="index" jdbcType="VARCHAR" property="index"/>
+        <result column="temp_data" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg" property="tempData"/>
+        <result column="addition" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg" property="addition"/>
+        <result column="created_by" jdbcType="INTEGER" property="createdBy"/>
+        <result column="created_on" jdbcType="TIMESTAMP" property="createdOn"/>
+        <result column="modified_by" jdbcType="INTEGER" property="modifiedBy"/>
+        <result column="modified_on" jdbcType="TIMESTAMP" property="modifiedOn"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+    id ,job_id ,name ,type ，status ,index ,temp_data ,addition ,created_by,created_on ,modified_by ,modified_on
+  </sql>
+
+
+    <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from "action_stream"
+        where id = #{id,jdbcType=BIGINT}
+    </select>
+
+    <select id="selectByName" parameterType="java.lang.String" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from "action_stream"
+        where name = #{name,jdbcType=VARCHAR}
+    </select>
+
+
+    <insert id="insertSelective" parameterType="com.sailheader.middleware.model.Action">
+        insert into "action_stream"
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">
+                id,
+            </if>
+            <if test="jobId != null">
+                job_id,
+            </if>
+            <if test="name != null">
+                "name",
+            </if>
+            <if test="type != null">
+                type,
+            </if>
+            <if test="status != null">
+                status,
+            </if>
+            <if test="index != null">
+                index,
+            </if>
+            <if test="tempData != null">
+                temp_data,
+            </if>
+            <if test="addition != null">
+                addition,
+            </if>
+            <if test="createdBy != null">
+                created_by,
+            </if>
+            <if test="createdOn != null">
+                created_on,
+            </if>
+            <if test="modifiedBy != null">
+                "modified_by",
+            </if>
+            <if test="modifiedOn != null">
+                "modified_on",
+            </if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">
+                #{id,jdbcType=BIGINT},
+            </if>
+            <if test="jobId != null">
+                #{jobId,jdbcType=BIGINT},
+            </if>
+            <if test="name != null">
+                #{name,jdbcType=VARCHAR},
+            </if>
+            <if test="type != null">
+                #{type,jdbcType=SMALLINT},
+            </if>
+            <if test="status != null">
+                #{status,jdbcType=SMALLINT},
+            </if>
+            <if test="index != null">
+                #{index,jdbcType=INTEGER},
+            </if>
+            <if test="tempData != null">
+                #{tempData,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            </if>
+            <if test="addition != null">
+                #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            </if>
+            <if test="createdBy != null">
+                #{createdBy,jdbcType=INTEGER},
+            </if>
+            <if test="createdOn != null">
+                #{createdOn,jdbcType=TIMESTAMP},
+            </if>
+            <if test="modifiedBy != null">
+                #{modifiedBy,jdbcType=INTEGER},
+            </if>
+            <if test="modifiedOn != null">
+                #{modifiedOn,jdbcType=TIMESTAMP},
+            </if>
+        </trim>
+    </insert>
+
+    <update id="updateByActionStreamSelective" parameterType="com.sailheader.middleware.model.Action">
+        update "action_stream"
+        <set>
+            <if test="jobId != null">
+                "job_id" = #{jobId,jdbcType=BIGINT},
+            </if>
+            <if test="name != null">
+                "name" = #{name,jdbcType=VARCHAR},
+            </if>
+            <if test="type != null">
+                type = #{type,jdbcType=SMALLINT},
+            </if>
+            <if test="status != null">
+                status = #{type,jdbcType=SMALLINT},
+            </if>
+            <if test="index != null">
+                index = #{index,jdbcType=INTEGER},
+            </if>
+            <if test="tempData != null">
+                temp_data = typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            </if>
+            <if test="addition != null">
+                addition = typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            </if>
+            <if test="createdBy != null">
+                created_by = #{createdBy,jdbcType=INTEGER},
+            </if>
+            <if test="createdOn != null">
+                created_on = #{createdOn,jdbcType=TIMESTAMP},
+            </if>
+            <if test="modifiedBy != null">
+                modified_by = #{modifiedBy,jdbcType=INTEGER},
+            </if>
+            <if test="modifiedOn != null">
+                modified_on = #{modifiedOn,jdbcType=TIMESTAMP}
+            </if>
+        </set>
+        where id = #{id,jdbcType=BIGINT}
+    </update>
+
+    <delete id="deleteActionStreamById" parameterType="java.lang.Long">
+        delete from action_stream where id = #{id,jdbcType=BIGINT}
+    </delete>
+
+</mapper>

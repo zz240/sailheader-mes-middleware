@@ -735,7 +735,7 @@ public class JobExample {
             return (JobExample.Criteria) this;
         }
 
-        public JobExample.Criteria andStatusEqualTo(String value) {
+        public JobExample.Criteria andStatusEqualTo(Short value) {
             addCriterion("\"status\" =", value, "status");
             return (JobExample.Criteria) this;
         }

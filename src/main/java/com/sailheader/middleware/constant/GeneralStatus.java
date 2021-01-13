@@ -1,13 +1,14 @@
 package com.sailheader.middleware.constant;
 
 public enum GeneralStatus {
-    ACTIVE("Active", "正常"),
-    DELETED("Deleted", "已删除"),
-    NULL("NULL", "是空");
+    ACTIVE((short) 1, "正常"),
+    DELETED((short) -1, "已删除"),
+    DISABLE((short) 2, "未启用");
 
-    private String enUSLabel;
+    private Short enUSLabel;
     private String zhCNLabel;
-    public String getEnUSLabel() {
+
+    public Short getIntLabel() {
         return enUSLabel;
     }
     public String getZhCNLabel() {
@@ -16,9 +17,11 @@ public enum GeneralStatus {
     public String getValue(){
         return name();
     }
-    GeneralStatus(String enUSLabel, String zhCNLabel){
+
+    GeneralStatus(Short enUSLabel, String zhCNLabel){
         this.enUSLabel = enUSLabel;
         this.zhCNLabel = zhCNLabel;
     }
+
 
 }

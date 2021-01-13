@@ -1,6 +1,7 @@
 package com.sailheader.middleware.model;
 
 
+import com.alibaba.fastjson.JSONObject;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,13 +32,13 @@ public class DataSource implements Serializable {
     private Integer type;
 
     //状态
-    private Integer status;
+    private Short status;
 
     //数据源地址
     private String address;
 
     //附加辅助信息
-    private Object addition;
+    private JSONObject addition;
 
     //创建人id
     private int createdBy;

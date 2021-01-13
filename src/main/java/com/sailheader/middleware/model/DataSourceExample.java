@@ -735,7 +735,7 @@ public class DataSourceExample {
             return (DataSourceExample.Criteria) this;
         }
 
-        public DataSourceExample.Criteria andStatusEqualTo(String value) {
+        public DataSourceExample.Criteria andStatusEqualTo(Short value) {
             addCriterion("\"status\" =", value, "status");
             return (DataSourceExample.Criteria) this;
         }

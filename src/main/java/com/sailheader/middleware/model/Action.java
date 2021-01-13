@@ -1,6 +1,6 @@
 package com.sailheader.middleware.model;
 
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,7 +18,7 @@ import java.util.Date;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ActionStream implements Serializable {
+public class Action implements Serializable {
     private static final long serialVersionUID = 1L;
 
     //id
@@ -39,11 +39,11 @@ public class ActionStream implements Serializable {
     //动作序列
     private int index;
 
-    //输出数据
-    private JSON tempData;
+    //当前动作输出数据
+    private JSONObject tempData;
 
     //附加辅助信息
-    private JSON addition;
+    private JSONObject addition;
 
     //创建人id
     private Integer createdBy;
