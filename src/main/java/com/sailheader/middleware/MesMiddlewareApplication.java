@@ -2,13 +2,14 @@ package com.sailheader.middleware;
 
 import com.huaweicloud.sdk.iot.module.ItClient;
 import com.huaweicloud.sdk.iot.module.exception.GeneraException;
+import com.sailheader.middleware.config.SpringApplicationContext;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.servlet.ServletComponentScan;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
-@ServletComponentScan
 @SpringBootApplication
 @MapperScan(basePackages = "com.sailheader.middleware.mapper")
 public class MesMiddlewareApplication {
@@ -26,7 +27,7 @@ public class MesMiddlewareApplication {
         } catch (GeneraException e) {
             e.printStackTrace();
         }
-        SpringApplication.run(MesMiddlewareApplication.class, args);
+        SpringApplicationContext.setApplicationContext(SpringApplication.run(MesMiddlewareApplication.class, args));
     }
 
 }

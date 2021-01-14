@@ -11,3 +11,28 @@ services:
     volumes:
     - /data/sailheader/middleware/postgresql:/var/lib/postgresql/data
     - ./db/pgsql/:/docker-entrypoint-initdb.d/
+    networks:
+      middleware-network:
+        ipv4_address: 173.26.1.11
+  other-postgresql:
+    image: postgres:12-alpine
+    container_name: other-postgresql
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: middleware
+    volumes:
+      - /data/orther/postgresql:/var/lib/postgresql/data
+      - ./db/pgsql/:/docker-entrypoint-initdb.d/
+    networks:
+      middleware-network:
+        ipv4_address: 173.26.1.12
+
+networks:
+  middleware-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 173.26.1.0/28

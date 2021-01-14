@@ -1,6 +1,6 @@
 package com.sailheader.middleware.chain;
 
-import com.sailheader.middleware.chain.action.Action;
+import com.sailheader.middleware.chain.action.ActionHandler;
 
 /**
  * 动作链
@@ -10,7 +10,7 @@ public interface JobActionChain {
 
 
     // 添加动作
-    JobActionChain addAction(Action action);
+    JobActionChain addAction(ActionHandler actionHandler);
 
-    JobActionChain removeAction(Action action);
+    JobActionChain removeAction(ActionHandler actionHandler);
 }

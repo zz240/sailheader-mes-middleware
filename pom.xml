@@ -34,7 +34,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <!--<scope>runtime</scope>-->
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -77,24 +76,29 @@
             <version>1.12.0</version>
         </dependency>
 
+        <!-- 华为云第三方插件 -->
         <dependency>
             <groupId>com.huawei.iot</groupId>
             <artifactId>iot-module-client</artifactId>
             <version>1.2.4</version>
         </dependency>
 
+        <!-- HTTP请求相关 华为云第三方包需要此依赖 -->
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpcore</artifactId>
             <version>4.4.5</version>
         </dependency>
-
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
             <version>4.5.13</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

@@ -1,10 +1,8 @@
 package com.sailheader.middleware.chain.action;
 
-import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.chain.ActionTempData;
-import lombok.AllArgsConstructor;
+import com.sailheader.middleware.model.Action;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
@@ -13,13 +11,13 @@ import lombok.Setter;
  * @param <I>
  */
 
-public abstract class ActionAdapter<O, I> implements Action {
+public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
     @Setter
     @Getter
-    protected JSON addition;
+    protected Action action;
 
     @Override
-    public ActionTempData<?> dataHandler(ActionTempData<?> object) throws Exception {
+    public ActionTempData<O> dataHandler(ActionTempData<?> object) throws Exception {
 
         // 1. 校验输入内容并转换为泛型内容
         ActionTempData<I> sendData;
@@ -34,16 +32,16 @@ public abstract class ActionAdapter<O, I> implements Action {
         }
 
         // 2. 校验附加内容
-        validateAddition();
+        validateActionData();
 
         // 3. 执行并范围内容
         return this.execute(sendData);
     }
 
     // 实际执行需要实现的内容
-    protected abstract ActionTempData<O> execute(ActionTempData<I> object);
+    protected abstract ActionTempData<O> execute(ActionTempData<I> object) throws Exception;
 
-    // 每个动作必须校验 addition
-    protected abstract void validateAddition() throws Exception;
+    // 每个动作处理器必须验证 动作 数据
+    protected abstract void validateActionData() throws Exception;
 
 }

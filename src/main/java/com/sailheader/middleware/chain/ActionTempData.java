@@ -1,6 +1,6 @@
 package com.sailheader.middleware.chain;
 
-import com.sailheader.middleware.constant.ActionStatusEnum;
+import com.sailheader.middleware.constant.ActionStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -14,7 +14,7 @@ import lombok.experimental.Accessors;
 @AllArgsConstructor
 @Accessors(chain = true)
 public class ActionTempData<T> {
-    private ActionStatusEnum status;
+    private ActionStatus status;
     private T body;
 
 }

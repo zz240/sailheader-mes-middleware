@@ -2,8 +2,8 @@
 -- Version 1.0.1
 
 -- drop database if exists middleware;
-create database middleware;
-\c middleware;
+-- create database middleware;
+-- \c middleware;
 
 -- --------------------------------------------------
 -- 执行任务
