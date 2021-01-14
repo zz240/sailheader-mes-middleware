@@ -60,7 +60,6 @@ public class JobController {
             jobById.setName(job.getName());
             jobById.setCrontab(job.getCrontab());
             jobById.setRemarks(job.getRemarks());
-            jobById.setStatus(job.getStatus());
             jobById.setModifiedBy(job.getModifiedBy());
             jobById.setModifiedOn(new Date());
             jobService.updateJobSelective(jobById);

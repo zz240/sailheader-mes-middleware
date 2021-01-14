@@ -27,7 +27,7 @@ public class Action implements Serializable {
     //绑定任务id
     private Long jobId;
 
-    //动作任务
+    //动作名称
     private String name;
 
     //动作类型

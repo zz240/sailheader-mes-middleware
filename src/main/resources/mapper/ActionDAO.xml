@@ -89,7 +89,7 @@
     </select>
 
 
-    <insert id="insertSelective" parameterType="com.sailheader.middleware.model.Action">
+    <insert id="insertSelective" parameterType="com.sailheader.middleware.model.Action" >
         insert into "action_stream"
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="id != null">

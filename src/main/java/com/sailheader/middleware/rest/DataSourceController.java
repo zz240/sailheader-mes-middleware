@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Date;
 import java.util.List;
 
 @Slf4j
@@ -20,6 +21,7 @@ public class DataSourceController {
 
     @PostMapping("/wm/api/data/source/create")
     public OperationResult createDataSource(@RequestBody DataSource dataSource){
+        dataSource.setCreatedOn(new Date());
         int i = dataSourceService.createDataSource(dataSource);
         return new OperationResult(dataSource.getName()).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
     }
