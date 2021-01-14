@@ -17,7 +17,7 @@ public class JobController {
     @Autowired
     private JobService jobService;
 
-    @PostMapping("/wm/api/job/create")
+    @PostMapping("/mw/api/job/create")
     public OperationResult createJob(@RequestBody Job job){
         int i = jobService.insertSelective(job);
         if (i == 1){
@@ -26,7 +26,7 @@ public class JobController {
         return new OperationResult().setData(null).setMessage("插入异常").setStateCode(StateCode.ADD_FAIL.getValue());
     }
 
-    @DeleteMapping("/wm/api/job/delete/{id}")
+    @DeleteMapping("/mw/api/job/delete/{id}")
     public OperationResult deleteDataSource(@PathVariable Long id){
         Job job = jobService.selectJobById(id);
         if (job != null && !job.getStatus().equals(GeneralStatus.DELETED)){
@@ -37,7 +37,7 @@ public class JobController {
         return new OperationResult().setMessage("删除失败,已删除或不存在！").setStateCode(StateCode.DELETE_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/job/query/{id}")
+    @GetMapping("/mw/api/job/query/{id}")
     public OperationResult findDataSourceById(@PathVariable Long id){
         Job job = jobService.selectJobById(id);
         if (job != null && !job.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -46,14 +46,14 @@ public class JobController {
         return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/job/query/all")
+    @GetMapping("/mw/api/job/query/all")
     public OperationResult findAllDataSources(){
         return new OperationResult().setData(jobService.findJobByStatus(GeneralStatus.ACTIVE.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
     }
 
 
     @Transactional(rollbackFor = Exception.class)
-    @PutMapping("/wm/api/job/update/{id}")
+    @PutMapping("/mw/api/job/update/{id}")
     public OperationResult updateJob(@PathVariable Long id,@RequestBody Job job){
         Job jobById = jobService.selectJobById(id);
         if (jobById != null && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())){
@@ -66,6 +66,13 @@ public class JobController {
             return new OperationResult(jobById).setMessage("更新成功！").setStateCode(StateCode.EDIT_SUCCESS.getValue());
         }
         return new OperationResult().setData(null).setMessage("更新失败！").setStateCode(StateCode.EDIT_FAIL.getValue());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @GetMapping("/mw")
+    public OperationResult ManualTrigger(){
+
+        return new OperationResult();
     }
 
 

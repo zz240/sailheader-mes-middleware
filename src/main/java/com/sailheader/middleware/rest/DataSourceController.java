@@ -19,14 +19,14 @@ public class DataSourceController {
     @Autowired
     private DataSourceService dataSourceService;
 
-    @PostMapping("/wm/api/data/source/create")
+    @PostMapping("/mw/api/data/source/create")
     public OperationResult createDataSource(@RequestBody DataSource dataSource){
         dataSource.setCreatedOn(new Date());
         int i = dataSourceService.createDataSource(dataSource);
         return new OperationResult(dataSource.getName()).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
     }
 
-    @DeleteMapping("/wm/api/data/source/delete/{id}")
+    @DeleteMapping("/mw/api/data/source/delete/{id}")
     public OperationResult deleteDataSource(@PathVariable Long id){
         DataSource dataSource = dataSourceService.findDataSourceByid(id);
         if (dataSource != null && !dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -37,7 +37,7 @@ public class DataSourceController {
         return new OperationResult().setMessage("删除失败,已删除或不存在！").setStateCode(StateCode.DELETE_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/data/source/query/{id}")
+    @GetMapping("/mw/api/data/source/query/{id}")
     public OperationResult findDataSourceById(@PathVariable Long id){
         DataSource dataSource = dataSourceService.findDataSourceByid(id);
         if (dataSource != null && !dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -47,7 +47,7 @@ public class DataSourceController {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    @PutMapping("/wm/api/data/source/update/{id}")
+    @PutMapping("/mw/api/data/source/update/{id}")
     public OperationResult updateDataSource(@PathVariable Long id,@RequestBody DataSource dataSource){
         DataSource source = dataSourceService.findDataSourceByid(id);
         if (source != null && !dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -61,7 +61,7 @@ public class DataSourceController {
         return new OperationResult().setData(null).setMessage("更新失败！").setStateCode(StateCode.EDIT_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/data/source/query/all")
+    @GetMapping("/mw/api/data/source/query/all")
     public OperationResult findDatasourcesByStatus(){
         return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
     }

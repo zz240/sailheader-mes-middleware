@@ -16,14 +16,14 @@ public class ActionController {
     @Autowired
     private ActionService actionService;
 
-    @PostMapping("/wm/api/action/stream/create")
+    @PostMapping("/mw/api/action/stream/create")
     public OperationResult createAction(@RequestBody Action action){
         action.setCreatedOn(new Date());
         int i = actionService.insertSelective(action);
         return new OperationResult(action).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
     }
 
-    @DeleteMapping("/wm/api/action/stream/delete/{id}")
+    @DeleteMapping("/mw/api/action/stream/delete/{id}")
     public OperationResult deleteAction(@PathVariable Long id){
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -35,7 +35,7 @@ public class ActionController {
         return new OperationResult().setMessage("删除失败,已删除或不存在！").setStateCode(StateCode.DELETE_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/action/stream/query/{id}")
+    @GetMapping("/mw/api/action/stream/query/{id}")
     public OperationResult findActionById(@PathVariable Long id){
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
@@ -45,7 +45,7 @@ public class ActionController {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    @PutMapping("/wm/api/action/stream/update/{id}")
+    @PutMapping("/mw/api/action/stream/update/{id}")
     public OperationResult updateActionById(@PathVariable Long id,@RequestBody Action action){
         Action actionStream = actionService.selectByPrimaryKey(id);
         if (actionStream != null && !actionStream.getStatus().equals(GeneralStatus.DELETED.getIntLabel()) ){
@@ -63,7 +63,7 @@ public class ActionController {
         return new OperationResult().setData(null).setMessage("更新失败！").setStateCode(StateCode.EDIT_FAIL.getValue());
     }
 
-    @GetMapping("/wm/api/action/stream/query/all")
+    @GetMapping("/mw/api/action/stream/query/all")
     public OperationResult findAllActions(){
         return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
     }
