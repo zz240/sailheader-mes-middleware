@@ -11,7 +11,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 @SpringBootApplication
-@MapperScan(basePackages = "com.sailheader.middleware.mapper")
 public class MesMiddlewareApplication {
     private static ItClient itClient;
 
