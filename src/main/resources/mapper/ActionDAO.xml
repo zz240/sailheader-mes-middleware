@@ -3,7 +3,7 @@
 <mapper namespace="com.sailheader.middleware.mapper.ActionDAO">
     <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.Action">
         <id column="id" jdbcType="BIGINT" property="id"/>
-        <result column="job_id" jdbcType="VARCHAR" property="jobId"/>
+        <result column="job_id" jdbcType="BIGINT" property="jobId"/>
         <result column="name" jdbcType="VARCHAR" property="name"/>
         <result column="type" jdbcType="SMALLINT" property="type"/>
         <result column="status" jdbcType="SMALLINT" property="status"/>

@@ -8,6 +8,7 @@ import lombok.experimental.Accessors;
 
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
 /**
  * 执行任务表
@@ -47,7 +48,8 @@ public class Job implements Serializable {
     //更新时间
     private Date modifiedOn;
 
-
+    //绑定任务的动作列表
+    private List<Action> actionList;
 
 
 }
