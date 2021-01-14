@@ -18,7 +18,7 @@ import java.util.Date;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ActionStream implements Serializable {
+public class Action implements Serializable {
     private static final long serialVersionUID = 1L;
 
     //id
