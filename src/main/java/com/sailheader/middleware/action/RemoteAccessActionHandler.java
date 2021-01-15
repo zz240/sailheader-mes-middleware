@@ -1,13 +1,11 @@
-package com.sailheader.middleware.chain.action;
+package com.sailheader.middleware.action;
 
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.chain.action.remote.RemoteAccess;
-import com.sailheader.middleware.config.SpringApplicationContext;
+import com.sailheader.middleware.action.remote.RemoteAccess;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.DataSourceType;
 import com.sailheader.middleware.model.DataSource;
-import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.ApplicationContext;
@@ -18,7 +16,7 @@ import org.springframework.stereotype.Component;
 /**
  * 远程访问动作
  */
-@Component("action.remoteAccess")
+@Component("action.remote.access")
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class RemoteAccessActionHandler extends ActionHandlerAdapter<JSON, Object> {
 
@@ -30,13 +28,13 @@ public class RemoteAccessActionHandler extends ActionHandlerAdapter<JSON, Object
     @Override
     protected ActionTempData<JSON> execute(ActionTempData<Object> object) throws Exception {
 
-        // 从map获取bean名称
+        // 1. 从map获取bean名称
         DataSourceType dataSourceType = DataSourceType.dataSourceMapById.get(dataSource.getType());
         if (dataSourceType == null || dataSourceType.getBeanName() == null) {
             throw new Exception("未找到注册方法");
         }
 
-        // 获取spring中注册的 bean
+        // 2. 获取 spring 中注册的 bean,选择一个远程访问的实现
         RemoteAccess<Object> access;
         try {
             access = context.getBean(dataSourceType.getBeanName(), RemoteAccess.class);
@@ -44,9 +42,10 @@ public class RemoteAccessActionHandler extends ActionHandlerAdapter<JSON, Object
             throw new Exception("未能成功载入" + dataSourceType.getBeanName() + " spring bean");
         }
 
+        // 3. 注入 datasource 给具体的远程访问实现类
         access.setDataSource(dataSource);
 
-        return new ActionTempData<JSON>(ActionStatus.INITIAL, access.access(object));
+        return new ActionTempData<>(ActionStatus.INITIAL, access.access(object));
     }
 
     @Override

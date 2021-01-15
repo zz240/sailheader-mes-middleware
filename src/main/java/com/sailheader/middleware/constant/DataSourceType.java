@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public enum DataSourceType {
-    HTTP(1, "action.remote.http"),
+    HTTP(1, "action.remote.access.http"),
     DB(2, "action.remote.db");
 
     @Getter

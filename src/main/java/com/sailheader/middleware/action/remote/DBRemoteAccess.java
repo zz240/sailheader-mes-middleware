@@ -1,16 +1,19 @@
-package com.sailheader.middleware.chain.action.remote;
+package com.sailheader.middleware.action.remote;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.chain.action.remote.db.DruidUtil;
-import com.sailheader.middleware.chain.action.remote.db.service.DynamicDataSourceSqlService;
+import com.sailheader.middleware.action.remote.db.DruidUtil;
+import com.sailheader.middleware.action.remote.db.service.DynamicDataSourceSqlService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
-@Component("action.remote.db")
+/**
+ * 远程访问 db 动作
+ */
+@Component("action.remote.access.db")
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class DBRemoteAccess extends RemoteAccess<JSON> {
 
@@ -34,7 +37,7 @@ public class DBRemoteAccess extends RemoteAccess<JSON> {
                 sql = (String) ((JSONObject) dataSource.getAddition()).get("sql");
             }
         } catch (Exception e) {
-            throw new Exception("db remote access 输入的sql数据无法解析!");
+            throw new Exception("db remote access 输入数据/已选择的数据源数据无法解析!");
         }
 
         // 为空直接抛出异常

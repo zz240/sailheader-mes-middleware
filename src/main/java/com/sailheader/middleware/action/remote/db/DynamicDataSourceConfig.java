@@ -1,16 +1,12 @@
-package com.sailheader.middleware.chain.action.remote.db;
+package com.sailheader.middleware.action.remote.db;
 
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -19,7 +15,7 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 
 @Configuration
-@MapperScan(basePackages = "com.sailheader.middleware.chain.action.remote.db.dao", sqlSessionTemplateRef  = "dynamic.data.source.session.template")
+@MapperScan(basePackages = "com.sailheader.middleware.action.remote.db.dao", sqlSessionTemplateRef  = "dynamic.data.source.session.template")
 public class DynamicDataSourceConfig {
 
     @Bean("dynamic.data.source")

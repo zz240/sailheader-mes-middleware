@@ -1,6 +1,6 @@
 package com.sailheader.middleware.chain;
 
-import com.sailheader.middleware.chain.action.ActionHandler;
+import com.sailheader.middleware.action.ActionHandler;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.model.Action;
 import lombok.Getter;
@@ -17,7 +17,7 @@ import java.util.List;
 
 @Component
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-public class SingleLinerJobActionHandlerChain implements JobActionChain, ActionHandler {
+public class SingleLinerJobActionHandlerChain implements JobActionChain {
     @Getter
     @Setter
     private List<ActionHandler> actionHandlerList;

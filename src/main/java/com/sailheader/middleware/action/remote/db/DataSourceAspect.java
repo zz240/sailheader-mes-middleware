@@ -1,4 +1,4 @@
-package com.sailheader.middleware.chain.action.remote.db;
+package com.sailheader.middleware.action.remote.db;
 
 import com.sailheader.middleware.model.DataSource;
 import org.aspectj.lang.JoinPoint;
@@ -25,7 +25,7 @@ public class DataSourceAspect {
     @Autowired
     private DruidUtil druidUtil;
 
-    @Pointcut("execution(* com.sailheader.middleware.chain.action.remote.db.service.*.*(..))")
+    @Pointcut("execution(* com.sailheader.middleware.action.remote.db.service.*.*(..))")
     public void daoAspect() {
     }
 

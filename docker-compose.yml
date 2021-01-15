@@ -4,6 +4,8 @@ services:
     image: postgres:12-alpine
     container_name: middleware-postgresql
     restart: always
+    ports:
+    - 9001:5432
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: 123456

@@ -1,4 +1,4 @@
-package com.sailheader.middleware.chain.action.remote.db;
+package com.sailheader.middleware.action.remote.db;
 
 import com.alibaba.druid.pool.DruidDataSource;
 import com.alibaba.fastjson.JSONObject;

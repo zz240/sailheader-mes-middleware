@@ -1,15 +1,15 @@
-package com.sailheader.middleware.chain.action.remote;
+package com.sailheader.middleware.action.remote;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.model.DataSource;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
-
-@Component("action.remote.http")
+/**
+ * 远程访问 http 动作
+ */
+@Component("action.remote.access.http")
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class HttpRemoteAccess extends RemoteAccess<JSON> {
 

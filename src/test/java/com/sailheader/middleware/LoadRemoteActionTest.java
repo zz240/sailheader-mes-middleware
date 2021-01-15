@@ -3,7 +3,7 @@ package com.sailheader.middleware;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.chain.action.RemoteAccessActionHandler;
+import com.sailheader.middleware.action.RemoteAccessActionHandler;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.DataSourceType;
 import com.sailheader.middleware.model.Action;
@@ -11,8 +11,6 @@ import com.sailheader.middleware.model.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-
-import java.util.HashMap;
 
 @SpringBootTest
 public class LoadRemoteActionTest {
@@ -74,9 +72,7 @@ public class LoadRemoteActionTest {
 
         ActionTempData<JSON> tempData = new ActionTempData<>(ActionStatus.INITIAL, null);
         ActionTempData<JSON> result = remoteAccessActionHandler.dataHandler(tempData);
-        Object object = (((JSONObject)((JSONObject)result.getBody()).get("temp_data")).get("value"));
-        System.out.println(object);
-        //System.out.println(((JSONObject)object).get("name"));
+        System.out.println(result.getBody());
     }
 
 }

@@ -3,7 +3,6 @@ package com.sailheader.middleware.job;
 
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.rest.JobController;
-import com.sailheader.middleware.service.DataUpdateService;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;
 import org.springframework.stereotype.Service;
