@@ -1,6 +1,8 @@
 package com.sailheader.middleware.job;
 
+
 import com.alibaba.fastjson.JSON;
+import com.sailheader.middleware.rest.JobController;
 import com.sailheader.middleware.service.DataUpdateService;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;
@@ -12,27 +14,21 @@ import org.springframework.util.StringUtils;
 @PersistJobDataAfterExecution
 @Service
 public class UpdateJobDetail implements Job {
-    public final static String KEY_IMPORT_JOB = "importJob";
+    public final static String KEY_IMPORT_JOB = "job";
 
     @Override
-    public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
-
+    public void execute(JobExecutionContext context) throws JobExecutionException {
+        JobController jobController = new JobController();
+        try {
+            JobDataMap jobDataMap = context.getJobDetail().getJobDataMap();
+            String jsonString = jobDataMap.getString(KEY_IMPORT_JOB);
+            if (StringUtils.hasText(jsonString)) {
+                com.sailheader.middleware.model.Job job = JSON.parseObject(jsonString, com.sailheader.middleware.model.Job.class);
+                log.info("触发-定时同步任务：" + job.getName());
+                jobController.ManualTrigger(job.getId());
+            }
+        } catch (Exception e) {
+            log.info("执行定时任务异常！");
+        }
     }
-
-//    @Override
-//    public void execute(JobExecutionContext context) throws JobExecutionException {
-//        DataUpdateService dataUpdateService = new DataUpdateService();
-////        ImportJob importJob = null;
-//        try {
-//            JobDataMap jobDataMap = context.getJobDetail().getJobDataMap();
-//            String jsonString = jobDataMap.getString(KEY_IMPORT_JOB);
-//            if (StringUtils.hasText(jsonString)) {
-//                importJob = JSON.parseObject(jsonString, ImportJob.class);
-//                log.info("触发-定时同步任务：" + importJob.getName());
-//                dataUpdateService.executeImportJobClassConfigRestApi(importJob);
-//            }
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//    }
 }

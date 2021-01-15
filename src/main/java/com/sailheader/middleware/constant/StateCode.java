@@ -12,6 +12,7 @@ public enum StateCode {
     EDIT_SUCCESS("COMMON.EDIT_SUCCESS", "编辑成功"),
     EDIT_FAIL("COMMON.EDIT_FAIL", "编辑失败"),
     QUERY_SUCCESS("QUERY_SUCCESS", "查询成功"),
+    QUERY_FAIL("QUERY_FAIL", "查询失败"),
     DELETE_SUCCESS("COMMON.DELETE_SUCCESS", "删除成功"),
     DELETE_FAIL("COMMON.DELETE_FAIL", "删除失败");
     private String enUSLabel;

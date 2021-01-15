@@ -6,8 +6,11 @@ import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.service.DataUpdateService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+
+import javax.servlet.http.HttpServletRequest;
 
 @Slf4j
 @RestController
@@ -36,5 +39,14 @@ public class DataUpdateController {
 //        }
 //        return new OperationResult().setData(null).setMessage("启动数据同步失败！").setStateCode(StateCode.SYSTEM_FAIL.getValue());
 //    }
+
+    @RequestMapping("/test")
+    public String test(HttpServletRequest request){
+        System.out.println(request.getQueryString());
+        System.out.println(request.getContextPath());
+        System.out.println(request.getMethod());
+        return "{'code':'success'}";
+    }
+
 
 }

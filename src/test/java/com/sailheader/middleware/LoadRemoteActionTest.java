@@ -37,7 +37,7 @@ public class LoadRemoteActionTest {
 
         // 加载Action
         Action action = new Action();
-        action.setAddition((JSON) JSON.toJSON(dataSource));
+        action.setAddition((JSONObject) JSON.toJSON(dataSource));
 
         remoteAccessActionHandler.setAction(action);
 
@@ -64,11 +64,11 @@ public class LoadRemoteActionTest {
         DataSource dataSource = new DataSource();
         dataSource.setType(DataSourceType.DB.getId());
         dataSource.setAddition(jsonObject);
-        dataSource.setAddress("jdbc:postgresql://middleware-postgresql:5432/middleware");
+        dataSource.setAddress("jdbc:postgresql://192.168.1.115:9001/middleware");
 
         // 加载Action
         Action action = new Action();
-        action.setAddition((JSON) JSON.toJSON(dataSource));
+        action.setAddition((JSONObject) JSON.toJSON(dataSource));
 
         remoteAccessActionHandler.setAction(action);
 
@@ -76,7 +76,7 @@ public class LoadRemoteActionTest {
         ActionTempData<JSON> result = remoteAccessActionHandler.dataHandler(tempData);
         Object object = (((JSONObject)((JSONObject)result.getBody()).get("temp_data")).get("value"));
         System.out.println(object);
-        System.out.println(((JSONObject)object).get("name"));
+        //System.out.println(((JSONObject)object).get("name"));
     }
 
 }

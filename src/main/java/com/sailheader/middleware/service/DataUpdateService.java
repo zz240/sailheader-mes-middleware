@@ -24,12 +24,8 @@ public class DataUpdateService {
     private final static String JSON_CONTENT_TYPE = "application/json; charset=utf-8";
     public final static String UTF_8 = "utf-8";
 
-    /**
-     * 执行同步REST
-     * @param importJob
-     * @return
-     * @throws Exception
-     */
+
+     //执行同步REST
 //    public OperationResult executeImportJobClassConfigRestApi(ImportJob importJob) throws Exception {
 //        OperationResult operationResult = new OperationResult();
 //        if (importJob != null && StringUtils.hasText(importJob.getRestUrl()) && StringUtils.hasText(importJob.getTargetAddress())) {

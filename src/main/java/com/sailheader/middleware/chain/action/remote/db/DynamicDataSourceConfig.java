@@ -4,11 +4,13 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -20,7 +22,7 @@ import java.util.HashMap;
 @MapperScan(basePackages = "com.sailheader.middleware.chain.action.remote.db.dao", sqlSessionTemplateRef  = "dynamic.data.source.session.template")
 public class DynamicDataSourceConfig {
 
-    @Bean
+    @Bean("dynamic.data.source")
     public DataSource dynamicDataSource() {
         AbstractRoutingDataSource dataSource = new DynamicDataSourceHandler();
         dataSource.setTargetDataSources(new HashMap<>());
@@ -32,25 +34,25 @@ public class DynamicDataSourceConfig {
      * @return
      * @throws Exception
      */
-    @Bean
-    public SqlSessionFactory sqlSessionFactory() throws Exception {
+    @Bean("dynamic.data.sql.session.factory")
+    public SqlSessionFactory sqlSessionFactory(@Qualifier("dynamic.data.source") DataSource dataSource) throws Exception {
         SqlSessionFactoryBean sqlSessionFactoryBean = new SqlSessionFactoryBean();
-        sqlSessionFactoryBean.setDataSource(dynamicDataSource());
+        sqlSessionFactoryBean.setDataSource(dataSource);
         return sqlSessionFactoryBean.getObject();
     }
 
     @Bean("dynamic.data.source.session.template")
-    public SqlSessionTemplate sqlSessionTemplate() throws Exception {
-        return new SqlSessionTemplate(sqlSessionFactory());
+    public SqlSessionTemplate sqlSessionTemplate(@Qualifier("dynamic.data.sql.session.factory") SqlSessionFactory sqlSessionFactory) throws Exception {
+        return new SqlSessionTemplate(sqlSessionFactory);
     }
 
     /**
      * 事务管理
      * @return 事务管理实例
      */
-    @Bean
-    public PlatformTransactionManager platformTransactionManager() {
-        return new DataSourceTransactionManager(dynamicDataSource());
+    @Bean("dynamic.data.source.transaction.manager")
+    public PlatformTransactionManager platformTransactionManager(@Qualifier("dynamic.data.source") DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
     }
 
 }
