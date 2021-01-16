@@ -30,7 +30,7 @@ public class DataSourceAspect {
     }
 
     @Before("daoAspect()")
-    public void beforeServiceMethodExecute(JoinPoint point) {
+    public void beforeServiceMethodExecute(JoinPoint point) throws Exception {
         MethodSignature methodSignature = (MethodSignature) point.getSignature();
         Method targetMethod = methodSignature.getMethod();
         Parameter[] parameters = targetMethod.getParameters();

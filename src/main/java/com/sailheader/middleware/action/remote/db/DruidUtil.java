@@ -11,13 +11,17 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class DruidUtil {
-    public void switchDB(DataSource data) {
+    public void switchDB(DataSource data) throws Exception {
         DruidDataSource druidDataSource = new DruidDataSource();
-        JSONObject addition = (JSONObject) data.getAddition();
+        JSONObject addition = data.getAddition();
         druidDataSource.setUrl(data.getAddress());
         druidDataSource.setDriverClassName((String) addition.get("driver"));
         druidDataSource.setUsername((String) addition.get("userName"));
         druidDataSource.setPassword((String) addition.get("password"));
-        DynamicDataSourceHandler.setDataSource(druidDataSource);
+        try {
+            DynamicDataSourceHandler.setDataSource(druidDataSource);
+        } catch (Exception e) {
+            throw new Exception("未能成功切换数据库!" + data.toString());
+        }
     }
 }

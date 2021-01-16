@@ -7,13 +7,6 @@ import com.sailheader.middleware.common.helper.MappingJsonData;
 import com.sailheader.middleware.model.Action;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.expression.EvaluationContext;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.common.TemplateParserContext;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
-import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -40,15 +33,14 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
             try {
                 sendData = (ActionTempData<I>) object;
             } catch (Exception e) {
-                throw new Exception("数据类型不一致!");
+                throw new Exception( "序号" + action.getIndex() + ": " + action.getName() + " 无法处理上一个动作产生的数据!");
             }
         }
         I inputData = sendData != null && sendData.getBody() != null ? sendData.getBody() : null;
 
-
         // 2. 过滤action addition中的数据，并注入
-        if (sendData != null && sendData.getBody() != null) {
-            action.setAddition((JSONObject) filterForActionAddition(sendData.getBody()));
+        if (inputData != null) {
+            action.setAddition((JSONObject) filterForActionAddition(inputData));
             // 校验 action 的内容
             validateActionData();
         }
@@ -59,7 +51,7 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
 
         // 4. 过滤输出内容，替换其中的占位符
         if (action.getTempData() != null && actionTempData != null) {
-            actionTempData.setBody(filterForOut(inputData, currentData));
+            actionTempData.setBody((O) filterForOut(inputData, currentData));
         }
 
         return actionTempData;
@@ -76,10 +68,10 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
      * @param lastData 上一个动作输入的数据
      * @return 根据 tempData 格式替换后产生的数据
      */
-    protected O filterForActionAddition(I lastData) {
+    protected JSON filterForActionAddition(I lastData) {
         Map<String, Object> map = new HashMap<>();
         map.put("lastData", lastData);
-        return (O) MappingJsonData.mappingJsonIntoJson(map, action.getAddition());
+        return MappingJsonData.mappingJsonIntoJson(map, action.getAddition());
     }
 
     // 每个动作处理器必须验证 动作 数据
@@ -95,11 +87,11 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
      * @param currentData   当前动作产生的数据
      * @return 根据 tempData 格式替换后产生的数据
      */
-    protected O filterForOut(I lastData, O currentData) {
+    protected JSON filterForOut(I lastData, O currentData) {
         Map<String, Object> map = new HashMap<>();
         if (lastData != null) map.put("lastData", lastData);
         if (currentData != null) map.put("current", currentData);
-        return (O) MappingJsonData.mappingJsonIntoJson(map, action.getTempData());
+        return MappingJsonData.mappingJsonIntoJson(map, action.getTempData());
     }
 
 

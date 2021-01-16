@@ -106,7 +106,7 @@ public class JobController {
         for (int i = 0; i < job.getActionList().size(); i++) {
             action = job.getActionList().get(i);
             if (action.getType().equals(remoteAccess.getType()) && action.getAddition().get("address")!= null){
-                ActionHandlerAdapter bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
+                ActionHandlerAdapter<?, ?> bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
                 actionHandlers.add(bean);
                 bean.setAction(action);
             }

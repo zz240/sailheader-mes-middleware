@@ -4,11 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.common.helper.MappingJsonData;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.model.Action;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
