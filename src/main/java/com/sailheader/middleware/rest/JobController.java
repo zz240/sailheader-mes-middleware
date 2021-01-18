@@ -133,7 +133,7 @@ public class JobController {
                 action = job.getActionList().get(i);
                 JSONObject prefix = action.getAddition().getJSONObject("addition").getJSONObject("dataSource").getJSONObject("addition");
                 if (action.getType().equals(remoteAccess.getType()) && prefix.get("address") != null) {
-                    ActionHandlerAdapter bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
+                    ActionHandlerAdapter<?, ?> bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
                     actionHandlers.add(bean);
                     bean.setAction(action);
                 } else {
