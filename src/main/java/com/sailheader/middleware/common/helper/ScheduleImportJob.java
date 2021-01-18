@@ -63,7 +63,9 @@ public class ScheduleImportJob {
             scheduler.pauseTrigger(triggerKey);// 停止触发器
             scheduler.unscheduleJob(triggerKey);// 移除触发器
             scheduler.deleteJob(jobKey);// 删除任务
+            result = true;
         }catch (Exception e){
+            log.error("定时任务删除失败");
             e.printStackTrace();
         }
         return result;
