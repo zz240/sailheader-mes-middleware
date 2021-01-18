@@ -2,7 +2,7 @@ package com.sailheader.middleware.action;
 
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.action.remote.RemoteAccess;
+import com.sailheader.middleware.action.remote.AccessAdapter;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.DataSourceType;
 import com.sailheader.middleware.model.DataSource;
@@ -35,9 +35,9 @@ public class RemoteAccessActionHandler extends ActionHandlerAdapter<JSON, Object
         }
 
         // 2. 获取 spring 中注册的 bean,选择一个远程访问的实现
-        RemoteAccess<Object> access;
+        AccessAdapter<Object> access;
         try {
-            access = context.getBean(dataSourceType.getBeanName(), RemoteAccess.class);
+            access = context.getBean(dataSourceType.getBeanName(), AccessAdapter.class);
         } catch (Exception e) {
             throw new Exception("未能成功载入" + dataSourceType.getBeanName() + " spring bean");
         }
