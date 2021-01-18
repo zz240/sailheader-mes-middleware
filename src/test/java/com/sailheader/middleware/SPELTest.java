@@ -38,4 +38,19 @@ public class SPELTest {
         JSON json = MappingJsonData.mappingJsonIntoJson(jsonMap, (JSON) JSON.toJSON(context));
         System.out.println(json);
     }
+
+    @Test
+    public void test() {
+        class d {
+            {
+                System.out.println("??");
+            }
+
+            d() {
+                System.out.println("d");
+            }
+        }
+
+        new d();
+    }
 }
