@@ -55,6 +55,7 @@ public class MappingJsonData {
                     .getValue(ctx, String.class);
             object = (JSON) JSON.parse(resultStr);
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException("无法解析表达式，请确保一个表达式输出的内容为基础类型，而非collection或者map");
         }
 

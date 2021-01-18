@@ -208,7 +208,7 @@
                 created_by = #{createdBy,jdbcType=INTEGER},
             </if>
             <if test="createdOn != null">
-                created_on = #{createdOn,jdbcType=TIMESTAMP}
+                created_on = #{createdOn,jdbcType=TIMESTAMP},
             </if>
             <if test="modifiedBy != null">
                 modified_by = #{modifiedBy,jdbcType=INTEGER},

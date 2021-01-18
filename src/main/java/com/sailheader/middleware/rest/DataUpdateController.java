@@ -42,9 +42,9 @@ public class DataUpdateController {
 
     @RequestMapping("/test")
     public String test(HttpServletRequest request){
-        System.out.println(request.getQueryString());
-        System.out.println(request.getContextPath());
-        System.out.println(request.getMethod());
+//        System.out.println("URI :"+request.getRequestURI());
+//        System.out.println("Query : "+request.getQueryString());
+        System.out.println("Method : "+request.getMethod());
         return "{'code':'success'}";
     }
 
