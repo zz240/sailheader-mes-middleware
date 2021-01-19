@@ -41,6 +41,13 @@ public class ActionHandlerAdapterTests {
             }
         };
 
+        Action action = new Action();
+
+        @BeforeEach
+        public void initAction() {
+            action.setJobId(1L).setName("test").setType((short) 1).setIndex(1);
+        }
+
         @Test
         public void testActionDataIsEmpty() {
             actionHandlerAdapter.setAction(null);
@@ -59,7 +66,6 @@ public class ActionHandlerAdapterTests {
 
         @Test
         public void testActionDataWithJogId() {
-            Action action = new Action();
             action.setJobId(0L);
             actionHandlerAdapter.setAction(action);
             MiddlewareException exception1 = assertThrows(MiddlewareException.class,
@@ -75,8 +81,7 @@ public class ActionHandlerAdapterTests {
 
         @Test
         public void testActionDataWithName() {
-            Action action = new Action();
-            action.setJobId(1L).setName(null);
+            action.setName(null);
             actionHandlerAdapter.setAction(action);
             MiddlewareException exception1 = assertThrows(MiddlewareException.class,
                                                           () -> actionHandlerAdapter.dataHandler(null));
@@ -91,8 +96,7 @@ public class ActionHandlerAdapterTests {
 
         @Test
         public void testActionDataWithType() {
-            Action action = new Action();
-            action.setJobId(1L).setName("test").setType(null);
+            action.setType(null);
             actionHandlerAdapter.setAction(action);
             MiddlewareException exception1 = assertThrows(MiddlewareException.class,
                                                           () -> actionHandlerAdapter.dataHandler(null));
@@ -107,8 +111,7 @@ public class ActionHandlerAdapterTests {
 
         @Test
         public void testActionDataWithIndex() {
-            Action action = new Action();
-            action.setJobId(1L).setName("test").setType((short) 1).setIndex(0);
+            action.setIndex(0);
             actionHandlerAdapter.setAction(action);
             MiddlewareException exception1 = assertThrows(MiddlewareException.class,
                                                           () -> actionHandlerAdapter.dataHandler(null));
@@ -166,7 +169,8 @@ public class ActionHandlerAdapterTests {
             JSONObject addition = JSONObject.parseObject("{'simpleName': \"#{#lastData['simpleName']}\"}");
             action.setAddition(addition);
 
-            MiddlewareException middlewareException = assertThrows(MiddlewareException.class, () -> actionHandlerAdapter.dataHandler(input));
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                                                                   () -> actionHandlerAdapter.dataHandler(input));
             assertEquals(JSON_MAPPING_PLACEHOLDER_CANT_PARSE, middlewareException.getExceptionMap());
         }
 
@@ -182,7 +186,8 @@ public class ActionHandlerAdapterTests {
             action.setAddition(addition);
 
 
-            MiddlewareException middlewareException = assertThrows(MiddlewareException.class, () -> actionHandlerAdapter.dataHandler(input));
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                                                                   () -> actionHandlerAdapter.dataHandler(input));
             assertEquals(JSON_MAPPING_PLACEHOLDER_CANT_PARSE, middlewareException.getExceptionMap());
         }
 

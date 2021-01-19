@@ -43,15 +43,16 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
         // 2. 替换action addition中的占位符内容
         if (action.getAddition() != null && inputData != null) {
             action.setAddition((JSONObject) filterForActionAddition(inputData));
-            // 校验 action addition 的内容
-            validateActionAddition();
         }
 
-        // 3. 执行并返回内容
+        // 3. 校验 action addition 的内容
+        validateActionAddition();
+
+        // 4. 执行并返回内容
         ActionTempData<O> actionTempData = this.execute(sendData);
         O currentData = actionTempData != null && actionTempData.getBody() != null ? actionTempData.getBody() : null;
 
-        // 4. 过滤输出内容，替换其中的占位符
+        // 5. 过滤输出内容，替换其中的占位符
         if (action.getTempData() != null && actionTempData != null) {
             actionTempData.setBody((O) filterForOut(inputData, currentData));
         }

@@ -7,7 +7,8 @@ import java.util.Map;
 
 public enum DataSourceType {
     HTTP(1, "action.remote.access.http"),
-    DB(2, "action.remote.db");
+    DB(2, "action.remote.access.db"),
+    NOT_FOUND_TEST(100, "action.remote.not.found.test");
 
     @Getter
     int id;

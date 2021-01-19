@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.ArrayList;
 import java.util.Date;
 
-import static com.sailheader.middleware.constant.ActionTypeEnum.remoteAccess;
+import static com.sailheader.middleware.constant.ActionType.remoteAccess;
+
 
 @RestController
 public class JobController {

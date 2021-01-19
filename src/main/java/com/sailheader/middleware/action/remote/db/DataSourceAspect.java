@@ -44,6 +44,7 @@ public class DataSourceAspect {
                 dataSource = (DataSource) arg;
             }
         }
+        assert dataSource != null;
         druidUtil.switchDB(dataSource);
 
     }
