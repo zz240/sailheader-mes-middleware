@@ -66,7 +66,6 @@ public class HttpRemoteAccessService extends ActionHandlerAdapter<JSON, JSON> {
 
         if (prefix.get("header") != null) {
             for (Map.Entry<String, Object> header : prefix.getJSONObject("header").entrySet()) {
-//                System.out.println(header.getKey()+"||"+header.getValue());
                 headers.put(header.getKey(), (List<String>)JSONArray.parse(JSONArray.toJSONString(header.getValue())));
 
             }
@@ -74,7 +73,6 @@ public class HttpRemoteAccessService extends ActionHandlerAdapter<JSON, JSON> {
 
         MultiValueMap<String, String> multiValueMap = new MultiValueMapAdapter(headers);
         RequestEntity requestEntity = new RequestEntity<>(body, multiValueMap, requestMethod, new URI(url));
-        System.out.println("requestEntity ----> query :"+query+", Url :"+url+", body :"+body+" , headers :" + headers + ", requestMethod :"+ requestMethod );
         return requestEntity;
     }
 }

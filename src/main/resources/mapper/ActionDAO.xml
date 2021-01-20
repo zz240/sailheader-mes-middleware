@@ -169,6 +169,19 @@
         </trim>
     </insert>
 
+    <update id="updateByActionStream" parameterType="com.sailheader.middleware.model.Action">
+    update "action_stream"
+    set "job_id" = #{jobId,jdbcType=BIGINT},
+      "name" = #{name,jdbcType=VARCHAR},
+      type = #{type,jdbcType=SMALLINT},
+      status = #{status,jdbcType=SMALLINT},
+      index = #{index,jdbcType=INTEGER},
+      temp_data = #{tempData,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+      addition = #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+      modified_by = #{modifiedBy,jdbcType=INTEGER}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
     <update id="updateByActionStreamSelective" parameterType="com.sailheader.middleware.model.Action">
         update "action_stream"
         <set>
@@ -212,5 +225,9 @@
     <delete id="deleteActionStreamById" parameterType="java.lang.Long">
         delete from action_stream where id = #{id,jdbcType=BIGINT}
     </delete>
+
+    <select id="checkForPresence" parameterType="java.lang.String" resultType="java.lang.Integer">
+        SELECT count(1) FROM "action_stream" where name = #{name,jdbcType=VARCHAR};
+    </select>
 
 </mapper>

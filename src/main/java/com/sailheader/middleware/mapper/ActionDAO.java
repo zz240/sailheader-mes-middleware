@@ -19,4 +19,8 @@ public interface ActionDAO {
 
     List<Action> selectByExample(ActionExample actionExample);
 
+    int checkForPresence(String name);
+
+    int updateByActionStream(Action action);
+
 }

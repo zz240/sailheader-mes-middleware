@@ -106,7 +106,7 @@
         where id = #{id,jdbcType=BIGINT}
     </select>
 
-    <select id="selectByName" parameterType="java.lang.String" resultMap="BaseResultMap">
+    <select id="selectJobByName" parameterType="java.lang.String" resultMap="BaseResultMap">
         select
         <include refid="Base_Column_List"/>
         from "job"
@@ -181,9 +181,6 @@
     set "name" = #{name,jdbcType=VARCHAR},
       crontab = #{crontab,jdbcType=VARCHAR},
       remarks = #{remarks,jdbcType=VARCHAR},
-      status = #{status,jdbcType=SMALLINT},
-      created_by = #{createdBy,jdbcType=INTEGER},
-      created_on = #{createdOn,jdbcType=TIMESTAMP},
       modified_by = #{modifiedBy,jdbcType=INTEGER},
       modified_on = #{modifiedOn,jdbcType=TIMESTAMP}
     where id = #{id,jdbcType=BIGINT}
@@ -220,8 +217,13 @@
         where id = #{id,jdbcType=BIGINT}
     </update>
 
+
     <delete id="deleteJobById" parameterType="java.lang.Long">
         delete from job where id = #{id,jdbcType=BIGINT}
     </delete>
+
+    <select id="checkForPresence" parameterType="java.lang.String" resultType="java.lang.Integer">
+        SELECT count(1) FROM "job" where name = #{name,jdbcType=VARCHAR};
+    </select>
 
 </mapper>

@@ -50,9 +50,9 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
         O currentData = actionTempData != null && actionTempData.getBody() != null ? actionTempData.getBody() : null;
 
         // 4. 过滤输出内容，替换其中的占位符
-        if (action.getTempData() != null && actionTempData != null) {
-            actionTempData.setBody((O) filterForOut(inputData, currentData));
-        }
+//        if (action.getTempData() != null && actionTempData != null) {
+//            actionTempData.setBody((O) filterForOut(inputData, currentData));
+//        }
 
         return actionTempData;
     }

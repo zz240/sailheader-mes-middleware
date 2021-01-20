@@ -37,4 +37,8 @@ public class DataSourceService {
         return dataSourceDAO.selectByExample(dataSourceExample);
     }
 
+    public int checkForPresence(String name){
+        return dataSourceDAO.checkForPresence(name);
+    }
+
 }

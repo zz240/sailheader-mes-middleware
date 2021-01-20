@@ -26,10 +26,8 @@ public class ScheduleImportJob {
      * @throws SchedulerException
      */
     public Boolean executeScheduleImportJob(Job job) throws SchedulerException {
-        System.out.println("------触发定时同步任务----");
         boolean result = false;
         Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
-        System.out.println("job : "+job);
         if (job != null && GeneralStatus.ACTIVE.getValue().equals(job.getStatus()) && StringUtils.hasText(job.getCrontab())){
 
             JobKey jobKey = JobKey.jobKey(job.getName(), Scheduler.DEFAULT_GROUP);
@@ -45,12 +43,10 @@ public class ScheduleImportJob {
             Trigger trigger = newTrigger().withSchedule(CronScheduleBuilder.cronSchedule(job.getCrontab()))
                     .withIdentity(triggerKey)
                     .build();
-            System.out.println("trigger : "+ trigger);
             result = scheduler.scheduleJob(jobDetail, trigger) != null;
             scheduler.start();
-            System.out.println("触发定时任务！");
         }else {
-            System.out.println("触发定时任务异常！");
+            log.error("触发定时任务异常！");
         }
         return result;
     }
@@ -73,7 +69,6 @@ public class ScheduleImportJob {
             result = true;
         }catch (Exception e){
             log.error("定时任务删除失败");
-            e.printStackTrace();
         }
         return result;
     }
@@ -85,7 +80,6 @@ public class ScheduleImportJob {
      * @param cron
      */
     public void modifyJobTime(String jobName, String cron) {
-        boolean result = false;
         SchedulerFactory schedulerFactory = new StdSchedulerFactory();
 
         TriggerKey triggerKey = TriggerKey.triggerKey(jobName, Scheduler.DEFAULT_GROUP);
@@ -106,7 +100,6 @@ public class ScheduleImportJob {
             }
         } catch (Exception e) {
             log.error("修改定时任务失败");
-//            throw new RuntimeException(e);
         }
     }
 
