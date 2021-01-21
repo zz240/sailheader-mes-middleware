@@ -6,6 +6,7 @@ import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.service.ActionService;
+import com.sun.org.apache.bcel.internal.generic.IF_ACMPEQ;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,7 +45,7 @@ public class ActionController {
         } catch (Exception e) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        return operationResult.setData(action.getName()).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
+        return operationResult.setData(action.getName()).setMessage("插入成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -71,7 +72,7 @@ public class ActionController {
         action.setName(action.getName() + "-" + action.getId());
         actionService.updateByActionStreamSelective(action);
         msg = "删除成功";
-        return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_SUCCESS.getValue());
+        return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -84,7 +85,7 @@ public class ActionController {
     public OperationResult findActionById(@PathVariable Long id) {
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
-            return new OperationResult().setData(action).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
+            return new OperationResult().setData(action).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
         return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
     }
@@ -107,12 +108,14 @@ public class ActionController {
             msg = "修改失败，name为空";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
+        Action actionStream = actionService.selectByPrimaryKey(id);
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
-            msg = "修改失败,name已存在";
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            if (!actionStream.getName().equals(action.getName())){
+                msg = "修改失败,name已存在";
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            }
         }
-        Action actionStream = actionService.selectByPrimaryKey(id);
         if (actionStream == null) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
@@ -131,7 +134,7 @@ public class ActionController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         msg = "修改成功";
-        return operationResult.setData(actionStream).setStateCode(StateCode.EDIT_SUCCESS.getValue()).setMessage(msg);
+        return operationResult.setData(actionStream).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
     }
 
     /**
@@ -141,7 +144,7 @@ public class ActionController {
      */
     @GetMapping("/mw/api/action/stream/query/all")
     public OperationResult findAllActions() {
-        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
+        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
 }
