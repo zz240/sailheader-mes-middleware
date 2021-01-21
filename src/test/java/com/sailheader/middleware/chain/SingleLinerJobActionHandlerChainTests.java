@@ -7,6 +7,7 @@ import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.action.RemoteAccessActionHandler;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.model.DataSource;
+import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
+@Ignore
 class SingleLinerJobActionHandlerChainTests {
 
     @Autowired

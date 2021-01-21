@@ -207,4 +207,8 @@
         delete from data_source where id = #{id,jdbcType=BIGINT}
     </delete>
 
+    <select id="checkForPresence" parameterType="java.lang.String" resultType="java.lang.Integer">
+        SELECT count(1) FROM "data_source" where name = #{name,jdbcType=VARCHAR};
+    </select>
+
 </mapper>

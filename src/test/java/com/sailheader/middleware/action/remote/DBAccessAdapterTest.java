@@ -9,6 +9,7 @@ import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import com.sailheader.middleware.model.DataSource;
+import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -124,6 +125,7 @@ class DBAccessAdapterTest {
      */
     @Nested
     @DisplayName("check execute sql")
+    @Ignore
     class CheckDBSql {
 
         /**
@@ -193,6 +195,7 @@ class DBAccessAdapterTest {
      */
     @Nested
     @DisplayName("switch db type and execute sql")
+    @Ignore
     class SwitchDifferentDB {
 
         /**

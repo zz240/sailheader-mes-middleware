@@ -25,6 +25,10 @@ public class JobService {
         return jobDAO.updateByPrimaryKeySelective(job);
     }
 
+    public int updateJob(Job job){
+        return jobDAO.updateByPrimaryKey(job);
+    }
+
     public int insertSelective(Job job){
         return jobDAO.insertSelective(job);
     }
@@ -35,8 +39,12 @@ public class JobService {
 
     public List<Job> findJobByStatus(Short status){
         JobExample example = new JobExample();
-        example.createCriteria().andStatusEqualTo(status);
+        example.createCriteria().andStatusNotEqualTo(status);
         return jobDAO.selectByExample(example);
+    }
+
+    public int checkForPresence(String name){
+        return jobDAO.checkForPresence(name);
     }
 
 }

@@ -740,7 +740,7 @@ public class JobExample {
             return (JobExample.Criteria) this;
         }
 
-        public JobExample.Criteria andStatusNotEqualTo(String value) {
+        public JobExample.Criteria andStatusNotEqualTo(Short value) {
             addCriterion("\"status\" <>", value, "status");
             return (JobExample.Criteria) this;
         }

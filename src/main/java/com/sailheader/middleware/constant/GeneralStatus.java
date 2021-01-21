@@ -14,8 +14,8 @@ public enum GeneralStatus {
     public String getZhCNLabel() {
         return zhCNLabel;
     }
-    public String getValue(){
-        return name();
+    public Short getValue(){
+        return getIntLabel();
     }
 
     GeneralStatus(Short enUSLabel, String zhCNLabel){

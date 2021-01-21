@@ -50,4 +50,11 @@ public interface DataSourceDAO {
 
     List<DataSource> selectByExample(DataSourceExample dataSourceExample);
 
+    /**
+     * 根据名称查重
+     * @param name
+     * @return
+     */
+    int checkForPresence(String name);
+
 }

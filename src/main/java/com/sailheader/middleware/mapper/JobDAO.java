@@ -19,7 +19,11 @@ public interface JobDAO {
 
     Job selectJobByName(String name);
 
+    int updateByPrimaryKey(Job job);
+
     List<Job> selectByExample(JobExample job);
+
+    int checkForPresence(String name);
 
 
 }
