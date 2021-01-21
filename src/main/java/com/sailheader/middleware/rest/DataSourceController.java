@@ -84,7 +84,7 @@ public class DataSourceController {
         dataSource.setStatus(GeneralStatus.DELETED.getIntLabel()).setName(dataSource.getName()+"-"+dataSource.getId());
         dataSourceService.updateDataSource(dataSource);
         msg = "删除成功！";
-        return operationResult.setData(dataSource.getName()).setMessage(msg).setStateCode(StateCode.DELETE_SUCCESS.getValue());
+        return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_SUCCESS.getValue());
     }
 
     /**
@@ -156,7 +156,8 @@ public class DataSourceController {
         try {
             dataSourceService.updateDataSource(source);
         }catch (Exception e){
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            throw new RuntimeException("更新异常！");
+//            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
 
         return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.EDIT_SUCCESS.getValue());

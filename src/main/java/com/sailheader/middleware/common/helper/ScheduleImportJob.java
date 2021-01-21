@@ -21,61 +21,70 @@ public class ScheduleImportJob {
 
     /**
      * 触发定时同步任务
+     *
      * @param job
      * @return
      * @throws SchedulerException
      */
     public Boolean executeScheduleImportJob(Job job) throws SchedulerException {
-        boolean result = false;
+        JobDataMap jobDataMap = new JobDataMap();
         Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
-        if (job != null && GeneralStatus.ACTIVE.getValue().equals(job.getStatus()) && StringUtils.hasText(job.getCrontab())){
-
-            JobKey jobKey = JobKey.jobKey(job.getName(), Scheduler.DEFAULT_GROUP);
-            TriggerKey triggerKey = TriggerKey.triggerKey(job.getName(), Scheduler.DEFAULT_GROUP);
-            JobDataMap jobDataMap = new JobDataMap();
-            jobDataMap.put(KEY_IMPORT_JOB, JSON.toJSONString(job));
-
-            //任务
-            JobDetail jobDetail = newJob(UpdateJobDetail.class).setJobData(jobDataMap)
-                    .withIdentity(jobKey).storeDurably().build();
-            System.out.println("jobDetail :"+jobDetail);
-            //触发器
-            Trigger trigger = newTrigger().withSchedule(CronScheduleBuilder.cronSchedule(job.getCrontab()))
-                    .withIdentity(triggerKey)
-                    .build();
-            result = scheduler.scheduleJob(jobDetail, trigger) != null;
-            scheduler.start();
-        }else {
-            log.error("触发定时任务异常！");
+        String msg = "触发定时任务异常！";
+        if (job == null) {
+            msg = "未发现任务";
+            log.error(msg);
+            return false;
         }
+        if (job.getStatus() == null || !job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
+            return false;
+        }
+        if (!StringUtils.hasText(job.getCrontab())) {
+            msg = "普通任务";
+            log.info(msg);
+            return true;
+        }
+        JobKey jobKey = JobKey.jobKey(job.getName(), Scheduler.DEFAULT_GROUP);
+        TriggerKey triggerKey = TriggerKey.triggerKey(job.getName(), Scheduler.DEFAULT_GROUP);
+        jobDataMap.put(KEY_IMPORT_JOB, JSON.toJSONString(job));
+
+        //任务
+        JobDetail jobDetail = newJob(UpdateJobDetail.class).setJobData(jobDataMap).withIdentity(jobKey).storeDurably().build();
+        //触发器
+        Trigger trigger = newTrigger().withSchedule(CronScheduleBuilder.cronSchedule(job.getCrontab()))
+                .withIdentity(triggerKey)
+                .build();
+        //调度器
+        boolean result = scheduler.scheduleJob(jobDetail, trigger) != null;
+        scheduler.start();
         return result;
     }
 
     /**
      * 移除指定名称的定时任务
+     *
      * @param name
      * @return
      * @throws SchedulerException
      */
-    public Boolean removeScheduleImportJob(String name)throws SchedulerException{
+    public Boolean removeScheduleImportJob(String name) throws SchedulerException {
         boolean result = false;
         TriggerKey triggerKey = TriggerKey.triggerKey(name, Scheduler.DEFAULT_GROUP);
         JobKey jobKey = JobKey.jobKey(name, Scheduler.DEFAULT_GROUP);
-        try {
-            Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
-            scheduler.pauseTrigger(triggerKey);// 停止触发器
-            scheduler.unscheduleJob(triggerKey);// 移除触发器
-            scheduler.deleteJob(jobKey);// 删除任务
-            result = true;
-        }catch (Exception e){
-            log.error("定时任务删除失败");
-        }
+        Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
+        // 停止触发器
+        scheduler.pauseTrigger(triggerKey);
+        // 移除触发器
+        scheduler.unscheduleJob(triggerKey);
+        // 删除任务
+        scheduler.deleteJob(jobKey);
+        result = true;
         return result;
     }
 
 
     /**
      * 修改一个任务的触发时间
+     *
      * @param jobName
      * @param cron
      */
@@ -102,7 +111,6 @@ public class ScheduleImportJob {
             log.error("修改定时任务失败");
         }
     }
-
 
 
 }

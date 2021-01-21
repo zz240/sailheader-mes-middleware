@@ -3,8 +3,7 @@ package com.sailheader.middleware.constant;
 import lombok.Getter;
 
 public enum ActionTypeEnum {
-    remoteAccess((short)1 ,"rest.remoteAccess"),//远程访问
-    DataFiltering((short)3 , "rest.data.filtering");//数据过滤
+    remoteAccess((short)1 ,"action.remote.access");//远程访问
 
     @Getter
     private final Short type;
