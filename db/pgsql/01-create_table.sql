@@ -15,9 +15,9 @@ create table job
         name        varchar unique,
         crontab     varchar,
         remarks     varchar,
-        status      smallint,
+        status      smallint default 2,
         created_by  integer,
-        created_on  timestamp,
+        created_on  timestamp default now(),
         modified_by integer,
         modified_on timestamp
     );
@@ -91,12 +91,12 @@ create table action_stream
         job_id      bigint,
         name        varchar,
         type        smallint,
-        status      smallint,
+        status      smallint default 1,
         index       integer,
         temp_data   json,
         addition    json,
         created_by  integer,
-        created_on  timestamp,
+        created_on  timestamp default now(),
         modified_by integer,
         modified_on timestamp
     );
@@ -178,16 +178,16 @@ create table data_source
         id          bigserial primary key,
         name        varchar,
         type        smallint,
-        status      smallint,
+        status      smallint default 1,
         address     varchar,
         addition    json,
         created_by  integer,
-        created_on  timestamp,
+        created_on  timestamp default now(),
         modified_by integer,
         modified_on timestamp
     );
 comment
-    on table data_source is '动作流表';
+    on table data_source is '数据源';
 comment
     on column data_source.id is 'id';
 comment
