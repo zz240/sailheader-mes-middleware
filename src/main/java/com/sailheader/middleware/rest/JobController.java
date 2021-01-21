@@ -39,7 +39,6 @@ public class JobController {
     @Autowired
     private ApplicationContext applicationContext;
 
-    @Transactional(rollbackFor = Exception.class)
     @PostMapping("/mw/api/job/create")
     public OperationResult createJob(@RequestBody Job job) {
         OperationResult operationResult = new OperationResult();
@@ -54,20 +53,15 @@ public class JobController {
             log.error(msg + "，任务名已存在！");
             return operationResult.setData(null).setMessage(msg + "，任务名已存在！").setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        try {
-            i = jobService.insertSelective(job);
-            jobByName = jobService.selectJobByName(job.getName());
-        } catch (Exception e) {
-            log.error(msg);
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
-        }
-
+        job.setCreatedOn(new Date());
+        i = jobService.insertSelective(job);
+        jobByName = jobService.selectJobByName(job.getName());
         if (i < 1) {
             log.error(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
 
-        msg = "添加" + jobByName + "任务成功！";
+        msg = "添加" + jobByName.getName() + "任务成功！";
         if (jobByName.getStatus().equals(GeneralStatus.ACTIVE) && !jobByName.getCrontab().isEmpty()) {
             //定时任务
             try {
@@ -75,10 +69,8 @@ public class JobController {
             } catch (SchedulerException e) {
                 return new OperationResult().setData(jobByName).setMessage("添加定时任务异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
-            msg = "添加" + jobByName + "定时任务成功！";
-            // TODO 空任务加个关闭状态
+            msg = "添加" + jobByName.getName() + "定时任务成功！";
         }
-
         log.info(msg);
         return new OperationResult(jobByName).setMessage(msg).setStateCode(StateCode.ADD_SUCCESS.getValue());
     }
@@ -89,7 +81,6 @@ public class JobController {
      * @param id 需要删除的任务id
      * @return 删除之后的结果集
      */
-    @Transactional(rollbackFor = Exception.class)
     @DeleteMapping("/mw/api/job/delete/{id}")
     public OperationResult deleteJob(@PathVariable Long id) {
         Job job = jobService.selectJobById(id);
@@ -115,7 +106,7 @@ public class JobController {
         job.setName(job.getName() + "-" + job.getId());
         jobService.updateJobSelective(job);
         log.info("成功删除");
-        return new OperationResult().setData(job.getName()).setMessage("成功删除任务！").setStateCode(StateCode.DELETE_SUCCESS.getValue());
+        return new OperationResult().setData(null).setMessage("成功删除任务！").setStateCode(StateCode.DELETE_SUCCESS.getValue());
     }
 
     /**
@@ -153,12 +144,10 @@ public class JobController {
      * @param job 更新内容对象
      * @return 更新之后的结果集
      */
-    @Transactional(rollbackFor = Exception.class)
     @PutMapping("/mw/api/job/update/{id}")
     public OperationResult updateJob(@PathVariable Long id, @RequestBody Job job) {
-        // TODO 更新定时任务 有问题
         OperationResult operationResult = new OperationResult();
-        String msg = "";
+        String msg = "更新失败！";
         Job jobById = jobService.selectJobById(id);
         if (jobById == null) {
             msg = "没有找到要更新的任务记录！";
@@ -172,33 +161,31 @@ public class JobController {
         }
         if (jobById.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "该任务已删除！";
+            log.error(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-
-        jobById.setName(job.getName()).setCrontab(job.getCrontab()).setRemarks(job.getRemarks())
-                .setModifiedBy(job.getModifiedBy()).setModifiedOn(new Date());
-        int i = jobService.updateJob(jobById);
-        if (i < 1) {
-            msg = "更新失败！";
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
-        }
-        Job jobByName = jobService.selectJobByName(jobById.getName());
         //关闭定时任务
         if (jobById.getCrontab() != null) {
             try {
                 scheduleImportJob.removeScheduleImportJob(jobById.getName());
             } catch (SchedulerException e) {
-                e.printStackTrace();
                 msg = "关闭定时任务异常";
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_SUCCESS.getValue());
             }
         }
+        jobById.setName(job.getName()).setCrontab(job.getCrontab()).setRemarks(job.getRemarks())
+                .setModifiedBy(job.getModifiedBy()).setModifiedOn(new Date());
+        int i = jobService.updateJob(jobById);
+        if (i < 1) {
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+        }
+        Job jobByName = jobService.selectJobByName(jobById.getName());
+
         //重新启动定时任务触发时间
-        if (job.getCrontab() != null) {
+        if (job.getCrontab() != null && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             try {
                 scheduleImportJob.executeScheduleImportJob(jobByName);
             } catch (SchedulerException e) {
-                e.printStackTrace();
                 msg = "更新定时任务异常";
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_SUCCESS.getValue());
             }
@@ -213,7 +200,6 @@ public class JobController {
      * @param id 执行的任务id
      * @return 执行之后的结果集
      */
-    @Transactional(rollbackFor = Exception.class)
     @GetMapping("/mw/api/job/execute/{id}")
     public OperationResult ManualTrigger(@PathVariable Long id) {
         OperationResult operationResult = new OperationResult();
@@ -235,8 +221,8 @@ public class JobController {
             JSONObject addition = action.getAddition();
             System.out.println("addition :" + addition);
             String address = (String) addition.getJSONObject("addition").getJSONObject("dataSource").getJSONObject("addition").get("address");
-            if (action.getType().equals(remoteAccess.getType())  //远程访问
-                    && addition.getShort("type").equals((short) 1)   // http访问
+            if (action.getType().equals(remoteAccess.getType())
+                    && addition.getShort("type").equals((short) 1)
                     && address != null) {
                 ActionHandlerAdapter<?, ?> bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
                 //  2、将动作添加到链中
@@ -251,7 +237,7 @@ public class JobController {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
             singleLinerJobActionHandlerChain.dataHandler(null);
         } catch (Exception e) {
-            msg = "执行单向链失败！";
+            msg = "执行失败！";
             return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         msg = "执行成功";
@@ -264,52 +250,46 @@ public class JobController {
      * @param id 待更新的定时任务的id
      * @return 更新状态之后的结果集
      */
-    @Transactional(rollbackFor = Exception.class)
     @PutMapping("/mw/api/job/change/status/{id}")
     public OperationResult changeJobStatus(@PathVariable Long id) {
+        OperationResult operationResult = new OperationResult();
         Job job = jobService.selectJobById(id);
         Boolean flag = false;
         String msg = "操作失败!";
         if (job == null) {
             log.error(msg);
-            return new OperationResult(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务不存在！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务不存在！");
         }
         if (job.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             log.error(msg);
-            return new OperationResult(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务或已删除！");
-        }
-        if (job.getCrontab() == null) {
-            log.error(msg);
-            return new OperationResult(flag).setStateCode(StateCode.SYSTEM_FAIL.getValue()).setMessage(msg + ",无需关闭！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务或已删除！");
         }
         try {
             if (job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
+                msg = "关闭";
                 job.setStatus(GeneralStatus.DISABLE.getIntLabel());
                 jobService.updateJobSelective(job);
-                msg = "关闭定时任务";
-                log.info(msg);
                 scheduleImportJob.removeScheduleImportJob(job.getName());
             } else {
+                msg = "开启";
                 job.setStatus(GeneralStatus.ACTIVE.getIntLabel());
                 jobService.updateJobSelective(job);
-                msg = "开启定时任务";
-                log.info(msg);
                 scheduleImportJob.executeScheduleImportJob(job);
             }
         } catch (SchedulerException e) {
-            msg = "修改任务状态异常！";
+            msg = msg + "任务异常！";
             log.error(msg);
-            return new OperationResult(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("修改任务状态异常！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("修改任务状态异常！");
         }
-        msg = "修改任务状态成功！";
+        msg = msg + "任务成功！";
         log.info(msg);
         flag = true;
-        return new OperationResult().setData(flag).setStateCode(StateCode.EDIT_SUCCESS.getValue()).setMessage("修改任务状态成功");
+        return operationResult.setData(flag).setStateCode(StateCode.EDIT_SUCCESS.getValue()).setMessage("修改任务状态成功");
     }
 
     @RequestMapping("/test")
     public void test() {
-        System.out.println("SUCCESS");
+        System.out.println("SUCCESS" + new Date());
     }
 
 }

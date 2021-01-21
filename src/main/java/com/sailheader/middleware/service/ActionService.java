@@ -87,13 +87,13 @@ public class ActionService {
     private void checkDB(JSONObject jsonObject){
         String msg = "数据存在异常";
         JSONObject json = jsonObject.getJSONObject("addition");
-        if (jsonObject.get("driver") == null || jsonObject.get("driver").equals("")) {
+        if (json.get("driver") == null || json.get("driver").equals("")) {
             throw new RuntimeException(msg);
         }
-        if (jsonObject.get("username") == null || jsonObject.get("username").equals("")) {
+        if (json.get("username") == null || json.get("username").equals("")) {
             throw new RuntimeException(msg);
         }
-        if (jsonObject.get("password") == null || jsonObject.get("password").equals("")) {
+        if (json.get("password") == null || json.get("password").equals("")) {
             throw new RuntimeException(msg);
         }
     }

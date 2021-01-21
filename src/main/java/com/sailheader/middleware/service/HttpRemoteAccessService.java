@@ -44,6 +44,7 @@ public class HttpRemoteAccessService extends ActionHandlerAdapter<JSON, JSON> {
             log.info("远程访问异常！");
         }
         return new ActionTempData(ActionStatus.FAILURE,null);
+//        return null;
     }
 
     @Override
@@ -59,8 +60,8 @@ public class HttpRemoteAccessService extends ActionHandlerAdapter<JSON, JSON> {
         HttpMethod requestMethod = HttpMethod.resolve(prefix.getString("method"));
 
         Map<String, List<String>> headers = new HashMap<>();
-        JSONObject body = null;
-        if (!prefix.getString("body").isEmpty()) {
+        JSON body = null;
+        if (!prefix.getString("body").trim().isEmpty()) {
             body = prefix.getJSONObject("body");
         }
 
