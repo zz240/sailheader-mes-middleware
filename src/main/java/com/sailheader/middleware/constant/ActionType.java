@@ -2,8 +2,8 @@ package com.sailheader.middleware.constant;
 
 import lombok.Getter;
 
-public enum ActionTypeEnum {
-    remoteAccess((short)1 ,"action.remote.access");//远程访问
+public enum ActionType {
+    remoteAccess((short)1 ,"rest.remoteAccess");
 
     @Getter
     private final Short type;
@@ -11,7 +11,7 @@ public enum ActionTypeEnum {
     @Getter
     private final String beanName;
 
-    ActionTypeEnum(Short type, String beanName) {
+    ActionType(Short type, String beanName) {
         this.type = type;
         this.beanName = beanName;
     }

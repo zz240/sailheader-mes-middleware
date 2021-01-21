@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-import static com.sailheader.middleware.constant.ActionTypeEnum.remoteAccess;
+import static com.sailheader.middleware.constant.ActionType.remoteAccess;
 
 @Service
 public class ActionService {

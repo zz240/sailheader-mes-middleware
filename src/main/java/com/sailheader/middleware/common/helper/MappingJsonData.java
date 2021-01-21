@@ -1,6 +1,8 @@
 package com.sailheader.middleware.common.helper;
 
 import com.alibaba.fastjson.JSON;
+import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
@@ -49,14 +51,12 @@ public class MappingJsonData {
         // 2. 将当前上下文和 current 下的表达式内容合并
         JSON object;
         try {
-            JSON.toJSONString(JSON.toJSONString(preContext));
             String resultStr = expressionParser
                     .parseExpression(JSON.toJSONString(preContext), templateParserContext)
                     .getValue(ctx, String.class);
             object = (JSON) JSON.parse(resultStr);
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("无法解析表达式，请确保一个表达式输出的内容为基础类型，而非collection或者map");
+            throw MiddlewareException.getInstance(MiddlewareExceptionMap.JSON_MAPPING_PLACEHOLDER_CANT_PARSE);
         }
 
         return object;

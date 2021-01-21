@@ -48,7 +48,7 @@ public class HttpRemoteAccessService extends ActionHandlerAdapter<JSON, JSON> {
     }
 
     @Override
-    protected void validateActionData() throws Exception {
+    protected void validateActionAddition() throws Exception {
 
     }
 
