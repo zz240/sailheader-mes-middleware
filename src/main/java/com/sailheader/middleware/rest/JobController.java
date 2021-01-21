@@ -25,11 +25,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
-
-
-
 
 
 @Slf4j
@@ -159,7 +158,7 @@ public class JobController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (jobService.checkForPresence(job.getName()) > 0) {
-            if (!job.getName().equals(jobById.getName())){
+            if (!job.getName().equals(jobById.getName())) {
                 msg = "任务名已存在！";
                 log.error(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
@@ -234,7 +233,7 @@ public class JobController {
             ActionHandlerAdapter bean;
             try {
                 bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
-            }catch (BeansException exception ){
+            } catch (BeansException exception) {
                 msg = "未能成功找到相关动作的实现！beanName:" + beanName;
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
@@ -249,6 +248,7 @@ public class JobController {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
             singleLinerJobActionHandlerChain.dataHandler(null);
         } catch (Exception e) {
+            e.printStackTrace();
             msg = "执行失败！";
             return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
@@ -301,10 +301,11 @@ public class JobController {
 
     @RequestMapping("/test")
     public JSON test(HttpServletRequest request) {
-        System.out.println(request.getContextPath());
-        System.out.println("SUCCESS" + new Date());
+        System.out.println("=================");
+        System.out.println("SUCCESS :" + new Date().getTime());
         JSONObject json = new JSONObject();
-        json.put("message","success");
+        json.put("data", "43623414175e9867890");
+        System.out.println("=================");
         return json;
     }
 

@@ -13,7 +13,6 @@ public class MiddlewareException extends RuntimeException {
     @Getter
     private MiddlewareExceptionMap exceptionMap;
 
-
     public MiddlewareException(MiddlewareExceptionMap map, String s) {
         super(s);
         this.exceptionMap = map;
