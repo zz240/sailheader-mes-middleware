@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-import static com.sailheader.middleware.constant.ActionType.remoteAccess;
+import com.sailheader.middleware.constant.DataSourceType;
 
 @Service
 public class ActionService {
@@ -69,7 +69,7 @@ public class ActionService {
             throw new RuntimeException(msg);
         }
         //判断动作类型
-        if (datasource.getShort("type").equals(remoteAccess.getType())){
+        if (DataSourceType.dataSourceMapById.get(datasource.getShort("type")) == DataSourceType.HTTP){
             checkHttp(datasource);
         }else {
             checkDB(datasource);

@@ -1,30 +1,34 @@
 package com.sailheader.middleware.rest;
 
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.ActionHandler;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
-
+import com.sailheader.middleware.action.remote.AccessAdapter;
 import com.sailheader.middleware.chain.SingleLinerJobActionHandlerChain;
+import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.helper.ScheduleImportJob;
 import com.sailheader.middleware.common.vo.OperationResult;
-
+import com.sailheader.middleware.constant.ActionType;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
+import com.sailheader.middleware.model.DataSource;
 import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.service.JobService;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.SchedulerException;
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Date;
 
-import static com.sailheader.middleware.constant.ActionType.remoteAccess;
+
 
 
 
@@ -72,7 +76,7 @@ public class JobController {
             msg = "添加" + jobByName.getName() + "定时任务成功！";
         }
         log.info(msg);
-        return new OperationResult(jobByName).setMessage(msg).setStateCode(StateCode.ADD_SUCCESS.getValue());
+        return new OperationResult(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -106,7 +110,7 @@ public class JobController {
         job.setName(job.getName() + "-" + job.getId());
         jobService.updateJobSelective(job);
         log.info("成功删除");
-        return new OperationResult().setData(null).setMessage("成功删除任务！").setStateCode(StateCode.DELETE_SUCCESS.getValue());
+        return new OperationResult().setData(null).setMessage("成功删除任务！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -120,7 +124,7 @@ public class JobController {
         Job job = jobService.selectJobById(id);
         if (job != null && !job.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             log.info("查询成功!");
-            return new OperationResult().setData(job).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
+            return new OperationResult().setData(job).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
         log.error("不存在或已删除！");
         return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
@@ -155,9 +159,11 @@ public class JobController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (jobService.checkForPresence(job.getName()) > 0) {
-            msg = "任务名已存在！";
-            log.error(msg);
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            if (!job.getName().equals(jobById.getName())){
+                msg = "任务名已存在！";
+                log.error(msg);
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            }
         }
         if (jobById.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "该任务已删除！";
@@ -170,7 +176,7 @@ public class JobController {
                 scheduleImportJob.removeScheduleImportJob(jobById.getName());
             } catch (SchedulerException e) {
                 msg = "关闭定时任务异常";
-                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_SUCCESS.getValue());
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
             }
         }
         jobById.setName(job.getName()).setCrontab(job.getCrontab()).setRemarks(job.getRemarks())
@@ -187,11 +193,11 @@ public class JobController {
                 scheduleImportJob.executeScheduleImportJob(jobByName);
             } catch (SchedulerException e) {
                 msg = "更新定时任务异常";
-                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_SUCCESS.getValue());
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
         }
         msg = "已更新";
-        return operationResult.setData(jobById).setMessage(msg).setStateCode(StateCode.EDIT_SUCCESS.getValue());
+        return operationResult.setData(jobById).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -218,19 +224,25 @@ public class JobController {
         ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
         for (int i = 0; i < job.getActionList().size(); i++) {
             action = job.getActionList().get(i);
-            JSONObject addition = action.getAddition();
-            System.out.println("addition :" + addition);
-            String address = (String) addition.getJSONObject("addition").getJSONObject("dataSource").getJSONObject("addition").get("address");
-            if (action.getType().equals(remoteAccess.getType())
-                    && addition.getShort("type").equals((short) 1)
-                    && address != null) {
-                ActionHandlerAdapter<?, ?> bean = applicationContext.getBean(remoteAccess.getBeanName(), ActionHandlerAdapter.class);
-                //  2、将动作添加到链中
-                actionHandlers.add(bean);
-                bean.setAction(action);
-            } else {
-                return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+
+            if (action.getType() == null || ActionType.actionTypeById.get(action.getType()) == null) {
+                msg = "当前动作为找到合适类型";
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
+
+            String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
+            ActionHandlerAdapter bean;
+            try {
+                bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
+            }catch (BeansException exception ){
+                msg = "未能成功找到相关动作的实现！beanName:" + beanName;
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            }
+
+            //  2、将动作添加到链中
+            actionHandlers.add(bean);
+            bean.setAction(action);
+
         }
         //  3、执行单向链
         try {
@@ -284,12 +296,16 @@ public class JobController {
         msg = msg + "任务成功！";
         log.info(msg);
         flag = true;
-        return operationResult.setData(flag).setStateCode(StateCode.EDIT_SUCCESS.getValue()).setMessage("修改任务状态成功");
+        return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("修改任务状态成功");
     }
 
     @RequestMapping("/test")
-    public void test() {
+    public JSON test(HttpServletRequest request) {
+        System.out.println(request.getContextPath());
         System.out.println("SUCCESS" + new Date());
+        JSONObject json = new JSONObject();
+        json.put("message","success");
+        return json;
     }
 
 }

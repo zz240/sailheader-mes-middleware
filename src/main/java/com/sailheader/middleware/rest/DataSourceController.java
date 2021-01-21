@@ -59,7 +59,7 @@ public class DataSourceController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         msg = "插入成功";
-        return new OperationResult(dataSource.getName()).setMessage("插入成功").setStateCode(StateCode.ADD_SUCCESS.getValue());
+        return new OperationResult(dataSource.getName()).setMessage("插入成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -84,7 +84,7 @@ public class DataSourceController {
         dataSource.setStatus(GeneralStatus.DELETED.getIntLabel()).setName(dataSource.getName()+"-"+dataSource.getId());
         dataSourceService.updateDataSource(dataSource);
         msg = "删除成功！";
-        return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_SUCCESS.getValue());
+        return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -105,7 +105,7 @@ public class DataSourceController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
 
-        return operationResult.setData(dataSource).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
+        return operationResult.setData(dataSource).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -135,8 +135,10 @@ public class DataSourceController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSourceService.checkForPresence(dataSource.getName()) > 0){
-            msg = "数据源名称重复";
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            if (!dataSource.getName().equals(source.getName())){
+                msg = "数据源名称重复";
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            }
         }
         if (dataSource.getType()==null){
             msg = "数据源 type 为空";
@@ -160,7 +162,7 @@ public class DataSourceController {
 //            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
 
-        return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.EDIT_SUCCESS.getValue());
+        return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -169,6 +171,6 @@ public class DataSourceController {
      */
     @GetMapping("/mw/api/data/source/query/all")
     public OperationResult findDatasourcesByStatus(){
-        return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.QUERY_SUCCESS.getValue());
+        return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 }
