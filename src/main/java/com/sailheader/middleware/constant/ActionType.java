@@ -2,8 +2,11 @@ package com.sailheader.middleware.constant;
 
 import lombok.Getter;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public enum ActionType {
-    remoteAccess((short)1 ,"rest.remoteAccess");
+    REMOTE_ACCESS((short)1 ,"action.remote.access");
 
     @Getter
     private final Short type;
@@ -14,5 +17,15 @@ public enum ActionType {
     ActionType(Short type, String beanName) {
         this.type = type;
         this.beanName = beanName;
+    }
+
+    public static final Map<Short,ActionType> actionTypeById = getEnumById();
+
+    private static Map<Short, ActionType> getEnumById() {
+        Map<Short,ActionType> result = new HashMap<>();
+        for (ActionType value : ActionType.values()) {
+            result.put(value.type, value);
+        }
+        return result;
     }
 }
