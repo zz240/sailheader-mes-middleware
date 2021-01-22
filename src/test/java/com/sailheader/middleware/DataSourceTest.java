@@ -5,6 +5,7 @@ import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.DataSource;
 import com.sailheader.middleware.rest.DataSourceController;
+import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
+@Ignore
 public class DataSourceTest {
     @Autowired
     private DataSourceController dataSourceController;

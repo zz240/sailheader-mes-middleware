@@ -5,6 +5,7 @@ import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.rest.JobController;
 
+import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
+@Ignore
 public class JobTest {
     @Autowired
     private JobController jobController;

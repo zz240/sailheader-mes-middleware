@@ -16,31 +16,17 @@ services:
     networks:
       middleware-network:
         ipv4_address: 173.26.1.11
-  other-postgresql:
-    image: postgres:12-alpine
-    container_name: other-postgresql
-    restart: always
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: middleware
-    volumes:
-      - /data/orther/postgresql:/var/lib/postgresql/data
-      - ./db/pgsql/:/docker-entrypoint-initdb.d/
-    networks:
-      middleware-network:
-        ipv4_address: 173.26.1.12
-  other-sql-server:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    container_name: other-sql-server
-    ports:
-      - 9002:1433
-    environment:
-      ACCEPT_EULA: Y
-      SA_PASSWORD: "Root123456"
-    networks:
-      middleware-network:
-        ipv4_address: 173.26.1.13
+#  other-sql-server:
+#    image: mcr.microsoft.com/mssql/server:2019-latest
+#    container_name: other-sql-server
+#    ports:
+#      - 9002:1433
+#    environment:
+#      ACCEPT_EULA: Y
+#      SA_PASSWORD: "Root123456"
+#    networks:
+#      middleware-network:
+#        ipv4_address: 173.26.1.13
 
 networks:
   middleware-network:

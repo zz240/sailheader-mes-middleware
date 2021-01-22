@@ -1,13 +1,9 @@
 package com.sailheader.middleware.action.remote.db.service;
 
-import com.alibaba.druid.DruidRuntimeException;
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONException;
-import com.microsoft.sqlserver.jdbc.SQLServerException;
 import com.sailheader.middleware.action.remote.db.dao.DynamicDataSourceSqlDao;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.model.DataSource;
-import org.apache.ibatis.exceptions.PersistenceException;
 import org.mybatis.spring.MyBatisSystemException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.BadSqlGrammarException;
