@@ -55,7 +55,6 @@ public class ActionService {
         String msg = "数据存在异常";
         try{
             datasource = action.getAddition().getJSONObject("dataSource");
-            System.out.println(datasource);
         }catch (Exception e){
             throw new RuntimeException(msg);
         }
@@ -69,7 +68,7 @@ public class ActionService {
             throw new RuntimeException(msg);
         }
         //判断动作类型
-        if (DataSourceType.dataSourceMapById.get(datasource.getShort("type")) == DataSourceType.HTTP){
+        if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP){
             checkHttp(datasource);
         }else {
             checkDB(datasource);

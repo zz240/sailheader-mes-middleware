@@ -45,12 +45,11 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
         if (actionTempData.getStatus() != ActionStatus.SUCCESS && actionTempData.getStatus() != ActionStatus.INITIAL) {
             throw MiddlewareException.getInstance(ACTION_STATUS_CONFUSE_ACCESS, "上一个动作需要成功 或者 动作初始化才能继续执行 http 访问动作!");
         }
-        JSONObject lastBody = (JSONObject) actionTempData.getBody();
+        JSON lastBody = actionTempData.getBody();
 
         //构建访问对象
         try {
             requestEntity = getRequestEntity(dataSource,lastBody);
-            System.out.println("当前动作的数据 ： "+ requestEntity.getBody());
         } catch (URISyntaxException e) {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_BUILD_FAILURE,e);
         }
@@ -62,7 +61,6 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_ACCESS_ERROR,e);
         }
 
-        System.out.println("访问后返回的 body : "+response.getBody());
         return JSONObject.parseObject(response.getBody());
     }
 
@@ -84,20 +82,16 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
     }
 
     //构建请求对象
-    public RequestEntity getRequestEntity(DataSource dataSource,JSONObject jsonObject) throws URISyntaxException {
+    public RequestEntity getRequestEntity(DataSource dataSource,JSON json) throws URISyntaxException {
         JSONObject addition = dataSource.getAddition();
         String query = addition.getString("query");
         String url = dataSource.getAddress() + (query != null ? "?" + query : "");
         HttpMethod requestMethod = HttpMethod.resolve(addition.getString("method"));
         Map<String, List<String>> headers = new HashMap<>();
-        JSONObject body = null;
+        JSON body = null;
 
-        if (jsonObject != null){
-            body = jsonObject;
-        }
-
-        if (addition.getJSONObject("body") != null){
-            body = addition.getJSONObject("body");
+        if (json != null){
+            body = json;
         }
 
         if (addition.get("header") != null) {
@@ -109,6 +103,5 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
         RequestEntity requestEntity = new RequestEntity<>(body, multiValueMap, requestMethod, new URI(url));
         return requestEntity;
     }
-
 
 }

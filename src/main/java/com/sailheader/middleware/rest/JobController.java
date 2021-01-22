@@ -249,7 +249,7 @@ public class JobController {
             singleLinerJobActionHandlerChain.dataHandler(null);
         } catch (Exception e) {
             e.printStackTrace();
-            msg = "执行失败！";
+            msg = "执行失败:"+ e.getMessage();
             return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         msg = "执行成功";
@@ -297,16 +297,6 @@ public class JobController {
         log.info(msg);
         flag = true;
         return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("修改任务状态成功");
-    }
-
-    @RequestMapping("/test")
-    public JSON test(HttpServletRequest request) {
-        System.out.println("=================");
-        System.out.println("SUCCESS :" + new Date().getTime());
-        JSONObject json = new JSONObject();
-        json.put("data", "43623414175e9867890");
-        System.out.println("=================");
-        return json;
     }
 
 }
