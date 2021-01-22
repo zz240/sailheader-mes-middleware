@@ -5,11 +5,13 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.ActionHandler;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
+import com.sailheader.middleware.action.consume.ConsumeData;
 import com.sailheader.middleware.action.remote.AccessAdapter;
 import com.sailheader.middleware.chain.SingleLinerJobActionHandlerChain;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.helper.ScheduleImportJob;
 import com.sailheader.middleware.common.vo.OperationResult;
+import com.sailheader.middleware.constant.ActionConsumeDataType;
 import com.sailheader.middleware.constant.ActionType;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
@@ -50,11 +52,13 @@ public class JobController {
         String msg = "添加任务异常";
         if (job.getName() == null) {
             log.error(msg + "，任务名不能为空！");
-            return operationResult.setData(null).setMessage(msg + "，任务名不能为空！").setStateCode(StateCode.ADD_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg + "，任务名不能为空！")
+                                  .setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (jobService.checkForPresence(job.getName()) > 0) {
             log.error(msg + "，任务名已存在！");
-            return operationResult.setData(null).setMessage(msg + "，任务名已存在！").setStateCode(StateCode.ADD_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg + "，任务名已存在！")
+                                  .setStateCode(StateCode.ADD_FAIL.getValue());
         }
         job.setCreatedOn(new Date());
         i = jobService.insertSelective(job);
@@ -70,7 +74,8 @@ public class JobController {
             try {
                 scheduleImportJob.executeScheduleImportJob(jobByName);
             } catch (SchedulerException e) {
-                return new OperationResult().setData(jobByName).setMessage("添加定时任务异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+                return new OperationResult().setData(jobByName).setMessage("添加定时任务异常")
+                                            .setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
             msg = "添加" + jobByName.getName() + "定时任务成功！";
         }
@@ -109,7 +114,8 @@ public class JobController {
         job.setName(job.getName() + "-" + job.getId());
         jobService.updateJobSelective(job);
         log.info("成功删除");
-        return new OperationResult().setData(null).setMessage("成功删除任务！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return new OperationResult().setData(null).setMessage("成功删除任务！")
+                                    .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -123,10 +129,12 @@ public class JobController {
         Job job = jobService.selectJobById(id);
         if (job != null && !job.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             log.info("查询成功!");
-            return new OperationResult().setData(job).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+            return new OperationResult().setData(job).setMessage("查询成功！")
+                                        .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
         log.error("不存在或已删除！");
-        return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
+        return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！")
+                                    .setStateCode(StateCode.QUERY_FAIL.getValue());
     }
 
     /**
@@ -136,7 +144,8 @@ public class JobController {
      */
     @GetMapping("/mw/api/job/query/all")
     public OperationResult findAllJobs() {
-        return new OperationResult().setData(jobService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return new OperationResult().setData(jobService.findJobByStatus(GeneralStatus.DELETED.getIntLabel()))
+                                    .setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
 
@@ -179,7 +188,7 @@ public class JobController {
             }
         }
         jobById.setName(job.getName()).setCrontab(job.getCrontab()).setRemarks(job.getRemarks())
-                .setModifiedBy(job.getModifiedBy()).setModifiedOn(new Date());
+               .setModifiedBy(job.getModifiedBy()).setModifiedOn(new Date());
         int i = jobService.updateJob(jobById);
         if (i < 1) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
@@ -230,7 +239,7 @@ public class JobController {
             }
 
             String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
-            ActionHandlerAdapter bean;
+            ActionHandlerAdapter<?, ?> bean;
             try {
                 bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
             } catch (BeansException exception) {
@@ -238,18 +247,39 @@ public class JobController {
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
             }
 
-            //  2、将动作添加到链中
+            // 2. 为bean找到一个消费输入数据的方式
+            ActionConsumeDataType consumeDataType = null;
+            if (ActionConsumeDataType.actionConsumeDataTypeById.get(action.getConsumeDataType()) != null) {
+                consumeDataType = ActionConsumeDataType.actionConsumeDataTypeById.get(action.getConsumeDataType());
+            } else {
+                // 默认直接注入
+                consumeDataType = ActionConsumeDataType.DIRECT;
+            }
+
+            String consumeDataBeanName = consumeDataType.getBeanName();
+            ConsumeData consumeDataBean;
+            try {
+                consumeDataBean = applicationContext.getBean(consumeDataBeanName, ConsumeData.class);
+            } catch (BeansException exception) {
+                msg = "未能成功找到相关消费动作的实现！consumeDataBeanName:" + consumeDataBeanName;
+                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            }
+
+            bean.setConsumeData(consumeDataBean);
+
+            //  3、将动作添加到链中
             actionHandlers.add(bean);
             bean.setAction(action);
 
         }
         //  3、执行单向链
         try {
-            SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
+            SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(
+                    actionHandlers);
             singleLinerJobActionHandlerChain.dataHandler(null);
         } catch (Exception e) {
             e.printStackTrace();
-            msg = "执行失败:"+ e.getMessage();
+            msg = "执行失败:" + e.getMessage();
             return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         msg = "执行成功";
@@ -270,11 +300,13 @@ public class JobController {
         String msg = "操作失败!";
         if (job == null) {
             log.error(msg);
-            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务不存在！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue())
+                                  .setMessage(msg + ",该任务不存在！");
         }
         if (job.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             log.error(msg);
-            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg + ",该任务或已删除！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue())
+                                  .setMessage(msg + ",该任务或已删除！");
         }
         try {
             if (job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
@@ -291,7 +323,8 @@ public class JobController {
         } catch (SchedulerException e) {
             msg = msg + "任务异常！";
             log.error(msg);
-            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("修改任务状态异常！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue())
+                                  .setMessage("修改任务状态异常！");
         }
         msg = msg + "任务成功！";
         log.info(msg);

@@ -56,4 +56,7 @@ public class Action implements Serializable {
 
     //更改时间
     private Date modifiedOn;
+
+    // 消费数据方式
+    private int consumeDataType;
 }

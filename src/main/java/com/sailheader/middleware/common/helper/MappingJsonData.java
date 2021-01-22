@@ -34,7 +34,7 @@ public class MappingJsonData {
      * @param preContext      待替换的上下文
      * @return
      */
-    public static JSON mappingJsonIntoJson(Map<String, Object> placeholderData, JSON preContext) {
+    public static JSON mappingJsonIntoJson(Map<String, Object> placeholderData, JSON preContext) throws Exception {
 
         if (preContext == null) {
             return null;

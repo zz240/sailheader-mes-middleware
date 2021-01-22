@@ -15,7 +15,7 @@ create table job
         name        varchar unique,
         crontab     varchar,
         remarks     varchar,
-        status      smallint default 2,
+        status      smallint  default 2,
         created_by  integer,
         created_on  timestamp default now(),
         modified_by integer,
@@ -87,18 +87,19 @@ comment
 drop table if exists action_stream;
 create table action_stream
     (
-        id          bigserial primary key,
-        job_id      bigint,
-        name        varchar,
-        type        smallint,
-        status      smallint default 1,
-        index       integer,
-        temp_data   json,
-        addition    json,
-        created_by  integer,
-        created_on  timestamp default now(),
-        modified_by integer,
-        modified_on timestamp
+        id                bigserial primary key,
+        job_id            bigint,
+        name              varchar,
+        type              smallint,
+        status            smallint  default 1,
+        index             integer,
+        consume_data_type integer default 1,
+        temp_data         json,
+        addition          json,
+        created_by        integer,
+        created_on        timestamp default now(),
+        modified_by       integer,
+        modified_on       timestamp
     );
 comment
     on table action_stream is '动作流表';
@@ -114,6 +115,8 @@ comment
     on column action_stream.status is '状态,1:启用,-1:删除';
 comment
     on column action_stream.index is '动作序号';
+comment
+    on column action_stream.consume_data_type is '消费数据方式';
 comment
     on column action_stream.temp_data is '输出数据';
 comment
@@ -139,6 +142,8 @@ CREATE
     INDEX idx_action_stream_type ON action_stream (type);
 CREATE
     INDEX idx_action_stream_index ON action_stream (index);
+CREATE
+    INDEX idx_action_consume_data_type ON action_stream (consume_data_type);
 
 -- --------------------------------------------------
 -- 动作日志表
@@ -178,7 +183,7 @@ create table data_source
         id          bigserial primary key,
         name        varchar,
         type        smallint,
-        status      smallint default 1,
+        status      smallint  default 1,
         address     varchar,
         addition    json,
         created_by  integer,
