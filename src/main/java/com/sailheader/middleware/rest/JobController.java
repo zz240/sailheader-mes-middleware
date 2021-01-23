@@ -6,10 +6,12 @@ import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.ActionHandler;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.action.remote.AccessAdapter;
+import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.chain.SingleLinerJobActionHandlerChain;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.helper.ScheduleImportJob;
 import com.sailheader.middleware.common.vo.OperationResult;
+import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.ActionType;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
@@ -205,11 +207,12 @@ public class JobController {
      * @param id 执行的任务id
      * @return 执行之后的结果集
      */
-    @GetMapping("/mw/api/job/execute/{id}")
-    public OperationResult ManualTrigger(@PathVariable Long id) {
+    @PostMapping("/mw/api/job/execute/{id}")
+    public OperationResult ManualTrigger(@PathVariable Long id,@RequestBody(required = false) String tempData) {
         OperationResult operationResult = new OperationResult();
         Action action = null;
         Job job = jobService.selectJobById(id);
+        JSON json = null;
         String msg = "执行失败！";
         if (job == null) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
@@ -218,6 +221,16 @@ public class JobController {
             msg = "状态未开启";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
+        try {
+            json = JSON.parseObject(tempData);
+        }catch (Exception e){
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+        }
+        if (tempData != null && json == null){
+            msg = "解析数据异常";
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+        }
+
 
         //  1、查询指定任务下的动作
         ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
@@ -244,16 +257,16 @@ public class JobController {
 
         }
         //  3、执行单向链
+        ActionTempData actionTempData = new ActionTempData(ActionStatus.INITIAL, json);
         try {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
-            singleLinerJobActionHandlerChain.dataHandler(null);
+            singleLinerJobActionHandlerChain.dataHandler(actionTempData);
         } catch (Exception e) {
-            e.printStackTrace();
             msg = "执行失败:"+ e.getMessage();
-            return operationResult.setData(action).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            return operationResult.setData(actionTempData.getBody()).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         msg = "执行成功";
-        return operationResult.setData(job).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setData(actionTempData.getBody()).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
