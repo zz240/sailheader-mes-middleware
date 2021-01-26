@@ -26,10 +26,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Date;
 
 
@@ -210,60 +206,61 @@ public class JobController {
     @PostMapping("/mw/api/job/execute/{id}")
     public OperationResult ManualTrigger(@PathVariable Long id,@RequestBody(required = false) String tempData) {
         OperationResult operationResult = new OperationResult();
-        Action action = null;
         Job job = jobService.selectJobById(id);
-        JSON json = null;
-        String msg = "执行失败！";
+        String msg = "执行失败";
         if (job == null) {
+            msg = "执行任务为空";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         if (!job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             msg = "状态未开启";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
+//        try {
+//            json = JSON.parseObject(tempData);
+//        }catch (Exception e){
+//            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+//        }
+//        if (tempData != null && json == null){
+//            msg = "解析数据异常";
+//            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+//        }
+//        //  1、查询指定任务下的动作
+//        ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
+//        for (int i = 0; i < job.getActionList().size(); i++) {
+//            action = job.getActionList().get(i);
+//            if (action.getType() == null || ActionType.actionTypeById.get(action.getType()) == null) {
+//                msg = "当前动作未找到合适类型";
+//                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+//            }
+//            String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
+//            ActionHandlerAdapter bean;
+//            try {
+//                bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
+//            } catch (BeansException exception) {
+//                msg = "未能成功找到相关动作的实现！beanName:" + beanName;
+//                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+//            }
+//            //  2、将动作添加到链中
+//            actionHandlers.add(bean);
+//            bean.setAction(action);
+//        }
+//        //  3、执行单向链
+//        ActionTempData actionTempData = new ActionTempData(ActionStatus.INITIAL, json);
+//        try {
+//            SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
+//            singleLinerJobActionHandlerChain.dataHandler(actionTempData);
+//        } catch (Exception e) {
+//            msg = "执行失败:"+ e.getMessage();
+//            return operationResult.setData(actionTempData.getBody()).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+//        }
+//        msg = "执行成功";
+        ActionTempData actionTempData = null;
         try {
-            json = JSON.parseObject(tempData);
-        }catch (Exception e){
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
-        }
-        if (tempData != null && json == null){
-            msg = "解析数据异常";
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
-        }
-
-
-        //  1、查询指定任务下的动作
-        ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
-        for (int i = 0; i < job.getActionList().size(); i++) {
-            action = job.getActionList().get(i);
-
-            if (action.getType() == null || ActionType.actionTypeById.get(action.getType()) == null) {
-                msg = "当前动作为找到合适类型";
-                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
-            }
-
-            String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
-            ActionHandlerAdapter bean;
-            try {
-                bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
-            } catch (BeansException exception) {
-                msg = "未能成功找到相关动作的实现！beanName:" + beanName;
-                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
-            }
-
-            //  2、将动作添加到链中
-            actionHandlers.add(bean);
-            bean.setAction(action);
-
-        }
-        //  3、执行单向链
-        ActionTempData actionTempData = new ActionTempData(ActionStatus.INITIAL, json);
-        try {
-            SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
-            singleLinerJobActionHandlerChain.dataHandler(actionTempData);
+            actionTempData = jobService.executeJob(job, tempData);
         } catch (Exception e) {
-            msg = "执行失败:"+ e.getMessage();
-            return operationResult.setData(actionTempData.getBody()).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            msg = msg + e.getMessage();
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
         msg = "执行成功";
         return operationResult.setData(actionTempData.getBody()).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
