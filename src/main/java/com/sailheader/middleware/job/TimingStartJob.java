@@ -23,11 +23,11 @@ public class TimingStartJob implements ApplicationRunner {
     public void run(ApplicationArguments args) throws Exception {
         List<Job> jobs = jobService.findActiveTimedTask();
         if (jobs.size() > 0){
-            jobs.forEach((job)->{
+            jobs.forEach(job -> {
                 try {
                     scheduleImportJob.executeScheduleImportJob(job);
                 } catch (Exception e) {
-                    log.error("定时执行任务 "+job.getName()+"出错："+e.getMessage());
+                    log.info("定时执行任务 "+job.getName()+"出错："+e.getMessage());
                 }
             });
         }

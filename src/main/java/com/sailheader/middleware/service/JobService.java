@@ -62,6 +62,26 @@ public class JobService {
         return jobDAO.checkForPresence(name);
     }
 
+    // 检查任务执行序列
+    public boolean checkJobIndex(Job job){
+        boolean flag = true;
+        if (job == null){
+            return false;
+        }
+        if (job.getActionList().size() < 1){
+            return false;
+        }
+        int lastIndex = 1;
+        for (int i = 0; i <  job.getActionList().size(); i++) {
+            if (lastIndex != job.getActionList().get(i).getIndex()){
+                flag = false;
+                break;
+            }
+            lastIndex ++;
+        }
+        return flag;
+    }
+
     // 查询存活的定时任务
     public List<Job> findActiveTimedTask() {
         JobExample example = new JobExample();
@@ -76,7 +96,7 @@ public class JobService {
         return list;
     }
 
-    //执行任务
+    // 执行任务
     public ActionTempData executeJob(Job job, String tempData) throws Exception {
         ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
         ActionTempData actionTempData = null;
@@ -112,8 +132,10 @@ public class JobService {
         try {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(actionHandlers);
             singleLinerJobActionHandlerChain.dataHandler(actionTempData);
+        } catch (MiddlewareException m){
+            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT);
         } catch (Exception e) {
-            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,e);
+            throw new Exception(e);
         }
         return actionTempData;
     }

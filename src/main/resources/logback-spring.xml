@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration ><!-- scan="true" scanPeriod="30 seconds" -->
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+
+    <jmxConfigurator/>
+
+    <springProperty scope="context" name="server_name" source="spring.application.name"/>
+
+    <property name="log_basedir" value="E:/data/Sailheader/${server_name}/logs" />
+
+
+    <!-- 日志输出格式 -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level - %logger{60}:%line - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 不同級別的文件記錄在不同的日志文件中 -->
+    <appender name="server" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!--在工程目录下自动生成logs文件夹 -->
+        <!-- 写入日志内容的文件名称（目录） -->
+        <File>${log_basedir}/${server_name}.log</File>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- 每产生一个日志文件，该日志文件的保存期限为30天 -->
+            <maxHistory>90</maxHistory>
+            <!-- 活动文件的名字会根据fileNamePattern的值，每隔一段时间改变一次 -->
+            <FileNamePattern>${log_basedir}/${server_name}.%d{yyyy-MM-dd}-%i.log</FileNamePattern>
+
+            <TimeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <MaxFileSize>1GB</MaxFileSize>
+            </TimeBasedFileNamingAndTriggeringPolicy>
+
+        </rollingPolicy>
+        <layout class="ch.qos.logback.classic.PatternLayout">
+            <!-- pattern节点，用来设置日志的输入格式 -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level - %logger{60}:%line - %msg%n</pattern>
+        </layout>
+    </appender>
+
+    <logger name="com.sailheader" additivity="false">
+        <level value="debug" />
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="server" />
+    </logger>
+
+    <root>
+        <level value="WARN" />
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="server" />
+    </root>
+</configuration>
+

@@ -31,10 +31,10 @@ public class UpdateJobDetail implements Job {
                 JobController jobController = (JobController) applicationContextUtil.getBean("JobController");
                 jobController.ManualTrigger(job.getId(),null);
             }else{
-                log.error("执行定时任务异常！没有该定时任务");
+                log.info("执行定时任务异常！没有该定时任务");
             }
         } catch (Exception e) {
-            log.error("执行定时任务异常！");
+            log.info("执行定时任务异常 :"+ e.getMessage());
         }
     }
 }

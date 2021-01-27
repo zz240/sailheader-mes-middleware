@@ -1,7 +1,9 @@
 package com.sailheader.middleware.service;
 
 import com.alibaba.fastjson.JSONObject;
+import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.vo.OperationResult;
+import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.mapper.ActionDAO;
 import com.sailheader.middleware.model.Action;
@@ -13,6 +15,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 import com.sailheader.middleware.constant.DataSourceType;
+
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 
 @Service
 public class ActionService {
@@ -50,50 +54,64 @@ public class ActionService {
     }
 
     //验证数据源参数
-    public void validateDataSource(Action action){
+    public void validateDataSource(Action action) throws Exception {
         JSONObject datasource = null;
         String msg = "数据存在异常";
+        if (action == null ){
+            throw  MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_IS_NULL);
+        }
         try{
-            datasource = action.getAddition().getJSONObject("dataSource");
+            datasource = action.getAddition();
+        }catch (MiddlewareException m){
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM);
         }catch (Exception e){
-            throw new RuntimeException(msg);
+            throw new Exception(e);
         }
         if (datasource == null){
-            throw new RuntimeException(msg);
+            msg = "数据源为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         if (datasource.getJSONObject("addition") == null) {
-            throw new RuntimeException(msg);
+            msg = "必选字段：addition 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         if (datasource.get("address") == null || datasource.get("address").equals("")) {
-            throw new RuntimeException(msg);
+            msg = "必选字段：address 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         //判断动作类型
         if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP){
             checkHttp(datasource);
-        }else {
+        }else if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB){
             checkDB(datasource);
+        }else{
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
         }
     }
 
     private  void checkHttp(JSONObject jsonObject){
-        String msg = "数据存在异常";
+        String msg = "";
         JSONObject addition = jsonObject.getJSONObject("addition");
         if (addition.get("method") == null){
-            throw new RuntimeException("msg");
+            msg = "必选字段：method 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
     }
 
     private void checkDB(JSONObject jsonObject){
-        String msg = "数据存在异常";
+        String msg = "";
         JSONObject json = jsonObject.getJSONObject("addition");
         if (json.get("driver") == null || json.get("driver").equals("")) {
-            throw new RuntimeException(msg);
+            msg = "必选字段：driver 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         if (json.get("username") == null || json.get("username").equals("")) {
-            throw new RuntimeException(msg);
+            msg = "必选字段：username 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         if (json.get("password") == null || json.get("password").equals("")) {
-            throw new RuntimeException(msg);
+            msg = "必选字段：password 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
     }
 

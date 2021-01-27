@@ -1,5 +1,7 @@
 package com.sailheader.middleware.action.remote.db;
 
+import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import com.sailheader.middleware.model.DataSource;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.After;
@@ -45,8 +47,12 @@ public class DataSourceAspect {
             }
         }
         assert dataSource != null;
-        druidUtil.switchDB(dataSource);
 
+        try{
+            druidUtil.switchDB(dataSource);
+        }catch (Exception e){
+            throw MiddlewareException.getInstance(MiddlewareExceptionMap.UNDEFINED_ERROR, e);
+        }
     }
 
     /**
@@ -57,6 +63,10 @@ public class DataSourceAspect {
      **/
     @After("daoAspect()")
     public void afterServiceMethodExecute(JoinPoint point) {
-        DynamicDataSourceHandler.clear();
+        try {
+            DynamicDataSourceHandler.clear();
+        }catch (Exception e){
+            throw MiddlewareException.getInstance(MiddlewareExceptionMap.UNDEFINED_ERROR,e);
+        }
     }
 }

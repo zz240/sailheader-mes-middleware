@@ -31,7 +31,7 @@ public class DruidUtil {
     private void setDefaultParam(DruidDataSource druidDataSource) {
         druidDataSource.setInitialSize(1); // 初始化连接大小
         druidDataSource.setMinIdle(1); // 最小连接池数量
-        druidDataSource.setMaxActive(1); // 最大连接池数量
+        druidDataSource.setMaxActive(3); // 最大连接池数量
         druidDataSource.setMaxWait(60000); // 获取连接时最大等待时间，单位毫秒
         druidDataSource.setKeepAlive(false); // 是否保持
         druidDataSource.setResetStatEnable(false);

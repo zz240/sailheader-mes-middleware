@@ -35,31 +35,38 @@ public class DataSourceController {
         }
         if (dataSource.getName()==null || dataSource.getName().equals("")){
             msg = "数据源名称为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (dataSourceService.checkForPresence(dataSource.getName()) > 0){
             msg = "数据源名称重复";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (dataSource.getType()==null){
             msg = "数据源 type 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (dataSource.getAddition() == null){
             msg = "数据源 addition 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (dataSource.getAddress() == null){
             msg = "数据源 address 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         dataSource.setCreatedOn(new Date());
         int i = dataSourceService.createDataSource(dataSource);
         if (i < 1 ){
+            log.info("添加失败！");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         msg = "插入成功";
-        return new OperationResult(dataSource.getName()).setMessage("插入成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        log.info(msg);
+        return new OperationResult(dataSource.getName()).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -78,12 +85,14 @@ public class DataSourceController {
         }
         if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
             msg = "数据源已删除";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
 
         dataSource.setStatus(GeneralStatus.DELETED.getIntLabel()).setName(dataSource.getName()+"-"+dataSource.getId());
         dataSourceService.updateDataSource(dataSource);
         msg = "删除成功！";
+        log.info(msg);
         return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -98,13 +107,15 @@ public class DataSourceController {
         String msg = "查询异常";
         DataSource dataSource = dataSourceService.findDataSourceByid(id);
         if (dataSource == null){
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
         if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
             msg = "数据源已删除！";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
-
+        log.info("查询id为"+id+" 的数据源");
         return operationResult.setData(dataSource).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -121,47 +132,55 @@ public class DataSourceController {
         String msg = "更新失败";
         DataSource source = dataSourceService.findDataSourceByid(id);
         if (source == null){
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (source.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
             msg = "数据源已删除";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource == null){
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource.getName()==null || dataSource.getName().equals("")){
             msg = "数据源名称为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSourceService.checkForPresence(dataSource.getName()) > 0){
             if (!dataSource.getName().equals(source.getName())){
                 msg = "数据源名称重复";
+                log.info(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
         if (dataSource.getType()==null){
             msg = "数据源 type 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource.getAddition() == null){
             msg = "数据源 addition 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource.getAddress() == null){
             msg = "数据源 address 为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        // TODO  mvc抛出 json无法解析的异常 updateDataSourceTest08
         source.setName(dataSource.getName()).setAddress(dataSource.getAddress()).setAddition(dataSource.getAddition())
                 .setType(dataSource.getType()).setModifiedBy(dataSource.getModifiedBy()).setModifiedOn(new Date());
         try {
             dataSourceService.updateDataSource(source);
         }catch (Exception e){
+            log.info("更新数据源： "+source+" 异常 : " + e.getMessage() );
             throw new RuntimeException("更新异常！");
 //            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-
+        log.info("更新数据源： "+source);
         return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 

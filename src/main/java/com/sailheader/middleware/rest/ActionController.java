@@ -7,6 +7,7 @@ import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.service.ActionService;
 import com.sun.org.apache.bcel.internal.generic.IF_ACMPEQ;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Date;
 
+@Slf4j
 @RestController
 public class ActionController {
     @Autowired
@@ -30,21 +32,31 @@ public class ActionController {
         OperationResult operationResult = new OperationResult();
         String msg = "添加动作失败";
         //验证数据源参数
-        actionService.validateDataSource(action);
+        try{
+            actionService.validateDataSource(action);
+        }catch (Exception e){
+            log.info(msg +" - "+e.getMessage());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+        }
+
         if (action == null && action.getName().isEmpty() && action.getType() != null) {
+            log.info("添加动作失败");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
             msg = "该名称已存在！";
+            log.info("添加动作失败");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         try {
             action.setCreatedOn(new Date());
             i = actionService.insertSelective(action);
         } catch (Exception e) {
+            log.info("添加动作失败");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+        log.info("添加任务"+action.getName()+"成功！");
         return operationResult.setData(action.getName()).setMessage("插入成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -60,10 +72,12 @@ public class ActionController {
         String msg = "删除失败！";
         Action action = actionService.selectByPrimaryKey(id);
         if (action == null) {
+            log.info("删除失败，动作为空");
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
         if (action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "该动作已删除！";
+            log.info("删除失败，动作已删除");
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
 
@@ -72,6 +86,7 @@ public class ActionController {
         action.setName(action.getName() + "-" + action.getId());
         actionService.updateByActionStreamSelective(action);
         msg = "删除成功";
+        log.info("删除"+action.getName()+"成功");
         return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -85,8 +100,10 @@ public class ActionController {
     public OperationResult findActionById(@PathVariable Long id) {
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
+            log.info("查询id为："+id+"的动作");
             return new OperationResult().setData(action).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
+        log.info("查询id为"+id+" 的动作失败，不存在或已删除！");
         return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
     }
 
@@ -101,26 +118,35 @@ public class ActionController {
     @PutMapping("/mw/api/action/stream/update/{id}")
     public OperationResult updateActionById(@PathVariable Long id, @RequestBody Action action) {
         OperationResult operationResult = new OperationResult();
-        String msg = "修改失败";
+        String msg = "修改动作失败";
         //验证数据源参数
-        actionService.validateDataSource(action);
+        try{
+            actionService.validateDataSource(action);
+        }catch (Exception e){
+            log.info(msg +" : "+ e.getMessage());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+        }
         if (action.getName() == null) {
-            msg = "修改失败，name为空";
+            msg = "修改动作失败，name为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         Action actionStream = actionService.selectByPrimaryKey(id);
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
             if (!actionStream.getName().equals(action.getName())){
-                msg = "修改失败,name已存在";
+                msg = "修改动作失败,name已存在";
+                log.info(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
         if (actionStream == null) {
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (actionStream.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "已删除！";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         actionStream.setName(action.getName()).setJobId(action.getJobId()).setType(action.getType()).setIndex(action.getIndex())
@@ -128,12 +154,14 @@ public class ActionController {
         try {
             i = actionService.updateByActionStream(actionStream);
         }catch (Exception e){
+            log.info("更新动作异常 :" + e.getMessage());
             throw new RuntimeException("更新异常！");
         }
         if (i < 1) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         msg = "修改成功";
+        log.info(msg);
         return operationResult.setData(actionStream).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
     }
 
