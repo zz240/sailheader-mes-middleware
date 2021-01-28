@@ -10,8 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 
@@ -23,9 +22,12 @@ public class DynamicDataSourceSqlWithJsonService {
 
     public int insertAll(String tableName, List<Map<String, Object>> inputData, DataSource dataSource) {
         int count;
-        String field = "";
+        HashMap<String, Object> map = new HashMap<>();
+        map.put("tableName",tableName);
+        map.put("field",parseField(inputData));
+        map.put("inputData",inputData);
         try {
-            count = dataSourceSqlWithJsonDao.insertAll(tableName, field, inputData);
+            count = dataSourceSqlWithJsonDao.insertAll(map);
         } catch (MyBatisSystemException e) {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_CONNECT_FAILURE, e);
         } catch (BadSqlGrammarException e) {
@@ -39,4 +41,13 @@ public class DynamicDataSourceSqlWithJsonService {
         }
         return count;
     }
+
+    public List<String> parseField(List<Map<String, Object>> list){
+        List<String> lists = new ArrayList<String>();
+        for (Map.Entry<String, Object> stringObjectEntry : list.get(0).entrySet()) {
+            lists.add(stringObjectEntry.getKey());
+        }
+        return lists;
+    }
+
 }

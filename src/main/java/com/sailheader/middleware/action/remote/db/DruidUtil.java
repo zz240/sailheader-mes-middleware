@@ -34,7 +34,6 @@ public class DruidUtil {
         druidDataSource.setMaxActive(1); // 最大连接池数量
         druidDataSource.setMaxWait(60000); // 获取连接时最大等待时间，单位毫秒
         druidDataSource.setKeepAlive(false); // 是否保持
-        druidDataSource.setResetStatEnable(false);
         druidDataSource.setBreakAfterAcquireFailure(true); // 在请求失败以后是否中断
         druidDataSource.setConnectionErrorRetryAttempts(0); //请求失败尝试次数
     }

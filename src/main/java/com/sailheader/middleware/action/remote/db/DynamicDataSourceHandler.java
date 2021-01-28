@@ -3,6 +3,7 @@ package com.sailheader.middleware.action.remote.db;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
 import javax.sql.DataSource;
+import java.sql.SQLException;
 
 public class DynamicDataSourceHandler extends AbstractRoutingDataSource {
 
@@ -26,7 +27,7 @@ public class DynamicDataSourceHandler extends AbstractRoutingDataSource {
         DynamicDataSourceHandler.DATASOURCE.set(dataSource);
     }
 
-    public static void clear() {
+    public static void clear() throws SQLException {
         DynamicDataSourceHandler.DATASOURCE.remove();
     }
 }

@@ -29,10 +29,11 @@ class RemoteAccessActionHandlerTests {
     @Nested
     @DisplayName("check action addition datasource effectiveness")
     class CheckDataSource {
-        JSONObject jsonObject = new JSONObject();
+        JSONObject jsonObject;
 
         @BeforeEach
         public void initJsonObject() {
+            jsonObject = new JSONObject();
             jsonObject.put("name", "远程访问");
             jsonObject.put("type", 1);
             jsonObject.put("address", "https://");
@@ -117,9 +118,11 @@ class RemoteAccessActionHandlerTests {
     @Nested
     @DisplayName("checkout spring bean")
     class CheckoutBean {
-        JSONObject datasourceJson = new JSONObject();
+        JSONObject datasourceJson;
 
-        {
+        @BeforeEach
+        public void init() {
+            datasourceJson = new JSONObject();
             datasourceJson.put("name", "远程访问");
             datasourceJson.put("type", 1);
             datasourceJson.put("address", "https://");
@@ -155,7 +158,51 @@ class RemoteAccessActionHandlerTests {
             assertEquals(middlewareException.getExceptionMap(),
                          REMOTE_ACCESS_ACTION_ACCESS_BEAN_INIT_FAILURE);
         }
+
+        /**
+         * 测试 addition 解析
+         * 单层结构
+         * todo
+         */
+        @Test
+        public void testDataSourceHasAddition() {
+            // 构造addition
+            JSONObject jsonObject = new JSONObject();
+            jsonObject.put("method", "get");
+            datasourceJson.put("addition", jsonObject);
+
+            action.setAddition(datasourceJson);
+            remoteAccessActionHandler.setAction(action);
+
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                    () -> remoteAccessActionHandler.dataHandler(null));
+            assertEquals(middlewareException.getExceptionMap(),
+                    ACTION_STATUS_CONFUSE_ACCESS);
+        }
+
+        /**
+         * 测试 addition 解析
+         * 单层结构
+         */
+        @Test
+        public void testDataSourceHasAdditionMul() {
+            // 构造addition
+            JSONObject jsonObject = new JSONObject();
+            JSONObject header = new JSONObject();
+            header.put("content-type", "application/json");
+            jsonObject.put("header", header);
+            datasourceJson.put("addition", jsonObject);
+
+            action.setAddition(datasourceJson);
+            remoteAccessActionHandler.setAction(action);
+
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                    () -> remoteAccessActionHandler.dataHandler(null));
+            assertEquals(middlewareException.getExceptionMap(),
+                    REMOTE_ACCESS_HTTP_MISSING_REQUIRE_PARAM);
+        }
     }
 
     // 冒烟需要具体动作测试 mock todo
+
 }

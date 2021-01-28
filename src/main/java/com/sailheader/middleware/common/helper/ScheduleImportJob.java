@@ -29,7 +29,7 @@ public class ScheduleImportJob {
     public Boolean executeScheduleImportJob(Job job) throws SchedulerException {
         JobDataMap jobDataMap = new JobDataMap();
         Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
-        String msg = "触发定时任务异常！";
+        String msg;
         if (job == null) {
             msg = "未发现任务";
             log.error(msg);

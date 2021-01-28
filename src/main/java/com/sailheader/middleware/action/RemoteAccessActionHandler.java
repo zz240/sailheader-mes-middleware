@@ -1,8 +1,9 @@
 package com.sailheader.middleware.action;
 
 import com.alibaba.fastjson.JSON;
-import com.sailheader.middleware.chain.ActionTempData;
+import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.remote.AccessAdapter;
+import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.DataSourceType;
@@ -59,8 +60,10 @@ public class RemoteAccessActionHandler extends ActionHandlerAdapter<JSON, Object
 
         // 提取远程访问中选择的 dataSource
         try {
-            dataSource = action.getAddition().toJavaObject(DataSource.class);
+            dataSource = JSONObject.parseObject(action.getAddition().toJSONString(),DataSource.class);
+
         } catch (Exception e) {
+            e.printStackTrace();
             throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_PARSE_ERROR, e);
         }
 

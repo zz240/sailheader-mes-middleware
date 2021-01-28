@@ -83,6 +83,7 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
                 tempData.setStatus(ActionStatus.INITIAL);
                 actionTempData = tempData;
             } else {
+                actionTempData = tempData;
                 throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败!");
             }
 

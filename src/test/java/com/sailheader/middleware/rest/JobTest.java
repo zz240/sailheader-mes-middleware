@@ -1,4 +1,4 @@
-package com.sailheader.middleware;
+package com.sailheader.middleware.rest;
 
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
@@ -169,7 +169,7 @@ public class JobTest {
     public void ManualTriggerTest01(long id){
         id = 3;
         try {
-            OperationResult result = jobController.ManualTrigger(id);
+            OperationResult result = jobController.ManualTrigger(id,null);
             System.out.println(result);
             assertEquals(result.getStateCode(),StateCode.SYSTEM_SUCCESS.getValue());
         } catch (Exception e) {

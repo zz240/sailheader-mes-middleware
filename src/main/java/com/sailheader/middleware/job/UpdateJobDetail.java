@@ -29,12 +29,12 @@ public class UpdateJobDetail implements Job {
             if (StringUtils.hasText(jsonString)) {
                 com.sailheader.middleware.model.Job job = JSON.parseObject(jsonString, com.sailheader.middleware.model.Job.class);
                 JobController jobController = (JobController) applicationContextUtil.getBean("JobController");
-                jobController.ManualTrigger(job.getId());
+                jobController.ManualTrigger(job.getId(),null);
             }else{
-                log.error("执行定时任务异常！没有该定时任务");
+                log.info("执行定时任务异常！没有该定时任务");
             }
         } catch (Exception e) {
-            log.error("执行定时任务异常！");
+            log.info("执行定时任务异常 :"+ e.getMessage());
         }
     }
 }

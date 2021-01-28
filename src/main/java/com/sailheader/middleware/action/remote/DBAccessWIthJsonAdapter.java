@@ -11,6 +11,7 @@ import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -41,7 +42,7 @@ public class DBAccessWIthJsonAdapter extends AccessAdapter<JSON> {
         try {
             // 加载输入数据的sql
             if (actionTempData.getBody() != null) {
-                inputList = actionTempData.getBody().toJavaObject(List.class);
+                inputList = (List<Map<String, Object>>) actionTempData.getBody();
             }
 
         } catch (Exception e) {
@@ -50,7 +51,7 @@ public class DBAccessWIthJsonAdapter extends AccessAdapter<JSON> {
         }
 
         // 为空直接抛出异常
-        if (inputList == null) {
+        if (inputList == null || inputList.size() == 0) {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_SQL_IS_NULL, "db remote access with json 输入的list为空");
         }
 
