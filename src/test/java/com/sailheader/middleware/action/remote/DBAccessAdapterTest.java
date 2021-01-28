@@ -214,6 +214,19 @@ class DBAccessAdapterTest {
         }
 
         /**
+         * 连接过多报错
+         */
+        @Test
+        public void testDBConnectionOutPool() throws Exception {
+            dbAccessAdapter.setDataSource(dataSource);
+            ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
+            for (int i = 0; i < 1000; i++) {
+                dbAccessAdapter.access(actionTempData);
+                System.out.println(i);
+            }
+        }
+
+        /**
          * 增删改查动作操作数据库
          * 返回内容的判定
          * 使用 postgresql 测试
