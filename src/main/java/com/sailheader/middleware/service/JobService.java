@@ -112,7 +112,6 @@ public class JobService {
         //  1、查询当前任务下的动作
         for (int i = 0; i < job.getActionList().size(); i++) {
             action = job.getActionList().get(i);
-
             if (action.getType() == null || ActionType.actionTypeById.get(action.getType()) == null) {
                 throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
             }

@@ -14,6 +14,7 @@ public enum MiddlewareExceptionMap {
     ACTION_HANDLER_ADAPTER_ACTION_MISSING_REQUIRE_PARAM("0101002", "Action Data 缺少必要的参数!"),
     ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND("0101003", "Action 未找到合适的类型"),
     ACTION_HANDLER_ADAPTER_ACTION_IMPL_CLASS_NOT_FOUND("0101004", "Action 未能找到相关的实现类"),
+    ACTION_HANDLER_ADAPTER_ACTION_EXECUTE_FAILURE("0101005", "未能成功执行 Action!"),
     JSON_MAPPING_PLACEHOLDER_CANT_PARSE("0101003", "无法解析表达式，请确保一个 #{#xx} 输出存在并且内容为基础类型，而非collection或者map!"),
     REMOTE_ACCESS_ACTION_DATASOURCE_IS_NULL("0101004", "远程访问动作 datasource 为空!"),
     REMOTE_ACCESS_ACTION_DATASOURCE_PARSE_ERROR("0101005", "datasource 字段解析错误!"),

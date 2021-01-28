@@ -1,20 +1,22 @@
 package com.sailheader.middleware.service;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.sailheader.middleware.action.ActionHandlerAdapter;
+import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.vo.OperationResult;
-import com.sailheader.middleware.constant.MiddlewareExceptionMap;
-import com.sailheader.middleware.constant.StateCode;
+import com.sailheader.middleware.constant.*;
 import com.sailheader.middleware.mapper.ActionDAO;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.model.ActionExample;
 import com.sailheader.middleware.model.DataSource;
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-
-import com.sailheader.middleware.constant.DataSourceType;
 
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 
@@ -22,6 +24,8 @@ import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 public class ActionService {
     @Autowired
     private ActionDAO actionDAO;
+    @Autowired
+    private ApplicationContext applicationContext;
 
     public Action selectByPrimaryKey(Long id){
         return actionDAO.selectByPrimaryKey(id);
@@ -68,7 +72,7 @@ public class ActionService {
             throw new Exception(e);
         }
         if (datasource == null){
-            msg = "数据源为空";
+            msg = " action 的 addition 字段为空";
             throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         if (datasource.getJSONObject("addition") == null) {
@@ -77,6 +81,14 @@ public class ActionService {
         }
         if (datasource.get("address") == null || datasource.get("address").equals("")) {
             msg = "必选字段：address 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
+        }
+        if (datasource.get("name") == null || datasource.get("name").equals("")) {
+            msg = "必选字段：name 为空";
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
+        }
+        if (datasource.get("type") == null ){
+            msg = "必选字段：type 为空";
             throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         //判断动作类型
@@ -115,5 +127,31 @@ public class ActionService {
         }
     }
 
-
+    public Object checkActionPass(Action action,String inputData) throws Exception {
+        JSON json;
+        ActionHandlerAdapter actionHandler;
+        try {
+            json = JSON.parseObject(inputData);
+        }catch (Exception e){
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
+        }
+        ActionTempData tempData = new ActionTempData(ActionStatus.INITIAL, json);
+        String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
+        try {
+            actionHandler = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
+        } catch (BeansException exception) {
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_IMPL_CLASS_NOT_FOUND,exception);
+        }
+        actionHandler.setAction(action);
+        ActionTempData data;
+        try {
+            // todo  1.0.0 tempData会覆盖之前的入参
+            data = actionHandler.dataHandler(tempData);
+        }catch (MiddlewareException e){
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_EXECUTE_FAILURE,e);
+        } catch (Exception e) {
+            throw new Exception(e.getMessage());
+        }
+        return data.getBody();
+    }
 }

@@ -40,6 +40,9 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
 
     @Override
     protected JSON execute(ActionTempData<JSON> actionTempData) throws Exception {
+        if (actionTempData == null) {
+            throw MiddlewareException.getInstance(ACTION_STATUS_CONFUSE_ACCESS, "输入数据为空");
+        }
         ResponseEntity<String> response = null;
         RequestEntity requestEntity = null;
         if (actionTempData.getStatus() != ActionStatus.SUCCESS && actionTempData.getStatus() != ActionStatus.INITIAL) {

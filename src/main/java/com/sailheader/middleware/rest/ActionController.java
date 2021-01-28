@@ -1,6 +1,9 @@
 package com.sailheader.middleware.rest;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
@@ -14,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -175,4 +180,51 @@ public class ActionController {
         return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
+    /**
+     * 检测 动作能否执行成功
+     * @param
+     * @return
+     */
+    @PostMapping("/mw/api/action/stream/check")
+    public OperationResult checkActionPass(@RequestBody Map<String, Object> map){
+        OperationResult operationResult = new OperationResult();
+        ObjectMapper objectMapper = new ObjectMapper();
+        String inputData;
+        String msg = "动作测试执行失败";
+
+        //转换 action 对象
+        Action action = objectMapper.convertValue(map.get("action"), Action.class);
+
+        try{
+            inputData = JSON.toJSONString(map.get("inputData"));
+        } catch (Exception e) {
+            log.info(msg + e.getMessage());
+            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        }
+
+        if (map.get("inputData") != null && inputData == null) {
+            msg = "数据转换异常";
+            log.info(msg);
+            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        }
+
+        if (action == null){
+            msg = "动作为空";
+            log.info(msg);
+            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        }
+        Object result;
+        try {
+            result = actionService.checkActionPass(action, inputData);
+        } catch (MiddlewareException e){
+            log.info(msg+"："+e.getMessage());
+            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        } catch (Exception e) {
+            log.info(msg+"："+e.getMessage());
+            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+        }
+        msg = "action: 测试执行成功";
+        log.info(msg);
+        return operationResult.setData(result).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+    }
 }

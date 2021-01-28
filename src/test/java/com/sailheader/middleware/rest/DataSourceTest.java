@@ -1,4 +1,4 @@
-package com.sailheader.middleware;
+package com.sailheader.middleware.rest;
 
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.common.vo.OperationResult;
