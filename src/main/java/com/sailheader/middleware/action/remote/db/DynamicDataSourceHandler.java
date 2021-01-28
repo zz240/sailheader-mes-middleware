@@ -1,5 +1,6 @@
 package com.sailheader.middleware.action.remote.db;
 
+import com.alibaba.druid.pool.DruidDataSource;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
 import javax.sql.DataSource;
@@ -28,6 +29,8 @@ public class DynamicDataSourceHandler extends AbstractRoutingDataSource {
     }
 
     public static void clear() throws SQLException {
+        DruidDataSource druidDataSource = (DruidDataSource) getDataSource();
+        druidDataSource.close();
         DynamicDataSourceHandler.DATASOURCE.remove();
     }
 }
