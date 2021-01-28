@@ -25,5 +25,5 @@ public interface JobDAO {
 
     int checkForPresence(String name);
 
-
+    List selectActionByJobId(Long id);
 }

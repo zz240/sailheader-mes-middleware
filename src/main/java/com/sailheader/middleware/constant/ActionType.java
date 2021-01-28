@@ -6,7 +6,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 public enum ActionType {
-    REMOTE_ACCESS((short)1 ,"action.remote.access");
+    // 远程访问
+    REMOTE_ACCESS((short)1 ,"action.remote.access"),
+    // 字段映射 - JSONObject
+    MAPPING_OBJECT((short)2,"action.field.mapping.object"),
+    // 字段映射 - JSONArray
+    MAPPING_ARRAY((short)3,"action.field.mapping.array");
 
     @Getter
     private final Short type;

@@ -23,4 +23,6 @@ public interface ActionDAO {
 
     int updateByActionStream(Action action);
 
+    List<Action> reorderActionIndex(List list);
+
 }
