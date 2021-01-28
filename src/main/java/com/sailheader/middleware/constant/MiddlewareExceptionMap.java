@@ -28,7 +28,7 @@ public enum MiddlewareExceptionMap {
     REMOTE_ACCESS_DB_CONNECT_FAILURE("0101016", "远程访问数据库 访问目的数据库失败!"),
     REMOTE_ACCESS_DB_SQL_EXECUTE_FAILURE("0101017", "远程访问数据库 执行sql语句失败，请确认sql语句正确性!"),
     JOB_ACTION_CHAIN_EXECUTE_INTERRUPT("0101018", "动作链执行中断!"),
-
+    JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR("0101019", "动作链中注入上下文的数据 复制失败"),
 
     REMOTE_ACCESS_HTTP_MISSING_REQUIRE_PARAM("0102001","缺少必要参数"),
     REMOTE_ACCESS_HTTP_DATASOURCE_IS_NULL("0102002","远程访问 datasource 为空"),

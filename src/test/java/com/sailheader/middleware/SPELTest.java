@@ -18,7 +18,7 @@ public class SPELTest {
 
 
     @Test
-    public void testPlaceholderMapping() {
+    public void testPlaceholderMapping() throws Exception {
         ExpressionParser expressionParser = new SpelExpressionParser();
         EvaluationContext ctx = SimpleEvaluationContext.forReadOnlyDataBinding().build();
         List numbers = (List) expressionParser.parseExpression("{1,2,3,4}").getValue(ctx);

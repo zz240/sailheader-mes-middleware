@@ -42,10 +42,11 @@ public class ActionHandlerAdapterTests {
             }
         };
 
-        Action action = new Action();
+        Action action;
 
         @BeforeEach
         public void initAction() {
+            action = new Action();
             action.setJobId(1L).setName("test").setType((short) 1).setIndex(1);
         }
 

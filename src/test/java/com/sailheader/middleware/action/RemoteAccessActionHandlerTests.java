@@ -1,6 +1,7 @@
 package com.sailheader.middleware.action;
 
 import com.alibaba.fastjson.JSONObject;
+import com.sailheader.middleware.action.consume.DirectConsume;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import com.sailheader.middleware.model.Action;
@@ -36,6 +37,7 @@ class RemoteAccessActionHandlerTests {
             jsonObject.put("type", 1);
             jsonObject.put("address", "https://");
             jsonObject.put("addition", new JSONObject());
+            remoteAccessActionHandler.setConsumeData(new DirectConsume());
         }
 
         @Test

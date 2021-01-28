@@ -1,7 +1,11 @@
 package com.sailheader.middleware.chain;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.ActionHandler;
+import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.common.helper.MappingJsonData;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.model.Action;
 import lombok.Getter;
@@ -10,10 +14,13 @@ import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR;
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JOB_ACTION_CHAIN_EXECUTE_INTERRUPT;
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.UNDEFINED_ERROR;
 
 /**
  * 单线性调用链
@@ -21,23 +28,32 @@ import static com.sailheader.middleware.constant.MiddlewareExceptionMap.UNDEFINE
 
 @Component
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-public class SingleLinerJobActionHandlerChain implements JobActionChain {
+public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHandlerAdapter<?, ?>> {
+
     @Getter
     @Setter
-    private List<ActionHandler> actionHandlerList;
+    private SingleLinerChainContext singleLinerChainContext;
 
-    public SingleLinerJobActionHandlerChain(List<ActionHandler> actionHandlerList) {
+    {
+        singleLinerChainContext = new SingleLinerChainContext();
+    }
+
+    @Getter
+    @Setter
+    private List<ActionHandlerAdapter<?, ?>> actionHandlerList;
+
+    public SingleLinerJobActionHandlerChain(List<ActionHandlerAdapter<?, ?>> actionHandlerList) {
         this.actionHandlerList = actionHandlerList;
     }
 
     @Override
-    public JobActionChain addAction(ActionHandler actionHandler) {
+    public JobActionChain<ActionHandlerAdapter<?, ?>> addAction(ActionHandlerAdapter<?, ?> actionHandler) {
         actionHandlerList.add(actionHandler);
         return this;
     }
 
     @Override
-    public JobActionChain removeAction(ActionHandler actionHandler) {
+    public JobActionChain<ActionHandlerAdapter<?, ?>> removeAction(ActionHandlerAdapter<?, ?> actionHandler) {
         actionHandlerList.remove(actionHandler);
         return this;
     }
@@ -47,9 +63,19 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain {
         if (actionTempData == null) {
             actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
         }
-        for (ActionHandler actionHandler : actionHandlerList) {
+        // 将第一个输入数据加入当前上下文
+        singleLinerChainContext.setChainContextItem(0, actionTempData);
+
+        for (ActionHandlerAdapter<?, ?> actionHandlerAdapter : actionHandlerList) {
+            // 帮助构造每个动作的数据
+            preActionDataBeforeExecute(actionHandlerAdapter);
+
             // 获取动作数据
-            ActionTempData<?> tempData = actionHandler.dataHandler(actionTempData);
+            ActionTempData<?> tempData = actionHandlerAdapter.dataHandler(actionTempData);
+
+            // 将所有输出数据加入当前上下文
+            singleLinerChainContext
+                    .setChainContextItem(actionHandlerAdapter.getAction().getIndex(), tempData);
 
             if (tempData == null || tempData.getStatus() == null) {
                 throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败!");
@@ -63,5 +89,48 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain {
         }
 
         return actionTempData;
+    }
+
+    /**
+     * 在执行之前预处理 action 需要的数据
+     */
+    @Override
+    public void preActionDataBeforeExecute(ActionHandlerAdapter<?, ?> actionHandlerAdapter) throws Exception {
+        // 1. 替换 addition 占位符
+        Action action = actionHandlerAdapter.getAction();
+        Map<String, Object> map = new HashMap<>();
+        map.put("contextData", singleLinerChainContext.getCollection());
+        JSONObject json = (JSONObject) MappingJsonData.mappingJsonIntoJson(map, action.getAddition());
+        action.setAddition(json);
+    }
+
+
+    private static class SingleLinerChainContext implements ChainContext<Map<Integer, ActionTempData<?>>, Integer, ActionTempData<?>> {
+
+        Map<Integer, ActionTempData<?>> actionTempDataList = new HashMap<>();
+
+
+        @Override
+        public void setChainContextItem(Integer key, ActionTempData<?> context) {
+            // 深复制
+            ActionTempData<?> inputData;
+            try {
+                inputData = (ActionTempData<?>) JSON.parseObject(JSON.toJSONString(context), ActionTempData.class);
+            } catch (Exception e) {
+                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR, e.getMessage());
+            }
+            actionTempDataList.put(key, inputData);
+        }
+
+        @Override
+        public ActionTempData<?> getItem(Integer key) {
+            return actionTempDataList.get(key);
+        }
+
+        @Override
+        public Map<Integer, ActionTempData<?>> getCollection() {
+            return actionTempDataList;
+        }
+
     }
 }

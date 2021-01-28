@@ -229,7 +229,7 @@ public class JobController {
         }
 
         //  1、查询指定任务下的动作
-        ArrayList<ActionHandler> actionHandlers = new ArrayList<>();
+        ArrayList<ActionHandlerAdapter<?, ?>> actionHandlers = new ArrayList<>();
         for (int i = 0; i < job.getActionList().size(); i++) {
             action = job.getActionList().get(i);
 

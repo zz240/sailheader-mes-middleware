@@ -3,6 +3,7 @@ package com.sailheader.middleware.action;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.consume.ConsumeData;
+import com.sailheader.middleware.action.consume.DirectConsume;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.helper.MappingJsonData;
@@ -30,7 +31,7 @@ public abstract class ActionHandlerAdapter<O, I> implements ActionHandler {
 
     @Setter
     @Getter
-    protected ConsumeData consumeData;
+    protected ConsumeData consumeData = new DirectConsume();
 
     @Setter
     @Getter
