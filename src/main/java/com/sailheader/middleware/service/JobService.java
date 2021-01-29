@@ -157,7 +157,7 @@ public class JobService {
                     actionHandlers);
             singleLinerJobActionHandlerChain.dataHandler(actionTempData);
         } catch (MiddlewareException m) {
-            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT);
+            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,m);
         } catch (Exception e) {
             throw new Exception(e);
         }

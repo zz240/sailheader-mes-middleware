@@ -3,10 +3,12 @@ package com.sailheader.middleware.common;
 import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 中间件自定义异常类
  */
+@Slf4j
 public class MiddlewareException extends RuntimeException {
 
     @Setter
@@ -40,6 +42,7 @@ public class MiddlewareException extends RuntimeException {
         if (e != null && e.getMessage() != null) {
             msg += ": " + e.getMessage();
         }
+        log.debug(msg);
         return new MiddlewareException(map, msg);
     }
 }

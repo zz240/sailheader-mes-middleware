@@ -99,6 +99,10 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
     public void preActionDataBeforeExecute(ActionHandlerAdapter<?, ?> actionHandlerAdapter) throws Exception {
         // 1. 替换 addition 占位符
         Action action = actionHandlerAdapter.getAction();
+        if (action.getAddition() == null) {
+            return;
+        }
+
         Map<String, Object> map = new HashMap<>();
         map.put("contextData", singleLinerChainContext.getCollection());
         JSONObject json = (JSONObject) MappingJsonData.mappingJsonIntoJson(map, action.getAddition());

@@ -6,5 +6,6 @@ spring:
     password: Sailheader@2018
 logging:
   level:
+    com.sailheader.middleware: debug
     com.sailheader.middleware.action.remote.db.dao: debug,
     com.sailheader.middleware.mapper: debug

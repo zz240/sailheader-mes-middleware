@@ -242,8 +242,8 @@ public class JobController {
         try {
             actionTempData = jobService.executeJob(job, tempData);
         } catch (Exception e) {
-            msg = msg + e.getMessage();
-            log.info(msg);
+            msg = msg;
+            log.info(msg + e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
         msg = "执行成功";

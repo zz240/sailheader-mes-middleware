@@ -64,7 +64,7 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_ACCESS_ERROR,e);
         }
 
-        return JSONObject.parseObject(response.getBody());
+        return JSON.parseObject(response.getBody(), JSON.class);
     }
 
     @Override
