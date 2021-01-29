@@ -94,7 +94,6 @@ create table action_stream
         status            smallint  default 1,
         index             integer,
         consume_data_type integer default 1,
-        temp_data         json,
         addition          json,
         created_by        integer,
         created_on        timestamp default now(),
@@ -117,8 +116,6 @@ comment
     on column action_stream.index is '动作序号';
 comment
     on column action_stream.consume_data_type is '消费数据方式';
-comment
-    on column action_stream.temp_data is '输出数据';
 comment
     on column action_stream.addition is '附加辅助信息';
 comment

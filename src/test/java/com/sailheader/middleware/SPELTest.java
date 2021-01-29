@@ -31,7 +31,7 @@ public class SPELTest {
         jsonMap.put("mapTest", mapOfMaps);
         jsonMap.put("listTest", numbers);
 
-        Map context = (Map) expressionParser.parseExpression("{mapTest: \"#{#mapTest['name']['first']}\", listTest: \"#{#listTest[1]}\"}")
+        Map context = (Map) expressionParser.parseExpression("{mapTest: \"JSON.toJSONString(#{#mapTest['name']})\"}, listTest: \"#{#listTest[1]}\"}")
                                             .getValue(ctx);
 
 
