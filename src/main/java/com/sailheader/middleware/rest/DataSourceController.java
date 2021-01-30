@@ -23,74 +23,94 @@ public class DataSourceController {
 
     /**
      * 添加数据源
-     * @param dataSource    待添加的数据源对象
-     * @return      添加之后返回的结果集
+     *
+     * @param dataSource 待添加的数据源对象
+     * @return 添加之后返回的结果集
      */
     @PostMapping("/mw/api/data/source/create")
-    public OperationResult createDataSource(@RequestBody DataSource dataSource){
-        OperationResult operationResult = new OperationResult();
+    public OperationResult<String> createDataSource(@RequestBody DataSource dataSource) {
+        OperationResult<String> operationResult = new OperationResult<>();
         String msg = "添加异常";
-        if (dataSource == null){
+        if (dataSource == null) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSource.getName()==null || dataSource.getName().equals("")){
+        if (dataSource.getName() == null || dataSource.getName().equals("")) {
             msg = "数据源名称为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSourceService.checkForPresence(dataSource.getName()) > 0){
+        if (dataSourceService.checkForPresence(dataSource.getName()) > 0) {
             msg = "数据源名称重复";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSource.getType()==null){
+        if (dataSource.getType() == null) {
             msg = "数据源 type 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSource.getAddition() == null){
+        if (dataSource.getAddition() == null) {
             msg = "数据源 addition 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSource.getAddress() == null){
+        if (dataSource.getAddress() == null) {
             msg = "数据源 address 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         dataSource.setCreatedOn(new Date());
-        int i = dataSourceService.createDataSource(dataSource);
-        if (i < 1 ){
+
+        int i;
+        try {
+            i = dataSourceService.createDataSource(dataSource);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+        }
+
+        if (i < 1) {
             log.info("添加失败！");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         msg = "插入成功";
         log.info(msg);
-        return new OperationResult(dataSource.getName()).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setData(dataSource.getName()).setMessage(msg)
+                              .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
      * 删除数据源
-     * @param id    待删除的数据源id
-     * @return      删除之后返回的结果集
+     *
+     * @param id 待删除的数据源id
+     * @return 删除之后返回的结果集
      */
     @DeleteMapping("/mw/api/data/source/delete/{id}")
-    public OperationResult deleteDataSource(@PathVariable Long id){
+    public OperationResult<String> deleteDataSource(@PathVariable Long id) {
         DataSource dataSource = dataSourceService.findDataSourceByid(id);
-        OperationResult operationResult = new OperationResult();
+        OperationResult<String> operationResult = new OperationResult<>();
         String msg = "删除异常";
 
-        if (dataSource==null){
+        if (dataSource == null) {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
-        if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
+        if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "数据源已删除";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
 
-        dataSource.setStatus(GeneralStatus.DELETED.getIntLabel()).setName(dataSource.getName()+"-"+dataSource.getId());
-        dataSourceService.updateDataSource(dataSource);
+        dataSource.setStatus(GeneralStatus.DELETED.getIntLabel())
+                  .setName(dataSource.getName() + "-" + dataSource.getId());
+        dataSource.setModifiedOn(new Date());
+
+        try {
+            dataSourceService.updateDataSource(dataSource);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
+        }
+
         msg = "删除成功！";
         log.info(msg);
         return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
@@ -98,98 +118,111 @@ public class DataSourceController {
 
     /**
      * 查询指定的数据源
-     * @param id    执行的数据源id
-     * @return      查询之后返回的结果集
+     *
+     * @param id 执行的数据源id
+     * @return 查询之后返回的结果集
      */
     @GetMapping("/mw/api/data/source/query/{id}")
-    public OperationResult findDataSourceById(@PathVariable Long id){
-        OperationResult operationResult = new OperationResult();
+    public OperationResult<DataSource> findDataSourceById(@PathVariable Long id) {
+        OperationResult<DataSource> operationResult = new OperationResult<>();
         String msg = "查询异常";
-        DataSource dataSource = dataSourceService.findDataSourceByid(id);
-        if (dataSource == null){
+        DataSource dataSource;
+        try {
+            dataSource = dataSourceService.findDataSourceByid(id);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
+        }
+
+        if (dataSource == null) {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
-        if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
+        if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "数据源已删除！";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
-        log.info("查询id为"+id+" 的数据源");
-        return operationResult.setData(dataSource).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        log.info("查询id为" + id + " 的数据源");
+        return operationResult.setData(dataSource).setMessage("查询成功！")
+                              .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
      * 更新数据源
-     * @param id    待更新的数据源id
-     * @param dataSource    更新数据源内容
-     * @return      更新之后返回的结果集
+     *
+     * @param id         待更新的数据源id
+     * @param dataSource 更新数据源内容
+     * @return 更新之后返回的结果集
      */
     @Transactional(rollbackFor = Exception.class)
     @PutMapping("/mw/api/data/source/update/{id}")
-    public OperationResult updateDataSource(@PathVariable Long id,@RequestBody DataSource dataSource){
-        OperationResult operationResult = new OperationResult();
+    public OperationResult<DataSource> updateDataSource(@PathVariable Long id, @RequestBody DataSource dataSource) {
+        OperationResult<DataSource> operationResult = new OperationResult<>();
         String msg = "更新失败";
         DataSource source = dataSourceService.findDataSourceByid(id);
-        if (source == null){
+        if (source == null) {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (source.getStatus().equals(GeneralStatus.DELETED.getIntLabel())){
+        if (source.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "数据源已删除";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSource == null){
+        if (dataSource == null) {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSource.getName()==null || dataSource.getName().equals("")){
+        if (dataSource.getName() == null || dataSource.getName().equals("")) {
             msg = "数据源名称为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSourceService.checkForPresence(dataSource.getName()) > 0){
-            if (!dataSource.getName().equals(source.getName())){
+        if (dataSourceService.checkForPresence(dataSource.getName()) > 0) {
+            if (!dataSource.getName().equals(source.getName())) {
                 msg = "数据源名称重复";
                 log.info(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
-        if (dataSource.getType()==null){
+        if (dataSource.getType() == null) {
             msg = "数据源 type 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSource.getAddition() == null){
+        if (dataSource.getAddition() == null) {
             msg = "数据源 addition 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSource.getAddress() == null){
+        if (dataSource.getAddress() == null) {
             msg = "数据源 address 为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         source.setName(dataSource.getName()).setAddress(dataSource.getAddress()).setAddition(dataSource.getAddition())
-                .setType(dataSource.getType()).setModifiedBy(dataSource.getModifiedBy()).setModifiedOn(new Date());
+              .setType(dataSource.getType()).setModifiedBy(dataSource.getModifiedBy()).setModifiedOn(new Date());
         try {
             dataSourceService.updateDataSource(source);
-        }catch (Exception e){
-            log.info("更新数据源： "+source+" 异常 : " + e.getMessage() );
+        } catch (Exception e) {
+            log.info("更新数据源： " + source + " 异常 : " + e.getMessage());
             throw new RuntimeException("更新异常！");
 //            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        log.info("更新数据源： "+source);
+        log.info("更新数据源： " + source);
         return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
      * 查询所有数据源
-     * @return  返回查询所有数据源的结果集
+     *
+     * @return 返回查询所有数据源的结果集
      */
     @GetMapping("/mw/api/data/source/query/all")
-    public OperationResult findDatasourcesByStatus(){
-        return new OperationResult().setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+    public OperationResult<List<DataSource>> findDataSourcesByStatus() {
+        return new OperationResult<List<DataSource>>()
+                .setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！")
+                .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 }

@@ -32,7 +32,7 @@ public class ScheduleImportJob {
         String msg;
         if (job == null) {
             msg = "未发现任务";
-            log.error(msg);
+            log.info(msg);
             return false;
         }
         if (job.getStatus() == null || !job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {

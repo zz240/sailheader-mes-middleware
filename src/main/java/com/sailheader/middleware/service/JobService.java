@@ -141,7 +141,8 @@ public class JobService {
                 consumeDataBean = applicationContext.getBean(consumeDataBeanName, ConsumeData.class);
             } catch (BeansException exception) {
                 String msg = "未能成功找到相关消费动作的实现！consumeDataBeanName:" + consumeDataBeanName;
-                throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_CONSUME_IMPL_NOT_FOUND, msg, exception);
+                throw MiddlewareException
+                        .getInstance(ACTION_HANDLER_ADAPTER_ACTION_CONSUME_IMPL_NOT_FOUND, msg, exception);
             }
 
             bean.setConsumeData(consumeDataBean);
@@ -151,14 +152,14 @@ public class JobService {
             bean.setAction(action);
 
         }
-        //  3、执行单向链
+        //  4、执行单向链
         ActionTempData<?> dataHandler;
         try {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(
                     actionHandlers);
             dataHandler = singleLinerJobActionHandlerChain.dataHandler(actionTempData);
         } catch (MiddlewareException m) {
-            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,m);
+            throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, m);
         } catch (Exception e) {
             throw new Exception(e);
         }

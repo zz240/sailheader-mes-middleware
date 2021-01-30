@@ -52,16 +52,16 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
 
         //构建访问对象
         try {
-            requestEntity = getRequestEntity(dataSource,lastBody);
+            requestEntity = getRequestEntity(dataSource, lastBody);
         } catch (URISyntaxException e) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_BUILD_FAILURE,e);
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_BUILD_FAILURE, e);
         }
 
         //http访问
         try {
             response = restTemplate.exchange(requestEntity, String.class);
-        }catch (Exception e){
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_ACCESS_ERROR,e);
+        } catch (Exception e) {
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_ACCESS_ERROR, e);
         }
 
         return JSON.parseObject(response.getBody(), JSON.class);
@@ -69,23 +69,24 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
 
     @Override
     protected void validateDataSource() throws Exception {
-        if (dataSource == null){
+        if (dataSource == null) {
             throw MiddlewareException.getInstance(MiddlewareExceptionMap.REMOTE_ACCESS_HTTP_DATASOURCE_IS_NULL);
         }
-        if (dataSource.getAddition() == null){
-            throw MiddlewareException.getInstance(MiddlewareExceptionMap.REMOTE_ACCESS_HTTP_DATASOURCE_ADDITION_IS_NULL);
+        if (dataSource.getAddition() == null) {
+            throw MiddlewareException
+                    .getInstance(MiddlewareExceptionMap.REMOTE_ACCESS_HTTP_DATASOURCE_ADDITION_IS_NULL);
         }
-        if (dataSource.getAddress() == null){
+        if (dataSource.getAddress() == null) {
             throw MiddlewareException.getInstance(MiddlewareExceptionMap.REMOTE_ACCESS_HTTP_DATASOURCE_ADDRESS_IS_NULL);
         }
         JSONObject jsonObject = dataSource.getAddition();
-        if (jsonObject.getString("method") == null || jsonObject.getString("method").trim().equals("")){
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_MISSING_REQUIRE_PARAM,"缺少 method");
+        if (jsonObject.getString("method") == null || jsonObject.getString("method").trim().equals("")) {
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_MISSING_REQUIRE_PARAM, "缺少 method");
         }
     }
 
     //构建请求对象
-    public RequestEntity getRequestEntity(DataSource dataSource,JSON json) throws URISyntaxException {
+    public RequestEntity getRequestEntity(DataSource dataSource, JSON json) throws URISyntaxException {
         JSONObject addition = dataSource.getAddition();
         String query = addition.getString("query");
         String url = dataSource.getAddress() + (query != null ? "?" + query : "");
@@ -93,7 +94,7 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
         Map<String, List<String>> headers = new HashMap<>();
         JSON body = null;
 
-        if (json != null){
+        if (json != null) {
             body = json;
         }
 

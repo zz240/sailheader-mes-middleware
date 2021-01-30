@@ -40,7 +40,7 @@ public class DBAccessWIthJsonAdapter extends AccessAdapter<JSON> {
 
         List<Map<String,Object>> inputList = null;
         try {
-            // 加载输入数据的sql
+            // 加载array
             if (actionTempData.getBody() != null) {
                 inputList = (List<Map<String, Object>>) actionTempData.getBody();
             }
