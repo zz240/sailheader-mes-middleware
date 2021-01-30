@@ -6,6 +6,8 @@ import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.rest.JobController;
 
 import jdk.nashorn.internal.ir.annotations.Ignore;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +20,41 @@ public class JobTest {
     @Autowired
     private JobController jobController;
 
+    @Nested
+    @DisplayName("check Manual Trigger Job")
+    class checkManualTriggerJobTests{
+
+        /**
+         * 测试 手动执行任务 - 正常流程
+         */
+        @Test
+        public void testMethodNormal(){
+            long id = 33L;
+            OperationResult result = jobController.ManualTrigger(id,null);
+            assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
+        }
+
+        /**
+         * 测试 手动执行任务 - job 未开启
+         */
+        @Test
+        public void testJobStatusIsClose(){
+            long id = 27L;
+            OperationResult result = jobController.ManualTrigger(id,null);
+            assertEquals(result.getMessage(),"状态未开启");
+        }
+
+        /**
+         * 测试 手动执行任务 - job 设置 执行顺序异常
+         */
+        @Test
+        public void testActionByJobIdIndex(){
+            long id = 31L;
+            OperationResult result = jobController.ManualTrigger(id,null);
+            assertEquals(result.getMessage(),"任务执行顺序有误，请检查后再试");
+        }
+
+    }
 
     //添加job - 完整流程
     @Test
@@ -29,7 +66,7 @@ public class JobTest {
         job.setStatus((short) 1);
 
         OperationResult result = jobController.createJob(job);
-        assertEquals(result.getStateCode(), StateCode.ADD_SUCCESS.getValue());
+        assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
 //        Exception exception = assertThrows(Exception.class, () -> );
     }
 
