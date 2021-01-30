@@ -1,7 +1,5 @@
 package com.sailheader.middleware.action.remote.db.service;
 
-import com.alibaba.fastjson.JSON;
-import com.sailheader.middleware.action.remote.db.dao.DynamicDataSourceSqlDao;
 import com.sailheader.middleware.action.remote.db.dao.DynamicDataSourceSqlWithJsonDao;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.model.DataSource;
@@ -10,7 +8,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 

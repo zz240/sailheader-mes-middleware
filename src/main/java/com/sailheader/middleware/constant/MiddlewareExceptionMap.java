@@ -2,9 +2,6 @@ package com.sailheader.middleware.constant;
 
 import lombok.Getter;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * 中间件异常错误码和异常说明
  * code 构成: 例如第一条 -> {项目当次主版本号(01)当前功能分支号(01)递增的序号(001)}

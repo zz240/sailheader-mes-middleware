@@ -3,11 +3,8 @@ package com.sailheader.middleware.common.helper;
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.constant.MiddlewareExceptionMap;
-import groovy.lang.Script;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.ParserContext;
 import org.springframework.expression.common.TemplateParserContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
@@ -21,7 +18,6 @@ public class MappingJsonData {
 
     private static ExpressionParser expressionParser;
     private static TemplateParserContext templateParserContext;
-    private static Script groovyScript = GroovyLoader.loadGroovy("JsonMapping.groovy");
 
     @PostConstruct
     public void getExpressionParse() {
@@ -62,10 +58,6 @@ public class MappingJsonData {
         }
 
         return object;
-    }
-
-    public static Object groovyJsonMapping(Map<String, Object> placeholderData, String preContext) {
-        return groovyScript.invokeMethod("mappingJson", new Object[]{placeholderData, preContext});
     }
 
 }

@@ -1,8 +1,8 @@
 package com.sailheader.middleware.common.helper;
 
 import com.alibaba.fastjson.JSON;
-import com.sailheader.middleware.job.UpdateJobDetail;
 import com.sailheader.middleware.constant.GeneralStatus;
+import com.sailheader.middleware.job.UpdateJobDetail;
 import com.sailheader.middleware.model.Job;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.*;

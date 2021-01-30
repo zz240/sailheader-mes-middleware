@@ -2,7 +2,6 @@ package com.sailheader.middleware.model;
 
 
 import com.alibaba.fastjson.JSONObject;
-import groovyjarjarantlr4.v4.runtime.misc.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

@@ -1,11 +1,10 @@
 package com.sailheader.middleware.action;
 
-import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
 
-
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.REMOTE_ACCESS_ACTION_DATASOURCE_IS_NULL;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM;
 
 /**
  * 字段映射动作

@@ -1,21 +1,15 @@
 package com.sailheader.middleware.action;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.consume.ConsumeData;
 import com.sailheader.middleware.action.consume.DirectConsume;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
-import com.sailheader.middleware.common.helper.MappingJsonData;
 import com.sailheader.middleware.model.Action;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.stereotype.Component;
 
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
-
-import java.util.HashMap;
-import java.util.Map;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.ACTION_HANDLER_ADAPTER_ACTION_IS_NULL;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.ACTION_HANDLER_ADAPTER_ACTION_MISSING_REQUIRE_PARAM;
 
 /**
  * 泛型适配器

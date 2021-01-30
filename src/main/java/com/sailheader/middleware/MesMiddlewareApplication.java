@@ -2,22 +2,12 @@ package com.sailheader.middleware;
 
 import com.huaweicloud.sdk.iot.module.ItClient;
 import com.huaweicloud.sdk.iot.module.exception.GeneraException;
-import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.config.SpringApplicationContext;
-import com.sailheader.middleware.constant.GeneralStatus;
-import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.service.JobService;
-import lombok.extern.slf4j.Slf4j;
-import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.web.servlet.ServletComponentScan;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
-
-import javax.annotation.PostConstruct;
-import java.util.List;
 
 @SpringBootApplication
 public class MesMiddlewareApplication {

@@ -2,7 +2,6 @@ package com.sailheader.middleware.action.remote;
 
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.chain.ActionTempData;
-import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.model.DataSource;
 import lombok.Getter;
 import lombok.Setter;

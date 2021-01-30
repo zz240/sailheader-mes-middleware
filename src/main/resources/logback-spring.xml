@@ -6,7 +6,7 @@
 
     <springProperty scope="context" name="server_name" source="spring.application.name"/>
 
-    <property name="log_basedir" value="/data/Sailheader/${server_name}/logs" />
+    <property name="log_basedir" value="/data/sailheader/${server_name}/logs" />
 
 
     <!-- 日志输出格式 -->

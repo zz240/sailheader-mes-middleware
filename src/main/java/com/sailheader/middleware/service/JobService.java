@@ -1,13 +1,15 @@
 package com.sailheader.middleware.service;
 
 import com.alibaba.fastjson.JSON;
-import com.sailheader.middleware.action.ActionHandler;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.action.consume.ConsumeData;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.chain.SingleLinerJobActionHandlerChain;
 import com.sailheader.middleware.common.MiddlewareException;
-import com.sailheader.middleware.constant.*;
+import com.sailheader.middleware.constant.ActionConsumeDataType;
+import com.sailheader.middleware.constant.ActionStatus;
+import com.sailheader.middleware.constant.ActionType;
+import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.mapper.JobDAO;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.model.Job;

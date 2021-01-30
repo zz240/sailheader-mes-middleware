@@ -1,32 +1,40 @@
 version: "3.7"
 services:
   middleware-postgresql:
-    image: postgres:12-alpine
+    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware-postgresql:1.1.0
     container_name: middleware-postgresql
     restart: always
     ports:
-    - 9001:5432
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: middleware
+      - 9001:5432
     volumes:
-    - /data/sailheader/middleware/postgresql:/var/lib/postgresql/data
-    - ./db/pgsql/:/docker-entrypoint-initdb.d/
+      - /data/sailheader/middleware/postgresql:/var/lib/postgresql/data
     networks:
       middleware-network:
         ipv4_address: 173.26.1.11
-  other-sql-server:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    container_name: other-sql-server
-    ports:
-      - 9002:1433
+  #  other-sql-server:
+  #    image: mcr.microsoft.com/mssql/server:2019-latest
+  #    container_name: other-sql-server
+  #    ports:
+  #      - 9002:1433
+  #    environment:
+  #      ACCEPT_EULA: Y
+  #      SA_PASSWORD: "Root123456"
+  #    networks:
+  #      middleware-network:
+  #        ipv4_address: 173.26.1.13
+  middleware:
+    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.1.0
+    container_name: middleware
+    depends_on:
+      - middleware-postgresql
+    restart: always
     environment:
-      ACCEPT_EULA: Y
-      SA_PASSWORD: "Root123456"
+      PROFILE: prod
+    volumes:
+      - /data/sailheader/middleware/logs:/data/sailheader/middleware/logs
     networks:
       middleware-network:
-        ipv4_address: 173.26.1.13
+        ipv4_address: 173.26.1.14
 
 networks:
   middleware-network:

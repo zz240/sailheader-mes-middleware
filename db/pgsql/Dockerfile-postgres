@@ -1,0 +1,11 @@
+FROM postgres:12-alpine
+MAINTAINER steven.xu
+
+#初始化PostgreSQL
+ENV POSTGRES_USER root
+ENV POSTGRES_PASSWORD 123456
+ENV POSTGRES_DB middleware
+ADD 01-create_table.sql /docker-entrypoint-initdb.d/
+ADD 02-initial_user.sql /docker-entrypoint-initdb.d/
+
+EXPOSE 5432

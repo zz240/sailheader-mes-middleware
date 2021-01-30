@@ -1,6 +1,5 @@
 package com.sailheader.middleware.service;
 
-import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.mapper.DataSourceDAO;
 import com.sailheader.middleware.model.DataSource;
 import com.sailheader.middleware.model.DataSourceExample;
