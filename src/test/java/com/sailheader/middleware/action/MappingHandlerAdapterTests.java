@@ -39,7 +39,6 @@ class MappingHandlerAdapterTests {
     class CheckFieldMappingWithArray{
         JSONObject jsonObject;
         JSONObject addition;
-        JSONObject object;
         JSONArray arr;
         @BeforeEach
         public void initJsonObject() {
