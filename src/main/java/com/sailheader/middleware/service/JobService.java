@@ -152,15 +152,16 @@ public class JobService {
 
         }
         //  3、执行单向链
+        ActionTempData<?> dataHandler;
         try {
             SingleLinerJobActionHandlerChain singleLinerJobActionHandlerChain = new SingleLinerJobActionHandlerChain(
                     actionHandlers);
-            singleLinerJobActionHandlerChain.dataHandler(actionTempData);
+            dataHandler = singleLinerJobActionHandlerChain.dataHandler(actionTempData);
         } catch (MiddlewareException m) {
             throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,m);
         } catch (Exception e) {
             throw new Exception(e);
         }
-        return actionTempData;
+        return dataHandler;
     }
 }
