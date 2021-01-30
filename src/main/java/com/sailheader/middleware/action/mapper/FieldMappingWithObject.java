@@ -1,5 +1,6 @@
 package com.sailheader.middleware.action.mapper;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.action.FieldMappingActionHandler;
 import com.sailheader.middleware.chain.ActionTempData;
@@ -16,12 +17,12 @@ import java.util.Map;
 @Slf4j
 @Component("action.field.mapping.object")
 @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-public class FieldMappingWithObject extends FieldMappingActionHandler {
+public class FieldMappingWithObject extends FieldMappingActionHandler<JSON, JSON> {
 
 
     @Override
-    protected ActionTempData mapping(ActionTempData actionTempData) {
-        return new ActionTempData(ActionStatus.SUCCESS, action.getAddition());
+    protected ActionTempData<JSON> mapping(ActionTempData<JSON> actionTempData) {
+        return new ActionTempData<>(ActionStatus.SUCCESS, action.getAddition());
     }
 
     @Override

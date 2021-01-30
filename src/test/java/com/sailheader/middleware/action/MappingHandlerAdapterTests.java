@@ -39,7 +39,6 @@ class MappingHandlerAdapterTests {
     class CheckFieldMappingWithArray{
         JSONObject jsonObject;
         JSONObject addition;
-        JSONObject object;
         JSONArray arr;
         @BeforeEach
         public void initJsonObject() {
@@ -54,10 +53,7 @@ class MappingHandlerAdapterTests {
             addition.put("tid","id");
             addition.put("miaoshu","desc");
             addition.put("tname","name");
-        }
 
-        @BeforeEach
-        public void initFieldMapping(){
             arr = JSONArray.parseArray("[{\"miaoshu\":\"ball\"},{\"tid\":\"3\",\"tname\":\"steam\",\"desc\":\"game\"},{\"flag\":true,\"tname\":1611909871426,\"miaoshu\":\"test\",\"tid\":3}]");
             System.out.println("处理前的数据" + arr);
         }
@@ -68,7 +64,7 @@ class MappingHandlerAdapterTests {
             action.setAddition(addition);
             fieldMappingWithArray.setAction(action);
             try {
-                assertEquals(json,fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,arr)).getBody());
+                assertEquals(json,fieldMappingWithArray.dataHandler(new ActionTempData<>(ActionStatus.INITIAL,arr)).getBody());
 
             } catch (Exception e) {
                 e.printStackTrace();
