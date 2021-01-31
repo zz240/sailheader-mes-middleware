@@ -28,7 +28,7 @@ public class GroovyJsonMapping {
         jsonMap.put("mapTest", mapOfMaps);
         jsonMap.put("listTest", numbers);
 
-        String context = "{'listTest': listTest[1], 'mapTest': mapTest['name']}";
+        String context = "{\"listTest\": [\"$listTest.1\"], \"mapTest\": \"$mapTest.name\"}";
 
         Object o = MappingJsonData.groovyJsonMapping(jsonMap, context);
         System.out.println(o);

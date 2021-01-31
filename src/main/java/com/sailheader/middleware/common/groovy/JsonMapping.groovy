@@ -1,29 +1,37 @@
 package com.sailheader.middleware.common.groovy
 
 import groovy.json.JsonSlurper
-import groovy.transform.Field
 
-def mapTest;
+def mappingJson(placeholderData, preContext) {
+    preContext = new JsonSlurper().parseText(preContext)
+    deepReplace(placeholderData, preContext)
+    return preContext
+}
 
-static def mappingJson(placeholderData, preContext) {
-    def listTest = placeholderData["listTest"]
-    def mapTest = placeholderData["mapTest"]
-    def context = "{\"listTest\": [\"listTest[1]\"], \"mapTest\": \"mapTest['name']\"}"
-    def result = new JsonSlurper().parseText(context)
-    result.collect { k, v ->
-        {
-            println k
-            if (v instanceof String) {
-                def n = v;
-                println(n)
-                v = "??"
+static def deepReplace(context, list) {
+    if (list instanceof Map) {
+        list.each { index, value ->
+            if (value instanceof List || value instanceof Map) {deepReplace(context, value)}
+            else if (value instanceof String && value ==~ /^\$\S+/) {
+                list[index] = actValToGet(context, value.substring(1))
             }
-            result[k] = v
+        }
+    }else if (list instanceof List) {
+        list.eachWithIndex { value, index ->
+            if (value instanceof List || value instanceof Map) {deepReplace(context, value)}
+            else if (value instanceof String && value ==~ /^\$\S+/) {
+                list[index] = actValToGet(context, value.substring(1))
+            }
         }
     }
-    println result
-
-//    Eval.me(result)
-    return result
+    return list
 }
+
+static actValToGet(def resp, String params) {
+    params.split(/\./).inject(resp) { map, key ->
+        if (map instanceof List) key = Integer.parseInt(key)
+        return map[key]
+    }
+}
+
 
