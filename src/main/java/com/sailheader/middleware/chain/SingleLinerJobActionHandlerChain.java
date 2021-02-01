@@ -103,7 +103,7 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
 
         Map<String, Object> map = new HashMap<>();
         map.put("contextData", singleLinerChainContext.getCollection());
-        JSONObject json = (JSONObject) MappingJsonData.mappingJsonIntoJson(map, action.getAddition());
+        JSONObject json = (JSONObject) MappingJsonData.groovyJsonMapping(map, action.getAddition());
         action.setAddition(json);
     }
 

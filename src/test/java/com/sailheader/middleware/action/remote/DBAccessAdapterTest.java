@@ -126,6 +126,7 @@ class DBAccessAdapterTest {
     @Nested
     @DisplayName("check execute sql")
     @Ignore
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class CheckDBSql {
 
         /**
@@ -141,10 +142,26 @@ class DBAccessAdapterTest {
             assertEquals(middlewareException.getExceptionMap(), REMOTE_ACCESS_DB_SQL_IS_NULL);
         }
 
+        @Test
+        @Order(1)
+        public void testAdd() throws Exception {
+            jsonObject.put("sql",
+                           "INSERT INTO public.action_stream (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
+                                   "                                  modified_by, modified_on)\n" +
+                                   "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
+                                   "}', 2, null, null, null);\n");
+            dbAccessAdapter.setDataSource(dataSource);
+            ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
+            JSONArray json = (JSONArray) dbAccessAdapter.access(actionTempData);
+            System.out.println(json);
+        }
+
         /**
          * 输入有sql但是数据源没有
+         * 需要提前构造一条数据
          */
         @Test
+        @Order(2)
         public void testInputDataHaveSql() throws Exception {
             // 构造请求
             dataSource.getAddition().put("sql", "");
@@ -161,6 +178,7 @@ class DBAccessAdapterTest {
          * 数据源有sql 但是输入没有sql
          */
         @Test
+        @Order(2)
         public void testDatasourceHaveSql() throws Exception {
             // 构造请求
             dataSource.getAddition().put("sql", "select * from action_stream");
@@ -177,6 +195,7 @@ class DBAccessAdapterTest {
          * 数据源和输入都有sql
          */
         @Test
+        @Order(2)
         public void testDatasourceAndInputDataHaveSql() throws Exception {
             // 构造请求
             dataSource.getAddition().put("sql", "select * from data_source");
@@ -187,6 +206,24 @@ class DBAccessAdapterTest {
 
             JSONArray json = (JSONArray) dbAccessAdapter.access(actionTempData);
             assertEquals(json.size(), 1);
+        }
+
+        @Test
+        @Order(3)
+        public void testDelete() throws Exception {
+            jsonObject.put("sql",
+                           "DELETE FROM public.action_stream\n" +
+                                   "WHERE name = '2';\n");
+            dbAccessAdapter.setDataSource(dataSource);
+            ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
+            dbAccessAdapter.access(actionTempData);
+
+            // 验证删除
+            jsonObject.put("sql", "select * from action_stream where name = '2'");
+            ActionTempData<JSON> validateData = new ActionTempData<>(ActionStatus.INITIAL, null);
+            JSONArray json = (JSONArray) dbAccessAdapter.access(validateData);
+
+            assertEquals(json.size(), 0);
         }
     }
 
@@ -200,6 +237,7 @@ class DBAccessAdapterTest {
 
         /**
          * 数据库不存在时
+         * todo 失败不需要重复尝试
          */
         @Test
         public void testDBConnectNotFound() {
@@ -216,15 +254,15 @@ class DBAccessAdapterTest {
         /**
          * 连接过多报错
          */
-        @Test
-        public void testDBConnectionOutPool() throws Exception {
-            dbAccessAdapter.setDataSource(dataSource);
-            ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
-            for (int i = 0; i < 1000; i++) {
-                dbAccessAdapter.access(actionTempData);
-                System.out.println(i);
-            }
-        }
+//        @Test
+//        public void testDBConnectionOutPool() throws Exception {
+//            dbAccessAdapter.setDataSource(dataSource);
+//            ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
+//            for (int i = 0; i < 1000; i++) {
+//                dbAccessAdapter.access(actionTempData);
+//                System.out.println(i);
+//            }
+//        }
 
         /**
          * 增删改查动作操作数据库
@@ -240,10 +278,9 @@ class DBAccessAdapterTest {
             @Order(1)
             public void testAdd() throws Exception {
                 jsonObject.put("sql",
-                               "INSERT INTO public.action_stream (id, job_id, name, type, status, index, temp_data, addition, created_by, created_on,\n" +
+                               "INSERT INTO public.action_stream (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
                                        "                                  modified_by, modified_on)\n" +
                                        "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
-                                       "}', '{\"name\": \"steven\"\n" +
                                        "}', 2, null, null, null);\n");
                 dbAccessAdapter.setDataSource(dataSource);
                 ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);

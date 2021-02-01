@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.GROOVY_JSON_MAPPING_PARSE_ERROR;
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JSON_MAPPING_PLACEHOLDER_CANT_PARSE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -90,7 +91,7 @@ class SingleLinerJobActionHandlerChainTest {
     class preActionData {
         /**
          * 存在占位符
-         * 查看是否被
+         * 但是输入数据是一个string
          */
         @Test
         public void filterAdditionInputIsString() throws Exception {
@@ -98,18 +99,18 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<String> input = new ActionTempData<>(ActionStatus.INITIAL, "{'simpleName': \"steven\"}");
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body']['simpleName']} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.simpleName\" }");
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[1]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
             action2.setAddition(addition2);
 
             // 执行动作链
             MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
                                                                    () -> singleLinerJobActionHandlerChain.dataHandler(input));
-            assertEquals(JSON_MAPPING_PLACEHOLDER_CANT_PARSE, middlewareException.getExceptionMap());
+            assertEquals(GROOVY_JSON_MAPPING_PARSE_ERROR, middlewareException.getExceptionMap());
         }
 
         /**
@@ -123,18 +124,18 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<List<String>> input = new ActionTempData<>(ActionStatus.INITIAL, arrayList);
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body']['simpleName']} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.simpleName\" }");
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[1]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
             action2.setAddition(addition2);
 
             // 执行动作链
             MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
                                                                    () -> singleLinerJobActionHandlerChain.dataHandler(input));
-            assertEquals(JSON_MAPPING_PLACEHOLDER_CANT_PARSE, middlewareException.getExceptionMap());
+            assertEquals(GROOVY_JSON_MAPPING_PARSE_ERROR, middlewareException.getExceptionMap());
         }
 
         /**
@@ -148,18 +149,18 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<List<String>> input = new ActionTempData<>(ActionStatus.INITIAL, arrayList);
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body'][0]} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.0\" }");
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[1]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
             action2.setAddition(addition2);
 
             // 执行动作链
             ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
 
-            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven action1");
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven");
         }
 
         /**
@@ -172,18 +173,67 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<Map<String, String>> input = new ActionTempData<>(ActionStatus.INITIAL, map);
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body']['simpleName']} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.simpleName\" }");
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[1]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
             action2.setAddition(addition2);
 
             // 执行动作链
             ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
 
-            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven action1");
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven");
+        }
+
+        /**
+         * 有占位符但是输入数据类型是List
+         * 查看list是否被替换
+         */
+        @Test
+        public void filterAdditionInputReplaceList() throws Exception {
+            List<String> arrayList = Collections.singletonList("steven");
+            // 输入数据
+            ActionTempData<List<String>> input = new ActionTempData<>(ActionStatus.INITIAL, arrayList);
+            // 动作1的 action addition
+            JSONObject addition1 = JSONObject
+                    .parseObject("{'simpleName': \"$contextData.0.body\" }");
+            action1.setAddition(addition1);
+
+            // 动作2的 action addition
+            JSONObject addition2 = JSONObject
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
+            action2.setAddition(addition2);
+
+            // 执行动作链
+            ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
+
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getJSONArray("simpleName"), arrayList);
+        }
+
+        /**
+         * 有占位符但是输入数据类型是MAP
+         */
+        @Test
+        public void filterAdditionInputReplaceMap() throws Exception {
+            Map<String, String> map = Maps.newHashMap("simpleName", "steven");
+            // 输入数据
+            ActionTempData<Map<String, String>> input = new ActionTempData<>(ActionStatus.INITIAL, map);
+            // 动作1的 action addition
+            JSONObject addition1 = JSONObject
+                    .parseObject("{'simpleName': \"$contextData.0.body\" }");
+            action1.setAddition(addition1);
+
+            // 动作2的 action addition
+            JSONObject addition2 = JSONObject
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
+            action2.setAddition(addition2);
+
+            // 执行动作链
+            ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
+
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getJSONObject("simpleName"), map);
         }
 
         /**
@@ -196,18 +246,18 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<JSON> input = new ActionTempData<>(ActionStatus.INITIAL, json);
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body'][0]['simpleName']} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.0.simpleName\" }");
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[1]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.1.body.simpleName\"}");
             action2.setAddition(addition2);
 
             // 执行动作链
             ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
 
-            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven action1");
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven");
         }
 
         /**
@@ -220,20 +270,20 @@ class SingleLinerJobActionHandlerChainTest {
             ActionTempData<JSON> input = new ActionTempData<>(ActionStatus.INITIAL, json);
             // 动作1的 action addition
             JSONObject addition1 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[0]['body'][0]['simpleName']} action1\" }");
+                    .parseObject("{'simpleName': \"$contextData.0.body.0.simpleName\" }");
             action1.setIndex(2);
             action1.setAddition(addition1);
 
             // 动作2的 action addition
             JSONObject addition2 = JSONObject
-                    .parseObject("{'simpleName': \"#{#contextData[2]['body']['simpleName']}\"}");
+                    .parseObject("{'simpleName': \"$contextData.2.body.simpleName\"}");
             action2.setIndex(5);
             action2.setAddition(addition2);
 
             // 执行动作链
             ActionTempData<?> actionTempData = singleLinerJobActionHandlerChain.dataHandler(input);
 
-            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven action1");
+            assertEquals(actionHandlerAdapter2.getAction().getAddition().getString("simpleName"), "steven");
         }
     }
 }

@@ -41,7 +41,7 @@ public enum MiddlewareExceptionMap {
     FIELD_MAPPING_CALSS_CAST_ERROR("0103001","输入数据类型转换异常 "),
     FIELD_MAPPING_ADDITION_IS_NULL("0103002","未能获取字段映射规则 "),
     FIELD_MAPPING_DATA_IS_NULL("0103003","字段映射的数据为空  "),
-
+    GROOVY_JSON_MAPPING_PARSE_ERROR("0103004","groovy字段解析失败"),
 
     UNDEFINED_ERROR("0000001", "未知错误!");
 

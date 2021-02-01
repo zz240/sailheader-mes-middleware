@@ -3,7 +3,6 @@ package com.sailheader.middleware.rest;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Job;
-import com.sailheader.middleware.rest.JobController;
 
 import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.DisplayName;
