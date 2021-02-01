@@ -41,18 +41,6 @@ public class JobController {
             log.info(msg + "，任务名已存在！");
             return operationResult.setData(null).setMessage(msg + ":任务名已存在！").setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        job.setCreatedOn(new Date());
-        i = jobService.insertSelective(job);
-        jobByName = jobService.selectJobByName(job.getName());
-        if (i < 1) {
-            log.info(msg);
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
-        }
-        if (jobByName.getCrontab() == null || jobByName.getCrontab() == "") {
-            msg = "添加" + jobByName.getName() + "任务成功！";
-            return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
-        }
-        //定时任务
         Boolean canDo = false;
         if (job.getCrontab() != null && job.getCrontab() != ""){
             try {
@@ -68,6 +56,20 @@ public class JobController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+
+
+        job.setCreatedOn(new Date());
+        i = jobService.insertSelective(job);
+        jobByName = jobService.selectJobByName(job.getName());
+        if (i < 1) {
+            log.info(msg);
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+        }
+        if (jobByName.getCrontab() == null || jobByName.getCrontab() == "") {
+            msg = "添加" + jobByName.getName() + "任务成功！";
+            return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        }
+        //定时任务
         try {
             scheduleImportJob.executeScheduleImportJob(jobByName);
         } catch (SchedulerException e) {
