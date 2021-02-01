@@ -64,12 +64,17 @@ public class ActionService {
         if (action == null ){
             throw  MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_IS_NULL);
         }
+
+        if (action.getType() == null || action.getType() != ActionType.REMOTE_ACCESS.getType()) {
+            return;
+        }
+
         try{
             datasource = action.getAddition();
         }catch (MiddlewareException m){
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM);
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,m);
         }catch (Exception e){
-            throw new Exception(e);
+            throw new Exception(e.getMessage());
         }
         if (datasource == null){
             msg = " action 的 addition 字段为空";
@@ -145,7 +150,6 @@ public class ActionService {
         actionHandler.setAction(action);
         ActionTempData data;
         try {
-            // todo  1.0.0 tempData会覆盖之前的入参
             data = actionHandler.dataHandler(tempData);
         }catch (MiddlewareException e){
             throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_EXECUTE_FAILURE,e);
