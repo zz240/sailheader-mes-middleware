@@ -13,7 +13,6 @@ import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.swing.plaf.nimbus.State;
 import java.text.ParseException;
 import java.util.Date;
 
@@ -41,44 +40,50 @@ public class JobController {
             log.info(msg + "，任务名已存在！");
             return operationResult.setData(null).setMessage(msg + ":任务名已存在！").setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        Boolean canDo = false;
-        if (job.getCrontab() != null && job.getCrontab() != ""){
-            try {
-                canDo = TaskUtils.isCanDoExpression(job.getCrontab());
-            } catch (ParseException e) {
-                msg = "定时表达式异常：" + e.getMessage();
-                log.info(msg);
-                return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
-            }
+
+        // 添加普通任务
+        if (job.getCrontab() == null || job.getCrontab().equals("")){
+            job.setCreatedOn(new Date());
+            i = jobService.insertSelective(job);
+            jobByName = jobService.selectJobByName(job.getName());
         }
+        if (i > 0) {
+            msg = "添加" + jobByName.getName() + "定时任务成功！";
+            log.info(msg);
+            return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        }
+
+        Boolean canDo;
+        try {
+            canDo = TaskUtils.isCanDoExpression(job.getCrontab());
+        } catch (ParseException e) {
+            msg = "定时表达式异常：" + e.getMessage();
+            log.info(msg);
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+        }
+
         if (canDo == false){
             msg = "定时任务表达式格式有误";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-
-
-        job.setCreatedOn(new Date());
-        i = jobService.insertSelective(job);
-        jobByName = jobService.selectJobByName(job.getName());
+        // 添加定时任务
+        try {
+            job.setCreatedOn(new Date());
+            i = jobService.insertSelective(job);
+            jobByName = jobService.selectJobByName(job.getName());
+            scheduleImportJob.executeScheduleImportJob(jobByName);
+        } catch (SchedulerException e) {
+            log.info(jobByName + " -- 添加定时任务异常:" + e.getMessage());
+            return operationResult.setData(null).setMessage("添加定时任务异常").setStateCode(StateCode.ADD_FAIL.getValue());
+        }
         if (i < 1) {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (jobByName.getCrontab() == null || jobByName.getCrontab() == "") {
-            msg = "添加" + jobByName.getName() + "任务成功！";
-            return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
-        }
-        //定时任务
-        try {
-            scheduleImportJob.executeScheduleImportJob(jobByName);
-        } catch (SchedulerException e) {
-            log.info(jobByName + " -- 添加定时任务异常:" + e.getMessage());
-            return new OperationResult().setData(jobByName).setMessage("添加定时任务异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
-        }
         msg = "添加" + jobByName.getName() + "定时任务成功！";
         log.info(msg);
-        return new OperationResult(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
