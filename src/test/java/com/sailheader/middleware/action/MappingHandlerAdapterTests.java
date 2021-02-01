@@ -40,6 +40,7 @@ class MappingHandlerAdapterTests {
         JSONObject jsonObject;
         JSONObject addition;
         JSONArray arr;
+        JSONObject obj;
         @BeforeEach
         public void initJsonObject() {
             jsonObject = new JSONObject();
@@ -53,24 +54,95 @@ class MappingHandlerAdapterTests {
             addition.put("tid","id");
             addition.put("miaoshu","desc");
             addition.put("tname","name");
-
-            arr = JSONArray.parseArray("[{\"miaoshu\":\"ball\"},{\"tid\":\"3\",\"tname\":\"steam\",\"desc\":\"game\"},{\"flag\":true,\"tname\":1611909871426,\"miaoshu\":\"test\",\"tid\":3}]");
-            System.out.println("处理前的数据" + arr);
         }
 
+        @BeforeEach
+        public void initFieldMapping_arr(){
+            arr = JSONArray.parseArray("[{\"miaoshu\":\"ball\"},{\"tid\":\"3\",\"tname\":\"steam\",\"desc\":\"game\"},{\"flag\":true,\"tname\":1611909871426,\"miaoshu\":\"test\",\"tid\":3}]");
+
+        }
+
+        @BeforeEach
+        public void initFieldMapping_obj(){
+            obj = JSONObject.parseObject("{\"data\":[{\"miaoshu\":\"ball\"},{\"tid\":\"3\",\"tname\":\"steam\",\"desc\":\"game\"},{\"flag\":true,\"tname\":1611909871426,\"miaoshu\":\"test\",\"tid\":3}]}");
+
+        }
+
+
         @Test
-        public void testNormal() {
+        public void testNormal_jsonArray() {
+            System.out.println("处理前的jsonArray 数据:" + arr);
             JSONArray json = JSONArray.parseArray("[{\"desc\":\"ball\"},{\"name\":\"steam\",\"id\":\"3\",\"desc\":\"game\"},{\"flag\":true,\"name\":1611909871426,\"id\":3,\"desc\":\"test\"}]");
             action.setAddition(addition);
             fieldMappingWithArray.setAction(action);
             try {
-                assertEquals(json,fieldMappingWithArray.dataHandler(new ActionTempData<>(ActionStatus.INITIAL,arr)).getBody());
+                assertEquals(json, fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,arr)).getBody());
 
             } catch (Exception e) {
                 e.printStackTrace();
             }
 
         }
+
+        @Test
+        public void testNormal_jsonObject() {
+            System.out.println("处理前的jsonObject 数据:" + obj);
+            JSONArray json = JSONArray.parseArray("[{\"desc\":\"ball\"},{\"name\":\"steam\",\"id\":\"3\",\"desc\":\"game\"},{\"flag\":true,\"name\":1611909871426,\"id\":3,\"desc\":\"test\"}]");
+            action.setAddition(addition);
+            fieldMappingWithArray.setAction(action);
+            try {
+                assertEquals(json, fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,obj)).getBody());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        }
+
+        @Test
+        public void testNormal_jsonObjectIsNull() {
+            obj = JSONObject.parseObject("{\"data\":\"\"}");
+            System.out.println("处理前的jsonObject 数据:" + obj);
+            action.setAddition(addition);
+            fieldMappingWithArray.setAction(action);
+
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                    () -> fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,obj)));
+            assertEquals(middlewareException.getExceptionMap(),
+                    FIELD_MAPPING_DATA_IS_NULL);
+
+        }
+
+        @Test
+        public void testNormal_jsonObjectFieldNotFound() {
+            obj = JSONObject.parseObject("{\"qweqweqweqweqweqwewq\":\"\"}");
+            System.out.println("处理前的jsonObject 数据:" + obj);
+            action.setAddition(addition);
+            fieldMappingWithArray.setAction(action);
+
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                    () -> fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,obj)));
+            assertEquals(middlewareException.getExceptionMap(),
+                    FIELD_MAPPING_DATA_IS_NULL);
+
+        }
+
+        @Test
+        public void testNormal_jsonObjectNotJson() {
+            String obj = "";
+            System.out.println("处理前的jsonObject 数据:" + obj);
+            action.setAddition(addition);
+            fieldMappingWithArray.setAction(action);
+
+            MiddlewareException middlewareException = assertThrows(MiddlewareException.class,
+                    () -> fieldMappingWithArray.dataHandler(new ActionTempData(ActionStatus.INITIAL,obj)));
+            assertEquals(middlewareException.getExceptionMap(),
+                    FIELD_MAPPING_DATA_IS_NULL);
+
+        }
+
+
+
+
 
         /**
          * 映射规则为空
