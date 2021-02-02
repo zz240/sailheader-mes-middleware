@@ -239,7 +239,7 @@
     <select id="checkJobIdPresence" parameterType="java.lang.Long" resultType="java.lang.Integer">
         select count(1)
         from "job"
-        where id = #{jobId,jdbcType=BIGINT}
+        where id = #{jobId,jdbcType=BIGINT} and status in (1,2);
     </select>
 
     <update id="reorderActionIndex" parameterType="java.util.List">

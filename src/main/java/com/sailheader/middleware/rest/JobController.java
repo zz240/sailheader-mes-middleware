@@ -206,7 +206,7 @@ public class JobController {
         Job jobByName = jobService.selectJobByName(jobById.getName());
 
         //重新启动定时任务触发时间
-        if (canDo && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
+            if (canDo && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             try {
                 scheduleImportJob.executeScheduleImportJob(jobByName);
             } catch (SchedulerException e) {
@@ -230,7 +230,7 @@ public class JobController {
     public OperationResult ManualTrigger(@PathVariable Long id,@RequestBody(required = false) String tempData) {
         OperationResult operationResult = new OperationResult();
         Job job = jobService.selectJobById(id);
-        String msg = "执行失败";
+        String msg;
         if (job == null) {
             msg = "执行任务为空";
             log.info(msg);
@@ -243,15 +243,16 @@ public class JobController {
         }
         if (!jobService.checkJobIndex(job)){
             msg = "任务执行顺序有误，请检查后再试";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
-        ActionTempData actionTempData = null;
+        ActionTempData actionTempData;
         try {
             actionTempData = jobService.executeJob(job, tempData);
         } catch (Exception e) {
-            msg = msg;
-            log.info(msg + e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+            msg = "执行任务过程异常：" + e.getMessage();
+            log.info(msg);
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         msg = "执行成功";
         log.info(msg);

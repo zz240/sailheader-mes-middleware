@@ -39,25 +39,25 @@ public class ActionController {
             log.info(msg + " - " + e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-
         if (action == null && action.getName().isEmpty() && action.getType() != null) {
             msg = msg + " 必要参数为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
             msg = "该名称已存在！";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+
         int checkJobId = actionService.checkJobIdPresence(action.getJobId());
         if (checkJobId == 0){
             msg = "绑定的任务不存在";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-
         try {
             action.setCreatedOn(new Date());
             actionService.insertSelective(action);
@@ -66,6 +66,7 @@ public class ActionController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+
         log.info("添加任务" + action.getName() + "成功！");
         return operationResult.setData(action.getName()).setMessage("插入成功")
                               .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());

@@ -109,7 +109,8 @@ public class JobService {
         try {
             json = JSON.parseObject(tempData);
         } catch (Exception e) {
-            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
+            String msg = "输入的数据转换异常！ data : " + tempData;
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND,msg,e);
         }
 
         //  1、查询指定任务下的动作
@@ -123,13 +124,13 @@ public class JobService {
             try {
                 bean = applicationContext.getBean(beanName, ActionHandlerAdapter.class);
             } catch (BeansException exception) {
-                throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_IMPL_CLASS_NOT_FOUND, exception);
+                throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_IMPL_CLASS_NOT_FOUND, exception.getMessage());
             }
             actionTempData = new ActionTempData<JSON>(ActionStatus.INITIAL, json);
 
 
             // 2. 为bean找到一个消费输入数据的方式
-            ActionConsumeDataType consumeDataType = null;
+            ActionConsumeDataType consumeDataType;
             if (ActionConsumeDataType.actionConsumeDataTypeById.get(action.getConsumeDataType()) != null) {
                 consumeDataType = ActionConsumeDataType.actionConsumeDataTypeById.get(action.getConsumeDataType());
             } else {

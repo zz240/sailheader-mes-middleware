@@ -68,7 +68,6 @@ public class FieldMappingWithArray extends FieldMappingActionHandler {
             resArr.add(parseJsonKey(rawJson , keyMap ));
         }
 
-        System.out.println("处理后的数据 ： " + resArr);
         // 3. 返回处理后的数据
         return new ActionTempData(ActionStatus.SUCCESS,resArr);
     }

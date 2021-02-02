@@ -34,7 +34,7 @@ public class DBAccessWIthJsonAdapter extends AccessAdapter<JSON> {
             throw MiddlewareException.getInstance(ACTION_STATUS_CONFUSE_ACCESS, "输入数据为空");
         }
         if (actionTempData.getStatus() != ActionStatus.SUCCESS && actionTempData.getStatus() != ActionStatus.INITIAL) {
-            throw MiddlewareException.getInstance(ACTION_STATUS_CONFUSE_ACCESS, "上一个动作需要成功 或者 动作初始化才能继续执行 db 访问动作!");
+            throw MiddlewareException.getInstance(ACTION_STATUS_CONFUSE_ACCESS, "上一个动作需要成功 或 动作初始化才能继续执行 db 访问动作!");
         }
 
         List<Map<String,Object>> inputList = null;
