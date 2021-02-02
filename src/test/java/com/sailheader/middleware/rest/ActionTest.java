@@ -241,7 +241,7 @@ public class ActionTest {
             datasource.put("addition",addition);
 
             action.setType((short)1).setName("testAction").setJobId((long)33).setIndex(3)
-                    .setAddition(datasource).setTempData(addition);
+                    .setAddition(datasource);
 
         }
 

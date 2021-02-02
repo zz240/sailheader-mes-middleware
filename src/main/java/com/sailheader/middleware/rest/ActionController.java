@@ -33,10 +33,10 @@ public class ActionController {
         OperationResult operationResult = new OperationResult();
         String msg = "添加动作失败";
         //验证数据源参数
-        try{
+        try {
             actionService.validateDataSource(action);
-        }catch (Exception e){
-            log.info(msg +" - "+e.getMessage());
+        } catch (Exception e) {
+            log.info(msg + " - " + e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
 
@@ -57,8 +57,9 @@ public class ActionController {
             log.info("添加动作失败");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        log.info("添加任务"+action.getName()+"成功！");
-        return operationResult.setData(action.getName()).setMessage("插入成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        log.info("添加任务" + action.getName() + "成功！");
+        return operationResult.setData(action.getName()).setMessage("插入成功")
+                              .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -87,7 +88,7 @@ public class ActionController {
         action.setName(action.getName() + "-" + action.getId());
         actionService.updateByActionStreamSelective(action);
         msg = "删除成功";
-        log.info("删除"+action.getName()+"成功");
+        log.info("删除" + action.getName() + "成功");
         return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -101,11 +102,13 @@ public class ActionController {
     public OperationResult findActionById(@PathVariable Long id) {
         Action action = actionService.selectByPrimaryKey(id);
         if (action != null && !action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
-            log.info("查询id为："+id+"的动作");
-            return new OperationResult().setData(action).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+            log.info("查询id为：" + id + "的动作");
+            return new OperationResult().setData(action).setMessage("查询成功！")
+                                        .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
-        log.info("查询id为"+id+" 的动作失败，不存在或已删除！");
-        return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
+        log.info("查询id为" + id + " 的动作失败，不存在或已删除！");
+        return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！")
+                                    .setStateCode(StateCode.QUERY_FAIL.getValue());
     }
 
     /**
@@ -121,10 +124,10 @@ public class ActionController {
         OperationResult operationResult = new OperationResult();
         String msg = "修改动作失败";
         //验证数据源参数
-        try{
+        try {
             actionService.validateDataSource(action);
-        }catch (Exception e){
-            log.info(msg +" : "+ e.getMessage());
+        } catch (Exception e) {
+            log.info(msg + " : " + e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (action.getName() == null) {
@@ -135,7 +138,7 @@ public class ActionController {
         Action actionStream = actionService.selectByPrimaryKey(id);
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
-            if (!actionStream.getName().equals(action.getName())){
+            if (!actionStream.getName().equals(action.getName())) {
                 msg = "修改动作失败,name已存在";
                 log.info(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
@@ -150,11 +153,12 @@ public class ActionController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        actionStream.setName(action.getName()).setJobId(action.getJobId()).setType(action.getType()).setIndex(action.getIndex())
-                .setTempData(action.getTempData()).setAddition(action.getAddition()).setModifiedBy(action.getModifiedBy()).setModifiedOn(new Date());
+        actionStream.setName(action.getName()).setJobId(action.getJobId()).setType(action.getType())
+                    .setIndex(action.getIndex())
+                    .setAddition(action.getAddition()).setModifiedBy(action.getModifiedBy()).setModifiedOn(new Date());
         try {
             i = actionService.updateByActionStream(actionStream);
-        }catch (Exception e){
+        } catch (Exception e) {
             log.info("更新动作异常 :" + e.getMessage());
             throw new RuntimeException("更新异常！");
         }
@@ -173,16 +177,18 @@ public class ActionController {
      */
     @GetMapping("/mw/api/action/stream/query/all")
     public OperationResult findAllActions() {
-        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel()))
+                                    .setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
      * 检测 动作能否执行成功
+     *
      * @param
      * @return
      */
     @PostMapping("/mw/api/action/stream/check")
-    public OperationResult checkActionPass(@RequestBody Map<String, Object> map){
+    public OperationResult checkActionPass(@RequestBody Map<String, Object> map) {
         OperationResult operationResult = new OperationResult();
         ObjectMapper objectMapper = new ObjectMapper();
         String inputData;
@@ -191,7 +197,7 @@ public class ActionController {
         //转换 action 对象
         Action action = objectMapper.convertValue(map.get("action"), Action.class);
 
-        try{
+        try {
             inputData = JSON.toJSONString(map.get("inputData"));
         } catch (Exception e) {
             log.info(msg + e.getMessage());
@@ -204,7 +210,7 @@ public class ActionController {
             return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
 
-        if (action == null){
+        if (action == null) {
             msg = "动作为空";
             log.info(msg);
             return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
@@ -212,11 +218,11 @@ public class ActionController {
         Object result;
         try {
             result = actionService.checkActionPass(action, inputData);
-        } catch (MiddlewareException e){
-            log.info(msg+"："+e.getMessage());
+        } catch (MiddlewareException e) {
+            log.info(msg + "：" + e.getMessage());
             return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         } catch (Exception e) {
-            log.info(msg+"："+e.getMessage());
+            log.info(msg + "：" + e.getMessage());
             return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
         msg = "action: 测试执行成功";

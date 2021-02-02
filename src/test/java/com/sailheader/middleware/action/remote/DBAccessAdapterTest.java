@@ -339,7 +339,7 @@ class DBAccessAdapterTest {
             @Test
             public void testTableNotExists() {
                 jsonObject.put("sql",
-                               "INSERT INTO public.action_stream22 (id, job_id, name, type, status, index, temp_data, addition, created_by, created_on,\n" +
+                               "INSERT INTO public.action_stream22 (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
                                        "                                  modified_by, modified_on)\n" +
                                        "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
                                        "}', '{\"name\": \"steven\"\n" +

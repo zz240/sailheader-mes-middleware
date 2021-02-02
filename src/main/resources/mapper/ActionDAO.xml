@@ -7,9 +7,10 @@
         <result column="name" jdbcType="VARCHAR" property="name"/>
         <result column="type" jdbcType="SMALLINT" property="type"/>
         <result column="status" jdbcType="SMALLINT" property="status"/>
-        <result column="index" jdbcType="VARCHAR" property="index"/>
-        <result column="temp_data" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg" property="tempData"/>
-        <result column="addition" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg" property="addition"/>
+        <result column="index" jdbcType="INTEGER" property="index"/>
+        <result column="consume_data_type" jdbcType="SMALLINT" property="consumeDataType"/>
+        <result column="addition" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg"
+                property="addition"/>
         <result column="created_by" jdbcType="INTEGER" property="createdBy"/>
         <result column="created_on" jdbcType="TIMESTAMP" property="createdOn"/>
         <result column="modified_by" jdbcType="INTEGER" property="modifiedBy"/>
@@ -17,8 +18,8 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-    id ,job_id ,name ,type ,status ,index ,temp_data ,addition ,created_by,created_on ,modified_by ,modified_on
-  </sql>
+        id, job_id, name, type, status, index, consume_data_type, addition, created_by, created_on, modified_by, modified_on
+    </sql>
 
     <sql id="Example_Where_Clause">
         <where>
@@ -38,7 +39,8 @@
                                 </when>
                                 <when test="criterion.listValue">
                                     and ${criterion.condition}
-                                    <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                                    <foreach close=")" collection="criterion.value" item="listItem" open="("
+                                             separator=",">
                                         #{listItem}
                                     </foreach>
                                 </when>
@@ -55,10 +57,10 @@
         <if test="distinct">
             distinct
         </if>
-        <include refid="Base_Column_List" />
+        <include refid="Base_Column_List"/>
         from "action_stream"
         <if test="_parameter != null">
-            <include refid="Example_Where_Clause" />
+            <include refid="Example_Where_Clause"/>
         </if>
         <if test="orderByClause != null">
             order by ${orderByClause}
@@ -89,7 +91,7 @@
     </select>
 
 
-    <insert id="insertSelective" parameterType="com.sailheader.middleware.model.Action" >
+    <insert id="insertSelective" parameterType="com.sailheader.middleware.model.Action">
         insert into "action_stream"
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="id != null">
@@ -110,8 +112,8 @@
             <if test="index != null">
                 index,
             </if>
-            <if test="tempData != null">
-                temp_data,
+            <if test="consumeDataType != null">
+                consume_data_type,
             </if>
             <if test="addition != null">
                 addition,
@@ -148,8 +150,8 @@
             <if test="index != null">
                 #{index,jdbcType=INTEGER},
             </if>
-            <if test="tempData != null">
-                #{tempData,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            <if test="consumeDataType != null">
+                #{consumeDataType,jdbcType=INTEGER},
             </if>
             <if test="addition != null">
                 #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
@@ -170,17 +172,17 @@
     </insert>
 
     <update id="updateByActionStream" parameterType="com.sailheader.middleware.model.Action">
-    update "action_stream"
-    set "job_id" = #{jobId,jdbcType=BIGINT},
-      "name" = #{name,jdbcType=VARCHAR},
-      type = #{type,jdbcType=SMALLINT},
-      status = #{status,jdbcType=SMALLINT},
-      index = #{index,jdbcType=INTEGER},
-      temp_data = #{tempData,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
-      addition = #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
-      modified_by = #{modifiedBy,jdbcType=INTEGER}
-    where id = #{id,jdbcType=BIGINT}
-  </update>
+        update "action_stream"
+        set "job_id"          = #{jobId,jdbcType=BIGINT},
+            "name"            = #{name,jdbcType=VARCHAR},
+            type              = #{type,jdbcType=SMALLINT},
+            status            = #{status,jdbcType=SMALLINT},
+            index             = #{index,jdbcType=INTEGER},
+            consume_data_type = #{consumeDataType,jdbcType=INTEGER},
+            addition          = #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            modified_by       = #{modifiedBy,jdbcType=INTEGER}
+        where id = #{id,jdbcType=BIGINT}
+    </update>
 
     <update id="updateByActionStreamSelective" parameterType="com.sailheader.middleware.model.Action">
         update "action_stream"
@@ -200,8 +202,8 @@
             <if test="index != null">
                 index = #{index,jdbcType=INTEGER},
             </if>
-            <if test="tempData != null">
-                temp_data = #{tempData,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
+            <if test="consume_data_type != null">
+                consume_data_type = #{consumeDataType,jdbcType=INTEGER},
             </if>
             <if test="addition != null">
                 addition = #{addition,typeHandler=com.sailheader.middleware.common.helper.JsonTypeHandlerPg},
@@ -223,11 +225,15 @@
     </update>
 
     <delete id="deleteActionStreamById" parameterType="java.lang.Long">
-        delete from action_stream where id = #{id,jdbcType=BIGINT}
+        delete
+        from action_stream
+        where id = #{id,jdbcType=BIGINT}
     </delete>
 
     <select id="checkForPresence" parameterType="java.lang.String" resultType="java.lang.Integer">
-        SELECT count(1) FROM "action_stream" where name = #{name,jdbcType=VARCHAR};
+        SELECT count(1)
+        FROM "action_stream"
+        where name = #{name,jdbcType=VARCHAR};
     </select>
 
     <update id="reorderActionIndex" parameterType="java.util.List">

@@ -39,9 +39,6 @@ public class Action implements Serializable {
     //动作序列
     private int index;
 
-    //当前动作输出数据
-    private JSONObject tempData;
-
     //附加辅助信息
     private JSONObject addition;
 

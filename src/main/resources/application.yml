@@ -9,10 +9,6 @@ spring:
     active: dev
   application:
     name: middleware
-  # groovy 模板
-  groovy:
-    template:
-      check-template-location: false
   # 连接池配置
   druid:
     initialSize: 5 #初始化连接大小

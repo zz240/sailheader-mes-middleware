@@ -2,6 +2,7 @@ package com.sailheader.middleware.common.helper;
 
 import com.alibaba.fastjson.JSON;
 import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.common.groovy.JsonMapping;
 import com.sailheader.middleware.constant.MiddlewareExceptionMap;
 import groovy.lang.Script;
 import org.springframework.expression.EvaluationContext;
@@ -19,8 +20,6 @@ public class MappingJsonData {
 
     private static ExpressionParser expressionParser;
     private static TemplateParserContext templateParserContext;
-    private static Script groovyScript = GroovyLoader.loadGroovy("JsonMapping.groovy");
-
     @PostConstruct
     public void getExpressionParse() {
         expressionParser = new SpelExpressionParser();
@@ -65,7 +64,7 @@ public class MappingJsonData {
     public static JSON groovyJsonMapping(Map<String, Object> placeholderData, JSON preContext) throws MiddlewareException {
         JSON result;
         try {
-            result = (JSON) groovyScript.invokeMethod("mappingJson", new Object[]{placeholderData, preContext});
+            result = (JSON) JsonMapping.mappingJson(placeholderData, preContext);
         } catch (Exception e) {
             throw MiddlewareException.getInstance(MiddlewareExceptionMap.GROOVY_JSON_MAPPING_PARSE_ERROR, e);
         }
