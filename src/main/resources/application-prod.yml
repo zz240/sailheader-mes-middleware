@@ -3,7 +3,7 @@ server:
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://127.0.0.1:5432/middleware?currentSchema=public
+    url: jdbc:postgresql://user_middleware-postgresql:5432/middleware?currentSchema=public
     username: middleware_user
     password: 860fbbdd75de0b5d517323d6f1832e10
 logging:

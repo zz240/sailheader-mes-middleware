@@ -39,23 +39,6 @@ services:
       middleware-network:
         ipv4_address: 173.26.1.14
 
-  middleware-with-postgresql:
-    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.1.0-test
-    container_name: middleware-with-postgresql
-    depends_on:
-      - middleware-postgresql
-    restart: always
-    ports:
-      - 9002:8080
-    environment:
-      PROFILE: prod
-    volumes:
-      - /data/sailheader/middleware/logs:/data/sailheader/middleware/logs
-      - /data/sailheader/middleware/postgresql:/var/lib/postgresql/data
-    networks:
-      middleware-network:
-        ipv4_address: 173.26.1.2
-
 networks:
   middleware-network:
     driver: bridge

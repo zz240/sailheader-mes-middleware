@@ -181,10 +181,6 @@
                                     <directory>src/main/docker</directory>
                                     <filtering>true</filtering>
                                 </resource>
-                                <resource>
-                                    <directory>db/pgsql</directory>
-                                    <include>*.sql</include>
-                                </resource>
                             </resources>
                         </configuration>
                     </execution>
@@ -226,26 +222,26 @@
             </plugin>
 
             <!-- 打包docker镜像 -->
-            <plugin>
-                <groupId>com.spotify</groupId>
-                <artifactId>dockerfile-maven-plugin</artifactId>
-                <version>1.4.13</version>
-                <executions>
-                    <execution>
-                        <id>default</id>
-                        <goals>
-                            <goal>build</goal>
-                            <goal>push</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>
-                    <tag>${project.version}</tag>
-                    <dockerfile>${basedir}/target/dockerfile/DockerFile-on-postgres</dockerfile>
-                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>
-                </configuration>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>com.spotify</groupId>-->
+<!--                <artifactId>dockerfile-maven-plugin</artifactId>-->
+<!--                <version>1.4.13</version>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>default</id>-->
+<!--                        <goals>-->
+<!--                            <goal>build</goal>-->
+<!--                            <goal>push</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--                <configuration>-->
+<!--                    <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>-->
+<!--                    <tag>${project.version}</tag>-->
+<!--                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>-->
+<!--                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>-->
+<!--                </configuration>-->
+<!--            </plugin>-->
         </plugins>
     </build>
 
