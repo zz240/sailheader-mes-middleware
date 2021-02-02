@@ -234,7 +234,7 @@ public class JobController {
         if (job == null) {
             msg = "执行任务为空";
             log.info(msg);
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            return operationResult.setData(null ).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         if (!job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             msg = "状态未开启";
@@ -250,7 +250,7 @@ public class JobController {
         try {
             actionTempData = jobService.executeJob(job, tempData);
         } catch (Exception e) {
-            msg = "执行任务过程异常：" + e.getMessage();
+            msg = "执行任务过程异常 - " + e.getMessage();
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }

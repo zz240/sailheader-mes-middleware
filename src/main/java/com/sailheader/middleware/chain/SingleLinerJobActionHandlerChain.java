@@ -76,13 +76,13 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
                     .setChainContextItem(actionHandlerAdapter.getAction().getIndex(), tempData);
 
             if (tempData == null || tempData.getStatus() == null) {
-                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败!");
+                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败");
             } else if (tempData.getStatus() == ActionStatus.SUCCESS) {
                 tempData.setStatus(ActionStatus.INITIAL);
                 actionTempData = tempData;
             } else {
                 actionTempData = tempData;
-                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败!");
+                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败");
             }
 
         }

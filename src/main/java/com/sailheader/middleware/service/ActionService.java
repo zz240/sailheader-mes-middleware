@@ -143,7 +143,7 @@ public class ActionService {
         try {
             json = JSON.parseObject(inputData);
         }catch (Exception e){
-            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
+            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_EXECUTE_FAILURE,"无法解析成json类型",e);
         }
         ActionTempData tempData = new ActionTempData(ActionStatus.INITIAL, json);
         String beanName = ActionType.actionTypeById.get(action.getType()).getBeanName();
