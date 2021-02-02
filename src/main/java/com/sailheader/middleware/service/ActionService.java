@@ -53,6 +53,10 @@ public class ActionService {
         return actionDAO.checkForPresence(name);
     }
 
+    public int checkJobIdPresence(Long jobId){
+        return actionDAO.checkJobIdPresence(jobId);
+    }
+
     public int updateByActionStream(Action action){
         return actionDAO.updateByActionStream(action);
     }
@@ -99,7 +103,8 @@ public class ActionService {
         //判断动作类型
         if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP){
             checkHttp(datasource);
-        }else if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB){
+        }else if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB
+                || DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB_JSON){
             checkDB(datasource);
         }else{
             throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
@@ -107,7 +112,7 @@ public class ActionService {
     }
 
     private  void checkHttp(JSONObject jsonObject){
-        String msg = "";
+        String msg;
         JSONObject addition = jsonObject.getJSONObject("addition");
         if (addition.get("method") == null){
             msg = "必选字段：method 为空";
@@ -116,7 +121,7 @@ public class ActionService {
     }
 
     private void checkDB(JSONObject jsonObject){
-        String msg = "";
+        String msg;
         JSONObject json = jsonObject.getJSONObject("addition");
         if (json.get("driver") == null || json.get("driver").equals("")) {
             msg = "必选字段：driver 为空";

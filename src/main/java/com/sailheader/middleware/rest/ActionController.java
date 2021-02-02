@@ -41,20 +41,29 @@ public class ActionController {
         }
 
         if (action == null && action.getName().isEmpty() && action.getType() != null) {
-            log.info("添加动作失败");
+            msg = msg + " 必要参数为空";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
             msg = "该名称已存在！";
-            log.info("添加动作失败");
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
+        int checkJobId = actionService.checkJobIdPresence(action.getJobId());
+        if (checkJobId == 0){
+            msg = "绑定的任务不存在";
+            log.info(msg);
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+        }
+
         try {
             action.setCreatedOn(new Date());
-            i = actionService.insertSelective(action);
+            actionService.insertSelective(action);
         } catch (Exception e) {
-            log.info("添加动作失败");
+            msg = msg + "-" + e.getMessage();
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         log.info("添加任务" + action.getName() + "成功！");
@@ -78,7 +87,6 @@ public class ActionController {
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
         if (action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
-            msg = "该动作已删除！";
             log.info("删除失败，动作已删除");
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
@@ -136,6 +144,11 @@ public class ActionController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         Action actionStream = actionService.selectByPrimaryKey(id);
+        if (actionStream == null) {
+            msg = "目标动作数据为空";
+            log.info(msg);
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+        }
         int i = actionService.checkForPresence(action.getName());
         if (i > 0) {
             if (!actionStream.getName().equals(action.getName())) {
@@ -144,10 +157,13 @@ public class ActionController {
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
-        if (actionStream == null) {
+        int checkJobId = actionService.checkJobIdPresence(action.getJobId());
+        if (checkJobId == 0){
+            msg = "绑定的任务不存在";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
+
         if (actionStream.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "已删除！";
             log.info(msg);

@@ -48,7 +48,7 @@ public class JobController {
             jobByName = jobService.selectJobByName(job.getName());
         }
         if (i > 0) {
-            msg = "添加" + jobByName.getName() + "定时任务成功！";
+            msg = "添加" + jobByName.getName() + "任务成功！";
             log.info(msg);
             return operationResult.setData(jobByName).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }

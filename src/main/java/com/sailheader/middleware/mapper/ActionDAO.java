@@ -23,6 +23,8 @@ public interface ActionDAO {
 
     int updateByActionStream(Action action);
 
+    int checkJobIdPresence(Long jobId);
+
     List<Action> reorderActionIndex(List list);
 
 }

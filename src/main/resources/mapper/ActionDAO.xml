@@ -236,6 +236,12 @@
         where name = #{name,jdbcType=VARCHAR};
     </select>
 
+    <select id="checkJobIdPresence" parameterType="java.lang.Long" resultType="java.lang.Integer">
+        select count(1)
+        from "job"
+        where id = #{jobId,jdbcType=BIGINT}
+    </select>
+
     <update id="reorderActionIndex" parameterType="java.util.List">
         <foreach collection="list" item="item" index="index" open="" close="" separator=";">
             update action_stream
