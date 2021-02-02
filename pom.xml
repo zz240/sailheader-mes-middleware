@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.sailheader</groupId>
     <artifactId>middleware</artifactId>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
     <name>middleware</name>
     <description>Demo project for Spring Boot</description>
 
@@ -181,6 +181,10 @@
                                     <directory>src/main/docker</directory>
                                     <filtering>true</filtering>
                                 </resource>
+                                <resource>
+                                    <directory>db/pgsql</directory>
+                                    <include>*.sql</include>
+                                </resource>
                             </resources>
                         </configuration>
                     </execution>
@@ -238,7 +242,7 @@
                 <configuration>
                     <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>
                     <tag>${project.version}</tag>
-                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>
+                    <dockerfile>${basedir}/target/dockerfile/DockerFile-on-postgres</dockerfile>
                     <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>
                 </configuration>
             </plugin>

@@ -1,0 +1,26 @@
+# 以postgresql为底的镜像
+FROM postgres:12-alpine
+MAINTAINER steven.xu <steven.xu@sailheader.com> 2021-02-01
+
+# 更新源地址为阿里云
+RUN cp /etc/apk/repositories /etc/apk/repositories.bak && sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && apk update
+
+# 更新时区为上海
+RUN apk add -U tzdata && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && apk del tzdata
+
+#初始化PostgreSQL
+ENV POSTGRES_USER root
+ENV POSTGRES_PASSWORD 123456
+ENV POSTGRES_DB middleware
+ADD 01-create_table.sql /docker-entrypoint-initdb.d/
+ADD 02-initial_user.sql /docker-entrypoint-initdb.d/
+
+# 安装openjdk8
+RUN apk add --no-cache openjdk8
+
+# 加入jar包
+RUN mkdir -p /usr/local/@project.artifactId@
+COPY @project.build.finalName@.jar /usr/local/@project.artifactId@/
+COPY run-with-postgresql.sh run-with-postgresql.sh
+RUN chmod +x run-with-postgresql.sh
+CMD ./run-with-postgresql.sh
