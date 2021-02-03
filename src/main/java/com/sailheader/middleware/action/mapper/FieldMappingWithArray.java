@@ -63,7 +63,7 @@ public class FieldMappingWithArray extends FieldMappingActionHandler {
                 rawJson = array.getJSONObject(i);
             }catch (Exception e) {
                 log.info(e.getMessage());
-                throw MiddlewareException.getInstance(FIELD_MAPPING_CALSS_CAST_ERROR, "非二维数组无法解析", e);
+                throw MiddlewareException.getInstance(FIELD_MAPPING_CLASS_CAST_ERROR, "非二维数组无法解析", e);
             }
             resArr.add(parseJsonKey(rawJson , keyMap ));
         }

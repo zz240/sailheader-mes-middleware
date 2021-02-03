@@ -2,7 +2,7 @@ version: "3.7"
 services:
   middleware-postgresql:
     image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware-postgresql:1.1.0
-    container_name: middleware-postgresql
+    container_name: user-middleware-postgresql
     restart: always
     ports:
       - 9001:5432
@@ -24,7 +24,7 @@ services:
 #      middleware-network:
 #        ipv4_address: 173.26.1.13
   middleware:
-    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.1.0
+    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.1.1
     container_name: middleware
     depends_on:
       - middleware-postgresql

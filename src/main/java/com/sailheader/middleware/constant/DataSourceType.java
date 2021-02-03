@@ -9,6 +9,7 @@ public enum DataSourceType {
     HTTP(1, "action.remote.access.http"),
     DB(2, "action.remote.access.db"),
     DB_JSON(3,"action.remote.access.db.json"),
+    HTTP_ROMA(4,"action.remote.access.http.roma"),
     NOT_FOUND_TEST(100, "action.remote.not.found.test");
 
     @Getter

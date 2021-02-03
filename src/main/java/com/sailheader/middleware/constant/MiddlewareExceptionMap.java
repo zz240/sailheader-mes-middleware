@@ -38,10 +38,14 @@ public enum MiddlewareExceptionMap {
     REMOTE_ACCESS_HTTP_DATASOURCE_ADDRESS_IS_NULL("0102005"," http 远程访问 address 为空 - "),
     REMOTE_ACCESS_HTTP_BUILD_FAILURE("0102006","构建 http 访问对象失败 - "),
 
-    FIELD_MAPPING_CALSS_CAST_ERROR("0103001","输入数据类型转换异常 - "),
+    FIELD_MAPPING_CLASS_CAST_ERROR("0103001", "输入数据类型转换异常 - "),
     FIELD_MAPPING_ADDITION_IS_NULL("0103002","未能获取字段映射规则 - "),
     FIELD_MAPPING_DATA_IS_NULL("0103003","字段映射的数据为空 - "),
     GROOVY_JSON_MAPPING_PARSE_ERROR("0103004","groovy字段解析失败 - "),
+
+    REMOTE_ACCESS_HTTP_WITH_ROMA_REQUEST_CONSTRUCT_ERROR("0104001","远程访问 http with ROMA 构造 request 失败,请确保 datasource 的准确性 "),
+    REMOTE_ACCESS_HTTP_WITH_ROMA_REQUEST_SEND_ERROR("0104002","远程访问 http with ROMA 发送请求失败 "),
+    REMOTE_ACCESS_HTTP_WITH_ROMA_RESPONSE_PARSE_JSON("0104003","远程访问 http with ROMA 解析返回内容失败 "),
 
     UNDEFINED_ERROR("0000001", "未知错误 ");
 

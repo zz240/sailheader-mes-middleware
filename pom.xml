@@ -133,6 +133,12 @@
             <artifactId>groovy-json</artifactId>
             <version>3.0.7</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.huawei.apigateway</groupId>
+            <artifactId>java-sdk-core</artifactId>
+            <version>3.1.1</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -222,26 +228,26 @@
             </plugin>
 
             <!-- 打包docker镜像 -->
-<!--            <plugin>-->
-<!--                <groupId>com.spotify</groupId>-->
-<!--                <artifactId>dockerfile-maven-plugin</artifactId>-->
-<!--                <version>1.4.13</version>-->
-<!--                <executions>-->
-<!--                    <execution>-->
-<!--                        <id>default</id>-->
-<!--                        <goals>-->
-<!--                            <goal>build</goal>-->
-<!--                            <goal>push</goal>-->
-<!--                        </goals>-->
-<!--                    </execution>-->
-<!--                </executions>-->
-<!--                <configuration>-->
-<!--                    <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>-->
-<!--                    <tag>${project.version}</tag>-->
-<!--                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>-->
-<!--                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>-->
-<!--                </configuration>-->
-<!--            </plugin>-->
+            <plugin>
+                <groupId>com.spotify</groupId>
+                <artifactId>dockerfile-maven-plugin</artifactId>
+                <version>1.4.13</version>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>push</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <repository>${huawei-swr-repository.name}/${project.artifactId}</repository>
+                    <tag>${project.version}</tag>
+                    <dockerfile>${basedir}/target/dockerfile/Dockerfile</dockerfile>
+                    <contextDirectory>${basedir}/target/dockerfile/</contextDirectory>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
