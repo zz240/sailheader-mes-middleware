@@ -94,6 +94,14 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
         Map<String, List<String>> headers = new HashMap<>();
         JSON body = null;
 
+        try {
+            if (addition.get("body") != null) {
+                body = JSON.parseObject(JSON.toJSONString(addition.get("body")), JSON.class);
+            }
+        }catch (Exception e){
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_BODY_CANT_CONVERT_JSON, e.getMessage());
+        }
+
         if (json != null) {
             body = json;
         }

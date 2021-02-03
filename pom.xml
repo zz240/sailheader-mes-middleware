@@ -224,6 +224,12 @@
                         <artifactId>lombok</artifactId>
                         <version>1.18.16</version>
                     </dependency>
+                    <dependency>
+                        <groupId>com.huawei.apigateway</groupId>
+                        <artifactId>java-sdk-core</artifactId>
+                        <version>3.1.1</version>
+                    </dependency>
+
                 </dependencies>
             </plugin>
 
