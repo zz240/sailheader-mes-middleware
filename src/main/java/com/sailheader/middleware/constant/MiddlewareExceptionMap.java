@@ -37,6 +37,7 @@ public enum MiddlewareExceptionMap {
     REMOTE_ACCESS_HTTP_DATASOURCE_ADDITION_IS_NULL("0102004"," http 远程访问 addition 为空 - "),
     REMOTE_ACCESS_HTTP_DATASOURCE_ADDRESS_IS_NULL("0102005"," http 远程访问 address 为空 - "),
     REMOTE_ACCESS_HTTP_BUILD_FAILURE("0102006","构建 http 访问对象失败 - "),
+    REMOTE_ACCESS_HTTP_BODY_CANT_CONVERT_JSON("0102007"," http 远程访问请求体无法转换成json - "),
 
     FIELD_MAPPING_CALSS_CAST_ERROR("0103001","输入数据类型转换异常 - "),
     FIELD_MAPPING_ADDITION_IS_NULL("0103002","未能获取字段映射规则 - "),
