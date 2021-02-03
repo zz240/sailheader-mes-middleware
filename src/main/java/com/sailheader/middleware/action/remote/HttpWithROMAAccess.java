@@ -82,15 +82,20 @@ public class HttpWithROMAAccess extends AccessAdapter<JSON> {
             OkHttpClient client = new OkHttpClient.Builder().build();
             Response response = client.newCall(signedRequest).execute();
 
+            if (!response.isSuccessful()) {
+                throw new IOException("http code: " + response.code() + "; message: " + response.message());
+            }
             // 接受并解析请求为json
             ResponseBody body = response.body();
-            result = (JSON) JSON.parse(JSON.toJSONString(body));
+            String str = body != null ? body.string() : "";
+            result = str.equals("") ? null : (JSON) JSON.parse(str);
 
         } catch (IOException e) {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_REQUEST_SEND_ERROR, e);
         } catch (JSONException e) {
             throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_RESPONSE_PARSE_JSON, e);
         } catch (Exception e) {
+            e.printStackTrace();
             throw MiddlewareException.getInstance(UNDEFINED_ERROR, e);
         }
 
@@ -100,26 +105,29 @@ public class HttpWithROMAAccess extends AccessAdapter<JSON> {
     @Override
     protected void validateDataSource() throws Exception {
         if (dataSource == null) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_IS_NULL);
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_IS_NULL);
         }
 
         if (dataSource.getAddition() == null) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_ADDITION_IS_NULL);
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_ADDITION_IS_NULL);
         }
 
         if (dataSource.getAddress() == null || dataSource.getAddress().equals("")) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_MISSING_REQUIRE_PARAM);
+            throw MiddlewareException.getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_MISSING_REQUIRE_PARAM);
         }
 
         JSONObject jsonObject = dataSource.getAddition();
         if (jsonObject.get("key") == null || jsonObject.get("key").equals("")) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 key");
+            throw MiddlewareException
+                    .getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 key");
         }
         if (jsonObject.get("secret") == null || jsonObject.get("secret").equals("")) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 secret");
+            throw MiddlewareException
+                    .getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 secret");
         }
         if (jsonObject.get("method") == null || jsonObject.get("method").equals("")) {
-            throw MiddlewareException.getInstance(REMOTE_ACCESS_DB_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 method");
+            throw MiddlewareException
+                    .getInstance(REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_MISSING_REQUIRE_PARAM, "缺少 method");
         }
     }
 }

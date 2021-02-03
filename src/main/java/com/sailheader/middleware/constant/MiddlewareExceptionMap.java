@@ -48,6 +48,10 @@ public enum MiddlewareExceptionMap {
     REMOTE_ACCESS_HTTP_WITH_ROMA_REQUEST_SEND_ERROR("0104002","远程访问 http with ROMA 发送请求失败 "),
     REMOTE_ACCESS_HTTP_WITH_ROMA_RESPONSE_PARSE_JSON("0104003","远程访问 http with ROMA 解析返回内容失败 "),
 
+    REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_IS_NULL("0101009", "远程访问数据库 datasource 为空 - "),
+    REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_ADDITION_IS_NULL("0101010", "远程访问数据库 datasource addition 为空 - "),
+    REMOTE_ACCESS_HTTP_WITH_ROMA_DATASOURCE_MISSING_REQUIRE_PARAM("0101011", "远程访问数据库 datasource 缺少必要的参数 - "),
+
     UNDEFINED_ERROR("0000001", "未知错误 ");
 
     @Getter
