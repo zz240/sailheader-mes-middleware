@@ -24,7 +24,7 @@ services:
 #      middleware-network:
 #        ipv4_address: 173.26.1.13
   middleware:
-    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.1.1
+    image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware:1.2.0
     container_name: middleware
     depends_on:
       - middleware-postgresql
