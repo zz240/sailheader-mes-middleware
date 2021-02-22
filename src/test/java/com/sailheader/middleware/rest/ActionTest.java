@@ -1,12 +1,9 @@
 package com.sailheader.middleware.rest;
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
-import com.sailheader.middleware.rest.ActionController;
-import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,7 +30,7 @@ public class ActionTest {
             jsonObject = new JSONObject();
             action = new Action();
             dataSource = new JSONObject();
-            int i = 1;
+            int i = 10;
 
             dataSource.put("method","POST");
 
@@ -42,7 +39,7 @@ public class ActionTest {
             jsonObject.put("address","http://localhost:3361/test");
             jsonObject.put("addition",dataSource);
 
-            action.setName("checkActionTest"+i).setType((short)1).setJobId((long)20).setIndex(1);
+            action.setName("checkActionTest"+i).setType((short)1).setJobId((long)56).setIndex(1);
             i ++;
         }
 
@@ -52,7 +49,7 @@ public class ActionTest {
         public void createActionTest01(){
             action.setAddition(jsonObject);
             OperationResult result = actionController.createAction(action);
-            assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
+            assertEquals(StateCode.SYSTEM_SUCCESS.getValue(),result.getStateCode());
         }
 
         // 添加动作 - name重复
@@ -60,9 +57,9 @@ public class ActionTest {
         @Order(2)
         public void createActionTest02(){
             action.setAddition(jsonObject);
-            action.setName("checkActionTest1");
+            action.setName("checkActionTest10");
             OperationResult result = actionController.createAction(action);
-            assertEquals(result.getStateCode(), StateCode.ADD_FAIL.getValue());
+            assertEquals(StateCode.ADD_FAIL.getValue(),result.getStateCode());
         }
 
         // 添加动作 - type为空
@@ -72,7 +69,7 @@ public class ActionTest {
             action.setAddition(jsonObject);
             action.setType(null);
             OperationResult result = actionController.createAction(action);
-            assertEquals(result.getStateCode(), StateCode.ADD_FAIL.getValue());
+            assertEquals(StateCode.ADD_FAIL.getValue(),result.getStateCode());
         }
 
         // 添加动作 - 空对象
@@ -81,7 +78,7 @@ public class ActionTest {
         public void createActionTest04(){
             action = null;
             OperationResult result = actionController.createAction(action);
-            assertEquals(result.getStateCode(), StateCode.ADD_FAIL.getValue());
+            assertEquals(StateCode.ADD_FAIL.getValue(),result.getStateCode());
         }
 
 
@@ -98,10 +95,10 @@ public class ActionTest {
         @Test
         @Order(1)
         public void testDelActionNormal(){
-            Long id = Long.valueOf(24);
+            Long id = Long.valueOf(45);
             OperationResult result = actionController.deleteAction(id);
             System.out.println(result);
-            assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
+            assertEquals(StateCode.SYSTEM_SUCCESS.getValue(),result.getStateCode());
         }
 
         // 删除动作 - 范围之外的动作id
@@ -111,17 +108,17 @@ public class ActionTest {
             Long id = Long.valueOf(10000);
             OperationResult result = actionController.deleteAction(id);
             System.out.println(result);
-            assertEquals(result.getStateCode(), StateCode.DELETE_FAIL.getValue());
+            assertEquals(StateCode.DELETE_FAIL.getValue(),result.getStateCode());
         }
 
         // 删除动作 - 删除动作的id
         @Test
         @Order(3)
         public void testDelActionDeleted(){
-            Long id = Long.valueOf(24); //已删除
+            Long id = Long.valueOf(4); //已删除
             OperationResult result = actionController.deleteAction(id);
             System.out.println(result);
-            assertEquals(result.getStateCode(), StateCode.DELETE_FAIL.getValue());
+            assertEquals(StateCode.DELETE_FAIL.getValue(),result.getStateCode());
         }
     }
 
@@ -146,7 +143,7 @@ public class ActionTest {
             jsonObject.put("address","http://localhost:3361/test");
             jsonObject.put("addition",dataSource);
 
-            action.setName("checkUpdateAction"+i).setType((short)1).setJobId((long)20).setIndex(1);
+            action.setName("checkUpdateAction"+i).setType((short)1).setJobId((long)56).setIndex(1);
             i ++;
         }
 
@@ -156,8 +153,8 @@ public class ActionTest {
         public void testUpdateActionNormal(){
             action.setAddition(jsonObject);
             System.out.println(action);
-            OperationResult result = actionController.updateActionById((long) 24, action);
-            assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
+            OperationResult result = actionController.updateActionById((long) 45, action);
+            assertEquals(StateCode.SYSTEM_SUCCESS.getValue(),result.getStateCode());
         }
 
         // 更新指定动作 - name重复
@@ -165,9 +162,9 @@ public class ActionTest {
         @Order(2)
         public void testUpdateActionRepeatName(){
             action.setAddition(jsonObject);
-            action.setName("demo03");
-            OperationResult result = actionController.updateActionById((long) 24, action);
-            assertEquals(result.getStateCode(), StateCode.EDIT_FAIL.getValue());
+            action.setName("demo01");
+            OperationResult result = actionController.updateActionById((long) 45, action);
+            assertEquals(StateCode.EDIT_FAIL.getValue(),result.getStateCode());
         }
 
         // 更新指定动作 - action is null
@@ -175,7 +172,7 @@ public class ActionTest {
         @Order(3)
         public void testUpdateActionIsNull(){
             Action action = new Action();
-            OperationResult result = actionController.updateActionById((long) 24, action);
+            OperationResult result = actionController.updateActionById((long) 45, action);
             assertEquals(result.getStateCode(), StateCode.EDIT_FAIL.getValue());
         }
 
@@ -184,7 +181,7 @@ public class ActionTest {
         @Order(4)
         public void testUpdateActionCheckAddition(){
             action.setAddition(null);
-            OperationResult result = actionController.updateActionById((long) 24, action);
+            OperationResult result = actionController.updateActionById((long) 45, action);
             assertEquals(result.getStateCode(), StateCode.EDIT_FAIL.getValue());
         }
 
@@ -198,22 +195,22 @@ public class ActionTest {
         // 查询指定动作 - 正确流程
         @Test
         public void findActionTest01(){
-            OperationResult result = actionController.findActionById((long) 24);
-            assertEquals(result.getStateCode(), StateCode.SYSTEM_SUCCESS.getValue());
+            OperationResult result = actionController.findActionById((long) 45);
+            assertEquals(StateCode.SYSTEM_SUCCESS.getValue(),result.getStateCode());
         }
 
         // 查询指定动作 - 范围之外的动作id
         @Test
         public void findActionTest02(){
             OperationResult result = actionController.findActionById((long) 10000);
-            assertEquals(result.getStateCode(), StateCode.QUERY_FAIL.getValue());
+            assertEquals(StateCode.QUERY_FAIL.getValue(),result.getStateCode());
         }
 
         // 查询指定动作 - 已删除的id
         @Test
         public void findActionTest03(){
             OperationResult result = actionController.findActionById((long) 1);
-            assertEquals(result.getStateCode(), StateCode.QUERY_FAIL.getValue());
+            assertEquals(StateCode.QUERY_FAIL.getValue(),result.getStateCode());
         }
    }
 

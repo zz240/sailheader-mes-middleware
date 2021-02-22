@@ -1,67 +1,101 @@
-package com.sailheader.middleware.service;
+package com.sailheader.middleware.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.common.helper.SearchUtil;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.ActionType;
 import com.sailheader.middleware.constant.DataSourceType;
-import com.sailheader.middleware.mapper.ActionDAO;
+import com.sailheader.middleware.constant.GeneralStatus;
+import com.sailheader.middleware.mapper.ActionMapper;
 import com.sailheader.middleware.model.Action;
-import com.sailheader.middleware.model.ActionExample;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.sailheader.middleware.service.IActionService;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 
+import java.util.Date;
 import java.util.List;
 
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 
+/**
+ * <p>
+ * 动作流表 服务实现类
+ * </p>
+ *
+ * @author Elizer
+ * @since 2021-02-19
+ */
 @Service
-public class ActionService {
+public class ActionServiceImpl extends ServiceImpl<ActionMapper, Action> implements IActionService {
     @Autowired
-    private ActionDAO actionDAO;
+    private ActionMapper actionMapper;
     @Autowired
     private ApplicationContext applicationContext;
 
-    public Action selectByPrimaryKey(Long id){
-        return actionDAO.selectByPrimaryKey(id);
+    QueryWrapper queryWrapper = new QueryWrapper<Action>();
+
+    @Override
+    public Action selectByPrimaryKey(Long id) {
+        return actionMapper.selectById(id);
     }
 
-    public int insertSelective(Action action){
-        return actionDAO.insertSelective(action);
+    @Override
+    public void insertAction(Action action) {
+        actionMapper.insertAction(action);
     }
 
-    public int updateByActionStreamSelective(Action action){
-        return actionDAO.updateByActionStreamSelective(action);
+    @Override
+    public int updateAction(Action action) {
+        return actionMapper.updateAction(action);
     }
 
-    public int deleteActionStreamById(Long id){
-        return actionDAO.deleteActionStreamById(id);
+    @Override
+    public int deleteAction(Action action) {
+        action.setStatus(GeneralStatus.DELETED.getIntLabel());
+        action.setModifiedOn(new Date());
+        action.setName(action.getName() + "-" + action.getId());
+        return actionMapper.updateByActionSelective(action);
     }
 
-    public List<Action> findAllActionsByStatus(Short status){
-        ActionExample actionExample = new ActionExample();
-        actionExample.createCriteria().andStatusNotEqualTo(status);
-        return actionDAO.selectByExample(actionExample);
+    @Override
+    public IPage<Action> selectPage(IPage page,Integer jobId,String condition) throws Exception {
+        QueryWrapper<Action> queryWrapper = SearchUtil.parseWhereSql(condition);
+        queryWrapper.ne("status",-1).eq("job_id",jobId).orderByAsc("index","id");
+        return actionMapper.selectPage(page,queryWrapper);
     }
 
-    public int checkForPresence(String name){
-        return actionDAO.checkForPresence(name);
+    /**
+     * 检查action的名称
+     * @param name
+     * @return
+     */
+    @Override
+    public int checkForPresence(String name) {
+        queryWrapper.eq("name",name);
+        return actionMapper.selectCount(queryWrapper);
     }
 
-    public int checkJobIdPresence(Long jobId){
-        return actionDAO.checkJobIdPresence(jobId);
-    }
-
-    public int updateByActionStream(Action action){
-        return actionDAO.updateByActionStream(action);
+    /**
+     * 检查绑定的任务是否存在
+     * @param jobId
+     * @return
+     */
+    @Override
+    public int checkJobIdPresence(Long jobId) {
+        return actionMapper.checkJobIdPresence(jobId);
     }
 
     //验证数据源参数
+    @Override
     public void validateDataSource(Action action) throws Exception {
         JSONObject datasource = null;
         String msg = "数据存在异常";
@@ -111,7 +145,8 @@ public class ActionService {
         }
     }
 
-    private  void checkHttp(JSONObject jsonObject){
+    @Override
+    public void checkHttp(JSONObject jsonObject) {
         String msg;
         JSONObject addition = jsonObject.getJSONObject("addition");
         if (addition.get("method") == null){
@@ -120,7 +155,8 @@ public class ActionService {
         }
     }
 
-    private void checkDB(JSONObject jsonObject){
+    @Override
+    public void checkDB(JSONObject jsonObject) {
         String msg;
         JSONObject json = jsonObject.getJSONObject("addition");
         if (json.get("driver") == null || json.get("driver").equals("")) {
@@ -137,7 +173,8 @@ public class ActionService {
         }
     }
 
-    public Object checkActionPass(Action action,String inputData) throws Exception {
+    @Override
+    public Object checkActionPass(Action action, String inputData) throws Exception {
         JSON json;
         ActionHandlerAdapter actionHandler;
         try {

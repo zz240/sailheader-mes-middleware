@@ -1,13 +1,17 @@
 package com.sailheader.middleware.rest;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.common.helper.ScheduleImportJob;
 import com.sailheader.middleware.common.helper.TaskUtils;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
+import com.sailheader.middleware.mapper.JobMapper;
 import com.sailheader.middleware.model.Job;
-import com.sailheader.middleware.service.JobService;
+import com.sailheader.middleware.service.IJobService;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.SchedulerException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,9 +24,8 @@ import java.util.Date;
 @Slf4j
 @RestController(value = "JobController")
 public class JobController {
-
     @Autowired
-    private JobService jobService;
+    private IJobService jobService;
     @Autowired
     private ScheduleImportJob scheduleImportJob;
 
@@ -42,7 +45,7 @@ public class JobController {
         }
 
         // 添加普通任务
-        if (job.getCrontab() == null || job.getCrontab().equals("")){
+        if (job.getCrontab() == null || job.getCrontab().equals("")) {
             job.setCreatedOn(new Date());
             i = jobService.insertSelective(job);
             jobByName = jobService.selectJobByName(job.getName());
@@ -62,7 +65,7 @@ public class JobController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
 
-        if (canDo == false){
+        if (canDo == false) {
             msg = "定时任务表达式格式有误";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
@@ -133,7 +136,7 @@ public class JobController {
             log.info("查询成功!");
             return new OperationResult().setData(job).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
         }
-        log.info("查询id为："+id+" 任务不存在或已删除！:"+job);
+        log.info("查询id为：" + id + " 任务不存在或已删除！:" + job);
         return new OperationResult().setData(null).setMessage("查询失败，不存在或已删除！").setStateCode(StateCode.QUERY_FAIL.getValue());
     }
 
@@ -142,9 +145,20 @@ public class JobController {
      *
      * @return 查询之后的结果集
      */
-    @GetMapping("/mw/api/job/query/all")
-    public OperationResult findAllJobs() {
-        return new OperationResult().setData(jobService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+    @PostMapping("/mw/api/job/query/all")
+    public OperationResult<IPage<Job>> findAllJobs(@RequestParam(name = "pageNum",required = false,defaultValue = "1") Integer pageNum,
+                                       @RequestParam(name = "pageSize",required = false,defaultValue = "10") Integer pageSize,
+                                       @RequestBody(required = false) String condition) {
+        OperationResult result = new OperationResult();
+        IPage<Job> jobIPage = null;
+        try {
+            jobIPage = jobService.selectPage(new Page(pageNum,pageSize),condition);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return result.setMessage("条件查询异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+        }
+        return result.setData(jobIPage)
+                .setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
 
@@ -163,27 +177,27 @@ public class JobController {
         Job jobById = jobService.selectJobById(id);
         if (jobById == null) {
             msg = "没有找到要更新的任务记录！";
-            log.info(msg + "id = "+id);
+            log.info(msg + "id = " + id);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (job.getCrontab() != null || job.getCrontab() != ""){
+        if (job.getCrontab() != null || job.getCrontab() != "") {
             try {
                 canDo = TaskUtils.isCanDoExpression(job.getCrontab());
             } catch (ParseException e) {
-                msg = "定时表达式有误"+e.getMessage();
+                msg = "定时表达式有误" + e.getMessage();
                 return operationResult.setData(job.getCrontab()).setStateCode(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
         if (jobService.checkForPresence(job.getName()) > 0) {
             if (!job.getName().equals(jobById.getName())) {
-                msg = "任务名已存在！";
-                log.info(jobById+"修改失败："+msg);
+                msg = "任务名已存在";
+                log.info(jobById + "修改失败：" + msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
             }
         }
         if (jobById.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
             msg = "该任务已删除！";
-            log.info("id =" + id +" 的任务已删除！");
+            log.info("id =" + id + " 的任务已删除！");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         //关闭定时任务
@@ -192,7 +206,7 @@ public class JobController {
                 scheduleImportJob.removeScheduleImportJob(jobById.getName());
             } catch (SchedulerException e) {
                 msg = "关闭定时任务异常";
-                log.info("msg : "+e.getMessage());
+                log.info("msg : " + e.getMessage());
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
             }
         }
@@ -206,7 +220,7 @@ public class JobController {
         Job jobByName = jobService.selectJobByName(jobById.getName());
 
         //重新启动定时任务触发时间
-            if (canDo && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
+        if (canDo && jobById.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             try {
                 scheduleImportJob.executeScheduleImportJob(jobByName);
             } catch (SchedulerException e) {
@@ -216,7 +230,7 @@ public class JobController {
             }
         }
         msg = "已更新";
-        log.info("更新id为："+id+"的任务成功！");
+        log.info("更新id为：" + id + "的任务成功！");
         return operationResult.setData(jobById).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
@@ -227,21 +241,21 @@ public class JobController {
      * @return 执行之后的结果集
      */
     @PostMapping("/mw/api/job/execute/{id}")
-    public OperationResult ManualTrigger(@PathVariable Long id,@RequestBody(required = false) String tempData) {
+    public OperationResult ManualTrigger(@PathVariable Long id, @RequestBody(required = false) String tempData) {
         OperationResult operationResult = new OperationResult();
         Job job = jobService.selectJobById(id);
         String msg;
         if (job == null) {
             msg = "执行任务为空";
             log.info(msg);
-            return operationResult.setData(null ).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         if (!job.getStatus().equals(GeneralStatus.ACTIVE.getIntLabel())) {
             msg = "状态未开启";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
-        if (!jobService.checkJobIndex(job)){
+        if (!jobService.checkJobIndex(job)) {
             msg = "任务执行顺序有误，请检查后再试";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_ERROR.getValue());

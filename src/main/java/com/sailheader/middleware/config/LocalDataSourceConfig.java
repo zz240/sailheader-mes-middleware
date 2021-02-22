@@ -1,5 +1,7 @@
 package com.sailheader.middleware.config;
 
+import com.baomidou.mybatisplus.extension.plugins.PaginationInterceptor;
+import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -16,7 +18,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import javax.sql.DataSource;
 
 @Configuration
-@MapperScan(basePackages = "com.sailheader.middleware.mapper", sqlSessionTemplateRef = "local.data.source.session.template")
 public class LocalDataSourceConfig {
 
     @Value("${spring.datasource.driver-class-name}")
@@ -36,7 +37,7 @@ public class LocalDataSourceConfig {
     }
 
     /**
-     * 使用 SqlSessionFactory 加载动态数据源
+     * 使用 MybatisSqlSessionFactory 加载动态数据源
      *
      * @return
      * @throws Exception
@@ -44,11 +45,14 @@ public class LocalDataSourceConfig {
     @Bean("local.data.sql.session.factory")
     @Primary
     public SqlSessionFactory sqlSessionFactory() throws Exception {
-        SqlSessionFactoryBean sqlSessionFactoryBean = new SqlSessionFactoryBean();
+        MybatisSqlSessionFactoryBean sqlSessionFactoryBean = new MybatisSqlSessionFactoryBean();
         sqlSessionFactoryBean.setDataSource(dynamicDataSource());
         sqlSessionFactoryBean
                 .setMapperLocations(new PathMatchingResourcePatternResolver().getResources("classpath*:mapper/*.xml"));
+        //  手动写入mybatis plus分页插件
+        sqlSessionFactoryBean.setPlugins(new PaginationInterceptor());
         return sqlSessionFactoryBean.getObject();
+
     }
 
     @Bean("local.data.source.session.template")

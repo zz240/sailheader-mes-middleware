@@ -1,13 +1,15 @@
 package com.sailheader.middleware.rest;
 
 import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sailheader.middleware.common.MiddlewareException;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
-import com.sailheader.middleware.service.ActionService;
+import com.sailheader.middleware.service.IActionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +22,7 @@ import java.util.Map;
 @RestController
 public class ActionController {
     @Autowired
-    private ActionService actionService;
+    private IActionService actionService;
 
     /**
      * 添加动作
@@ -39,7 +41,7 @@ public class ActionController {
             log.info(msg + " - " + e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (action == null && action.getName().isEmpty() && action.getType() != null) {
+        if (action == null || action.getName().trim().isEmpty() || action.getType() == null) {
             msg = msg + " 必要参数为空";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
@@ -60,7 +62,7 @@ public class ActionController {
         }
         try {
             action.setCreatedOn(new Date());
-            actionService.insertSelective(action);
+            actionService.insertAction(action);
         } catch (Exception e) {
             msg = msg + "-" + e.getMessage();
             log.info(msg);
@@ -91,11 +93,7 @@ public class ActionController {
             log.info("删除失败，动作已删除");
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
-
-        action.setStatus(GeneralStatus.DELETED.getIntLabel());
-        action.setModifiedOn(new Date());
-        action.setName(action.getName() + "-" + action.getId());
-        actionService.updateByActionStreamSelective(action);
+        actionService.deleteAction(action);
         msg = "删除成功";
         log.info("删除" + action.getName() + "成功");
         return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
@@ -174,7 +172,7 @@ public class ActionController {
                     .setIndex(action.getIndex())
                     .setAddition(action.getAddition()).setModifiedBy(action.getModifiedBy()).setModifiedOn(new Date());
         try {
-            i = actionService.updateByActionStream(actionStream);
+            i = actionService.updateAction(actionStream);
         } catch (Exception e) {
             log.info("更新动作异常 :" + e.getMessage());
             throw new RuntimeException("更新异常！");
@@ -188,14 +186,24 @@ public class ActionController {
     }
 
     /**
-     * 查询全部动作
+     * 查询任务中所有动作
      *
      * @return 返回查询所有的结果集
      */
-    @GetMapping("/mw/api/action/stream/query/all")
-    public OperationResult findAllActions() {
-        return new OperationResult().setData(actionService.findAllActionsByStatus(GeneralStatus.DELETED.getIntLabel()))
-                                    .setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+    @PostMapping("/mw/api/action/stream/query/all")
+    public OperationResult<IPage<Action>> findAllActions(@RequestParam(name = "jobId") Integer jobId,
+                                          @RequestParam(name = "pageNum",required = false,defaultValue = "1") Integer pageNum,
+                                          @RequestParam(name = "pageSize",required = false,defaultValue = "10") Integer pageSize,
+                                          @RequestBody(required = false) String condition) {
+        OperationResult result = new OperationResult();
+        IPage<Action> actionPage = null;
+        try {
+            actionPage = actionService.selectPage(new Page<Action>(pageNum, pageSize), jobId, condition);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return result.setMessage("条件查询异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+        }
+        return result.setData(actionPage).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -209,7 +217,7 @@ public class ActionController {
         OperationResult operationResult = new OperationResult();
         ObjectMapper objectMapper = new ObjectMapper();
         String inputData;
-        String msg = "动作测试执行失败";
+        String msg = "动作测试执行失败 - ";
 
         //转换 action 对象
         Action action = objectMapper.convertValue(map.get("action"), Action.class);
@@ -218,7 +226,7 @@ public class ActionController {
             inputData = JSON.toJSONString(map.get("inputData"));
         } catch (Exception e) {
             log.info(msg + e.getMessage());
-            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+            return operationResult.setMessage(msg+e.getMessage()).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
 
         if (map.get("inputData") != null && inputData == null) {
@@ -236,11 +244,11 @@ public class ActionController {
         try {
             result = actionService.checkActionPass(action, inputData);
         } catch (MiddlewareException e) {
-            log.info(msg + "：" + e.getMessage());
-            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+            log.info(msg);
+            return operationResult.setMessage(msg + e.getMessage()).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         } catch (Exception e) {
-            log.info(msg + "：" + e.getMessage());
-            return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
+            log.info(msg);
+            return operationResult.setMessage(msg + e.getMessage()).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
         msg = "action: 测试执行成功";
         log.info(msg);
