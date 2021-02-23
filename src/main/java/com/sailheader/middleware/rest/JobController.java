@@ -1,6 +1,5 @@
 package com.sailheader.middleware.rest;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sailheader.middleware.chain.ActionTempData;
@@ -9,7 +8,6 @@ import com.sailheader.middleware.common.helper.TaskUtils;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
-import com.sailheader.middleware.mapper.JobMapper;
 import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.service.IJobService;
 import lombok.extern.slf4j.Slf4j;
@@ -112,8 +110,8 @@ public class JobController {
                 //删除定时任务
                 scheduleImportJob.removeScheduleImportJob(job.getName());
             } catch (SchedulerException e) {
-                log.error("移除定时任务失败！");
-                return new OperationResult().setMessage("删除定时任务失败！").setStateCode(StateCode.DELETE_FAIL.getValue());
+                log.error("移除定时任务失败！"+e.getMessage());
+                return new OperationResult().setMessage("删除定时任务失败！"+e.getMessage()).setStateCode(StateCode.DELETE_FAIL.getValue());
             }
         }
         job.setStatus(GeneralStatus.DELETED.getIntLabel());
@@ -155,7 +153,7 @@ public class JobController {
             jobIPage = jobService.selectPage(new Page(pageNum,pageSize),condition);
         } catch (Exception e) {
             log.info(e.getMessage());
-            return result.setMessage("条件查询异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            return result.setMessage("条件查询异常,请检查 查询条件 后重试！").setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         return result.setData(jobIPage)
                 .setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
@@ -205,8 +203,8 @@ public class JobController {
             try {
                 scheduleImportJob.removeScheduleImportJob(jobById.getName());
             } catch (SchedulerException e) {
-                msg = "关闭定时任务异常";
-                log.info("msg : " + e.getMessage());
+                msg = "关闭定时任务异常 - "+e.getMessage();
+                log.info(msg);
                 return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_FAIL.getValue());
             }
         }
@@ -306,14 +304,14 @@ public class JobController {
                 scheduleImportJob.executeScheduleImportJob(job);
             }
         } catch (SchedulerException e) {
-            msg = msg + "任务异常！";
+            msg = msg + "任务修改异常！";
             log.info(msg);
-            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("修改任务状态异常！");
+            return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage(msg);
         }
-        msg = msg + "任务成功！";
+        msg = msg + "任务修改成功！";
         log.info(msg);
         flag = true;
-        return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("修改任务状态成功");
+        return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
     }
 
 }

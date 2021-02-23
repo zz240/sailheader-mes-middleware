@@ -13,13 +13,13 @@ public class SearchUtil {
             List<ConditionVo> conditionList = conditionList = JSON.parseArray(conditionJson,ConditionVo.class);
             if(conditionList.size() > 0 ){
                 for(ConditionVo conditionVo : conditionList){
-                    switch (conditionVo.getType()){
-                        case "eq": queryWrapper.eq(conditionVo.getColumn(),conditionVo.getValue());break;       //等于
-                        case "ne": queryWrapper.ne(conditionVo.getColumn(),conditionVo.getValue());break;       //不等于
-                        case "like": queryWrapper.like(conditionVo.getColumn(),conditionVo.getValue());break;   //模糊查询
-                        case "notlike": queryWrapper.notLike(conditionVo.getColumn(),conditionVo.getValue());break;     //不等于模糊查询
-                        case "gt": queryWrapper.gt(conditionVo.getColumn(),conditionVo.getValue());break;       //大于
-                        case "lt": queryWrapper.lt(conditionVo.getColumn(),conditionVo.getValue());break;       //小于
+                    switch (conditionVo.getConditionalOperators()){
+                        case "EQUALS": queryWrapper.eq(conditionVo.getName(),conditionVo.getValue());break;       //等于
+                        case "NOTEQUEALS": queryWrapper.ne(conditionVo.getName(),conditionVo.getValue());break;       //不等于
+                        case "CONTAINSTEXT": queryWrapper.like(conditionVo.getName(),conditionVo.getValue());break;   //模糊查询
+                        case "NOTCONTAINSTEXT": queryWrapper.notLike(conditionVo.getName(),conditionVo.getValue());break;     //不等于模糊查询
+                        case "gt": queryWrapper.gt(conditionVo.getName(),conditionVo.getValue());break;       //大于
+                        case "lt": queryWrapper.lt(conditionVo.getName(),conditionVo.getValue());break;       //小于
                     }
                 }
             }
