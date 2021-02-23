@@ -33,6 +33,7 @@ public class DataSourceController {
         OperationResult<String> operationResult = new OperationResult<>();
         String msg = "添加异常";
         if (dataSource == null) {
+            msg = msg + "，数据源为空";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (dataSource.getName() == null || dataSource.getName().equals("")) {
@@ -67,11 +68,12 @@ public class DataSourceController {
             i = dataSourceService.createDataSource(dataSource);
         } catch (Exception e) {
             log.info(e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg+e.getMessage()).setStateCode(StateCode.ADD_FAIL.getValue());
         }
 
         if (i < 1) {
-            log.info("添加失败！");
+            msg = "操作失败,添加到数据库异常";
+            log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         msg = "插入成功";
@@ -90,9 +92,10 @@ public class DataSourceController {
     public OperationResult<String> deleteDataSource(@PathVariable Long id) {
         DataSource dataSource = dataSourceService.findDataSourceByid(id);
         OperationResult<String> operationResult = new OperationResult<>();
-        String msg = "删除异常";
+        String msg = "删除异常 ";
 
         if (dataSource == null) {
+            msg = msg +"找不到数据源";
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
         if (dataSource.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
@@ -104,7 +107,7 @@ public class DataSourceController {
             dataSourceService.deleteDataSourceById(dataSource);
         } catch (Exception e) {
             log.info(e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg+e.getMessage()).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
 
         msg = "删除成功！";
@@ -127,7 +130,7 @@ public class DataSourceController {
             dataSource = dataSourceService.findDataSourceByid(id);
         } catch (Exception e) {
             log.info(e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.QUERY_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg+e.getMessage()).setStateCode(StateCode.QUERY_FAIL.getValue());
         }
 
         if (dataSource == null) {
@@ -155,9 +158,10 @@ public class DataSourceController {
     @PutMapping("/mw/api/data/source/update/{id}")
     public OperationResult<DataSource> updateDataSource(@PathVariable Long id, @RequestBody DataSource dataSource) {
         OperationResult<DataSource> operationResult = new OperationResult<>();
-        String msg = "更新失败";
+        String msg = "更新失败 ";
         DataSource source = dataSourceService.findDataSourceByid(id);
         if (source == null) {
+            msg = msg + "找不到要修改的数据源";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
@@ -167,7 +171,7 @@ public class DataSourceController {
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource == null) {
-            log.info(msg);
+            log.info(msg+"，请填写更新内容");
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (dataSource.getName() == null || dataSource.getName().equals("")) {
@@ -203,8 +207,8 @@ public class DataSourceController {
             dataSourceService.updateDataSource(source);
         } catch (Exception e) {
             log.info("更新数据源： " + source + " 异常 : " + e.getMessage());
-            throw new RuntimeException("更新异常！");
-//            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+//            throw new RuntimeException("更新异常！");
+            return operationResult.setData(null).setMessage("更新数据源： " + source + " 异常 : " + e.getMessage()).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         log.info("更新数据源： " + source);
         return operationResult.setData(source).setMessage("更新成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
@@ -226,7 +230,7 @@ public class DataSourceController {
             dataSourceByPage = dataSourceService.findDataSourceByPage(page, condition);
         } catch (Exception e) {
             log.info(e.getMessage());
-            return result.setMessage("条件查询异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+            return result.setMessage("条件查询异常："+e.getMessage()).setStateCode(StateCode.SYSTEM_ERROR.getValue());
         }
         return result.setData(dataSourceByPage).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }

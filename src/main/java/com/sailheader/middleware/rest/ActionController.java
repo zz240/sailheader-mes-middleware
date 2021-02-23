@@ -38,8 +38,9 @@ public class ActionController {
         try {
             actionService.validateDataSource(action);
         } catch (Exception e) {
-            log.info(msg + " - " + e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
+            msg = msg + e.getMessage();
+            log.info(msg);
+            return operationResult.setData(null).setMessage(e.getMessage()).setStateCode(StateCode.ADD_FAIL.getValue());
         }
         if (action == null || action.getName().trim().isEmpty() || action.getType() == null) {
             msg = msg + " 必要参数为空";
@@ -83,20 +84,21 @@ public class ActionController {
     @DeleteMapping("/mw/api/action/stream/delete/{id}")
     public OperationResult deleteAction(@PathVariable Long id) {
         OperationResult operationResult = new OperationResult();
-        String msg = "删除失败！";
+        String msg;
         Action action = actionService.selectByPrimaryKey(id);
         if (action == null) {
-            log.info("删除失败，动作为空");
+            msg = "删除失败，动作为空";
+            log.info(msg);
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
         if (action.getStatus().equals(GeneralStatus.DELETED.getIntLabel())) {
-            log.info("删除失败，动作已删除");
+            msg = "删除失败，动作已删除";
+            log.info(msg);
             return operationResult.setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
         actionService.deleteAction(action);
-        msg = "删除成功";
         log.info("删除" + action.getName() + "成功");
-        return operationResult.setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setMessage("删除 " + action.getName() + " 成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -135,7 +137,7 @@ public class ActionController {
             actionService.validateDataSource(action);
         } catch (Exception e) {
             log.info(msg + " : " + e.getMessage());
-            return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
+            return operationResult.setData(null).setMessage(msg + " : " + e.getMessage()).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
         if (action.getName() == null) {
             msg = "修改动作失败，name为空";
@@ -244,10 +246,10 @@ public class ActionController {
         try {
             result = actionService.checkActionPass(action, inputData);
         } catch (MiddlewareException e) {
-            log.info(msg);
+            log.info(msg+e.getMessage());
             return operationResult.setMessage(msg + e.getMessage()).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         } catch (Exception e) {
-            log.info(msg);
+            log.info(msg+e.getMessage());
             return operationResult.setMessage(msg + e.getMessage()).setStateCode(StateCode.SYSTEM_FAIL.getValue());
         }
         msg = "action: 测试执行成功";

@@ -3,7 +3,10 @@ package com.sailheader.middleware.model;
 
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.FastjsonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,6 +24,7 @@ import java.util.Date;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@TableName(autoResultMap = true)
 public class DataSource implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -41,6 +45,7 @@ public class DataSource implements Serializable {
     private String address;
 
     //附加辅助信息
+    @TableField(typeHandler = FastjsonTypeHandler.class)
     private JSONObject addition;
 
     //创建人id

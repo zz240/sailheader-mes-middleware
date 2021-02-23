@@ -11,13 +11,13 @@ public class ConditionVo implements Serializable {
     /**
      * 数据库字段名
      */
-    private String column;
+    private String name;
+    /**
+     * 连接类型，如：CONTAINSTEXT，EQUALS
+     */
+    private String conditionalOperators;
     /**
      * 字段值
      */
     private String value;
-    /**
-     * 连接类型，如like,equals,gt,ge,lt,le
-     */
-    private String type;
 }
