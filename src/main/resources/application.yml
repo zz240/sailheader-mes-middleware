@@ -1,9 +1,9 @@
 server:
   port: 3361
-mybatis:
-  mapper-locations: classpath*:mapper/*.xml
+mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+  mapper-locations: classpath*:mapper/*.xml
 spring:
   profiles:
     active: dev

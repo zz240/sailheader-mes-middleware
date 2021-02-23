@@ -3,10 +3,9 @@ package com.sailheader.middleware.rest;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.sailheader.middleware.common.MiddlewareException;
-import com.sailheader.middleware.common.helper.TaskUtils;
 import com.sailheader.middleware.model.Job;
-import com.sailheader.middleware.service.JobService;
+import com.sailheader.middleware.service.IJobService;
+import com.sailheader.middleware.service.impl.JobServiceImpl;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,14 +20,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.FIELD_MAPPING_DATA_IS_NULL;
-
 
 @RestController
 public class TestController {
     JSONObject json = new JSONObject();
     @Autowired
-    private JobService jobService;
+    private JobServiceImpl jobService;
 
     // test
     @RequestMapping("/test")

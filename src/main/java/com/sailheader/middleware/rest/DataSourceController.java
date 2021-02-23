@@ -1,10 +1,13 @@
 package com.sailheader.middleware.rest;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.DataSource;
-import com.sailheader.middleware.service.DataSourceService;
+import com.sailheader.middleware.service.IDataSourceService;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +20,7 @@ import java.util.List;
 @RestController
 public class DataSourceController {
     @Autowired
-    private DataSourceService dataSourceService;
+    private IDataSourceService dataSourceService;
 
     /**
      * 添加数据源
@@ -37,7 +40,7 @@ public class DataSourceController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
         }
-        if (dataSourceService.checkForPresence(dataSource.getName()) > 0) {
+        if (dataSourceService.checkForPresence(dataSource) > 0) {
             msg = "数据源名称重复";
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.ADD_FAIL.getValue());
@@ -97,13 +100,8 @@ public class DataSourceController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
-
-        dataSource.setStatus(GeneralStatus.DELETED.getIntLabel())
-                  .setName(dataSource.getName() + "-" + dataSource.getId());
-        dataSource.setModifiedOn(new Date());
-
         try {
-            dataSourceService.updateDataSource(dataSource);
+            dataSourceService.deleteDataSourceById(dataSource);
         } catch (Exception e) {
             log.info(e.getMessage());
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.DELETE_FAIL.getValue());
@@ -177,7 +175,7 @@ public class DataSourceController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        if (dataSourceService.checkForPresence(dataSource.getName()) > 0) {
+        if (dataSourceService.checkForPresence(dataSource) > 0) {
             if (!dataSource.getName().equals(source.getName())) {
                 msg = "数据源名称重复";
                 log.info(msg);
@@ -217,10 +215,19 @@ public class DataSourceController {
      *
      * @return 返回查询所有数据源的结果集
      */
-    @GetMapping("/mw/api/data/source/query/all")
-    public OperationResult<List<DataSource>> findDataSourcesByStatus() {
-        return new OperationResult<List<DataSource>>()
-                .setData(dataSourceService.findJobByStatus(GeneralStatus.DELETED.getIntLabel())).setMessage("查询成功！")
-                .setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+    @PostMapping("/mw/api/data/source/query/all")
+    public OperationResult<IPage<DataSource>> findDataSourcesByStatus(@RequestParam(name = "pageNum",required = false,defaultValue = "1") Integer pageNum,
+                                                                      @RequestParam(name = "pageSize",required = false,defaultValue = "10") Integer pageSize,
+                                                                      @RequestBody(required = false) String condition) {
+        OperationResult<IPage<DataSource>> result = new OperationResult<>();
+        Page<DataSource> page = new Page<>(pageNum, pageSize);
+        IPage<DataSource> dataSourceByPage = null;
+        try {
+            dataSourceByPage = dataSourceService.findDataSourceByPage(page, condition);
+        } catch (Exception e) {
+            log.info(e.getMessage());
+            return result.setMessage("条件查询异常").setStateCode(StateCode.SYSTEM_ERROR.getValue());
+        }
+        return result.setData(dataSourceByPage).setMessage("查询成功！").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 }

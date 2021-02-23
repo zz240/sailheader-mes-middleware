@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sailheader.middleware.mapper.JobMapper">
+    <resultMap id="BaseResultMap" type="com.sailheader.middleware.model.Job">
+        <id column="id" jdbcType="BIGINT" property="id"/>
+        <result column="name" jdbcType="VARCHAR" property="name"/>
+        <result column="crontab" jdbcType="VARCHAR" property="crontab"/>
+        <result column="remarks" jdbcType="VARCHAR" property="remarks"/>
+        <result column="status" jdbcType="SMALLINT" property="status"/>
+        <result column="created_by" jdbcType="INTEGER" property="createdBy"/>
+        <result column="created_on" jdbcType="TIMESTAMP" property="createdOn"/>
+        <result column="modified_by" jdbcType="INTEGER" property="modifiedBy"/>
+        <result column="modified_on" jdbcType="TIMESTAMP" property="modifiedOn"/>
+        <collection property="actionList" column="id" ofType="com.sailheader.middleware.model.Action"
+                    select="selectActionByJobId" javaType="ArrayList"/>
+    </resultMap>
+
+    <resultMap id="ActionResultMap" type="com.sailheader.middleware.model.Action">
+        <id column="id" jdbcType="BIGINT" property="id"/>
+        <result column="job_id" jdbcType="BIGINT" property="jobId"/>
+        <result column="name" jdbcType="VARCHAR" property="name"/>
+        <result column="type" jdbcType="SMALLINT" property="type"/>
+        <result column="status" jdbcType="SMALLINT" property="status"/>
+        <result column="index" jdbcType="INTEGER" property="index"/>
+        <result column="consume_data_type" jdbcType="SMALLINT" property="consumeDataType"/>
+        <result column="addition" typeHandler="com.sailheader.middleware.common.helper.JsonTypeHandlerPg" property="addition"/>
+        <result column="created_by" jdbcType="INTEGER" property="createdBy"/>
+        <result column="created_on" jdbcType="TIMESTAMP" property="createdOn"/>
+        <result column="modified_by" jdbcType="INTEGER" property="modifiedBy"/>
+        <result column="modified_on" jdbcType="TIMESTAMP" property="modifiedOn"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+      id ,name ,crontab ,remarks ,status ,created_by ,created_on ,modified_by ,modified_on
+  </sql>
+
+    <sql id="Action_Column_List">
+        id ,job_id ,name ,type ,status ,index ,addition ,created_by, created_on ,modified_by , modified_on
+    </sql>
+
+    <!-- ActionList 嵌套查询 -->
+    <select id="selectActionByJobId" parameterType="java.lang.Long" resultMap="ActionResultMap">
+        select
+        <include refid="Action_Column_List"/>
+        from "action_stream"
+        where job_id = #{id,jdbcType = BIGINT} and status != -1
+        order by index asc
+    </select>
+
+    <select id="selectJobById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from "job"
+        where id = #{id,jdbcType = BIGINT}
+    </select>
+
+    <select id="checkForPresence" parameterType="java.lang.String" resultType="java.lang.Integer">
+        SELECT count(1) FROM "job" where name = #{name,jdbcType=VARCHAR};
+    </select>
+
+    <update id="updateJob" parameterType="com.sailheader.middleware.model.Job">
+    update "job"
+    set "name" = #{name,jdbcType=VARCHAR},
+      crontab = #{crontab,jdbcType=VARCHAR},
+      remarks = #{remarks,jdbcType=VARCHAR},
+      modified_by = #{modifiedBy,jdbcType=INTEGER},
+      modified_on = #{modifiedOn,jdbcType=TIMESTAMP}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+    <select id="selectJobByPage" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from "job"
+        ${ew.customSqlSegment}
+    </select>
+
+</mapper>

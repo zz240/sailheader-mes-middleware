@@ -1,5 +1,8 @@
 package com.sailheader.middleware.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,6 +25,7 @@ public class Job implements Serializable {
     private static final long serialVersionUID = 1L;
 
     //id
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     //任务名称
@@ -49,6 +53,7 @@ public class Job implements Serializable {
     private Date modifiedOn;
 
     //绑定任务的动作列表
+    @TableField(exist = false)
     private List<Action> actionList;
 
 

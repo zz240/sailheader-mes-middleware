@@ -1,19 +1,24 @@
-package com.sailheader.middleware.service;
+package com.sailheader.middleware.service.impl;
 
 import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.sailheader.middleware.action.ActionHandlerAdapter;
 import com.sailheader.middleware.action.consume.ConsumeData;
 import com.sailheader.middleware.chain.ActionTempData;
 import com.sailheader.middleware.chain.SingleLinerJobActionHandlerChain;
 import com.sailheader.middleware.common.MiddlewareException;
+import com.sailheader.middleware.common.helper.SearchUtil;
 import com.sailheader.middleware.constant.ActionConsumeDataType;
 import com.sailheader.middleware.constant.ActionStatus;
 import com.sailheader.middleware.constant.ActionType;
-import com.sailheader.middleware.constant.GeneralStatus;
-import com.sailheader.middleware.mapper.JobDAO;
+import com.sailheader.middleware.mapper.JobMapper;
 import com.sailheader.middleware.model.Action;
 import com.sailheader.middleware.model.Job;
-import com.sailheader.middleware.model.JobExample;
+import com.sailheader.middleware.service.IJobService;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -23,46 +28,47 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JOB_ACTION_CHAIN_EXECUTE_INTERRUPT;
 
 @Service
-public class JobService {
+public class JobServiceImpl extends ServiceImpl<JobMapper, Job> implements IJobService {
     @Autowired
-    private JobDAO jobDAO;
+    private JobMapper jobMapper;
     @Autowired
     private ApplicationContext applicationContext;
 
     public Job selectJobById(Long id) {
-        return jobDAO.selectByPrimaryKey(id);
-    }
-
-    public int deleteJobById(Long id) {
-        return jobDAO.deleteJobById(id);
+        return jobMapper.selectJobById(id);
     }
 
     public int updateJobSelective(Job job) {
-        return jobDAO.updateByPrimaryKeySelective(job);
+        return jobMapper.updateById(job);
     }
 
     public int updateJob(Job job) {
-        return jobDAO.updateByPrimaryKey(job);
+        return jobMapper.updateJob(job);
     }
 
     public int insertSelective(Job job) {
-        return jobDAO.insertSelective(job);
+        return jobMapper.insert(job);
     }
 
     public Job selectJobByName(String name) {
-        return jobDAO.selectJobByName(name);
+        QueryWrapper<Job> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("name",name);
+        return jobMapper.selectOne(queryWrapper);
     }
 
-    public List<Job> findJobByStatus(Short status) {
-        JobExample example = new JobExample();
-        example.createCriteria().andStatusNotEqualTo(status);
-        return jobDAO.selectByExample(example);
+
+    @Override
+    public IPage<Job> selectPage(Page<Job> page,String conditionWithJson) throws Exception {
+        QueryWrapper<Job> queryWrapper = SearchUtil.parseWhereSql(conditionWithJson);
+        queryWrapper.ne("status",-1).orderByAsc("id");
+        return jobMapper.selectJobByPage(page,queryWrapper);
     }
 
     public int checkForPresence(String name) {
-        return jobDAO.checkForPresence(name);
+        return jobMapper.checkForPresence(name);
     }
 
     // 检查任务执行序列
@@ -87,10 +93,10 @@ public class JobService {
 
     // 查询存活的定时任务
     public List<Job> findActiveTimedTask() {
-        JobExample example = new JobExample();
+        QueryWrapper<Job> queryWrapper = new QueryWrapper<>();
         List<Job> list = new ArrayList<>();
-        example.createCriteria().andStatusEqualTo(GeneralStatus.ACTIVE.getValue());
-        List<Job> jobList = jobDAO.selectByExample(example);
+        queryWrapper.eq("status",1).orderByAsc("id");
+        List<Job> jobList = jobMapper.selectList(queryWrapper);
         jobList.forEach((job) -> {
             if (job.getCrontab() != null && !job.getCrontab().trim().equals("")) {
                 list.add(job);
