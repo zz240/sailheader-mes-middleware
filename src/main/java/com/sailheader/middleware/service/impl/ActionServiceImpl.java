@@ -135,13 +135,12 @@ public class ActionServiceImpl extends ServiceImpl<ActionMapper, Action> impleme
             throw MiddlewareException.getInstance(REMOTE_ACCESS_ACTION_DATASOURCE_MISSING_REQUIRE_PARAM,msg);
         }
         //判断动作类型
-        if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP){
+        if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP
+            || DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.HTTP_ROMA){
             checkHttp(datasource);
         }else if (DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB
                 || DataSourceType.dataSourceMapById.get(datasource.getInteger("type")) == DataSourceType.DB_JSON){
             checkDB(datasource);
-        }else{
-            throw MiddlewareException.getInstance(ACTION_HANDLER_ADAPTER_ACTION_SUITABLE_TYPE_NOT_FOUND);
         }
     }
 

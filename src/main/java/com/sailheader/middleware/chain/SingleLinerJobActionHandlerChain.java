@@ -17,8 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR;
-import static com.sailheader.middleware.constant.MiddlewareExceptionMap.JOB_ACTION_CHAIN_EXECUTE_INTERRUPT;
+import static com.sailheader.middleware.constant.MiddlewareExceptionMap.*;
 
 /**
  * 单线性调用链
@@ -69,20 +68,30 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
             preActionDataBeforeExecute(actionHandlerAdapter);
 
             // 获取动作数据
-            ActionTempData<?> tempData = actionHandlerAdapter.dataHandler(actionTempData);
+            ActionTempData<?> tempData;
+            try {
+                tempData = actionHandlerAdapter.dataHandler(actionTempData);
+            } catch (Exception e) {
+                throw MiddlewareException
+                        .getInstance(SINGLE_ACTION_CHAIN_EXCEPTION, "动作序号:" + actionHandlerAdapter.getAction() + "执行失败!", e);
+            }
 
             // 将所有输出数据加入当前上下文
             singleLinerChainContext
                     .setChainContextItem(actionHandlerAdapter.getAction().getIndex(), tempData);
 
             if (tempData == null || tempData.getStatus() == null) {
-                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败");
+                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,
+                                                      "动作序号:" + actionHandlerAdapter.getAction()
+                                                                                    .getIndex() + "执行失败");
             } else if (tempData.getStatus() == ActionStatus.SUCCESS) {
                 tempData.setStatus(ActionStatus.INITIAL);
                 actionTempData = tempData;
             } else {
                 actionTempData = tempData;
-                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT, "执行失败");
+                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_EXECUTE_INTERRUPT,
+                                                      "动作序号:" + actionHandlerAdapter.getAction()
+                                                                                    .getIndex() + "执行失败");
             }
 
         }
@@ -120,7 +129,8 @@ public class SingleLinerJobActionHandlerChain implements JobActionChain<ActionHa
             try {
                 inputData = (ActionTempData<?>) JSON.parseObject(JSON.toJSONString(context), ActionTempData.class);
             } catch (Exception e) {
-                throw MiddlewareException.getInstance(JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR, e.getMessage());
+                throw MiddlewareException
+                        .getInstance(JOB_ACTION_CHAIN_CONTEXT_DATA_COPY_ERROR, "动作序号:" + key + "执行失败！--" + e.getMessage());
             }
             actionTempDataList.put(key, inputData);
         }

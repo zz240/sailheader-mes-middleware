@@ -15,8 +15,8 @@ public class MiddlewareException extends RuntimeException {
     @Getter
     private MiddlewareExceptionMap exceptionMap;
 
-    public MiddlewareException(MiddlewareExceptionMap map, String s) {
-        super(s);
+    public MiddlewareException(MiddlewareExceptionMap map, String s, Throwable throwable) {
+        super(s, throwable);
         this.exceptionMap = map;
     }
 
@@ -36,13 +36,14 @@ public class MiddlewareException extends RuntimeException {
         if (msg == null || msg.equals("")) {
             msg = map.getMsg();
         } else {
-            msg = map.getMsg() + ": " + msg;
+            msg = map.getMsg() + "--" + msg;
         }
 
         if (e != null && e.getMessage() != null) {
-            msg += ": " + e.getMessage();
+            msg += "--" + e.getMessage();
         }
-        log.debug(msg);
-        return new MiddlewareException(map, msg);
+        log.error(msg);
+        return new MiddlewareException(map, msg, e);
     }
+
 }
