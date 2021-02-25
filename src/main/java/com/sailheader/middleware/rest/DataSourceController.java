@@ -110,7 +110,7 @@ public class DataSourceController {
             return operationResult.setData(null).setMessage(msg+e.getMessage()).setStateCode(StateCode.DELETE_FAIL.getValue());
         }
 
-        msg = "删除成功！";
+        msg = "成功删除数据源！";
         log.info(msg);
         return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }

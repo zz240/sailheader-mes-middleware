@@ -98,7 +98,7 @@ public class ActionController {
         }
         actionService.deleteAction(action);
         log.info("删除" + action.getName() + "成功");
-        return operationResult.setMessage("删除 " + action.getName() + " 成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setMessage("成功删除动作").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -170,11 +170,10 @@ public class ActionController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        actionStream.setName(action.getName()).setJobId(action.getJobId()).setType(action.getType())
-                    .setIndex(action.getIndex())
-                    .setAddition(action.getAddition()).setModifiedBy(action.getModifiedBy()).setModifiedOn(new Date());
+        action.setCreatedBy(actionStream.getCreatedBy()).setCreatedOn(actionStream.getCreatedOn()).setModifiedOn(new Date());
+
         try {
-            i = actionService.updateAction(actionStream);
+            i = actionService.updateAction(action);
         } catch (Exception e) {
             log.info("更新动作异常 :" + e.getMessage());
             throw new RuntimeException("更新异常！");
