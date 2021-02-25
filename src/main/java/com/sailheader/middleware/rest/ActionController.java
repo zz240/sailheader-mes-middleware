@@ -98,7 +98,7 @@ public class ActionController {
         }
         actionService.deleteAction(action);
         log.info("删除" + action.getName() + "成功");
-        return operationResult.setMessage("删除 " + action.getName() + " 成功").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
+        return operationResult.setMessage("成功删除动作").setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
 
     /**
@@ -127,8 +127,8 @@ public class ActionController {
      * @param action 需要更新的动作内容
      * @return 更新之后的结果集
      */
-    @Transactional(rollbackFor = Exception.class)
     @PutMapping("/mw/api/action/stream/update/{id}")
+    @Transactional(rollbackFor = Exception.class)
     public OperationResult updateActionById(@PathVariable Long id, @RequestBody Action action) {
         OperationResult operationResult = new OperationResult();
         String msg = "修改动作失败";
@@ -170,11 +170,11 @@ public class ActionController {
             log.info(msg);
             return operationResult.setData(null).setMessage(msg).setStateCode(StateCode.EDIT_FAIL.getValue());
         }
-        actionStream.setName(action.getName()).setJobId(action.getJobId()).setType(action.getType())
-                    .setIndex(action.getIndex())
-                    .setAddition(action.getAddition()).setModifiedBy(action.getModifiedBy()).setModifiedOn(new Date());
+        action.setCreatedBy(actionStream.getCreatedBy()).setCreatedOn(actionStream.getCreatedOn())
+                .setModifiedOn(new Date()).setId(id).setStatus(actionStream.getStatus());
+
         try {
-            i = actionService.updateAction(actionStream);
+            i = actionService.updateAction(action);
         } catch (Exception e) {
             log.info("更新动作异常 :" + e.getMessage());
             throw new RuntimeException("更新异常！");
@@ -184,7 +184,7 @@ public class ActionController {
         }
         msg = "修改成功";
         log.info(msg);
-        return operationResult.setData(actionStream).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
+        return operationResult.setData(action).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
     }
 
     /**
