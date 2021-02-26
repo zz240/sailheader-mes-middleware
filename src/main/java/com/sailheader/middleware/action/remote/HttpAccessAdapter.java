@@ -90,8 +90,8 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
         JSONObject addition = dataSource.getAddition();
         String query = addition.getString("query");
         String url = dataSource.getAddress() + (query != null ? "?" + query : "");
-        HttpMethod requestMethod = HttpMethod.resolve(addition.getString("method"));
-        Map<String, List<String>> headers = new HashMap<>();
+        HttpMethod requestMethod = HttpMethod.resolve(addition.getString("method").toUpperCase());
+        MultiValueMap<String, String> multiValueMap = new MultiValueMapAdapter<>(new HashMap<>());
         JSON body = null;
 
         try {
@@ -108,10 +108,10 @@ public class HttpAccessAdapter extends AccessAdapter<JSON> {
 
         if (addition.get("header") != null) {
             for (Map.Entry<String, Object> header : addition.getJSONObject("header").entrySet()) {
-                headers.put(header.getKey(), (List<String>) JSONArray.parse(JSONArray.toJSONString(header.getValue())));
+                multiValueMap.add(header.getKey(), (String) header.getValue());
             }
         }
-        MultiValueMap<String, String> multiValueMap = new MultiValueMapAdapter(headers);
+
         RequestEntity requestEntity = new RequestEntity<>(body, multiValueMap, requestMethod, new URI(url));
         return requestEntity;
     }

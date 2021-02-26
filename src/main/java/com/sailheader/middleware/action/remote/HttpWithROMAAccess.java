@@ -49,7 +49,7 @@ public class HttpWithROMAAccess extends AccessAdapter<JSON> {
             request.setUrl(dataSource.getAddress());
 
             // 添加 header
-            if (addition.getJSONObject("header") != null) {
+            if (addition.getJSONObject("header") != null ) {
                 for (Map.Entry<String, Object> header : addition.getJSONObject("header").entrySet()) {
                     request.addHeader(header.getKey(), (String) header.getValue());
                 }
