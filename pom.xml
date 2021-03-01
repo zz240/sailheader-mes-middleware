@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.sailheader</groupId>
     <artifactId>middleware</artifactId>
-    <version>1.2.2</version>
+    <version>1.2.3</version>
     <name>middleware</name>
     <description>Demo project for Spring Boot</description>
 
