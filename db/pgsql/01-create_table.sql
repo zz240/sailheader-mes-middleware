@@ -53,35 +53,6 @@ CREATE
 
 
 -- --------------------------------------------------
--- 执行任务日志表
--- --------------------------------------------------
-drop table if exists job_log;
-create table job_log
-    (
-        id          bigserial primary key,
-        job_id      bigint,
-        operation   smallint,
-        job_content text,
-        modified_by integer,
-        modified_on timestamp
-    );
-comment
-    on table job_log is '执行任务日志表';
-comment
-    on column job_log.id is 'id';
-comment
-    on column job_log.job_id is '执行任务id';
-comment
-    on column job_log.operation is '操作数,1:insert,2:update,3:delete';
-comment
-    on column job_log.job_content is '更改内容';
-comment
-    on column job_log.modified_by is '更改人';
-comment
-    on column job_log.modified_on is '更改时间';
-
-
--- --------------------------------------------------
 -- 动作流表
 -- --------------------------------------------------
 drop table if exists action_stream;
@@ -142,34 +113,6 @@ CREATE
 CREATE
     INDEX idx_action_consume_data_type ON action_stream (consume_data_type);
 
--- --------------------------------------------------
--- 动作日志表
--- --------------------------------------------------
-drop table if exists action_stream_log;
-create table action_stream_log
-    (
-        id               bigserial primary key,
-        action_stream_id bigint,
-        operation        smallint,
-        content          text,
-        modified_by      integer,
-        modified_on      timestamp
-    );
-comment
-    on table action_stream_log is '执行任务日志表';
-comment
-    on column action_stream_log.id is 'id';
-comment
-    on column action_stream_log.action_stream_id is '执行任务id';
-comment
-    on column action_stream_log.operation is '操作数,1:insert,2:update,3:delete';
-comment
-    on column action_stream_log.content is '更改内容';
-comment
-    on column action_stream_log.modified_by is '更改人';
-comment
-    on column action_stream_log.modified_on is '更改时间';
-
 
 -- --------------------------------------------------
 -- 数据源表
@@ -221,33 +164,3 @@ CREATE
     INDEX idx_data_source_type ON data_source (type);
 CREATE
     INDEX idx_data_source_address ON data_source (address);
-
-
--- --------------------------------------------------
--- 数据源日志表
--- --------------------------------------------------
-drop table if exists data_source_log;
-create table data_source_log
-    (
-        id             bigserial primary key,
-        data_source_id bigint,
-        operation      smallint,
-        content        text,
-        modified_by    integer,
-        modified_on    timestamp
-    );
-comment
-    on table data_source_log is '执行任务日志表';
-comment
-    on column data_source_log.id is 'id';
-comment
-    on column data_source_log.data_source_id is '数据源id';
-comment
-    on column data_source_log.operation is '操作数,1:insert,2:update,3:delete';
-comment
-    on column data_source_log.content is '更改内容';
-comment
-    on column data_source_log.modified_by is '更改人';
-comment
-    on column data_source_log.modified_on is '更改时间';
-

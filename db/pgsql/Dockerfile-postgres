@@ -1,6 +1,11 @@
 FROM postgres:12-alpine
 MAINTAINER steven.xu
 
+# 更新源地址为阿里云
+RUN cp /etc/apk/repositories /etc/apk/repositories.bak && sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && apk update
+# 更新时区为上海
+RUN apk add -U tzdata && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && apk del tzdata
+
 #初始化PostgreSQL
 ENV POSTGRES_USER root
 ENV POSTGRES_PASSWORD 123456
