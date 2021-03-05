@@ -9,12 +9,14 @@ import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.GeneralStatus;
 import com.sailheader.middleware.constant.StateCode;
 import com.sailheader.middleware.model.Action;
+import com.sailheader.middleware.model.Job;
 import com.sailheader.middleware.service.IActionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.Map;
 
@@ -256,4 +258,20 @@ public class ActionController {
         log.info(msg);
         return operationResult.setData(result).setMessage(msg).setStateCode(StateCode.SYSTEM_SUCCESS.getValue());
     }
+
+    /**
+     * 配置动作同步接口
+     * @param actions
+     * @return
+     */
+    @PostMapping("/mw/api/action/stream/sync")
+    public OperationResult<Action> insertOrUpdate(@RequestBody Collection<Action> actions){
+        OperationResult<Action> result = new OperationResult<>();
+        boolean b = actionService.saveOrUpdateBatch(actions);
+        if (!b){
+            return result.setData(null).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("配置同步动作失败");
+        }
+        return result.setData(null).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("同步动作成功");
+    }
+
 }
