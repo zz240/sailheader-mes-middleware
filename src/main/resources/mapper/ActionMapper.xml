@@ -22,7 +22,7 @@
     </sql>
 
     <update id="updateAction" parameterType="com.sailheader.middleware.model.Action">
-        update "action_stream"
+        update "action"
         set "job_id"          = #{jobId,jdbcType=BIGINT},
             "name"            = #{name,jdbcType=VARCHAR},
             type              = #{type,jdbcType=SMALLINT},
@@ -35,7 +35,7 @@
     </update>
 
     <update id="updateByActionSelective" parameterType="com.sailheader.middleware.model.Action">
-        update "action_stream"
+        update "action"
         <set>
             <if test="jobId != null">
                 "job_id" = #{jobId,jdbcType=BIGINT},
@@ -82,7 +82,7 @@
 
     <update id="reorderActionIndex" parameterType="java.util.List">
         <foreach collection="list" item="item" index="index" open="" close="" separator=";">
-            update action_stream
+            update action
             <set>
                 index = #{index}
             </set>
@@ -91,7 +91,7 @@
     </update>
 
     <insert id="insertAction" parameterType="com.sailheader.middleware.model.Action">
-        insert into "action_stream"
+        insert into "action"
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="id != null">
                 id,

@@ -24,7 +24,7 @@ import java.util.Date;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName(value = "action_stream",autoResultMap = true)
+@TableName(autoResultMap = true)
 public class Action implements Serializable {
     private static final long serialVersionUID = 1L;
 

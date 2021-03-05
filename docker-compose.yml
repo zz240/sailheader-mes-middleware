@@ -2,7 +2,7 @@ version: "3.7"
 services:
   middleware-postgresql:
     image: swr.cn-north-4.myhuaweicloud.com/cloud-sailheader/middleware-postgresql:1.1.0
-    container_name: middleware-postgresql
+    container_name: user-middleware-postgresql
     restart: always
     ports:
       - 9001:5432

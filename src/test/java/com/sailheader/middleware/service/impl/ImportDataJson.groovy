@@ -6,7 +6,7 @@ class ImportDataJson {
     static def slurper = new JsonSlurper()
     static def normal = slurper.parseText("""
     {
-        "action_stream": [
+        "action": [
             {
                 "id": 1,
                 "job_id": 2,

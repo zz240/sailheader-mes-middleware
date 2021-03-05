@@ -42,7 +42,7 @@
     <select id="selectActionByJobId" parameterType="java.lang.Long" resultMap="ActionResultMap">
         select
         <include refid="Action_Column_List"/>
-        from "action_stream"
+        from "action"
         where job_id = #{id,jdbcType = BIGINT} and status != -1
         order by index asc
     </select>

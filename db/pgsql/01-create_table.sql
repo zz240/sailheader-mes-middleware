@@ -55,8 +55,8 @@ CREATE
 -- --------------------------------------------------
 -- 动作流表
 -- --------------------------------------------------
-drop table if exists action_stream;
-create table action_stream
+drop table if exists action;
+create table action
     (
         id                bigserial primary key,
         job_id            bigint,
@@ -72,46 +72,46 @@ create table action_stream
         modified_on       timestamp
     );
 comment
-    on table action_stream is '动作流表';
+    on table action is '动作流表';
 comment
-    on column action_stream.id is 'id';
+    on column action.id is 'id';
 comment
-    on column action_stream.job_id is '绑定的任务Id';
+    on column action.job_id is '绑定的任务Id';
 comment
-    on column action_stream.name is '动作名称';
+    on column action.name is '动作名称';
 comment
-    on column action_stream.type is '动作类型';
+    on column action.type is '动作类型';
 comment
-    on column action_stream.status is '状态,1:启用,-1:删除';
+    on column action.status is '状态,1:启用,-1:删除';
 comment
-    on column action_stream.index is '动作序号';
+    on column action.index is '动作序号';
 comment
-    on column action_stream.consume_data_type is '消费数据方式';
+    on column action.consume_data_type is '消费数据方式';
 comment
-    on column action_stream.addition is '附加辅助信息';
+    on column action.addition is '附加辅助信息';
 comment
-    on column action_stream.created_on is '创建时间';
+    on column action.created_on is '创建时间';
 comment
-    on column action_stream.created_by is '创建人id';
+    on column action.created_by is '创建人id';
 comment
-    on column action_stream.modified_on is '更改时间';
+    on column action.modified_on is '更改时间';
 comment
-    on column action_stream.modified_by is '更改人id';
+    on column action.modified_by is '更改人id';
 
 
 -- --------------------------------------------------
 -- 动作表索引
 -- --------------------------------------------------
 CREATE
-    INDEX idx_action_stream_id ON action_stream (job_id);
+    INDEX idx_action_id ON action (job_id);
 CREATE
-    INDEX idx_action_stream_name ON action_stream (name);
+    INDEX idx_action_name ON action (name);
 CREATE
-    INDEX idx_action_stream_type ON action_stream (type);
+    INDEX idx_action_type ON action (type);
 CREATE
-    INDEX idx_action_stream_index ON action_stream (index);
+    INDEX idx_action_index ON action (index);
 CREATE
-    INDEX idx_action_consume_data_type ON action_stream (consume_data_type);
+    INDEX idx_action_consume_data_type ON action (consume_data_type);
 
 
 -- --------------------------------------------------

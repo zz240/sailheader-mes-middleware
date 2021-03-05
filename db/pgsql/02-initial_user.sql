@@ -9,7 +9,7 @@ GRANT ALL PRIVILEGES ON DATABASE middleware TO middleware_user;
 GRANT ALL PRIVILEGES ON all tables in schema public TO middleware_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO middleware_user;
 
-alter table public.action_stream owner to middleware_user;
+alter table public.action owner to middleware_user;
 alter table public.job owner to middleware_user;
 alter table public.data_source owner to middleware_user;
 

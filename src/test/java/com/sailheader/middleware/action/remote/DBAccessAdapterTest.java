@@ -29,7 +29,7 @@ class DBAccessAdapterTest {
 
     @BeforeEach
     public void initDatasource() {
-        jsonObject.put("sql", "select * from action_stream");
+        jsonObject.put("sql", "select * from action");
         jsonObject.put("driver", "org.postgresql.Driver");
         jsonObject.put("username", "middleware_user");
         jsonObject.put("password", "860fbbdd75de0b5d517323d6f1832e10");
@@ -146,7 +146,7 @@ class DBAccessAdapterTest {
         @Order(1)
         public void testAdd() throws Exception {
             jsonObject.put("sql",
-                           "INSERT INTO public.action_stream (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
+                           "INSERT INTO public.action (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
                                    "                                  modified_by, modified_on)\n" +
                                    "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
                                    "}', 2, null, null, null);\n");
@@ -167,7 +167,7 @@ class DBAccessAdapterTest {
             dataSource.getAddition().put("sql", "");
             dbAccessAdapter.setDataSource(dataSource);
             JSONObject jsonObject = new JSONObject();
-            jsonObject.put("sql", "select * from action_stream");
+            jsonObject.put("sql", "select * from action");
             ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, jsonObject);
 
             JSONArray json = (JSONArray) dbAccessAdapter.access(actionTempData);
@@ -181,7 +181,7 @@ class DBAccessAdapterTest {
         @Order(2)
         public void testDatasourceHaveSql() throws Exception {
             // 构造请求
-            dataSource.getAddition().put("sql", "select * from action_stream");
+            dataSource.getAddition().put("sql", "select * from action");
             dbAccessAdapter.setDataSource(dataSource);
             JSONObject jsonObject = new JSONObject();
             jsonObject.put("sql", "");
@@ -201,7 +201,7 @@ class DBAccessAdapterTest {
             dataSource.getAddition().put("sql", "select * from data_source");
             dbAccessAdapter.setDataSource(dataSource);
             JSONObject jsonObject = new JSONObject();
-            jsonObject.put("sql", "select * from action_stream");
+            jsonObject.put("sql", "select * from action");
             ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, jsonObject);
 
             JSONArray json = (JSONArray) dbAccessAdapter.access(actionTempData);
@@ -212,14 +212,14 @@ class DBAccessAdapterTest {
         @Order(3)
         public void testDelete() throws Exception {
             jsonObject.put("sql",
-                           "DELETE FROM public.action_stream\n" +
+                           "DELETE FROM public.action\n" +
                                    "WHERE name = '2';\n");
             dbAccessAdapter.setDataSource(dataSource);
             ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
             dbAccessAdapter.access(actionTempData);
 
             // 验证删除
-            jsonObject.put("sql", "select * from action_stream where name = '2'");
+            jsonObject.put("sql", "select * from action where name = '2'");
             ActionTempData<JSON> validateData = new ActionTempData<>(ActionStatus.INITIAL, null);
             JSONArray json = (JSONArray) dbAccessAdapter.access(validateData);
 
@@ -278,7 +278,7 @@ class DBAccessAdapterTest {
             @Order(1)
             public void testAdd() throws Exception {
                 jsonObject.put("sql",
-                               "INSERT INTO public.action_stream (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
+                               "INSERT INTO public.action (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
                                        "                                  modified_by, modified_on)\n" +
                                        "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
                                        "}', 2, null, null, null);\n");
@@ -291,7 +291,7 @@ class DBAccessAdapterTest {
             @Test
             @Order(2)
             public void testSelect() throws Exception {
-                jsonObject.put("sql", "select * from action_stream where name = '2'");
+                jsonObject.put("sql", "select * from action where name = '2'");
                 dbAccessAdapter.setDataSource(dataSource);
                 ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
                 JSONArray json = (JSONArray) dbAccessAdapter.access(actionTempData);
@@ -303,7 +303,7 @@ class DBAccessAdapterTest {
             @Order(3)
             public void testUpdate() throws Exception {
                 jsonObject.put("sql",
-                               "UPDATE public.action_stream\n" +
+                               "UPDATE public.action\n" +
                                        "SET index = 3\n" +
                                        "WHERE name = '2';\n");
                 dbAccessAdapter.setDataSource(dataSource);
@@ -311,7 +311,7 @@ class DBAccessAdapterTest {
                 dbAccessAdapter.access(actionTempData);
 
                 // 验证更新
-                jsonObject.put("sql", "select * from action_stream where name = '2'");
+                jsonObject.put("sql", "select * from action where name = '2'");
                 ActionTempData<JSON> validateData = new ActionTempData<>(ActionStatus.INITIAL, null);
                 JSONArray json = (JSONArray) dbAccessAdapter.access(validateData);
 
@@ -322,14 +322,14 @@ class DBAccessAdapterTest {
             @Order(4)
             public void testDelete() throws Exception {
                 jsonObject.put("sql",
-                               "DELETE FROM public.action_stream\n" +
+                               "DELETE FROM public.action\n" +
                                        "WHERE name = '2';\n");
                 dbAccessAdapter.setDataSource(dataSource);
                 ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
                 dbAccessAdapter.access(actionTempData);
 
                 // 验证删除
-                jsonObject.put("sql", "select * from action_stream where name = '2'");
+                jsonObject.put("sql", "select * from action where name = '2'");
                 ActionTempData<JSON> validateData = new ActionTempData<>(ActionStatus.INITIAL, null);
                 JSONArray json = (JSONArray) dbAccessAdapter.access(validateData);
 
@@ -339,7 +339,7 @@ class DBAccessAdapterTest {
             @Test
             public void testTableNotExists() {
                 jsonObject.put("sql",
-                               "INSERT INTO public.action_stream22 (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
+                               "INSERT INTO public.action22 (id, job_id, name, type, status, index, addition, created_by, created_on,\n" +
                                        "                                  modified_by, modified_on)\n" +
                                        "VALUES (DEFAULT, null, '2', 2, 2, 2, '{\"name\": \"steven\"\n" +
                                        "}', '{\"name\": \"steven\"\n" +
@@ -354,7 +354,7 @@ class DBAccessAdapterTest {
             @Test
             public void testSyntax() throws Exception {
                 jsonObject.put("sql",
-                               "DELETE 111 FROM public.action_stream\n" +
+                               "DELETE 111 FROM public.action\n" +
                                        "WHERE id = 4;\n");
                 dbAccessAdapter.setDataSource(dataSource);
                 ActionTempData<JSON> actionTempData = new ActionTempData<>(ActionStatus.INITIAL, null);
