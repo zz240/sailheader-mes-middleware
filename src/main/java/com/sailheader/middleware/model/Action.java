@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.FastjsonTypeHandler;
+import com.sailheader.middleware.common.helper.JsonTypeHandlerPg;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -28,7 +29,7 @@ public class Action implements Serializable {
     private static final long serialVersionUID = 1L;
 
     //id
-    @TableId(value ="id", type = IdType.AUTO)
+    @TableId(value ="id", type = IdType.ASSIGN_ID)
     private Long id;
 
     //绑定任务id
@@ -47,7 +48,7 @@ public class Action implements Serializable {
     private int index;
 
     //附加辅助信息
-    @TableField(typeHandler = FastjsonTypeHandler.class)
+    @TableField(typeHandler = JsonTypeHandlerPg.class)
     private JSONObject addition;
 
     //创建人id

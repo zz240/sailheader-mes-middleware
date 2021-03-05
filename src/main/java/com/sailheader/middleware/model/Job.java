@@ -25,7 +25,7 @@ public class Job implements Serializable {
     private static final long serialVersionUID = 1L;
 
     //id
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     //任务名称

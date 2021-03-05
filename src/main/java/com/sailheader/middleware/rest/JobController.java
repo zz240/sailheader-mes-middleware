@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.text.ParseException;
+import java.util.Collection;
 import java.util.Date;
 
 
@@ -312,6 +313,21 @@ public class JobController {
         log.info(msg);
         flag = true;
         return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
+    }
+
+    /**
+     * 配置同步接口
+     * @param jobs
+     * @return
+     */
+    @PostMapping("/mw/api/job/sync")
+    public OperationResult<Job> insertOrUpdate(@RequestBody Collection<Job> jobs){
+        OperationResult<Job> result = new OperationResult<>();
+        boolean b = jobService.saveOrUpdateBatch(jobs);
+        if (!b){
+            return result.setData(null).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("未添加任务");
+        }
+        return result.setData(null).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("添加成功");
     }
 
 }
