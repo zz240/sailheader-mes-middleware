@@ -314,4 +314,19 @@ public class JobController {
         return operationResult.setData(flag).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage(msg);
     }
 
+    /**
+     * 配置下发接口
+     * @param job
+     * @return
+     */
+    @PostMapping("/mw/api/job/sync")
+    public OperationResult<Job> insertOrUpdate(@RequestBody Job job){
+        OperationResult<Job> result = new OperationResult<>();
+        boolean b = jobService.saveOrUpdate(job);
+        if (!b){
+            return result.setData(null).setStateCode(StateCode.SYSTEM_ERROR.getValue()).setMessage("未添加任务");
+        }
+        return result.setData(null).setStateCode(StateCode.SYSTEM_SUCCESS.getValue()).setMessage("添加成功");
+    }
+
 }
