@@ -1,6 +1,6 @@
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://192.168.1.222:9001/middleware?currentSchema=public
+    url: jdbc:postgresql://192.168.1.222:9001/middleware?currentSchema=public&stringtype=unspecified
     username: middleware_user
     password: 860fbbdd75de0b5d517323d6f1832e10

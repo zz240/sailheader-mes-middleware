@@ -7,6 +7,7 @@ import com.sailheader.middleware.common.vo.OperationResult;
 import com.sailheader.middleware.constant.*;
 import com.sailheader.middleware.mapper.DataMapper;
 import com.sailheader.middleware.service.IDataService;
+import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,10 +28,11 @@ public class DataServiceImpl implements IDataService {
     private DataMapper dataMapper;
 
     @Override
-    public OperationResult<?> importData(JSONObject importData) throws Exception {
+    public OperationResult<?> importData(Map<String, ?> importData) throws Exception {
         importData.forEach((tableName, value) -> {
             // 1. 清空数据库
             dataMapper.deleteByTableName(tableName);
+            if (ObjectUtils.isEmpty(value)) return;
 
             // 2. 构造需要的字段
             List<String> fieldList = parseField(dataMapper.selectFieldByTableName(tableName));
@@ -38,7 +40,9 @@ public class DataServiceImpl implements IDataService {
             HashMap<String, Object> map = new HashMap<>();
             map.put("tableName", tableName);
             map.put("field", fieldList);
-            map.put("inputData", filterField(fieldList, (JSONArray) value));
+            // 将数据中 map 对象转为 JSONObject
+            JSONArray jsonArray = JSONArray.parseArray(JSON.toJSONString(value));
+            map.put("inputData", filterField(fieldList, jsonArray));
             dataMapper.insertAll(map);
         });
         return new OperationResult<>(null, StateCode.SYSTEM_SUCCESS.getEnUSLabel());
@@ -56,9 +60,9 @@ public class DataServiceImpl implements IDataService {
      *
      * @return
      */
-    private List<Map<String, Object>> filterField(List<String> field, JSONArray data) {
+    private List<Map<String, Object>> filterField(List<String> field, List<?> data) {
         return data.stream().map(item -> {
-            Map<?,?> finalItem = (Map<?, ?>) item;
+            Map<?, ?> finalItem = (Map<?, ?>) item;
             // 1. 遍历接口传递的每一行数据
             TreeMap<String, Object> temp = new TreeMap<>();
 
