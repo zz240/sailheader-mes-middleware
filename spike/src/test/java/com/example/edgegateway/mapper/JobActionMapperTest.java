@@ -12,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.jdbc.Sql;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,5 +92,29 @@ class JobActionMapperTest {
 
         assertThatThrownBy(() -> actionMapper.insert(a2))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void savesFieldMappingRulesRoundTrip() {
+        Job job = new Job();
+        job.setSiteId(1L);
+        job.setName("map-job");
+        job.setStatus(1);
+        jobMapper.insert(job);
+
+        Action map = new Action();
+        map.setJobId(job.getId());
+        map.setName("map");
+        map.setType(ActionType.FIELD_MAPPING);
+        map.setActionIndex(1);
+        map.setAddition(Map.of("rules", List.of(Map.of("source", "order_no", "target", "sheet_no"))));
+        actionMapper.insert(map);
+
+        List<Action> actions = actionMapper.selectList(
+                new LambdaQueryWrapper<Action>()
+                        .eq(Action::getJobId, job.getId())
+                        .orderByAsc(Action::getActionIndex));
+
+        assertThat(actions.get(0).getAddition()).containsKey("rules");
     }
 }

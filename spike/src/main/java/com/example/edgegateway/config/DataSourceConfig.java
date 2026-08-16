@@ -25,7 +25,4 @@ public sealed interface DataSourceConfig
         };
     }
 
-    static String str(Object value) {
-        return value == null ? null : value.toString();
-    }
 }

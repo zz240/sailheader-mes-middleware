@@ -14,22 +14,11 @@ public record RabbitMqDataSourceConfig(
 
     public static RabbitMqDataSourceConfig from(Map<String, Object> addition) {
         return new RabbitMqDataSourceConfig(
-                DataSourceConfig.str(addition.get("queue")),
-                DataSourceConfig.str(addition.getOrDefault("host", "localhost")),
-                toInt(addition.getOrDefault("port", 5672), 5672),
-                DataSourceConfig.str(addition.getOrDefault("username", "guest")),
-                DataSourceConfig.str(addition.getOrDefault("password", "guest")));
-    }
-
-    private static int toInt(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        try {
-            return Integer.parseInt(value.toString());
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
+                ConfigValues.str(addition.get("queue")),
+                ConfigValues.str(addition.getOrDefault("host", "localhost")),
+                ConfigValues.intValue(addition.getOrDefault("port", 5672), 5672),
+                ConfigValues.str(addition.getOrDefault("username", "guest")),
+                ConfigValues.str(addition.getOrDefault("password", "guest")));
     }
 
     @Override

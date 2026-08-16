@@ -8,7 +8,7 @@ import java.util.Map;
 public record HttpDataSourceConfig(String method) implements DataSourceConfig {
 
     public static HttpDataSourceConfig from(Map<String, Object> addition) {
-        return new HttpDataSourceConfig(DataSourceConfig.str(addition.get("method")));
+        return new HttpDataSourceConfig(ConfigValues.str(addition.get("method")));
     }
 
     @Override

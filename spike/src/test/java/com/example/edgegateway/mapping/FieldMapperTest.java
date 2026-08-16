@@ -1,5 +1,6 @@
 package com.example.edgegateway.mapping;
 
+import com.example.edgegateway.config.FieldMappingConfig;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Timestamp;
@@ -45,5 +46,33 @@ class FieldMapperTest {
 
         assertEquals("MES", out.get("source"));
         assertEquals(10, out.get("qty"));
+    }
+
+    @Test
+    void resolvesArrayIndexPath() {
+        FieldMapper mapper = new FieldMapper(List.of(
+                new MappingRule("data.items[0].name", "firstName", TransformType.STRING, null, null, null)));
+
+        Map<String, Object> source = Map.of(
+                "data", Map.of("items", List.of(Map.of("name", "Elizer"))));
+
+        Map<String, Object> out = mapper.apply(source);
+
+        assertEquals("Elizer", out.get("firstName"));
+    }
+
+    @Test
+    void appliesConfigRules() {
+        FieldMappingConfig config = FieldMappingConfig.from(Map.of("rules", List.of(
+                Map.of("source", "order_no", "target", "sheet_no"),
+                Map.of("source", "status", "target", "status",
+                        "transform", "ENUM", "enumMap", Map.of("ACTIVE", 1)))));
+        FieldMapper mapper = new FieldMapper(List.of());
+
+        Map<String, Object> out = mapper.apply(
+                Map.of("order_no", "PO-1", "status", "ACTIVE"), config.rules());
+
+        assertEquals("PO-1", out.get("sheet_no"));
+        assertEquals(1, out.get("status"));
     }
 }

@@ -103,4 +103,18 @@ class ActionServiceTest {
 
         assertThat(saved.getJobId()).isEqualTo(1L);
     }
+
+    @Test
+    void rejectsEmptyFieldMappingRules() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionType.FIELD_MAPPING, 2, Map.of());
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("映射规则");
+    }
 }

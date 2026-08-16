@@ -10,9 +10,9 @@ public record MysqlDataSourceConfig(String url, String username, String password
 
     public static MysqlDataSourceConfig from(Map<String, Object> addition) {
         return new MysqlDataSourceConfig(
-                DataSourceConfig.str(addition.get("url")),
-                DataSourceConfig.str(addition.get("username")),
-                DataSourceConfig.str(addition.get("password")));
+                ConfigValues.str(addition.get("url")),
+                ConfigValues.str(addition.get("username")),
+                ConfigValues.str(addition.get("password")));
     }
 
     @Override

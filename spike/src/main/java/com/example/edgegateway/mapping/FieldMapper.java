@@ -1,5 +1,7 @@
 package com.example.edgegateway.mapping;
 
+import com.example.edgegateway.config.FieldMappingRule;
+
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +27,15 @@ public class FieldMapper {
      * 对一行源数据执行所有映射规则，返回目标 Map。
      */
     public Map<String, Object> apply(Map<String, Object> source) {
+        return applyRules(source, rules);
+    }
+
+    /** 用类型化映射规则（来自字段映射动作配置）执行映射。 */
+    public Map<String, Object> apply(Map<String, Object> source, List<FieldMappingRule> rules) {
+        return applyRules(source, rules.stream().map(this::toMappingRule).toList());
+    }
+
+    private Map<String, Object> applyRules(Map<String, Object> source, List<MappingRule> rules) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (MappingRule rule : rules) {
             // switch 表达式（Java 14+）：整个 switch 本身会"产出一个值"，
@@ -55,6 +66,11 @@ public class FieldMapper {
         return out;
     }
 
+    private MappingRule toMappingRule(FieldMappingRule rule) {
+        return new MappingRule(rule.source(), rule.target(), rule.transform(),
+                rule.constant(), rule.enumMap(), rule.datePattern());
+    }
+
     /**
      * 按点号分隔的路径（如 data.name）从源 Map 逐级取值。
      */
@@ -64,13 +80,24 @@ public class FieldMapper {
         }
         Object current = source;
         for (String segment : path.split("\\.")) {
-            if (current instanceof Map<?, ?> map) {
-                current = map.get(segment);
-            } else {
+            current = resolveSegment(current, segment);
+            if (current == null) {
                 return null;
             }
         }
         return current;
+    }
+
+    /** 支持普通 key 和 data.items[0].name 形式的数组下标路径。 */
+    private Object resolveSegment(Object current, String segment) {
+        if (segment.endsWith("]")) {
+            int bracket = segment.lastIndexOf('[');
+            String name = segment.substring(0, bracket);
+            int index = Integer.parseInt(segment.substring(bracket + 1, segment.length() - 1));
+            Object node = current instanceof Map<?, ?> map ? map.get(name) : null;
+            return node instanceof List<?> list && index < list.size() ? list.get(index) : null;
+        }
+        return current instanceof Map<?, ?> map ? map.get(segment) : null;
     }
 
     /**

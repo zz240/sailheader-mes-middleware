@@ -1,10 +1,13 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.edgegateway.config.ActionConfig;
+import com.example.edgegateway.config.RemoteAccessConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionType;
 import com.example.edgegateway.web.dto.ActionRequest;
 import org.springframework.stereotype.Service;
 
@@ -34,10 +37,11 @@ public class ActionService {
             throw new NoSuchElementException("任务不存在: " + jobId);
         }
         validate(request);
+        ActionConfig.from(request.type(), request.addition()).validate();
         if (indexExists(jobId, request.index(), null)) {
             throw new IllegalArgumentException("同任务下动作序号不能重复: " + request.index());
         }
-        checkDataSourceReference(request.addition());
+        checkDataSourceReference(request.type(), request.addition());
         Action action = new Action();
         action.setJobId(jobId);
         apply(action, request);
@@ -48,10 +52,11 @@ public class ActionService {
     public Action update(Long id, ActionRequest request) {
         Action action = get(id);
         validate(request);
+        ActionConfig.from(request.type(), request.addition()).validate();
         if (indexExists(action.getJobId(), request.index(), id)) {
             throw new IllegalArgumentException("同任务下动作序号不能重复: " + request.index());
         }
-        checkDataSourceReference(request.addition());
+        checkDataSourceReference(request.type(), request.addition());
         apply(action, request);
         actionMapper.updateById(action);
         return action;
@@ -98,15 +103,11 @@ public class ActionService {
         }
     }
 
-    private void checkDataSourceReference(Map<String, Object> addition) {
-        if (addition == null) {
-            return;
-        }
-        Object id = addition.get("dataSourceId");
-        if (id != null && !id.toString().isBlank()) {
-            Long dataSourceId = Long.valueOf(id.toString());
-            if (dataSourceMapper.selectById(dataSourceId) == null) {
-                throw new IllegalArgumentException("引用的数据源不存在: " + dataSourceId);
+    private void checkDataSourceReference(ActionType type, Map<String, Object> addition) {
+        ActionConfig config = ActionConfig.from(type, addition);
+        if (config instanceof RemoteAccessConfig remote && remote.dataSourceId() != null) {
+            if (dataSourceMapper.selectById(remote.dataSourceId()) == null) {
+                throw new IllegalArgumentException("引用的数据源不存在: " + remote.dataSourceId());
             }
         }
     }
