@@ -15,6 +15,13 @@ spring:
     username: guest
     password: guest
 
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
 camel:
   springboot:
     name: edge-gateway-spike
