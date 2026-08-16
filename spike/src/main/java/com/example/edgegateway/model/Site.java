@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 站点：每个客户现场一套部署，携带默认时区与 API Key（预留字段）。
+ */
 @TableName("site")
 public class Site {
 

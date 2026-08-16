@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+/**
+ * 数据源业务：负责配置校验（必填项、类型相关字段、JSON 合法性）、
+ * CRUD 与"同站点重名"冲突检测。校验失败抛 IllegalArgumentException（400），
+ * 重名抛 ConflictException（409），不存在抛 NoSuchElementException（404）。
+ */
 @Service
 public class DataSourceService {
 
@@ -26,6 +31,7 @@ public class DataSourceService {
 
     public DataSource create(DataSourceRequest request) {
         validate(request);
+        // 同一站点下数据源名唯一，作为业务键
         if (exists(request.siteId(), request.name(), null)) {
             throw new ConflictException("数据源名称已存在: " + request.name());
         }
@@ -74,6 +80,7 @@ public class DataSourceService {
     }
 
     private boolean exists(Long siteId, String name, Long excludeId) {
+        // 更新时排除自身，避免"改个字段就撞上自己"的误判
         LambdaQueryWrapper<DataSource> wrapper = new LambdaQueryWrapper<DataSource>()
                 .eq(DataSource::getSiteId, siteId)
                 .eq(DataSource::getName, name);
@@ -106,6 +113,7 @@ public class DataSourceService {
         if (request.address() == null || request.address().isBlank()) {
             throw new IllegalArgumentException("数据源地址不能为空");
         }
+        // 按类型校验 addition 中的必填字段
         Map<String, Object> addition = parseAddition(request.addition());
         switch (request.type()) {
             case HTTP -> require(addition, "method", "HTTP 数据源需要 method");

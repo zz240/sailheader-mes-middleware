@@ -23,6 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+/**
+ * 数据源 REST 接口：CRUD + 列表查询（name 模糊、type 精确）+ 连接测试。
+ * 错误统一由本类的 @ExceptionHandler 映射为 400/404/409。
+ */
 @RestController
 @RequestMapping("/api/data-sources")
 public class DataSourceController {
@@ -37,6 +41,7 @@ public class DataSourceController {
 
     @PostMapping
     public ResponseEntity<DataSourceView> create(@RequestBody DataSourceRequest request) {
+        // 新增成功返回 201 + 落库后的数据源
         return ResponseEntity.status(HttpStatus.CREATED).body(DataSourceView.from(dataSourceService.create(request)));
     }
 
@@ -59,11 +64,13 @@ public class DataSourceController {
     @GetMapping
     public List<DataSourceView> list(@RequestParam(required = false) String name,
                                      @RequestParam(required = false) DataSourceType type) {
+        // 列表查询：两个条件都是可选的，组合过滤
         return dataSourceService.list(name, type).stream().map(DataSourceView::from).toList();
     }
 
     @PostMapping("/{id}/test")
     public ConnectionTester.TestResult test(@PathVariable Long id) {
+        // 按已保存的数据源配置做一次连接探测
         return connectionTester.test(dataSourceService.get(id));
     }
 

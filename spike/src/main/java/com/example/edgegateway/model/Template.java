@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 模板：可复用的任务配置资产，按 name + version 唯一，支持导出/导入。
+ */
 @TableName("template")
 public class Template {
 

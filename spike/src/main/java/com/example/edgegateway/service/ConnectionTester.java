@@ -14,6 +14,10 @@ import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.Map;
 
+/**
+ * 连接测试：按数据源类型做一次轻量探测（HTTP 请求 / JDBC 连接 / RabbitMQ 建连），
+ * 返回 {ok, message}；任何异常都收敛为 ok=false，不让异常冒泡到接口层。
+ */
 @Component
 public class ConnectionTester {
 
@@ -38,6 +42,7 @@ public class ConnectionTester {
     }
 
     private TestResult testHttp(DataSource dataSource) throws Exception {
+        // HTTP：GET 目标地址，3 秒超时；能拿到任何响应码都算连通
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
@@ -50,6 +55,7 @@ public class ConnectionTester {
     }
 
     private TestResult testMysql(DataSource dataSource) throws Exception {
+        // MySQL：用 addition 里的 url/username/password 建立 JDBC 连接
         Map<String, Object> addition = parse(dataSource.getAddition());
         String url = String.valueOf(addition.get("url"));
         String username = String.valueOf(addition.get("username"));
@@ -61,6 +67,7 @@ public class ConnectionTester {
     }
 
     private TestResult testRabbitMq(DataSource dataSource) throws Exception {
+        // RabbitMQ：用 amqp-client 建连，host/port/账号密码缺省取 localhost/5672/guest/guest
         Map<String, Object> addition = parse(dataSource.getAddition());
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(String.valueOf(addition.getOrDefault("host", "localhost")));

@@ -5,6 +5,10 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 动作：任务动作链中的最小执行单元。按 index 升序执行；
+ * addition 保存动作类型相关的 JSON 配置（如远程访问的地址/SQL、字段映射规则）。
+ */
 @TableName("job_action")
 public class Action {
 
@@ -15,12 +19,12 @@ public class Action {
 
     private String name;
 
-    private ActionType type;
+    private ActionType type; // 动作类型：远程访问 / 字段映射，按名字存 VARCHAR
 
-    @TableField("action_index")
+    @TableField("action_index") // 字段名 index 与列名 action_index 不对应，显式映射
     private Integer index;
 
-    private String addition;
+    private String addition; // JSON 配置串，由动作执行逻辑解析
 
     public Long getId() {
         return id;

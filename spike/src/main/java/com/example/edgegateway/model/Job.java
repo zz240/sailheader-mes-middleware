@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 任务：一条可执行的数据同步流程，由动作链（Action）按 index 顺序组成。
+ * 支持 cron 定时、手动、HTTP、MQ 四种触发；水位策略决定增量同步方式。
+ */
 @TableName("job")
 public class Job {
 
@@ -14,7 +18,7 @@ public class Job {
 
     private String name;
 
-    private Integer status;
+    private Integer status; // 0 停用，1 启用
 
     private String crontab;
 
@@ -24,9 +28,9 @@ public class Job {
 
     private Long backoffMs;
 
-    private WatermarkType watermarkType;
+    private WatermarkType watermarkType; // 水位策略：TIMESTAMP（时间列）或 SEQUENCE（自增列）
 
-    private String watermarkColumn;
+    private String watermarkColumn; // 对应的增量列名，路由生成器据此生成 where 条件
 
     private String remarks;
 

@@ -5,6 +5,9 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 死信：动作最终失败后的记录，保存动作上下文、原始输入和错误信息，供人工查看与重投。
+ */
 @TableName("dead_letter")
 public class DeadLetter {
 

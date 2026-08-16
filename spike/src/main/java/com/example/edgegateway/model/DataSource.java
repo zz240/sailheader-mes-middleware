@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * 数据源：一个可配置的外部连接实例。type 决定连接器类型（HTTP/MySQL/RabbitMQ），
+ * addition 保存类型相关的 JSON 配置串，由服务层解析和校验。
+ */
 @TableName("data_source")
 public class DataSource {
 
@@ -14,11 +18,11 @@ public class DataSource {
 
     private String name;
 
-    private DataSourceType type;
+    private DataSourceType type; // 枚举按名字存 VARCHAR，例如 MYSQL
 
     private String address;
 
-    private String addition;
+    private String addition; // JSON 字符串：HTTP 的 method；MySQL 的 url/username/password；RabbitMQ 的 queue
 
     public Long getId() {
         return id;
