@@ -20,8 +20,6 @@ public class Action {
     @TableField("action_index")
     private Integer index;
 
-    private Integer consumeDataType;
-
     private String addition;
 
     public Long getId() {
@@ -62,14 +60,6 @@ public class Action {
 
     public void setIndex(Integer index) {
         this.index = index;
-    }
-
-    public Integer getConsumeDataType() {
-        return consumeDataType;
-    }
-
-    public void setConsumeDataType(Integer consumeDataType) {
-        this.consumeDataType = consumeDataType;
     }
 
     public String getAddition() {

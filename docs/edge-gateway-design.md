@@ -56,7 +56,7 @@ flowchart TB
 
 - DataSource：`id, siteId, name, type(http|mysql|rabbitmq), address, addition(json), encryptedSecrets`。
 - Job：`id, siteId, code, name, status(0/1), crontab, timezone, retryCount, backoff, lastRunStatus, lastRunAt`。
-- Action：`id, jobId, type(remote|mapObject|mapArray), index, consumeDataType, addition(json)`。
+- Action：`id, jobId, type(remote|mapObject|mapArray), index, addition(json)`。
 - Template：`id, name, version, config(json)，含可变占位符`。
 - Watermark：`jobId, key, value, updatedAt`。
 - DeadLetter：`jobId, actionIndex, inputJson, error, retriedAt, status`。
@@ -66,7 +66,7 @@ flowchart TB
 - 一个启用任务对应一条已注册的 Camel 路由；停用即 `stopRoute`，修改即删旧建新。
 - 触发方式：手动执行、cron 定时、第三方 HTTP 调用、RabbitMQ 消费。
 - 手动执行接口可携带输入 JSON，作为任务输入（Job Input）。
-- 动作按 `index` 顺序执行；`consumeDataType` 决定是否把上一个动作输出作为当前输入。
+- 动作按 `index` 顺序执行；数据流向由动作配置显式声明（字段映射的"来源步骤"、远程访问的"请求体来源"），不设 consumeDataType 开关。
 - 上下文按动作输出顺序保存为列表：`0` 是任务输入，`1..n` 是动作 1..n 的输出；字段来源用"来源步骤 + 字段路径"结构化表达，不在界面上暴露占位符字符串。
 - 任务状态机：`disabled -> enabled`，执行中 `running`，结束后 `success | failed`。
 

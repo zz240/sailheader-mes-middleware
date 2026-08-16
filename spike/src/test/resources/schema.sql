@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS job_action (
     name VARCHAR(255) NOT NULL,
     type VARCHAR(30) NOT NULL,
     action_index INT NOT NULL,
-    consume_data_type INT,
     addition TEXT,
     CONSTRAINT uk_action_job_index UNIQUE (job_id, action_index)
 );
