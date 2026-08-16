@@ -7,6 +7,8 @@ import com.example.edgegateway.web.dto.DataSourceRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,7 +26,7 @@ class DataSourceServiceTest {
         service = new DataSourceService(mapper);
     }
 
-    private DataSourceRequest request(String name, DataSourceType type, String addition) {
+    private DataSourceRequest request(String name, DataSourceType type, Map<String, Object> addition) {
         return new DataSourceRequest(name, 1L, type, "http://localhost:8080/mock", addition);
     }
 
@@ -36,7 +38,7 @@ class DataSourceServiceTest {
             return 1;
         });
 
-        DataSource saved = service.create(request("erp", DataSourceType.HTTP, "{\"method\":\"GET\"}"));
+        DataSource saved = service.create(request("erp", DataSourceType.HTTP, Map.of("method", "GET")));
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getName()).isEqualTo("erp");
@@ -45,13 +47,13 @@ class DataSourceServiceTest {
 
     @Test
     void rejectsBlankName() {
-        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, "{\"method\":\"GET\"}")))
+        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, Map.of("method", "GET"))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void rejectsMissingRequiredAdditionField() {
-        assertThatThrownBy(() -> service.create(request("mysql", DataSourceType.MYSQL, "{\"username\":\"sa\"}")))
+        assertThatThrownBy(() -> service.create(request("mysql", DataSourceType.MYSQL, Map.of("username", "sa"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("url");
     }
@@ -60,7 +62,7 @@ class DataSourceServiceTest {
     void rejectsDuplicateNameInSite() {
         when(mapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, "{\"method\":\"GET\"}")))
+        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, Map.of("method", "GET"))))
                 .isInstanceOf(ConflictException.class);
     }
 }

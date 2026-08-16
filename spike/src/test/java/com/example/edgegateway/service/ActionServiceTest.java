@@ -11,6 +11,7 @@ import com.example.edgegateway.web.dto.ActionRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,7 +35,7 @@ class ActionServiceTest {
         service = new ActionService(actionMapper, jobMapper, dataSourceMapper);
     }
 
-    private ActionRequest request(Integer index, String addition) {
+    private ActionRequest request(Integer index, Map<String, Object> addition) {
         return new ActionRequest("read", ActionType.REMOTE_ACCESS, index, addition);
     }
 
@@ -49,7 +50,7 @@ class ActionServiceTest {
             return 1;
         });
 
-        Action saved = service.add(1L, request(1, "{}"));
+        Action saved = service.add(1L, request(1, Map.of()));
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getJobId()).isEqualTo(1L);
@@ -60,7 +61,7 @@ class ActionServiceTest {
     void rejectsActionWhenJobMissing() {
         when(jobMapper.selectById(99L)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.add(99L, request(1, "{}")))
+        assertThatThrownBy(() -> service.add(99L, request(1, Map.of())))
                 .isInstanceOf(NoSuchElementException.class);
     }
 
@@ -71,7 +72,7 @@ class ActionServiceTest {
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service.add(1L, request(1, "{}")))
+        assertThatThrownBy(() -> service.add(1L, request(1, Map.of())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("序号");
     }
@@ -84,7 +85,7 @@ class ActionServiceTest {
         when(actionMapper.selectCount(any())).thenReturn(0L);
         when(dataSourceMapper.selectById(99L)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.add(1L, request(1, "{\"dataSourceId\":99}")))
+        assertThatThrownBy(() -> service.add(1L, request(1, Map.of("dataSourceId", 99))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("数据源");
     }
@@ -98,7 +99,7 @@ class ActionServiceTest {
         when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
         when(actionMapper.insert(any(Action.class))).thenReturn(1);
 
-        Action saved = service.add(1L, request(1, "{\"dataSourceId\":7}"));
+        Action saved = service.add(1L, request(1, Map.of("dataSourceId", 7)));
 
         assertThat(saved.getJobId()).isEqualTo(1L);
     }

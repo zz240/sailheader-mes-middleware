@@ -108,8 +108,8 @@ public class DataSourceService {
         if (request.address() == null || request.address().isBlank()) {
             throw new IllegalArgumentException("数据源地址不能为空");
         }
-        // 按类型校验 addition 中的必填字段
-        Map<String, Object> addition = parseAddition(request.addition());
+        // 按类型校验 addition 中的必填字段；addition 是请求体里的 JSON 对象
+        Map<String, Object> addition = request.addition() == null ? Map.of() : request.addition();
         switch (request.type()) {
             case HTTP -> require(addition, "method", "HTTP 数据源需要 method");
             case MYSQL -> {
@@ -119,10 +119,6 @@ public class DataSourceService {
             }
             case RABBITMQ -> require(addition, "queue", "RabbitMQ 数据源需要 queue");
         }
-    }
-
-    private Map<String, Object> parseAddition(String addition) {
-        return AdditionJson.parse(addition);
     }
 
     private void require(Map<String, Object> addition, String key, String message) {

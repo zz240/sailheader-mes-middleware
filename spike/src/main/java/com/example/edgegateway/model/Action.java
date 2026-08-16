@@ -4,12 +4,15 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+
+import java.util.Map;
 
 /**
  * 动作：任务动作链中的最小执行单元。按 index 升序执行；
- * addition 保存动作类型相关的 JSON 配置（如远程访问的地址/SQL、字段映射规则）。
+ * addition 保存动作类型相关的 JSON 配置对象（如远程访问的 dataSourceId/SQL、字段映射规则）。
  */
-@TableName("job_action")
+@TableName(value = "job_action", autoResultMap = true)
 public class Action {
 
     @TableId(type = IdType.AUTO)
@@ -24,7 +27,8 @@ public class Action {
     @TableField("action_index") // 字段名 index 与列名 action_index 不对应，显式映射
     private Integer actionIndex;
 
-    private String addition; // JSON 配置串，由动作执行逻辑解析
+    @TableField(typeHandler = JacksonTypeHandler.class) // MySQL JSON 列
+    private Map<String, Object> addition;
 
     public Long getId() {
         return id;
@@ -66,11 +70,11 @@ public class Action {
         this.actionIndex = actionIndex;
     }
 
-    public String getAddition() {
+    public Map<String, Object> getAddition() {
         return addition;
     }
 
-    public void setAddition(String addition) {
+    public void setAddition(Map<String, Object> addition) {
         this.addition = addition;
     }
 }

@@ -118,7 +118,7 @@ class JobControllerTest {
 
         mockMvc.perform(post("/api/jobs/1/actions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":\"{}\"}"))
+                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":{}}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.index").value(1));
     }
@@ -130,7 +130,7 @@ class JobControllerTest {
 
         mockMvc.perform(post("/api/jobs/1/actions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":\"{}\"}"))
+                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":{}}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -146,7 +146,7 @@ class JobControllerTest {
 
         mockMvc.perform(put("/api/actions/1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"map\",\"type\":\"FIELD_MAPPING\",\"index\":3,\"addition\":\"{}\"}"))
+                        .content("{\"name\":\"map\",\"type\":\"FIELD_MAPPING\",\"index\":3,\"addition\":{}}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.index").value(3));
     }

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS data_source (
     name VARCHAR(255) NOT NULL,
     type VARCHAR(20) NOT NULL,
     address VARCHAR(500),
-    addition TEXT,
+    addition JSON,
     CONSTRAINT uk_data_source_site_name UNIQUE (site_id, name)
 );
 
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS job_action (
     name VARCHAR(255) NOT NULL,
     type VARCHAR(30) NOT NULL,
     action_index INT NOT NULL,
-    addition TEXT,
+    addition JSON,
     CONSTRAINT uk_action_job_index UNIQUE (job_id, action_index)
 );
 
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS template (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     version VARCHAR(64) NOT NULL,
-    config_json TEXT,
+    config_json JSON,
     CONSTRAINT uk_template_name_version UNIQUE (name, version)
 );
 

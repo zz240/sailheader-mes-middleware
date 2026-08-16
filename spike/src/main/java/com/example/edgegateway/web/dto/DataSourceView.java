@@ -3,6 +3,8 @@ package com.example.edgegateway.web.dto;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 
+import java.util.Map;
+
 /** 数据源接口响应体；from(DataSource) 负责实体到视图的转换。 */
 public record DataSourceView(
         Long id,
@@ -10,7 +12,7 @@ public record DataSourceView(
         String name,
         DataSourceType type,
         String address,
-        String addition
+        Map<String, Object> addition
 ) {
 
     public static DataSourceView from(DataSource ds) {

@@ -75,7 +75,7 @@ public class ConnectionTester {
         }
     }
 
-    private Map<String, Object> parse(String addition) throws Exception {
-        return AdditionJson.parse(addition);
+    private Map<String, Object> parse(Map<String, Object> addition) {
+        return addition == null ? Map.of() : addition;
     }
 }

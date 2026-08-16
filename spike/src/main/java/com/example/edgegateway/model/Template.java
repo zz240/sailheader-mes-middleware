@@ -1,13 +1,17 @@
 package com.example.edgegateway.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+
+import java.util.Map;
 
 /**
  * 模板：可复用的任务配置资产，按 name + version 唯一，支持导出/导入。
  */
-@TableName("template")
+@TableName(value = "template", autoResultMap = true)
 public class Template {
 
     @TableId(type = IdType.AUTO)
@@ -17,7 +21,8 @@ public class Template {
 
     private String version;
 
-    private String configJson;
+    @TableField(value = "config_json", typeHandler = JacksonTypeHandler.class) // MySQL JSON 列
+    private Map<String, Object> configJson;
 
     public Long getId() {
         return id;
@@ -43,11 +48,11 @@ public class Template {
         this.version = version;
     }
 
-    public String getConfigJson() {
+    public Map<String, Object> getConfigJson() {
         return configJson;
     }
 
-    public void setConfigJson(String configJson) {
+    public void setConfigJson(Map<String, Object> configJson) {
         this.configJson = configJson;
     }
 }

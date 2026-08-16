@@ -1,14 +1,18 @@
 package com.example.edgegateway.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+
+import java.util.Map;
 
 /**
  * 数据源：一个可配置的外部连接实例。type 决定连接器类型（HTTP/MySQL/RabbitMQ），
- * addition 保存类型相关的 JSON 配置串，由服务层解析和校验。
+ * addition 保存类型相关的 JSON 配置对象（HTTP 的 method、MySQL 的 url/username/password、RabbitMQ 的 queue）。
  */
-@TableName("data_source")
+@TableName(value = "data_source", autoResultMap = true)
 public class DataSource {
 
     @TableId(type = IdType.AUTO)
@@ -22,7 +26,8 @@ public class DataSource {
 
     private String address;
 
-    private String addition; // JSON 字符串：HTTP 的 method；MySQL 的 url/username/password；RabbitMQ 的 queue
+    @TableField(typeHandler = JacksonTypeHandler.class) // MySQL JSON 列，读写自动序列化/反序列化
+    private Map<String, Object> addition;
 
     public Long getId() {
         return id;
@@ -64,11 +69,11 @@ public class DataSource {
         this.address = address;
     }
 
-    public String getAddition() {
+    public Map<String, Object> getAddition() {
         return addition;
     }
 
-    public void setAddition(String addition) {
+    public void setAddition(Map<String, Object> addition) {
         this.addition = addition;
     }
 }

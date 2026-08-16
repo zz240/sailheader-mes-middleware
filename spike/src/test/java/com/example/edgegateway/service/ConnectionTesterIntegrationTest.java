@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -32,7 +33,7 @@ class ConnectionTesterIntegrationTest {
             DataSource ds = new DataSource();
             ds.setType(DataSourceType.HTTP);
             ds.setAddress("http://127.0.0.1:" + server.getAddress().getPort() + "/ping");
-            ds.setAddition("{\"method\":\"GET\"}");
+            ds.setAddition(Map.of("method", "GET"));
 
             ConnectionTester.TestResult result = tester.test(ds);
 
@@ -48,7 +49,7 @@ class ConnectionTesterIntegrationTest {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.HTTP);
         ds.setAddress("http://127.0.0.1:1/nothing"); // 端口 1 通常拒绝连接
-        ds.setAddition("{\"method\":\"GET\"}");
+        ds.setAddition(Map.of("method", "GET"));
 
         assertThat(tester.test(ds).ok()).isFalse();
     }
@@ -58,9 +59,10 @@ class ConnectionTesterIntegrationTest {
         assumeTrue(portOpen("localhost", 3306), "本地 MySQL 未启动，跳过");
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition("{\"url\":\"jdbc:mysql://localhost:3306/edge_gateway"
-                + "?useSSL=false&allowPublicKeyRetrieval=true\","
-                + "\"username\":\"gateway\",\"password\":\"gateway\"}");
+        ds.setAddition(Map.of(
+                "url", "jdbc:mysql://localhost:3306/edge_gateway?useSSL=false&allowPublicKeyRetrieval=true",
+                "username", "gateway",
+                "password", "gateway"));
 
         assertThat(tester.test(ds).ok()).isTrue();
     }
@@ -69,9 +71,10 @@ class ConnectionTesterIntegrationTest {
     void mysqlUnreachableReturnsFail() {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition("{\"url\":\"jdbc:mysql://localhost:33306/edge_gateway"
-                + "?connectTimeout=2000&socketTimeout=2000\","
-                + "\"username\":\"gateway\",\"password\":\"gateway\"}");
+        ds.setAddition(Map.of(
+                "url", "jdbc:mysql://localhost:33306/edge_gateway?connectTimeout=2000&socketTimeout=2000",
+                "username", "gateway",
+                "password", "gateway"));
 
         assertThat(tester.test(ds).ok()).isFalse();
     }
@@ -81,8 +84,9 @@ class ConnectionTesterIntegrationTest {
         assumeTrue(portOpen("localhost", 5672), "本地 RabbitMQ 未启动，跳过");
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.RABBITMQ);
-        ds.setAddition("{\"queue\":\"mes.to.edge\",\"host\":\"localhost\","
-                + "\"port\":5672,\"username\":\"guest\",\"password\":\"guest\"}");
+        ds.setAddition(Map.of(
+                "queue", "mes.to.edge", "host", "localhost",
+                "port", 5672, "username", "guest", "password", "guest"));
 
         assertThat(tester.test(ds).ok()).isTrue();
     }
@@ -91,8 +95,9 @@ class ConnectionTesterIntegrationTest {
     void rabbitMqUnreachableReturnsFail() {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.RABBITMQ);
-        ds.setAddition("{\"queue\":\"mes.to.edge\",\"host\":\"localhost\","
-                + "\"port\":55672,\"username\":\"guest\",\"password\":\"guest\"}");
+        ds.setAddition(Map.of(
+                "queue", "mes.to.edge", "host", "localhost",
+                "port", 55672, "username", "guest", "password", "guest"));
 
         assertThat(tester.test(ds).ok()).isFalse();
     }

@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.jdbc.Sql;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -26,7 +28,7 @@ class DataSourceMapperTest {
         ds.setName("erp-mysql");
         ds.setType(DataSourceType.MYSQL);
         ds.setAddress("jdbc:mysql://localhost:3306/cx");
-        ds.setAddition("{\"username\":\"sa\"}");
+        ds.setAddition(Map.of("username", "sa"));
         dataSourceMapper.insert(ds);
 
         DataSource found = dataSourceMapper.selectOne(
@@ -35,7 +37,7 @@ class DataSourceMapperTest {
         assertThat(found).isNotNull();
         assertThat(found.getType()).isEqualTo(DataSourceType.MYSQL);
         assertThat(found.getAddress()).isEqualTo("jdbc:mysql://localhost:3306/cx");
-        assertThat(found.getAddition()).contains("sa");
+        assertThat(found.getAddition()).containsEntry("username", "sa");
     }
 
     @Test

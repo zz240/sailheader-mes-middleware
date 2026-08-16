@@ -98,9 +98,11 @@ public class ActionService {
         }
     }
 
-    private void checkDataSourceReference(String addition) {
-        Map<String, Object> map = AdditionJson.parse(addition);
-        Object id = map.get("dataSourceId");
+    private void checkDataSourceReference(Map<String, Object> addition) {
+        if (addition == null) {
+            return;
+        }
+        Object id = addition.get("dataSourceId");
         if (id != null && !id.toString().isBlank()) {
             Long dataSourceId = Long.valueOf(id.toString());
             if (dataSourceMapper.selectById(dataSourceId) == null) {
