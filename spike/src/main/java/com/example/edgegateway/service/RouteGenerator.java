@@ -1,0 +1,229 @@
+package com.example.edgegateway.service;
+
+import com.example.edgegateway.WatermarkStore;
+import com.example.edgegateway.config.DataSourceConfig;
+import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.HttpDataSourceConfig;
+import com.example.edgegateway.config.RabbitMqDataSourceConfig;
+import com.example.edgegateway.config.RemoteAccessConfig;
+import com.example.edgegateway.mapper.DataSourceMapper;
+import com.example.edgegateway.mapping.FieldMapper;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.DataSource;
+import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.WatermarkType;
+import org.apache.camel.Exchange;
+import org.apache.camel.builder.RouteBuilder;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * 路由生成器：把"任务 + 动作链"配置编译成一条 Camel 路由。
+ * 目前支持两种演示模板：
+ * <ul>
+ *   <li>北向：MySQL 读（带水位）→ 字段映射 → HTTP 写</li>
+ *   <li>南向：RabbitMQ 消费 → 字段映射 → MySQL 幂等 upsert</li>
+ * </ul>
+ * SQL 中的 {@code {watermark}} 占位符会被替换成任务配置的水位谓词。
+ */
+@Component
+public class RouteGenerator {
+
+    private final DataSourceMapper dataSourceMapper;
+    private final WatermarkStore watermarkStore;
+    private final JdbcTemplate jdbcTemplate;
+
+    public RouteGenerator(DataSourceMapper dataSourceMapper, WatermarkStore watermarkStore, JdbcTemplate jdbcTemplate) {
+        this.dataSourceMapper = dataSourceMapper;
+        this.watermarkStore = watermarkStore;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public RouteBuilder build(Job job, List<Action> actions) {
+        if (actions == null || actions.isEmpty()) {
+            throw new IllegalArgumentException("任务没有动作，无法生成路由");
+        }
+        List<Action> sorted = actions.stream()
+                .sorted(Comparator.comparing(Action::getActionIndex))
+                .toList();
+        return isRabbitConsumer(sorted.get(0))
+                ? buildSouthbound(job, sorted)
+                : buildNorthbound(job, sorted);
+    }
+
+    private boolean isRabbitConsumer(Action action) {
+        RemoteAccessConfig config = RemoteAccessConfig.from(addition(action));
+        if (config.dataSourceId() == null) {
+            return false;
+        }
+        DataSource dataSource = dataSourceMapper.selectById(config.dataSourceId());
+        return dataSource != null && dataSource.getType() == DataSourceType.RABBITMQ;
+    }
+
+    private RouteBuilder buildNorthbound(Job job, List<Action> actions) {
+        String routeId = "job-" + job.getId();
+        RemoteAccessConfig read = RemoteAccessConfig.from(addition(remoteActions(actions).get(0)));
+        RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).get(remoteActions(actions).size() - 1)));
+        DataSource writeDataSource = dataSourceMapper.selectById(write.dataSourceId());
+        HttpDataSourceConfig http = (HttpDataSourceConfig)
+                DataSourceConfig.from(writeDataSource.getType(), writeDataSource.getAddition());
+        FieldMappingConfig mapping = fieldMapping(actions);
+        FieldMapper fieldMapper = new FieldMapper(List.of());
+
+        String sql = read.sql().replace("{watermark}", watermarkPredicate(job));
+
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                from("timer:" + routeId + "?period=60000&delay=5000")
+                        .routeId(routeId)
+                        .process(exchange -> readWatermark(exchange, job))
+                        .to("sql:" + sql + "?dataSource=#dataSource&outputType=SelectList")
+                        .process(exchange -> computeMax(exchange, job))
+                        .split(body())
+                        .process(exchange -> {
+                            Map<String, Object> source = exchange.getMessage().getBody(Map.class);
+                            exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
+                        })
+                        .marshal().json()
+                        .setHeader(Exchange.HTTP_METHOD, constant(http.method()))
+                        .setHeader(Exchange.CONTENT_TYPE, constant("application/json"))
+                        .to(writeDataSource.getAddress())
+                        .end()
+                        .process(exchange -> updateWatermark(exchange, job));
+            }
+        };
+    }
+
+    private RouteBuilder buildSouthbound(Job job, List<Action> actions) {
+        String routeId = "job-" + job.getId();
+        RemoteAccessConfig consumer = RemoteAccessConfig.from(addition(actions.get(0)));
+        DataSource mqDataSource = dataSourceMapper.selectById(consumer.dataSourceId());
+        RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
+                DataSourceConfig.from(mqDataSource.getType(), mqDataSource.getAddition());
+
+        RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).get(remoteActions(actions).size() - 1)));
+        Map<String, Object> writeAddition = addition(remoteActions(actions).get(remoteActions(actions).size() - 1));
+        String table = str(writeAddition.get("tableName"));
+        String idempotencyKey = str(writeAddition.get("idempotencyKey"));
+        FieldMappingConfig mapping = fieldMapping(actions);
+        FieldMapper fieldMapper = new FieldMapper(List.of());
+
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                from("spring-rabbitmq:" + mqDataSource.getName()
+                        + "?queues=" + mq.queue() + "&routingKey=" + mq.queue() + "&autoDeclare=true")
+                        .routeId(routeId)
+                        .unmarshal().json()
+                        .process(exchange -> {
+                            Map<String, Object> source = exchange.getMessage().getBody(Map.class);
+                            exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
+                        })
+                        .process(exchange -> upsert(exchange, table, idempotencyKey))
+                        .log(routeId + " upserted ${body}");
+            }
+        };
+    }
+
+    private List<Action> remoteActions(List<Action> actions) {
+        return actions.stream()
+                .filter(a -> a.getType() == ActionType.REMOTE_ACCESS)
+                .toList();
+    }
+
+    private FieldMappingConfig fieldMapping(List<Action> actions) {
+        return actions.stream()
+                .filter(a -> a.getType() == ActionType.FIELD_MAPPING)
+                .findFirst()
+                .map(a -> FieldMappingConfig.from(addition(a)))
+                .orElse(null);
+    }
+
+    private Map<String, Object> addition(Action action) {
+        return action.getAddition() == null ? Map.of() : action.getAddition();
+    }
+
+    private String watermarkPredicate(Job job) {
+        String column = job.getWatermarkColumn();
+        return job.getWatermarkType() == WatermarkType.TIMESTAMP
+                ? column + " > :#lastRun"
+                : column + " > :#lastId";
+    }
+
+    private String watermarkKey(Job job) {
+        return "job:" + job.getId();
+    }
+
+    private void readWatermark(Exchange exchange, Job job) {
+        long value = watermarkStore.get(watermarkKey(job));
+        if (job.getWatermarkType() == WatermarkType.TIMESTAMP) {
+            exchange.getMessage().setHeader("lastRun", formatTime(value));
+        } else {
+            exchange.getMessage().setHeader("lastId", value);
+        }
+    }
+
+    private void computeMax(Exchange exchange, Job job) {
+        List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
+        long value;
+        if (job.getWatermarkType() == WatermarkType.SEQUENCE) {
+            long max = exchange.getMessage().getHeader("lastId", Long.class);
+            String column = job.getWatermarkColumn();
+            for (Map<String, Object> row : rows) {
+                Object raw = row.get(column);
+                if (raw instanceof Number number) {
+                    max = Math.max(max, number.longValue());
+                }
+            }
+            value = max;
+        } else {
+            value = System.currentTimeMillis();
+        }
+        exchange.setProperty("watermarkValue", value);
+    }
+
+    private void updateWatermark(Exchange exchange, Job job) {
+        Long value = exchange.getProperty("watermarkValue", Long.class);
+        if (value != null) {
+            watermarkStore.put(watermarkKey(job), value);
+        }
+    }
+
+    private void upsert(Exchange exchange, String table, String idempotencyKey) {
+        Map<String, Object> row = exchange.getMessage().getBody(Map.class);
+        List<String> columns = new ArrayList<>(row.keySet());
+        String columnList = String.join(",", columns);
+        String placeholders = String.join(",", Collections.nCopies(columns.size(), "?"));
+        String updates = columns.stream()
+                .filter(c -> !c.equals(idempotencyKey))
+                .map(c -> c + " = values(" + c + ")")
+                .collect(Collectors.joining(", "));
+        String sql = "insert into " + table + " (" + columnList + ") values (" + placeholders + ")"
+                + " on duplicate key update "
+                + (updates.isEmpty() ? idempotencyKey + " = values(" + idempotencyKey + ")" : updates);
+        jdbcTemplate.update(sql, columns.stream().map(row::get).toArray());
+    }
+
+    private String formatTime(long epochMillis) {
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(ZoneId.systemDefault())
+                .format(Instant.ofEpochMilli(epochMillis));
+    }
+
+    private String str(Object value) {
+        return value == null ? null : value.toString();
+    }
+}

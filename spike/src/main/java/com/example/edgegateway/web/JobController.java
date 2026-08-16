@@ -2,11 +2,13 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.JobService;
+import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.ActionView;
 import com.example.edgegateway.web.dto.JobRequest;
 import com.example.edgegateway.web.dto.JobStatusRequest;
 import com.example.edgegateway.web.dto.JobView;
+import com.example.edgegateway.model.Job;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,24 +32,29 @@ public class JobController {
 
     private final JobService jobService;
     private final ActionService actionService;
+    private final RouteRegistry routeRegistry;
 
-    public JobController(JobService jobService, ActionService actionService) {
+    public JobController(JobService jobService, ActionService actionService, RouteRegistry routeRegistry) {
         this.jobService = jobService;
         this.actionService = actionService;
+        this.routeRegistry = routeRegistry;
     }
 
     @PostMapping
     public ResponseEntity<JobView> create(@RequestBody JobRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(JobView.from(jobService.create(request)));
+        Job job = jobService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(JobView.from(job));
     }
 
     @PutMapping("/{id}")
     public JobView update(@PathVariable Long id, @RequestBody JobRequest request) {
+        // 配置变更不自动启停，统一由 /status 端点控制，避免"空动作就启用"的中间态
         return JobView.from(jobService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
+        routeRegistry.disable(id);
         jobService.delete(id);
         return ResponseEntity.noContent().build();
     }
@@ -65,7 +72,13 @@ public class JobController {
 
     @PutMapping("/{id}/status")
     public JobView setStatus(@PathVariable Long id, @RequestBody JobStatusRequest request) {
-        return JobView.from(jobService.setStatus(id, request.status()));
+        Job job = jobService.setStatus(id, request.status());
+        if (job.getStatus() == 1) {
+            routeRegistry.enable(id);
+        } else {
+            routeRegistry.disable(id);
+        }
+        return JobView.from(job);
     }
 
     @PostMapping("/{id}/actions")

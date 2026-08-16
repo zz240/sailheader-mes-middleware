@@ -7,6 +7,7 @@ import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.ConflictException;
 import com.example.edgegateway.service.JobService;
+import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.JobRequest;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,9 @@ class JobControllerTest {
 
     @MockBean
     private ActionService actionService;
+
+    @MockBean
+    private RouteRegistry routeRegistry;
 
     private static final String JOB_BODY =
             "{\"name\":\"po-sync\",\"siteId\":1,\"status\":0,"
