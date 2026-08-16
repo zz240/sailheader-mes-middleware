@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>边缘数据网关 - M0 演示</title>
+    <style>
+        :root {
+            --border: #d9d9d9;
+            --primary: #2563eb;
+            --bg: #f6f7f9;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: "Microsoft YaHei", sans-serif; margin: 0; background: var(--bg); color: #222; }
+        header { background: #1f2937; color: #fff; padding: 12px 20px; }
+        header h1 { font-size: 18px; margin: 0; }
+        main { max-width: 1080px; margin: 20px auto; padding: 0 16px; }
+        section { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        h2 { font-size: 15px; margin: 0 0 12px; border-left: 4px solid var(--primary); padding-left: 8px; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+        label { font-size: 12px; color: #555; display: flex; flex-direction: column; gap: 3px; }
+        input, select, textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
+        textarea { font-family: Consolas, monospace; width: 100%; min-height: 64px; }
+        button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
+        button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+        button.danger { color: #dc2626; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+        th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+        th { background: #fafafa; }
+        .msg { margin-top: 8px; font-size: 12px; color: #2563eb; white-space: pre-wrap; }
+        .msg.error { color: #dc2626; }
+        .mapping-table input, .mapping-table select { font-size: 12px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<header><h1>边缘数据网关 · M0 演示</h1></header>
+<main>
+
+<section id="ds-section">
+    <h2>数据源</h2>
+    <div class="row">
+        <label>名称 <input id="ds-name"></label>
+        <label>站点ID <input id="ds-site" type="number" value="1"></label>
+        <label>类型
+            <select id="ds-type">
+                <option value="HTTP">HTTP</option>
+                <option value="MYSQL">MySQL</option>
+                <option value="RABBITMQ">RabbitMQ</option>
+            </select>
+        </label>
+        <label>地址 <input id="ds-address" style="min-width:320px"></label>
+        <button class="primary" onclick="saveDataSource()">保存数据源</button>
+    </div>
+    <label>addition（JSON 配置：HTTP 需 method；MySQL 需 url/username/password；RabbitMQ 需 queue）
+        <textarea id="ds-addition"></textarea>
+    </label>
+    <table id="ds-table">
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>地址</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <div class="msg" id="ds-msg"></div>
+</section>
+
+<section id="job-section">
+    <h2>任务</h2>
+    <div class="row">
+        <label>名称 <input id="job-name"></label>
+        <label>站点ID <input id="job-site" type="number" value="1"></label>
+        <label>状态
+            <select id="job-status"><option value="0">停用</option><option value="1">启用</option></select>
+        </label>
+        <label>水位策略
+            <select id="job-wm-type"><option value="SEQUENCE">自增列</option><option value="TIMESTAMP">时间列</option></select>
+        </label>
+        <label>水位列 <input id="job-wm-col" placeholder="如 id / updated_at"></label>
+        <label>cron <input id="job-cron" placeholder="可选"></label>
+        <button class="primary" onclick="saveJob()">保存任务</button>
+    </div>
+    <table id="job-table">
+        <thead><tr><th>ID</th><th>名称</th><th>状态</th><th>最近执行</th><th>最近时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <div class="msg" id="job-msg"></div>
+</section>
+
+<section id="action-section">
+    <h2>动作（选中任务）</h2>
+    <div class="row">
+        <label>任务
+            <select id="action-job" onchange="selectJobForAction()"></select>
+        </label>
+        <label>动作名称 <input id="act-name"></label>
+        <label>类型
+            <select id="act-type" onchange="toggleMappingEditor()">
+                <option value="REMOTE_ACCESS">远程访问</option>
+                <option value="FIELD_MAPPING">字段映射</option>
+            </select>
+        </label>
+        <label>序号 <input id="act-index" type="number" value="1"></label>
+        <button class="primary" onclick="saveAction()">保存动作</button>
+        <button onclick="loadSampleFields()">从样例数据拉字段</button>
+    </div>
+    <label>addition（JSON；远程访问可带 dataSourceId/sql/tableName/idempotencyKey）
+        <textarea id="act-addition"></textarea>
+    </label>
+
+    <div id="mapping-editor" class="hidden">
+        <p style="font-size:12px;color:#555">映射表格：来源字段（可用样例拉取的路径）→ 目标字段 + 转换</p>
+        <input id="sample-input" placeholder='样例 JSON，如 {"order_no":"PO-1","data":{"items":[{"name":"x"}]}}' style="width:100%;margin-bottom:6px">
+        <table class="mapping-table">
+            <thead><tr><th>来源字段</th><th>目标字段</th><th>转换</th><th>常量/枚举/日期</th><th></th></tr></thead>
+            <tbody id="mapping-rows"></tbody>
+        </table>
+        <button onclick="addMappingRow()">添加映射行</button>
+        <datalist id="field-paths"></datalist>
+    </div>
+
+    <table id="action-table">
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>序号</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <div class="msg" id="act-msg"></div>
+</section>
+
+<section id="run-section">
+    <h2>执行与结果</h2>
+    <div class="row">
+        <label>任务
+            <select id="run-job"></select>
+        </label>
+        <label>任务输入（可选 JSON）<input id="run-input" placeholder='{"orderNo":"PO-9"}'></label>
+        <button class="primary" onclick="executeJob()">手动执行</button>
+    </div>
+    <div class="msg" id="run-msg"></div>
+    <h3 style="font-size:13px">mock MES 最近收到的数据</h3>
+    <table>
+        <thead><tr><th>序号</th><th>内容</th></tr></thead>
+        <tbody id="received-table"></tbody>
+    </table>
+</section>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const api = async (url, options = {}) => {
+    const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(res.status + ': ' + text);
+    }
+    return res.status === 204 ? null : res.json();
+};
+const msg = (id, text, isError) => {
+    const el = $(id);
+    el.textContent = text;
+    el.className = 'msg' + (isError ? ' error' : '');
+};
+
+async function saveDataSource() {
+    try {
+        const body = {
+            name: $('ds-name').value.trim(),
+            siteId: Number($('ds-site').value),
+            type: $('ds-type').value,
+            address: $('ds-address').value.trim(),
+            addition: JSON.parse($('ds-addition').value || '{}')
+        };
+        await api('/api/data-sources', { method: 'POST', body: JSON.stringify(body) });
+        msg('ds-msg', '数据源已保存');
+        $('ds-name').value = ''; $('ds-address').value = ''; $('ds-addition').value = '';
+        loadDataSources();
+    } catch (e) { msg('ds-msg', '保存失败：' + e.message, true); }
+}
+
+async function loadDataSources() {
+    try {
+        const list = await api('/api/data-sources');
+        const tbody = document.querySelector('#ds-table tbody');
+        tbody.innerHTML = list.map(ds => `
+            <tr>
+                <td>${ds.id}</td><td>${ds.name}</td><td>${ds.type}</td><td>${ds.address}</td>
+                <td>
+                    <button onclick="testDataSource(${ds.id})">测试连接</button>
+                    <button class="danger" onclick="deleteDataSource(${ds.id})">删除</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { msg('ds-msg', '加载失败：' + e.message, true); }
+}
+
+async function testDataSource(id) {
+    try {
+        const r = await api('/api/data-sources/' + id + '/test', { method: 'POST' });
+        msg('ds-msg', '测试结果：ok=' + r.ok + ' ' + r.message);
+    } catch (e) { msg('ds-msg', '测试失败：' + e.message, true); }
+}
+
+async function deleteDataSource(id) {
+    await api('/api/data-sources/' + id, { method: 'DELETE' });
+    loadDataSources();
+}
+
+async function saveJob() {
+    try {
+        const body = {
+            name: $('job-name').value.trim(),
+            siteId: Number($('job-site').value),
+            status: Number($('job-status').value),
+            watermarkType: $('job-wm-type').value,
+            watermarkColumn: $('job-wm-col').value.trim() || null,
+            crontab: $('job-cron').value.trim() || null
+        };
+        await api('/api/jobs', { method: 'POST', body: JSON.stringify(body) });
+        msg('job-msg', '任务已保存（启停请用列表中的按钮）');
+        $('job-name').value = ''; $('job-wm-col').value = '';
+        loadJobs();
+    } catch (e) { msg('job-msg', '保存失败：' + e.message, true); }
+}
+
+async function loadJobs() {
+    try {
+        const list = await api('/api/jobs');
+        const tbody = document.querySelector('#job-table tbody');
+        tbody.innerHTML = list.map(job => `
+            <tr>
+                <td>${job.id}</td><td>${job.name}</td>
+                <td>${job.status === 1 ? '启用' : '停用'}</td>
+                <td>${job.lastRunStatus || '-'}</td><td>${job.lastRunAt || '-'}</td>
+                <td>
+                    <button onclick="setJobStatus(${job.id}, ${job.status === 1 ? 0 : 1})">${job.status === 1 ? '停用' : '启用'}</button>
+                    <button class="danger" onclick="deleteJob(${job.id})">删除</button>
+                </td>
+            </tr>`).join('');
+        const actionSelect = $('action-job');
+        const runSelect = $('run-job');
+        const opts = list.map(job => `<option value="${job.id}">#${job.id} ${job.name}</option>`).join('');
+        actionSelect.innerHTML = opts;
+        runSelect.innerHTML = opts;
+    } catch (e) { msg('job-msg', '加载失败：' + e.message, true); }
+}
+
+async function setJobStatus(id, status) {
+    await api('/api/jobs/' + id + '/status', { method: 'PUT', body: JSON.stringify({ status }) });
+    loadJobs();
+}
+
+async function deleteJob(id) {
+    await api('/api/jobs/' + id, { method: 'DELETE' });
+    loadJobs();
+}
+
+function selectJobForAction() {
+    loadActions();
+}
+
+function toggleMappingEditor() {
+    $('mapping-editor').classList.toggle('hidden', $('act-type').value !== 'FIELD_MAPPING');
+}
+
+function addMappingRow(source = '', target = '', transform = 'STRING', extra = '') {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input class="m-source" list="field-paths" value="${source}" placeholder="来源字段路径"></td>
+        <td><input class="m-target" value="${target}" placeholder="目标字段"></td>
+        <td><select class="m-transform">
+            <option>STRING</option><option>INT</option><option>DATE</option><option>ENUM</option><option>CONSTANT</option>
+        </select></td>
+        <td><input class="m-extra" value="${extra}" placeholder="常量值 / enumMap JSON / yyyy-MM-dd"></td>
+        <td><button onclick="this.closest('tr').remove()">删除</button></td>`;
+    tr.querySelector('.m-transform').value = transform;
+    $('mapping-rows').appendChild(tr);
+}
+
+async function loadSampleFields() {
+    try {
+        const sample = JSON.parse($('sample-input').value || '{}');
+        const paths = await api('/api/sample-fields', { method: 'POST', body: JSON.stringify({ sample }) });
+        $('field-paths').innerHTML = paths.map(p => `<option value="${p}">`).join('');
+        msg('act-msg', '字段路径：' + paths.join(', '));
+    } catch (e) { msg('act-msg', '拉取字段失败：' + e.message, true); }
+}
+
+function buildActionBody() {
+    const base = {
+        name: $('act-name').value.trim(),
+        type: $('act-type').value,
+        index: Number($('act-index').value)
+    };
+    if ($('act-type').value === 'FIELD_MAPPING') {
+        const rules = [...document.querySelectorAll('#mapping-rows tr')].map(tr => {
+            const rule = {
+                source: tr.querySelector('.m-source').value.trim(),
+                target: tr.querySelector('.m-target').value.trim(),
+                transform: tr.querySelector('.m-transform').value
+            };
+            const extra = tr.querySelector('.m-extra').value.trim();
+            if (rule.transform === 'CONSTANT') rule.constant = extra;
+            if (rule.transform === 'ENUM' && extra) rule.enumMap = JSON.parse(extra);
+            if (rule.transform === 'DATE' && extra) rule.datePattern = extra;
+            return rule;
+        });
+        base.addition = { rules };
+    } else {
+        base.addition = JSON.parse($('act-addition').value || '{}');
+    }
+    return base;
+}
+
+async function saveAction() {
+    const jobId = $('action-job').value;
+    if (!jobId) { msg('act-msg', '请先选择任务', true); return; }
+    try {
+        await api('/api/jobs/' + jobId + '/actions', { method: 'POST', body: JSON.stringify(buildActionBody()) });
+        msg('act-msg', '动作已保存');
+        $('act-name').value = '';
+        loadActions();
+    } catch (e) { msg('act-msg', '保存失败：' + e.message, true); }
+}
+
+async function loadActions() {
+    const jobId = $('action-job').value;
+    if (!jobId) return;
+    try {
+        const list = await api('/api/jobs/' + jobId + '/actions');
+        const tbody = document.querySelector('#action-table tbody');
+        tbody.innerHTML = list.map(a => `
+            <tr>
+                <td>${a.id}</td><td>${a.name}</td><td>${a.type}</td><td>${a.index}</td>
+                <td><button class="danger" onclick="deleteAction(${a.id})">删除</button></td>
+            </tr>`).join('');
+    } catch (e) { msg('act-msg', '加载失败：' + e.message, true); }
+}
+
+async function deleteAction(id) {
+    await api('/api/actions/' + id, { method: 'DELETE' });
+    loadActions();
+}
+
+async function executeJob() {
+    const jobId = $('run-job').value;
+    if (!jobId) { msg('run-msg', '请先选择任务', true); return; }
+    try {
+        const inputText = $('run-input').value.trim();
+        const input = inputText ? JSON.parse(inputText) : undefined;
+        const job = await api('/api/jobs/' + jobId + '/execute', {
+            method: 'POST',
+            body: input ? JSON.stringify(input) : undefined
+        });
+        msg('run-msg', '执行完成：lastRunStatus=' + job.lastRunStatus + '\nlastError=' + (job.lastError || '无'));
+        loadJobs();
+        loadReceived();
+    } catch (e) { msg('run-msg', '执行失败：' + e.message, true); }
+}
+
+async function loadReceived() {
+    try {
+        const list = await api('/mock/mes/received');
+        const tbody = $('received-table');
+        tbody.innerHTML = list.map((item, i) =>
+            `<tr><td>${i + 1}</td><td>${JSON.stringify(item)}</td></tr>`).join('');
+    } catch (e) { /* mock 接口异常忽略 */ }
+}
+
+addMappingRow('', '', 'STRING', '');
+loadDataSources();
+loadJobs();
+loadReceived();
+</script>
+</body>
+</html>
