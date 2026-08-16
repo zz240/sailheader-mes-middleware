@@ -1,6 +1,7 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
@@ -108,23 +109,8 @@ public class DataSourceService {
         if (request.address() == null || request.address().isBlank()) {
             throw new IllegalArgumentException("数据源地址不能为空");
         }
-        // 按类型校验 addition 中的必填字段；addition 是请求体里的 JSON 对象
+        // 按类型校验 addition：交给类型化配置各自的 validate()
         Map<String, Object> addition = request.addition() == null ? Map.of() : request.addition();
-        switch (request.type()) {
-            case HTTP -> require(addition, "method", "HTTP 数据源需要 method");
-            case MYSQL -> {
-                require(addition, "url", "MySQL 数据源需要 url");
-                require(addition, "username", "MySQL 数据源需要 username");
-                require(addition, "password", "MySQL 数据源需要 password");
-            }
-            case RABBITMQ -> require(addition, "queue", "RabbitMQ 数据源需要 queue");
-        }
-    }
-
-    private void require(Map<String, Object> addition, String key, String message) {
-        Object value = addition.get(key);
-        if (value == null || value.toString().isBlank()) {
-            throw new IllegalArgumentException(message);
-        }
+        DataSourceConfig.from(request.type(), addition).validate();
     }
 }
