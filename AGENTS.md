@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and specs live as Markdown files under `.scratch/<feature>/` (local tracker; this repo has no GitHub remote). See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues of `zz240/sailheader-mes-middleware`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
