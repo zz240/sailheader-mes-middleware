@@ -1,6 +1,7 @@
 package com.example.edgegateway.web;
 
 import com.example.edgegateway.service.ActionService;
+import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 /**
  * 任务 REST 接口：任务 CRUD + 启停；动作绑定在任务下（/api/jobs/{jobId}/actions）。
  * 错误映射由 ApiExceptionHandler 统一处理：400 校验失败 / 404 不存在 / 409 重名。
@@ -33,11 +35,14 @@ public class JobController {
     private final JobService jobService;
     private final ActionService actionService;
     private final RouteRegistry routeRegistry;
+    private final JobExecutionService jobExecutionService;
 
-    public JobController(JobService jobService, ActionService actionService, RouteRegistry routeRegistry) {
+    public JobController(JobService jobService, ActionService actionService,
+                         RouteRegistry routeRegistry, JobExecutionService jobExecutionService) {
         this.jobService = jobService;
         this.actionService = actionService;
         this.routeRegistry = routeRegistry;
+        this.jobExecutionService = jobExecutionService;
     }
 
     @PostMapping
@@ -79,6 +84,12 @@ public class JobController {
             routeRegistry.disable(id);
         }
         return JobView.from(job);
+    }
+
+    @PostMapping("/{id}/execute")
+    public JobView execute(@PathVariable Long id,
+                           @RequestBody(required = false) Map<String, Object> input) {
+        return JobView.from(jobExecutionService.execute(id, input));
     }
 
     @PostMapping("/{id}/actions")

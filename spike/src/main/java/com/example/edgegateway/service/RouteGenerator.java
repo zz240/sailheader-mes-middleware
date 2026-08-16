@@ -87,7 +87,8 @@ public class RouteGenerator {
         return new RouteBuilder() {
             @Override
             public void configure() {
-                from("timer:" + routeId + "?period=60000&delay=5000")
+                // 主链路：direct 入口供手动执行（可携带任务输入）
+                from("direct:" + routeId)
                         .routeId(routeId)
                         .process(exchange -> readWatermark(exchange, job))
                         .to("sql:" + sql + "?dataSource=#dataSource&outputType=SelectList")
@@ -103,6 +104,10 @@ public class RouteGenerator {
                         .to(writeDataSource.getAddress())
                         .end()
                         .process(exchange -> updateWatermark(exchange, job));
+                // 定时入口：timer 触发后转发到 direct
+                from("timer:" + routeId + "?period=60000&delay=5000")
+                        .routeId("timer-" + routeId)
+                        .to("direct:" + routeId);
             }
         };
     }

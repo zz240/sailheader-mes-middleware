@@ -89,10 +89,10 @@ class RouteGeneratorTest {
 
         DefaultCamelContext context = new DefaultCamelContext();
         context.addRoutes(generator.build(job, actions));
+        assertThat(context.getRouteDefinitions()).hasSize(2);
 
-        RouteDefinition route = context.getRouteDefinitions().get(0);
-        assertThat(route.getRouteId()).isEqualTo("job-7");
-        assertThat(route.getInput().getUri()).startsWith("timer:job-7");
+        RouteDefinition route = findRoute(context, "job-7");
+        assertThat(route.getInput().getUri()).isEqualTo("direct:job-7");
 
         long[] count = new long[1];
         List<String> toUris = new ArrayList<>();
@@ -101,6 +101,12 @@ class RouteGeneratorTest {
         assertThat(toUris).anyMatch(u -> u.contains("sql:") && u.contains("id > :#lastId"));
         assertThat(toUris).anyMatch(u -> u.startsWith("http://localhost:8080/mock"));
         assertThat(count[0]).isGreaterThanOrEqualTo(2);
+
+        RouteDefinition timer = findRoute(context, "timer-job-7");
+        assertThat(timer.getInput().getUri()).startsWith("timer:job-7");
+        List<String> timerUris = new ArrayList<>();
+        collect(timer, timerUris, new long[1]);
+        assertThat(timerUris).anyMatch(u -> u.equals("direct:job-7"));
     }
 
     @Test
@@ -122,7 +128,7 @@ class RouteGeneratorTest {
         DefaultCamelContext context = new DefaultCamelContext();
         context.addRoutes(generator.build(job, actions));
 
-        RouteDefinition route = context.getRouteDefinitions().get(0);
+        RouteDefinition route = findRoute(context, "job-8");
         List<String> toUris = new ArrayList<>();
         collect(route, toUris, new long[1]);
         assertThat(toUris).anyMatch(u -> u.contains("updated_at > :#lastRun"));
@@ -171,5 +177,12 @@ class RouteGeneratorTest {
                 collectOutputs(definition.getOutputs(), toUris, processCount);
             }
         }
+    }
+
+    private RouteDefinition findRoute(DefaultCamelContext context, String routeId) {
+        return context.getRouteDefinitions().stream()
+                .filter(r -> routeId.equals(r.getRouteId()))
+                .findFirst()
+                .orElseThrow();
     }
 }

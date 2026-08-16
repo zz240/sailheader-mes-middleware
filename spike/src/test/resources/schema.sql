@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS job (
     watermark_type VARCHAR(20),
     watermark_column VARCHAR(100),
     remarks TEXT,
+    last_run_status VARCHAR(16),
+    last_run_at TIMESTAMP,
+    last_error TEXT,
     CONSTRAINT uk_job_site_name UNIQUE (site_id, name)
 );
 

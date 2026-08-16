@@ -6,6 +6,7 @@ import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.ConflictException;
+import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
@@ -40,6 +41,9 @@ class JobControllerTest {
 
     @MockBean
     private RouteRegistry routeRegistry;
+
+    @MockBean
+    private JobExecutionService jobExecutionService;
 
     private static final String JOB_BODY =
             "{\"name\":\"po-sync\",\"siteId\":1,\"status\":0,"
@@ -159,6 +163,30 @@ class JobControllerTest {
     void deletesAction() throws Exception {
         mockMvc.perform(delete("/api/actions/1"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void executesJob() throws Exception {
+        Job job = new Job();
+        job.setId(1L);
+        job.setName("po-sync");
+        job.setLastRunStatus("SUCCESS");
+        when(jobExecutionService.execute(any(), any())).thenReturn(job);
+
+        mockMvc.perform(post("/api/jobs/1/execute")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderNo\":\"PO-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastRunStatus").value("SUCCESS"));
+    }
+
+    @Test
+    void rejectsExecuteWhenJobDisabled() throws Exception {
+        when(jobExecutionService.execute(any(), any()))
+                .thenThrow(new IllegalArgumentException("任务未启用，无法执行"));
+
+        mockMvc.perform(post("/api/jobs/1/execute"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

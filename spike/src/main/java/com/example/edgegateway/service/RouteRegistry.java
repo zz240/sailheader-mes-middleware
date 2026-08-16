@@ -57,6 +57,7 @@ public class RouteRegistry {
         RouteBuilder builder = routeGenerator.build(job, actions); // 配置问题抛 IllegalArgumentException -> 400
         try {
             removeIfExists(routeId(jobId));
+            removeIfExists(timerRouteId(jobId));
             camelContext.addRoutes(builder);
         } catch (Exception e) {
             throw new IllegalStateException("注册路由失败: " + jobId, e);
@@ -65,6 +66,7 @@ public class RouteRegistry {
 
     public void disable(Long jobId) {
         removeIfExists(routeId(jobId));
+        removeIfExists(timerRouteId(jobId));
     }
 
     private void removeIfExists(String routeId) {
@@ -80,5 +82,9 @@ public class RouteRegistry {
 
     private String routeId(Long jobId) {
         return "job-" + jobId;
+    }
+
+    private String timerRouteId(Long jobId) {
+        return "timer-job-" + jobId;
     }
 }

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.time.LocalDateTime;
+
 /**
  * 任务：一条可执行的数据同步流程，由动作链（Action）按 index 顺序组成。
  * 支持 cron 定时、手动、HTTP、MQ 四种触发；水位策略决定增量同步方式。
@@ -33,6 +35,13 @@ public class Job {
     private String watermarkColumn; // 对应的增量列名，路由生成器据此生成 where 条件
 
     private String remarks;
+
+    /** 最近一次执行结果：SUCCESS / FAILED；由执行服务写入，配置接口不维护。 */
+    private String lastRunStatus;
+
+    private LocalDateTime lastRunAt;
+
+    private String lastError;
 
     public Long getId() {
         return id;
@@ -120,5 +129,29 @@ public class Job {
 
     public void setRemarks(String remarks) {
         this.remarks = remarks;
+    }
+
+    public String getLastRunStatus() {
+        return lastRunStatus;
+    }
+
+    public void setLastRunStatus(String lastRunStatus) {
+        this.lastRunStatus = lastRunStatus;
+    }
+
+    public LocalDateTime getLastRunAt() {
+        return lastRunAt;
+    }
+
+    public void setLastRunAt(LocalDateTime lastRunAt) {
+        this.lastRunAt = lastRunAt;
+    }
+
+    public String getLastError() {
+        return lastError;
+    }
+
+    public void setLastError(String lastError) {
+        this.lastError = lastError;
     }
 }

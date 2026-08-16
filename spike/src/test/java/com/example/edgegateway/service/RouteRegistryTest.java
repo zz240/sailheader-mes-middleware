@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,7 +32,7 @@ class RouteRegistryTest {
     void enableRegistersRoute() throws Exception {
         Job job = new Job();
         job.setId(1L);
-        when(camelContext.getRoute("job-1")).thenReturn(null);
+        when(camelContext.getRoute(anyString())).thenReturn(null);
         when(camelContext.getRouteController()).thenReturn(routeController);
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectList(any())).thenReturn(List.of());
@@ -50,12 +51,15 @@ class RouteRegistryTest {
     @Test
     void disableStopsAndRemovesRoute() throws Exception {
         when(camelContext.getRoute("job-1")).thenReturn(mock(Route.class));
+        when(camelContext.getRoute("timer-job-1")).thenReturn(mock(Route.class));
         when(camelContext.getRouteController()).thenReturn(routeController);
 
         registry.disable(1L);
 
         verify(routeController).stopRoute("job-1");
+        verify(routeController).stopRoute("timer-job-1");
         verify(camelContext).removeRoute("job-1");
+        verify(camelContext).removeRoute("timer-job-1");
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.example.edgegateway.web.dto;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.WatermarkType;
 
+import java.time.LocalDateTime;
+
 /** 任务接口响应体。 */
 public record JobView(
         Long id,
@@ -15,7 +17,10 @@ public record JobView(
         Long backoffMs,
         WatermarkType watermarkType,
         String watermarkColumn,
-        String remarks
+        String remarks,
+        String lastRunStatus,
+        LocalDateTime lastRunAt,
+        String lastError
 ) {
 
     public static JobView from(Job job) {
@@ -30,6 +35,9 @@ public record JobView(
                 job.getBackoffMs(),
                 job.getWatermarkType(),
                 job.getWatermarkColumn(),
-                job.getRemarks());
+                job.getRemarks(),
+                job.getLastRunStatus(),
+                job.getLastRunAt(),
+                job.getLastError());
     }
 }
