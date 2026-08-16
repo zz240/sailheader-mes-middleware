@@ -5,9 +5,6 @@ import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.web.dto.DataSourceRequest;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,8 +20,6 @@ import java.util.NoSuchElementException;
 public class DataSourceService {
 
     private final DataSourceMapper dataSourceMapper;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     public DataSourceService(DataSourceMapper dataSourceMapper) {
         this.dataSourceMapper = dataSourceMapper;
     }
@@ -127,15 +122,7 @@ public class DataSourceService {
     }
 
     private Map<String, Object> parseAddition(String addition) {
-        if (addition == null || addition.isBlank()) {
-            return Map.of();
-        }
-        try {
-            JsonNode node = objectMapper.readTree(addition);
-            return objectMapper.convertValue(node, Map.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("addition 必须是合法 JSON");
-        }
+        return AdditionJson.parse(addition);
     }
 
     private void require(Map<String, Object> addition, String key, String message) {

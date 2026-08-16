@@ -44,14 +44,14 @@ class JobActionMapperTest {
         read.setJobId(job.getId());
         read.setName("read");
         read.setType(ActionType.REMOTE_ACCESS);
-        read.setIndex(1);
+        read.setActionIndex(1);
         actionMapper.insert(read);
 
         Action map = new Action();
         map.setJobId(job.getId());
         map.setName("map");
         map.setType(ActionType.FIELD_MAPPING);
-        map.setIndex(2);
+        map.setActionIndex(2);
         actionMapper.insert(map);
 
         Job found = jobMapper.selectOne(
@@ -62,7 +62,7 @@ class JobActionMapperTest {
         List<Action> actions = actionMapper.selectList(
                 new LambdaQueryWrapper<Action>()
                         .eq(Action::getJobId, job.getId())
-                        .orderByAsc(Action::getIndex));
+                        .orderByAsc(Action::getActionIndex));
         assertThat(actions).hasSize(2);
         assertThat(actions.get(0).getName()).isEqualTo("read");
         assertThat(actions.get(1).getType()).isEqualTo(ActionType.FIELD_MAPPING);
@@ -80,14 +80,14 @@ class JobActionMapperTest {
         a1.setJobId(job.getId());
         a1.setName("x");
         a1.setType(ActionType.REMOTE_ACCESS);
-        a1.setIndex(1);
+        a1.setActionIndex(1);
         actionMapper.insert(a1);
 
         Action a2 = new Action();
         a2.setJobId(job.getId());
         a2.setName("y");
         a2.setType(ActionType.FIELD_MAPPING);
-        a2.setIndex(1);
+        a2.setActionIndex(1);
 
         assertThatThrownBy(() -> actionMapper.insert(a2))
                 .isInstanceOf(DataIntegrityViolationException.class);

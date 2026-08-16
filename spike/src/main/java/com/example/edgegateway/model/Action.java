@@ -22,7 +22,7 @@ public class Action {
     private ActionType type; // 动作类型：远程访问 / 字段映射，按名字存 VARCHAR
 
     @TableField("action_index") // 字段名 index 与列名 action_index 不对应，显式映射
-    private Integer index;
+    private Integer actionIndex;
 
     private String addition; // JSON 配置串，由动作执行逻辑解析
 
@@ -58,12 +58,12 @@ public class Action {
         this.type = type;
     }
 
-    public Integer getIndex() {
-        return index;
+    public Integer getActionIndex() {
+        return actionIndex;
     }
 
-    public void setIndex(Integer index) {
-        this.index = index;
+    public void setActionIndex(Integer actionIndex) {
+        this.actionIndex = actionIndex;
     }
 
     public String getAddition() {

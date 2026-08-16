@@ -1,8 +1,6 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.model.DataSource;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.ConnectionFactory;
 import org.springframework.stereotype.Component;
 
@@ -23,8 +21,6 @@ public class ConnectionTester {
 
     public record TestResult(boolean ok, String message) {
     }
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TestResult test(DataSource dataSource) {
         if (dataSource == null || dataSource.getType() == null) {
@@ -80,10 +76,6 @@ public class ConnectionTester {
     }
 
     private Map<String, Object> parse(String addition) throws Exception {
-        if (addition == null || addition.isBlank()) {
-            return Map.of();
-        }
-        return objectMapper.readValue(addition, new TypeReference<Map<String, Object>>() {
-        });
+        return AdditionJson.parse(addition);
     }
 }

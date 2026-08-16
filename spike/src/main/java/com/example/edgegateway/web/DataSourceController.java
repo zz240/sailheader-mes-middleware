@@ -2,7 +2,6 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
-import com.example.edgegateway.service.ConflictException;
 import com.example.edgegateway.service.ConnectionTester;
 import com.example.edgegateway.service.DataSourceService;
 import com.example.edgegateway.web.dto.DataSourceRequest;
@@ -10,7 +9,6 @@ import com.example.edgegateway.web.dto.DataSourceView;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,11 +19,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.NoSuchElementException;
-
 /**
  * 数据源 REST 接口：CRUD + 列表查询（name 模糊、type 精确）+ 连接测试。
- * 错误统一由本类的 @ExceptionHandler 映射为 400/404/409。
+ * 错误统一由 ApiExceptionHandler 映射为 400/404/409。
  */
 @RestController
 @RequestMapping("/api/data-sources")
@@ -74,18 +70,4 @@ public class DataSourceController {
         return connectionTester.test(dataSourceService.get(id));
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleInvalid(IllegalArgumentException ex) {
-        return ResponseEntity.badRequest().body(ex.getMessage());
-    }
-
-    @ExceptionHandler(NoSuchElementException.class)
-    public ResponseEntity<String> handleNotFound(NoSuchElementException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
-    }
-
-    @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<String> handleConflict(ConflictException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
-    }
 }
