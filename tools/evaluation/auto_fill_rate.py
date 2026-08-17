@@ -151,12 +151,17 @@ class Suggestion:
 
 
 def suggest(
+    source_key: str,
     source_fields: list[dict],
     target_fields: list[dict],
-    history: set[tuple[str, str]],
+    history: dict,
     threshold: float,
 ) -> list[Suggestion]:
-    """为每个必填目标字段给出 top1 建议（>= 阈值才建议，历史命中 1.0 最高优先）。"""
+    """为每个必填目标字段给出 top1 建议。
+
+    历史键 = (源结构指纹, 源字段, 目标字段)；同键多条取最近确认；
+    历史命中时带出上次确认的转换参数；多个候选按 (得分, 复用次数, 最近确认) 排序。
+    """
     norm_cache = {}
 
     def norm(name: str) -> tuple[str, frozenset[str]]:
@@ -170,26 +175,35 @@ def suggest(
             continue
         t_compact, t_tokens = norm(target["name"])
         best: Suggestion | None = None
+        best_rank: tuple[float, int, int] | None = None
         for sf in source_fields:
             s_compact, s_tokens = norm(sf["name"])
-            score = 0.0
+            score, hit, updated = 0.0, 0, 0
             match_source = None
-            if (s_compact, t_compact) in history:
-                score, match_source = 1.0, "HISTORY"
+            entry = history.get((source_key, s_compact, t_compact))
+            transform = None
+            if entry is not None:
+                score, hit, updated = 1.0, entry["hit"], entry["updated"]
+                match_source = "HISTORY"
+                transform = entry["transform"]
             elif s_tokens == t_tokens and s_tokens:
                 score, match_source = 1.0, "EXACT"
             else:
                 sim = jaro_winkler(s_compact, t_compact)
                 if sim >= threshold:
                     score, match_source = sim, "SIMILAR"
-            if match_source and (best is None or score > best.score):
+            if match_source and transform is None:
+                transform = infer_transform(sf.get("samples"))
+            rank = (score, hit, updated)
+            if match_source and (best_rank is None or rank > best_rank):
                 best = Suggestion(
                     source=sf["name"],
                     target=target["name"],
                     score=score,
                     match_source=match_source,
-                    transform=infer_transform(sf.get("samples")),
+                    transform=transform,
                 )
+                best_rank = rank
         if best:
             out.append(best)
     return out
@@ -212,11 +226,17 @@ class CaseResult:
 
 def evaluate_case(
     case: dict,
-    history: set[tuple[str, str]],
+    history: dict,
     threshold: float,
 ) -> CaseResult:
     expected_by_target = {e["target"]: e for e in case["expected"]}
-    suggestions = suggest(case["source"]["fields"], case["target"]["fields"], history, threshold)
+    suggestions = suggest(
+        source_key(case),
+        case["source"]["fields"],
+        case["target"]["fields"],
+        history,
+        threshold,
+    )
     required = [f["name"] for f in case["target"]["fields"] if f.get("required", False)]
     res = CaseResult(
         case_id=case["id"],
@@ -259,6 +279,12 @@ def evaluate_case(
             f"{sug.transform['type']})" + extra
         )
     return res
+
+
+def source_key(case: dict) -> str:
+    """源结构指纹：表名 / 队列名 / 类型（对应映射历史按结构隔离）。"""
+    source = case["source"]
+    return source.get("table") or source.get("queue") or source.get("kind")
 
 
 def pct(n: int, d: int) -> float:
@@ -311,7 +337,7 @@ def main() -> int:
     cases = data["cases"]
 
     # 冷启动：无历史
-    cold = [evaluate_case(c, set(), args.threshold) for c in cases]
+    cold = [evaluate_case(c, {}, args.threshold) for c in cases]
     print_table(cold, f"冷启动（无映射历史，阈值 {args.threshold}）")
     for r in cold:
         if r.details:
@@ -320,11 +346,21 @@ def main() -> int:
                 print(d)
 
     # 带历史（资产沉淀）：以全部 ground truth 作为已确认映射，模拟同站点已配置过
-    history = {
-        (normalize(e["source"])[0], normalize(e["target"])[0])
-        for c in cases
-        for e in c["expected"]
-    }
+    history = {}
+    stamp = 0
+    for c in cases:
+        key = source_key(c)
+        for e in c["expected"]:
+            history[(key, normalize(e["source"])[0], normalize(e["target"])[0])] = {
+                "transform": {
+                    "type": e["transform"],
+                    "datePattern": e.get("datePattern"),
+                    "constant": e.get("constant"),
+                },
+                "hit": 1,
+                "updated": stamp,
+            }
+            stamp += 1
     warm = [evaluate_case(c, history, args.threshold) for c in cases]
     print_table(warm, "带映射历史（同站点资产沉淀后）")
 

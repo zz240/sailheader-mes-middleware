@@ -9,7 +9,7 @@ import java.util.List;
 public interface MappingSuggester {
 
     List<MappingSuggestion> suggest(
-            List<SourceField> sourceFields,
+            SourceStructure source,
             List<TargetField> targetFields,
             List<HistoryMapping> history
     );

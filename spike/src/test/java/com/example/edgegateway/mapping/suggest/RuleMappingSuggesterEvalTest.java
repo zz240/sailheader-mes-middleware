@@ -17,8 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 用评测集（tools/evaluation/eval-set.json）验收规则引擎，断言与 Python 原型一致的基线：
- * 冷启动配对 12/18，带历史 18/18。
+ * 用评测集（tools/evaluation/eval-set.json）验收规则引擎：
+ * 冷启动配对 12/18；带历史（映射历史带出确认参数）配对 18/18、完整 18/18。
  */
 class RuleMappingSuggesterEvalTest {
 
@@ -26,7 +26,7 @@ class RuleMappingSuggesterEvalTest {
 
     private record Case(
             String id,
-            List<SourceField> sourceFields,
+            SourceStructure source,
             List<TargetField> targetFields,
             List<Expected> expected
     ) {
@@ -52,6 +52,11 @@ class RuleMappingSuggesterEvalTest {
                         f.has("nullable") && f.get("nullable").asBoolean(),
                         toSamples(f.get("samples"))));
             }
+            JsonNode sourceNode = node.get("source");
+            String sourceKey = sourceNode.hasNonNull("table")
+                    ? sourceNode.get("table").asText()
+                    : sourceNode.hasNonNull("queue") ? sourceNode.get("queue").asText()
+                    : sourceNode.get("kind").asText();
             List<TargetField> targets = new ArrayList<>();
             for (JsonNode f : node.get("target").get("fields")) {
                 targets.add(new TargetField(
@@ -66,7 +71,7 @@ class RuleMappingSuggesterEvalTest {
                         e.get("transform").asText(),
                         e.has("datePattern") ? e.get("datePattern").asText() : null));
             }
-            cases.add(new Case(node.get("id").asText(), sources, targets, expected));
+            cases.add(new Case(node.get("id").asText(), new SourceStructure(sourceKey, sources), targets, expected));
         }
 
         // 冷启动：无历史
@@ -74,17 +79,22 @@ class RuleMappingSuggesterEvalTest {
         printTable("冷启动（无映射历史）", cases, cold);
 
         // 带历史：全部 ground truth 作为已确认映射（同站点资产沉淀后）
-        Set<String> history = new HashSet<>();
+        List<HistoryMapping> historyMappings = new ArrayList<>();
+        long stamp = 0;
         for (Case c : cases) {
             for (Expected e : c.expected()) {
-                history.add(NameNormalizer.normalize(e.source()).compact()
-                        + "|" + NameNormalizer.normalize(e.target()).compact());
+                historyMappings.add(new HistoryMapping(
+                        c.source().key(),
+                        e.source(),
+                        e.target(),
+                        TransformKind.valueOf(e.transform()),
+                        e.datePattern(),
+                        null,
+                        null,
+                        1,
+                        stamp++));
             }
         }
-        List<HistoryMapping> historyMappings = history.stream()
-                .map(k -> k.split("\\|", 2))
-                .map(p -> new HistoryMapping(p[0], p[1]))
-                .toList();
         Stats warm = run(cases, historyMappings);
         printTable("带历史（同站点资产沉淀后）", cases, warm);
 
@@ -96,12 +106,12 @@ class RuleMappingSuggesterEvalTest {
         assertEquals(11, cold.fullOk(), "冷启动参数完整率应为 11/18");
         assertEquals(18, warm.pairingOk(), "带历史自动填充率应为 18/18");
         assertEquals(18, warm.transformOk(), "带历史转换类型正确率应为 18/18");
-        assertEquals(16, warm.fullOk(), "带历史参数完整率应为 16/18");
+        assertEquals(18, warm.fullOk(), "带历史参数完整率应为 18/18（历史带出确认参数）");
 
         // 抽查：业务重命名冷启动不强猜、带历史可复用
         Map<String, MappingSuggestion> coldPo = top1ByTarget(
                 new RuleMappingSuggester().suggest(
-                        caseById(cases, "north-po-sync").sourceFields(),
+                        caseById(cases, "north-po-sync").source(),
                         caseById(cases, "north-po-sync").targetFields(),
                         List.of()));
         assertFalse(coldPo.containsKey("sheet_no"), "冷启动 sheet_no 不应有建议（业务重命名）");
@@ -109,12 +119,14 @@ class RuleMappingSuggesterEvalTest {
 
         Map<String, MappingSuggestion> warmPo = top1ByTarget(
                 new RuleMappingSuggester().suggest(
-                        caseById(cases, "north-po-sync").sourceFields(),
+                        caseById(cases, "north-po-sync").source(),
                         caseById(cases, "north-po-sync").targetFields(),
                         historyMappings));
         assertTrue(warmPo.containsKey("sheet_no"), "带历史 sheet_no 应有建议");
         assertEquals("order_no", warmPo.get("sheet_no").sourcePath());
         assertEquals(MatchSource.HISTORY, warmPo.get("sheet_no").matchSource());
+        assertEquals("yyyy-MM-dd", warmPo.get("sheet_date").datePattern(),
+                "历史复用应带出上次确认的日期格式，而非按样例重新推断");
     }
 
     // ---- 工具方法 ----
@@ -126,7 +138,7 @@ class RuleMappingSuggesterEvalTest {
         RuleMappingSuggester suggester = new RuleMappingSuggester();
         int required = 0, suggested = 0, pairing = 0, transform = 0, full = 0;
         for (Case c : cases) {
-            List<MappingSuggestion> suggestions = suggester.suggest(c.sourceFields(), c.targetFields(), history);
+            List<MappingSuggestion> suggestions = suggester.suggest(c.source(), c.targetFields(), history);
             Map<String, MappingSuggestion> top1 = top1ByTarget(suggestions);
             for (TargetField t : c.targetFields()) {
                 if (!t.required()) {
