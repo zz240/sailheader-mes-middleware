@@ -8,6 +8,7 @@ import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.ConflictException;
 import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
+import com.example.edgegateway.service.JobValidationService;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.JobRequest;
@@ -35,6 +36,9 @@ class JobControllerTest {
 
     @MockBean
     private JobService jobService;
+
+    @MockBean
+    private JobValidationService jobValidationService;
 
     @MockBean
     private ActionService actionService;

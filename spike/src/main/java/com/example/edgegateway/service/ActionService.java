@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.edgegateway.config.ActionConfig;
+import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.RemoteAccessConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
@@ -25,11 +26,17 @@ public class ActionService {
     private final ActionMapper actionMapper;
     private final JobMapper jobMapper;
     private final DataSourceMapper dataSourceMapper;
+    private final MappingHistoryService mappingHistoryService;
 
-    public ActionService(ActionMapper actionMapper, JobMapper jobMapper, DataSourceMapper dataSourceMapper) {
+    public ActionService(
+            ActionMapper actionMapper,
+            JobMapper jobMapper,
+            DataSourceMapper dataSourceMapper,
+            MappingHistoryService mappingHistoryService) {
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.dataSourceMapper = dataSourceMapper;
+        this.mappingHistoryService = mappingHistoryService;
     }
 
     public Action add(Long jobId, ActionRequest request) {
@@ -46,6 +53,7 @@ public class ActionService {
         action.setJobId(jobId);
         apply(action, request);
         actionMapper.insert(action);
+        recordMappingHistory(jobId, request);
         return action;
     }
 
@@ -59,6 +67,7 @@ public class ActionService {
         checkDataSourceReference(request.type(), request.addition());
         apply(action, request);
         actionMapper.updateById(action);
+        recordMappingHistory(action.getJobId(), request);
         return action;
     }
 
@@ -117,5 +126,13 @@ public class ActionService {
         action.setType(request.type());
         action.setActionIndex(request.index());
         action.setAddition(request.addition());
+    }
+
+    /** 字段映射动作保存/更新后，把最终确认的映射规则沉淀进映射历史。 */
+    private void recordMappingHistory(Long jobId, ActionRequest request) {
+        if (request.type() == ActionType.FIELD_MAPPING) {
+            mappingHistoryService.recordFromAction(
+                    jobId, FieldMappingConfig.from(request.addition()).rules());
+        }
     }
 }

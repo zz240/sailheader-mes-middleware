@@ -108,12 +108,23 @@
     <div id="mapping-editor" class="hidden">
         <p style="font-size:12px;color:#555">映射表格：来源字段（可用样例拉取的路径）→ 目标字段 + 转换</p>
         <input id="sample-input" placeholder='样例 JSON，如 {"order_no":"PO-1","data":{"items":[{"name":"x"}]}}' style="width:100%;margin-bottom:6px">
+        <div class="row">
+            <label>目标字段样例 JSON
+                <input id="target-sample-input" placeholder='{"sheet_no":"PO-1","vendor_code":"V001","sheet_date":"2026-08-14","status":1}' style="min-width:360px">
+            </label>
+            <button onclick="importTargetFields()">导入目标字段</button>
+            <button class="primary" onclick="fetchSuggestions()">获取推荐</button>
+            <button class="primary" onclick="autoFill()">一键自动填充</button>
+            <button onclick="validateJob()">校验任务</button>
+        </div>
         <table class="mapping-table">
             <thead><tr><th>来源字段</th><th>目标字段</th><th>转换</th><th>常量/枚举/日期</th><th></th></tr></thead>
             <tbody id="mapping-rows"></tbody>
         </table>
         <button onclick="addMappingRow()">添加映射行</button>
         <datalist id="field-paths"></datalist>
+        <datalist id="target-list"></datalist>
+        <div id="suggest-panel"></div>
     </div>
 
     <table id="action-table">
@@ -264,7 +275,7 @@ function addMappingRow(source = '', target = '', transform = 'STRING', extra = '
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td><input class="m-source" list="field-paths" value="${source}" placeholder="来源字段路径"></td>
-        <td><input class="m-target" value="${target}" placeholder="目标字段"></td>
+        <td><input class="m-target" list="target-list" value="${target}" placeholder="目标字段"></td>
         <td><select class="m-transform">
             <option>STRING</option><option>INT</option><option>DATE</option><option>ENUM</option><option>CONSTANT</option>
         </select></td>
@@ -272,6 +283,7 @@ function addMappingRow(source = '', target = '', transform = 'STRING', extra = '
         <td><button onclick="this.closest('tr').remove()">删除</button></td>`;
     tr.querySelector('.m-transform').value = transform;
     $('mapping-rows').appendChild(tr);
+    return tr;
 }
 
 async function loadSampleFields() {
@@ -281,6 +293,123 @@ async function loadSampleFields() {
         $('field-paths').innerHTML = paths.map(p => `<option value="${p}">`).join('');
         msg('act-msg', '字段路径：' + paths.join(', '));
     } catch (e) { msg('act-msg', '拉取字段失败：' + e.message, true); }
+}
+
+let targetFields = [];
+
+async function importTargetFields() {
+    try {
+        const sample = JSON.parse($('target-sample-input').value || '{}');
+        const paths = await api('/api/sample-fields', { method: 'POST', body: JSON.stringify({ sample }) });
+        targetFields = paths.map(p => ({ name: p, required: true }));
+        $('target-list').innerHTML = targetFields.map(t => `<option value="${t.name}">`).join('');
+        msg('act-msg', '目标字段已导入：' + paths.join(', '));
+    } catch (e) { msg('act-msg', '导入目标字段失败：' + e.message, true); }
+}
+
+async function fetchSuggestions() {
+    const jobId = $('action-job').value;
+    if (!jobId) { msg('act-msg', '请先选择任务', true); return; }
+    if (!targetFields.length) { msg('act-msg', '请先导入目标字段', true); return; }
+    try {
+        const sample = JSON.parse($('sample-input').value || '{}');
+        const source = await api('/api/probe/sample', { method: 'POST', body: JSON.stringify({ sample }) });
+        const suggestions = await api('/api/mapping-suggestions', {
+            method: 'POST',
+            body: JSON.stringify({ jobId: Number(jobId), source, targets: targetFields })
+        });
+        window.suggestions = suggestions;
+        renderSuggestions(suggestions);
+    } catch (e) { msg('act-msg', '获取推荐失败：' + e.message, true); }
+}
+
+function renderSuggestions(suggestions) {
+    const panel = $('suggest-panel');
+    if (!suggestions.length) {
+        panel.innerHTML = '<p style="font-size:12px;color:#888">暂无推荐（低于阈值不强猜，可手动填写）</p>';
+        return;
+    }
+    const byTarget = {};
+    suggestions.forEach((s, i) => {
+        (byTarget[s.targetName] = byTarget[s.targetName] || []).push({ s, i });
+    });
+    panel.innerHTML = '<p style="font-size:12px;color:#555">推荐候选（点击采用填入该行）：</p>' +
+        Object.entries(byTarget).map(([t, arr]) =>
+            '<div style="margin:4px 0;font-size:12px">' + t + ' ← ' +
+            arr.map(({ s, i }) =>
+                `<span style="border:1px solid #d9d9d9;border-radius:4px;padding:1px 5px;margin-right:4px">
+                    ${s.sourcePath} <b>${(s.score * 100).toFixed(0)}</b> ${s.matchSource} ${s.transform}
+                    <button style="padding:0 4px" onclick="applySuggestion(${i})">采用</button>
+                </span>`).join('') +
+            '</div>').join('');
+}
+
+function applySuggestion(i) {
+    const s = window.suggestions && window.suggestions[i];
+    if (!s) return;
+    const tr = findRowByTarget(s.targetName) || emptyRow() || addMappingRow();
+    fillRow(tr, s);
+    msg('act-msg', '已填入 ' + s.targetName + ' ← ' + s.sourcePath + '（' + s.transform + '）');
+}
+
+function autoFill() {
+    const suggestions = window.suggestions || [];
+    if (!suggestions.length) { msg('act-msg', '请先获取推荐', true); return; }
+    const top1 = {};
+    suggestions.forEach(s => { if (!(s.targetName in top1)) top1[s.targetName] = s; });
+    let filled = 0;
+    Object.values(top1).forEach(s => {
+        const existing = findRowByTarget(s.targetName);
+        if (existing) return; // 只补空行，不覆盖已填内容
+        const tr = emptyRow() || addMappingRow();
+        fillRow(tr, s);
+        filled++;
+    });
+    msg('act-msg', '一键自动填充 ' + filled + ' 行（只补空行，冲突取最高分）');
+}
+
+function findRowByTarget(target) {
+    return [...document.querySelectorAll('#mapping-rows tr')].find(tr =>
+        tr.querySelector('.m-target').value.trim() === target);
+}
+
+function emptyRow() {
+    return [...document.querySelectorAll('#mapping-rows tr')].find(tr =>
+        !tr.querySelector('.m-target').value.trim());
+}
+
+function fillRow(tr, s) {
+    tr.querySelector('.m-source').value = s.sourcePath;
+    tr.querySelector('.m-target').value = s.targetName;
+    tr.querySelector('.m-transform').value = transformSelectValue(s.transform);
+    tr.querySelector('.m-extra').value = extraFor(s);
+}
+
+function transformSelectValue(kind) {
+    // 应用转换类型不含 BOOLEAN/NUMBER，按透传处理为 STRING
+    if (kind === 'BOOLEAN' || kind === 'NUMBER') return 'STRING';
+    return kind;
+}
+
+function extraFor(s) {
+    if (s.transform === 'CONSTANT') return s.constant || '';
+    if (s.transform === 'ENUM' && s.enumMap) return JSON.stringify(s.enumMap);
+    if (s.transform === 'DATE' && s.datePattern) return s.datePattern;
+    return '';
+}
+
+async function validateJob() {
+    const jobId = $('action-job').value;
+    if (!jobId) { msg('act-msg', '请先选择任务', true); return; }
+    try {
+        const r = await api('/api/jobs/' + jobId + '/validate', { method: 'POST' });
+        const lines = [];
+        r.errors.forEach(e => lines.push('[错误] ' + e.scope + ':' + (e.field || '') + ' ' + e.message));
+        r.warnings.forEach(w => lines.push('[警告] ' + w.scope + ':' + (w.field || '') + ' ' + w.message));
+        msg('act-msg',
+            (r.valid ? '校验通过' : '校验失败（' + r.errors.length + ' 个错误，请修复后启用）') +
+            (lines.length ? '\n' + lines.join('\n') : ''));
+    } catch (e) { msg('act-msg', '校验失败：' + e.message, true); }
 }
 
 function buildActionBody() {

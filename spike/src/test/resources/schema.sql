@@ -64,3 +64,19 @@ CREATE TABLE IF NOT EXISTS dead_letter (
     error TEXT,
     status VARCHAR(32)
 );
+
+CREATE TABLE IF NOT EXISTS mapping_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    site_id BIGINT NOT NULL,
+    direction VARCHAR(16) NOT NULL,
+    source_key VARCHAR(128) NOT NULL,
+    source_path VARCHAR(255) NOT NULL,
+    target_name VARCHAR(255) NOT NULL,
+    transform VARCHAR(32) NOT NULL,
+    date_pattern VARCHAR(64),
+    constant VARCHAR(255),
+    enum_map TEXT,
+    hit_count INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP,
+    CONSTRAINT uk_mapping_history UNIQUE (site_id, direction, source_key, source_path, target_name)
+);

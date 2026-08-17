@@ -3,12 +3,14 @@ package com.example.edgegateway.web;
 import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
+import com.example.edgegateway.service.JobValidationService;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.ActionView;
 import com.example.edgegateway.web.dto.JobRequest;
 import com.example.edgegateway.web.dto.JobStatusRequest;
 import com.example.edgegateway.web.dto.JobView;
+import com.example.edgegateway.web.dto.ValidationResult;
 import com.example.edgegateway.model.Job;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,13 +38,16 @@ public class JobController {
     private final ActionService actionService;
     private final RouteRegistry routeRegistry;
     private final JobExecutionService jobExecutionService;
+    private final JobValidationService jobValidationService;
 
     public JobController(JobService jobService, ActionService actionService,
-                         RouteRegistry routeRegistry, JobExecutionService jobExecutionService) {
+                         RouteRegistry routeRegistry, JobExecutionService jobExecutionService,
+                         JobValidationService jobValidationService) {
         this.jobService = jobService;
         this.actionService = actionService;
         this.routeRegistry = routeRegistry;
         this.jobExecutionService = jobExecutionService;
+        this.jobValidationService = jobValidationService;
     }
 
     @PostMapping
@@ -100,6 +105,11 @@ public class JobController {
     @GetMapping("/{id}/actions")
     public List<ActionView> listActions(@PathVariable Long id) {
         return actionService.list(id).stream().map(ActionView::from).toList();
+    }
+
+    @PostMapping("/{id}/validate")
+    public ValidationResult validate(@PathVariable Long id) {
+        return jobValidationService.validate(id);
     }
 
 }
