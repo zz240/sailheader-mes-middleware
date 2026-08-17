@@ -19,6 +19,9 @@ public class Site {
 
     private String apiKey;
 
+    /** 映射建议器覆盖：rule | llm；为空时使用全局 edge.mapping.suggester。 */
+    private String suggester;
+
     public Long getId() {
         return id;
     }
@@ -49,5 +52,13 @@ public class Site {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public String getSuggester() {
+        return suggester;
+    }
+
+    public void setSuggester(String suggester) {
+        this.suggester = suggester;
     }
 }

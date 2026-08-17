@@ -1,6 +1,7 @@
 package com.example.edgegateway.mapping.suggest;
 
 import org.apache.commons.text.similarity.JaroWinklerSimilarity;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,6 +19,7 @@ import java.util.Map;
  * 历史命中时带出上次确认的转换类型与参数（不重新按样例推断）；
  * 多个 1.0 候选按 得分 → 复用次数 → 最近确认 排序。</p>
  */
+@Component
 public final class RuleMappingSuggester implements MappingSuggester {
 
     private static final int TOP_N = 3;

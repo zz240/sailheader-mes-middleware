@@ -22,6 +22,15 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+edge:
+  mapping:
+    suggester: rule # rule | llm；站点级可在 site.suggester 覆盖
+    llm:
+      base-url: http://localhost:11434/v1 # OpenAI 兼容端点（Ollama/vLLM/云厂商网关均可）
+      model: qwen2.5:7b
+      api-key: not-needed
+      timeout-seconds: 30
+
 camel:
   springboot:
     name: edge-gateway-spike

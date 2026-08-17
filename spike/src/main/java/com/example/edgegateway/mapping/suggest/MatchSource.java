@@ -4,5 +4,6 @@ package com.example.edgegateway.mapping.suggest;
 public enum MatchSource {
     HISTORY,
     EXACT,
-    SIMILAR
+    SIMILAR,
+    LLM
 }

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.edgegateway.mapping.suggest.HistoryMapping;
 import com.example.edgegateway.mapping.suggest.MappingSuggestion;
 import com.example.edgegateway.mapping.suggest.MappingSuggester;
-import com.example.edgegateway.mapping.suggest.RuleMappingSuggester;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.mapping.suggest.SourceStructure;
 import com.example.edgegateway.mapping.suggest.TargetField;
@@ -30,15 +29,17 @@ public class MappingSuggestionService {
     private final JobMapper jobMapper;
     private final ActionMapper actionMapper;
     private final MappingHistoryService historyService;
-    private final MappingSuggester suggester = new RuleMappingSuggester();
+    private final MappingSuggesterRouter router;
 
     public MappingSuggestionService(
             JobMapper jobMapper,
             ActionMapper actionMapper,
-            MappingHistoryService historyService) {
+            MappingHistoryService historyService,
+            MappingSuggesterRouter router) {
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
         this.historyService = historyService;
+        this.router = router;
     }
 
     public List<MappingSuggestion> suggest(SuggestionRequest request) {
@@ -57,7 +58,7 @@ public class MappingSuggestionService {
         for (SuggestionRequest.Target t : request.targets()) {
             targets.add(new TargetField(t.name(), t.required() == null || t.required()));
         }
-        return suggester.suggest(source, targets, history);
+        return router.forSite(job.getSiteId()).suggest(source, targets, history);
     }
 
     private SourceStructure toSource(SuggestionRequest.Source source) {

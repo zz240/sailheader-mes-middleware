@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS site (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     timezone VARCHAR(64),
-    api_key VARCHAR(255)
+    api_key VARCHAR(255),
+    suggester VARCHAR(16)
 );
 
 CREATE TABLE IF NOT EXISTS data_source (
