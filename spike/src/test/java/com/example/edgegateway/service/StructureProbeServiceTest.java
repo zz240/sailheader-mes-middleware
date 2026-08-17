@@ -1,18 +1,29 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.mapper.ActionMapper;
+import com.example.edgegateway.mapper.DataSourceMapper;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionType;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class StructureProbeServiceTest {
 
-    private final StructureProbeService service = new StructureProbeService();
+    private final ActionMapper actionMapper = mock(ActionMapper.class);
+    private final DataSourceMapper dataSourceMapper = mock(DataSourceMapper.class);
+    private final StructureProbeService service =
+            new StructureProbeService(actionMapper, dataSourceMapper);
 
     @Test
     void probeSampleWalksNestedAndArrayLeafs() {
@@ -52,5 +63,16 @@ class StructureProbeServiceTest {
         assertThatThrownBy(() -> service.probeFromDb(ds, "po_order; DROP TABLE x", false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("表名不合法");
+    }
+
+    @Test
+    void suggestTableExtractsFromJobReadSql() {
+        Action action = new Action();
+        action.setType(ActionType.REMOTE_ACCESS);
+        action.setAddition(Map.of("dataSourceId", 7, "sql", "SELECT * FROM po_order WHERE id > {watermark}"));
+        when(actionMapper.selectList(any())).thenReturn(List.of(action));
+
+        assertThat(service.suggestTable(7L)).isEqualTo("po_order");
+        assertThat(service.suggestTable(99L)).isNull();
     }
 }

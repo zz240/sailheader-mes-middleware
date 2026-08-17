@@ -2,10 +2,16 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.MysqlDataSourceConfig;
+import com.example.edgegateway.config.RemoteAccessConfig;
+import com.example.edgegateway.mapper.ActionMapper;
+import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionType;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
@@ -35,6 +41,13 @@ public class StructureProbeService {
     private static final Pattern SAFE_TABLE = Pattern.compile("[A-Za-z0-9_]+");
 
     private final Map<Long, CacheEntry> cache = new ConcurrentHashMap<>();
+    private final ActionMapper actionMapper;
+    private final DataSourceMapper dataSourceMapper;
+
+    public StructureProbeService(ActionMapper actionMapper, DataSourceMapper dataSourceMapper) {
+        this.actionMapper = actionMapper;
+        this.dataSourceMapper = dataSourceMapper;
+    }
 
     public SourceStructure probeFromDb(DataSource dataSource, String table, boolean refresh) {
         if (dataSource == null || dataSource.getType() != DataSourceType.MYSQL) {
@@ -58,6 +71,25 @@ public class StructureProbeService {
         List<SourceField> fields = new ArrayList<>();
         walk("", sample, fields);
         return new SourceStructure("sample", fields);
+    }
+
+    /** 从引用该数据源的远程读动作 SQL 推断表名（用于探测时预填），无则返回 null。 */
+    public String suggestTable(Long dataSourceId) {
+        List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                .eq(Action::getType, ActionType.REMOTE_ACCESS)
+                .orderByAsc(Action::getActionIndex));
+        for (Action action : actions) {
+            RemoteAccessConfig config = RemoteAccessConfig.from(
+                    action.getAddition() == null ? Map.of() : action.getAddition());
+            if (config.dataSourceId() != null && config.dataSourceId().equals(dataSourceId)
+                    && config.sql() != null) {
+                String table = MappingHistoryService.extractTable(config.sql());
+                if (table != null) {
+                    return table;
+                }
+            }
+        }
+        return null;
     }
 
     private SourceStructure probeDb(DataSource dataSource, String table) {

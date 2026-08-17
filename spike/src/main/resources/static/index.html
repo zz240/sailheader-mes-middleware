@@ -152,6 +152,23 @@
 </section>
 
 </main>
+<div id="probe-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);align-items:center;justify-content:center;z-index:10">
+    <div style="background:#fff;border-radius:8px;padding:16px;min-width:680px;max-height:80vh;overflow:auto">
+        <h3 style="font-size:15px;margin:0 0 12px">结构探测：<span id="probe-ds-name"></span></h3>
+        <div class="row">
+            <label>表名 <input id="probe-table" placeholder="如 po_order"></label>
+            <label>样例 JSON（可选，连库失败时回退）<input id="probe-sample" placeholder='{"order_no":"PO-1"}' style="min-width:260px"></label>
+            <button class="primary" onclick="runProbe(false)">探测</button>
+            <button onclick="runProbe(true)">强制刷新</button>
+            <button onclick="closeProbe()">关闭</button>
+        </div>
+        <table>
+            <thead><tr><th>字段</th><th>类型</th><th>可空</th><th>样例（前 5）</th></tr></thead>
+            <tbody id="probe-fields"></tbody>
+        </table>
+        <div class="msg" id="probe-msg"></div>
+    </div>
+</div>
 <script>
 const $ = id => document.getElementById(id);
 const api = async (url, options = {}) => {
@@ -196,6 +213,7 @@ async function loadDataSources() {
                 <td>${ds.id}</td><td>${ds.name}</td><td>${ds.type}</td><td>${ds.address}</td>
                 <td>
                     <button onclick="testDataSource(${ds.id})">测试连接</button>
+                    ${ds.type === 'MYSQL' ? `<button onclick="probeDataSource(${ds.id}, '${ds.name.replace(/'/g, '')}')">探测结构</button>` : ''}
                     <button class="danger" onclick="deleteDataSource(${ds.id})">删除</button>
                 </td>
             </tr>`).join('');
@@ -207,6 +225,54 @@ async function testDataSource(id) {
         const r = await api('/api/data-sources/' + id + '/test', { method: 'POST' });
         msg('ds-msg', '测试结果：ok=' + r.ok + ' ' + r.message);
     } catch (e) { msg('ds-msg', '测试失败：' + e.message, true); }
+}
+
+let probeDsId = null;
+
+async function probeDataSource(id, name) {
+    probeDsId = id;
+    $('probe-ds-name').textContent = name;
+    $('probe-fields').innerHTML = '';
+    $('probe-msg').textContent = '';
+    $('probe-sample').value = '';
+    $('probe-overlay').style.display = 'flex';
+    try {
+        const r = await api('/api/data-sources/' + id + '/suggest-table');
+        $('probe-table').value = r.table || '';
+        if (r.table) msg('probe-msg', '已从任务读 SQL 预填表名：' + r.table);
+    } catch (e) {
+        $('probe-table').value = '';
+        msg('probe-msg', '预填表名失败：' + e.message, true);
+    }
+}
+
+async function runProbe(refresh) {
+    if (!probeDsId) return;
+    const table = $('probe-table').value.trim();
+    if (!table) { msg('probe-msg', '请填写表名', true); return; }
+    const sampleText = $('probe-sample').value.trim();
+    try {
+        const body = { table, refresh };
+        if (sampleText) body.sample = JSON.parse(sampleText);
+        const r = await api('/api/data-sources/' + probeDsId + '/probe', {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        $('probe-fields').innerHTML = r.fields.map(f => `
+            <tr>
+                <td>${f.name}</td><td>${f.type}</td><td>${f.nullable ? '是' : '否'}</td>
+                <td>${(f.samples || []).slice(0, 5).map(v => JSON.stringify(v)).join(', ')}</td>
+            </tr>`).join('');
+        msg('probe-msg', '探测成功，共 ' + r.fields.length + ' 个字段'
+            + (r.sourceKey === 'sample' ? '（已回退样例模式）' : ''));
+    } catch (e) {
+        $('probe-fields').innerHTML = '';
+        msg('probe-msg', '探测失败：' + e.message, true);
+    }
+}
+
+function closeProbe() {
+    $('probe-overlay').style.display = 'none';
 }
 
 async function deleteDataSource(id) {

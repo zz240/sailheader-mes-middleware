@@ -5,6 +5,7 @@ import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.service.DataSourceService;
 import com.example.edgegateway.service.StructureProbeService;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,6 +42,12 @@ public class StructureProbeController {
             }
             throw e;
         }
+    }
+
+    /** GET /api/data-sources/{id}/suggest-table：从任务读 SQL 推断表名，供探测预填。 */
+    @GetMapping("/data-sources/{id}/suggest-table")
+    public Map<String, Object> suggestTable(@org.springframework.web.bind.annotation.PathVariable Long id) {
+        return Map.of("table", probeService.suggestTable(id));
     }
 
     /** POST /api/probe/sample：贴样例 JSON，递归展开叶子字段（含类型与样例值）。 */
