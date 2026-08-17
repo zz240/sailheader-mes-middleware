@@ -1,0 +1,166 @@
+{
+  "_comment": "字段映射评测集（mock 占位，可替换为真实源/目标字段对）。expected 为人工确认的 ground truth；required=true 的目标字段才计入自动填充率分母。transform 正确性只比类型，参数（datePattern/enumMap/constant）单独报告。",
+  "cases": [
+    {
+      "id": "north-po-sync",
+      "name": "北向-采购订单同步（客户 MySQL → MES HTTP）",
+      "direction": "NORTH",
+      "source": {
+        "kind": "db",
+        "table": "po_order",
+        "fields": [
+          { "name": "id", "type": "BIGINT", "nullable": false, "samples": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+          { "name": "order_no", "type": "VARCHAR", "nullable": false, "samples": ["PO-2026-001", "PO-2026-002", "PO-2026-003", "PO-2026-004", "PO-2026-005", "PO-2026-006", "PO-2026-007", "PO-2026-008"] },
+          { "name": "vendor_code", "type": "VARCHAR", "nullable": true, "samples": ["V001", "V002", "V003", "V004", "V005", "V006", "V007", "V008", "V009", "V010"] },
+          { "name": "order_date", "type": "DATETIME", "nullable": true, "samples": ["2026-08-14 10:00:00", "2026-08-15 11:30:00", "2026-08-16 09:00:00", "2026-08-17 14:20:00"] },
+          { "name": "status", "type": "VARCHAR", "nullable": true, "samples": ["ACTIVE", "ACTIVE", "ACTIVE", "CLOSED", "ACTIVE", "CLOSED", "ACTIVE", "CLOSED", "ACTIVE", "ACTIVE"] },
+          { "name": "updated_at", "type": "TIMESTAMP", "nullable": true, "samples": ["2026-08-14 12:00:00", "2026-08-15 12:00:00", "2026-08-16 12:00:00"] }
+        ]
+      },
+      "target": {
+        "kind": "http-api",
+        "name": "mes.purchase-order",
+        "fields": [
+          { "name": "sheet_no", "required": true },
+          { "name": "vendor_code", "required": true },
+          { "name": "sheet_date", "required": true },
+          { "name": "status", "required": true }
+        ]
+      },
+      "expected": [
+        { "source": "order_no", "target": "sheet_no", "transform": "STRING" },
+        { "source": "vendor_code", "target": "vendor_code", "transform": "STRING" },
+        { "source": "order_date", "target": "sheet_date", "transform": "DATE", "datePattern": "yyyy-MM-dd" },
+        { "source": "status", "target": "status", "transform": "ENUM", "enumMap": { "ACTIVE": 1, "CLOSED": 0 } }
+      ]
+    },
+    {
+      "id": "south-work-order",
+      "name": "南向-生产指令接收（RabbitMQ → 客户 MySQL）",
+      "direction": "SOUTH",
+      "source": {
+        "kind": "mq",
+        "queue": "mes.to.edge",
+        "fields": [
+          { "name": "orderNo", "type": "STRING", "nullable": false, "samples": ["MO-1001", "MO-1002", "MO-1003", "MO-1004", "MO-1005", "MO-1006", "MO-1007", "MO-1008"] },
+          { "name": "material", "type": "STRING", "nullable": false, "samples": ["M-9", "M-10", "M-9", "M-11", "M-12", "M-10", "M-13", "M-9"] },
+          { "name": "qty", "type": "NUMBER", "nullable": false, "samples": [10, 25, 10, 30, 25, 40, 10, 25] }
+        ]
+      },
+      "target": {
+        "kind": "db",
+        "table": "po_receipt",
+        "fields": [
+          { "name": "order_no", "required": true },
+          { "name": "material", "required": true },
+          { "name": "qty", "required": true }
+        ]
+      },
+      "expected": [
+        { "source": "orderNo", "target": "order_no", "transform": "STRING" },
+        { "source": "material", "target": "material", "transform": "STRING" },
+        { "source": "qty", "target": "qty", "transform": "INT" }
+      ]
+    },
+    {
+      "id": "north-work-report",
+      "name": "北向-工单报工（客户车间表 → MES 报工接口）",
+      "direction": "NORTH",
+      "source": {
+        "kind": "db",
+        "table": "work_report",
+        "fields": [
+          { "name": "report_id", "type": "BIGINT", "nullable": false, "samples": [101, 102, 103, 104, 105, 106] },
+          { "name": "work_order_no", "type": "VARCHAR", "nullable": false, "samples": ["WO-8001", "WO-8002", "WO-8003", "WO-8004", "WO-8005", "WO-8006", "WO-8007", "WO-8008"] },
+          { "name": "operator_name", "type": "VARCHAR", "nullable": false, "samples": ["张三", "李四", "王五", "赵六", "张三", "李四", "王五", "赵六"] },
+          { "name": "complete_qty", "type": "INT", "nullable": false, "samples": [50, 80, 50, 90, 80, 50, 90, 80] },
+          { "name": "report_time", "type": "DATETIME", "nullable": true, "samples": ["2026-08-16 09:12:00", "2026-08-16 10:30:00", "2026-08-17 08:45:00"] },
+          { "name": "defect_count", "type": "INT", "nullable": true, "samples": [0, 2, 0, 1, 0, 0, 2, 1] }
+        ]
+      },
+      "target": {
+        "kind": "http-api",
+        "name": "mes.work-report",
+        "fields": [
+          { "name": "workOrderNo", "required": true },
+          { "name": "operator", "required": true },
+          { "name": "qty", "required": true },
+          { "name": "reportDate", "required": true }
+        ]
+      },
+      "expected": [
+        { "source": "work_order_no", "target": "workOrderNo", "transform": "STRING" },
+        { "source": "operator_name", "target": "operator", "transform": "STRING" },
+        { "source": "complete_qty", "target": "qty", "transform": "INT" },
+        { "source": "report_time", "target": "reportDate", "transform": "DATE", "datePattern": "yyyy-MM-dd" }
+      ]
+    },
+    {
+      "id": "south-material-master",
+      "name": "南向-物料主数据下发（RabbitMQ → 客户物料主表）",
+      "direction": "SOUTH",
+      "source": {
+        "kind": "mq",
+        "queue": "mes.material.master",
+        "fields": [
+          { "name": "materialCode", "type": "STRING", "nullable": false, "samples": ["M-9", "M-10", "M-11", "M-12", "M-13", "M-14", "M-15", "M-16"] },
+          { "name": "materialName", "type": "STRING", "nullable": false, "samples": ["钢板", "螺栓", "螺母", "垫片", "角钢", "焊条", "钢管", "轴承"] },
+          { "name": "spec", "type": "STRING", "nullable": true, "samples": ["3mm", "M8x30", "M10x40", "5mm", "3mm", "M8x30", "M10x40", "5mm"] },
+          { "name": "unit", "type": "STRING", "nullable": true, "samples": ["件", "个", "套", "箱", "米", "吨", "支", "卷"] },
+          { "name": "isActive", "type": "BOOLEAN", "nullable": false, "samples": [true, false, true, false, true, true, false, false] }
+        ]
+      },
+      "target": {
+        "kind": "db",
+        "table": "material_master",
+        "fields": [
+          { "name": "material_code", "required": true },
+          { "name": "material_name", "required": true },
+          { "name": "spec", "required": false },
+          { "name": "unit", "required": false },
+          { "name": "active_flag", "required": true }
+        ]
+      },
+      "expected": [
+        { "source": "materialCode", "target": "material_code", "transform": "STRING" },
+        { "source": "materialName", "target": "material_name", "transform": "STRING" },
+        { "source": "spec", "target": "spec", "transform": "STRING" },
+        { "source": "unit", "target": "unit", "transform": "STRING" },
+        { "source": "isActive", "target": "active_flag", "transform": "BOOLEAN" }
+      ]
+    },
+    {
+      "id": "north-stock-out",
+      "name": "北向-库存出库单（客户 WMS → MES 出库接口）",
+      "direction": "NORTH",
+      "source": {
+        "kind": "db",
+        "table": "stock_out",
+        "fields": [
+          { "name": "out_no", "type": "VARCHAR", "nullable": false, "samples": ["SO-001", "SO-002", "SO-003", "SO-004", "SO-005", "SO-006", "SO-007", "SO-008"] },
+          { "name": "item_code", "type": "VARCHAR", "nullable": false, "samples": ["I-100", "I-200", "I-300", "I-400", "I-500", "I-600", "I-700", "I-800"] },
+          { "name": "qty", "type": "INT", "nullable": false, "samples": [30, 45, 30, 60, 45, 30, 60, 45] },
+          { "name": "out_date", "type": "DATETIME", "nullable": true, "samples": ["2026-08-15 14:00:00", "2026-08-15 15:30:00", "2026-08-16 09:10:00", "2026-08-16 11:20:00"] },
+          { "name": "warehouse", "type": "VARCHAR", "nullable": true, "samples": ["WH-A", "WH-A", "WH-B", "WH-A", "WH-B", "WH-A", "WH-A", "WH-B"] },
+          { "name": "remark", "type": "VARCHAR", "nullable": true, "samples": [null, null, null, null] }
+        ]
+      },
+      "target": {
+        "kind": "http-api",
+        "name": "mes.stock-out",
+        "fields": [
+          { "name": "outOrderNo", "required": true },
+          { "name": "skuCode", "required": true },
+          { "name": "quantity", "required": true },
+          { "name": "outTime", "required": true }
+        ]
+      },
+      "expected": [
+        { "source": "out_no", "target": "outOrderNo", "transform": "STRING" },
+        { "source": "item_code", "target": "skuCode", "transform": "STRING" },
+        { "source": "qty", "target": "quantity", "transform": "INT" },
+        { "source": "out_date", "target": "outTime", "transform": "DATE", "datePattern": "yyyy-MM-dd HH:mm:ss" }
+      ]
+    }
+  ]
+}
