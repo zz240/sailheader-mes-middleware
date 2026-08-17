@@ -6,6 +6,7 @@
 
 - `eval-set.json`：评测集（mock 占位，5 个场景、18 个必填目标字段），每个场景含源结构（字段/类型/样例原始行）、目标字段清单（必填标记）、人工确认的 ground truth
 - `auto_fill_rate.py`：统计脚本，实现 #11/#13 决策的规则引擎（归一化精确 → Jaro-Winkler ≥ 0.85 → 历史映射复用 + 样例值转换推断），输出冷启动与带历史的自动填充率
+- `validate_eval_set.py`：结构校验脚本，新增/替换真实评测对前跑一遍（校验字段清单、required、ground truth、转换参数一致性）
 
 ## 运行
 
@@ -20,7 +21,10 @@ python auto_fill_rate.py --eval-set eval-set.json [--threshold 0.85]
 - **参数完整率**：转换正确且 datePattern/constant 一致（enumMap 属人工语义，不计入）/ 必填目标数
 - **覆盖度**：给出建议的目标数 / 必填目标数
 
-## 当前基线（mock 集）
+## 当前基线（v1，mock 占位）
+
+> 正式基线按「先 mock 这些」确认：以当前 mock 集作为 v1 基线，替换真实数据后重新跑脚本与
+> Java 验收测试（`RuleMappingSuggesterEvalTest`）即可更新，无需改动代码。
 
 | 口径 | 冷启动 | 带历史（同站点资产沉淀后） |
 | --- | --- | --- |
@@ -46,3 +50,4 @@ python auto_fill_rate.py --eval-set eval-set.json [--threshold 0.85]
 - `samples` 保留探针原始行（含重复值），枚举推断依赖重复占比（去重数 < 行数一半才判 ENUM）
 - `required` 标记目标端必填字段，只有必填字段计入分母
 - `expected.transform` 只比类型；`datePattern`/`constant` 单独比对，`enumMap` 不算参数正确性
+- 改完先跑 `python validate_eval_set.py --eval-set eval-set.json` 校验结构，再跑统计与 Java 测试

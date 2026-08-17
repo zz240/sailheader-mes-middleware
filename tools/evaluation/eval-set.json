@@ -1,5 +1,5 @@
 {
-  "_comment": "字段映射评测集（mock 占位，可替换为真实源/目标字段对）。expected 为人工确认的 ground truth；required=true 的目标字段才计入自动填充率分母。transform 正确性只比类型，参数（datePattern/enumMap/constant）单独报告。",
+  "_comment": "字段映射评测集 v1（mock 占位基线，可替换为真实源/目标字段对）。expected 为人工确认的 ground truth；required=true 的目标字段才计入自动填充率分母。transform 正确性只比类型，参数（datePattern/enumMap/constant）单独报告。替换真实数据前先跑 validate_eval_set.py。",
   "cases": [
     {
       "id": "north-po-sync",
