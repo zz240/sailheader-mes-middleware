@@ -95,12 +95,7 @@ public class RouteGenerator {
                 onException(Exception.class)
                         .maximumRedeliveries(retries)
                         .redeliveryDelay(backoff)
-                        .process(exchange -> deadLetterService.record(
-                                job.getId(),
-                                exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getProperty("edge.originalInput",
-                                        exchange.getMessage().getBody()),
-                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .process(exchange -> recordDeadLetter(exchange, job))
                         .handled(false); // 重放失败必须上抛，让调用方（重投）感知
                 from("direct:" + job.getId())
                         .routeId(routeId)
@@ -158,12 +153,7 @@ public class RouteGenerator {
                 onException(Exception.class)
                         .maximumRedeliveries(retries)
                         .redeliveryDelay(backoff)
-                        .process(exchange -> deadLetterService.record(
-                                job.getId(),
-                                exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getProperty("edge.originalInput",
-                                        exchange.getMessage().getBody()),
-                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .process(exchange -> recordDeadLetter(exchange, job))
                         .handled(false); // 失败即停：异常继续上抛，执行状态 FAILED，水位不推进
                 // 主链路：direct 入口供手动执行（可携带任务输入）
                 from("direct:" + routeId)
@@ -230,12 +220,7 @@ public class RouteGenerator {
                 onException(Exception.class)
                         .maximumRedeliveries(retries)
                         .redeliveryDelay(backoff)
-                        .process(exchange -> deadLetterService.record(
-                                job.getId(),
-                                exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getProperty("edge.originalInput",
-                                        exchange.getMessage().getBody()),
-                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .process(exchange -> recordDeadLetter(exchange, job))
                         .handled(true); // MQ 消费：记录死信后视为已处理，避免 broker 无限重投
                 from("spring-rabbitmq:" + mqDataSource.getName()
                         + "?queues=" + mq.queue() + "&routingKey=" + mq.queue() + "&autoDeclare=true")
@@ -260,6 +245,19 @@ public class RouteGenerator {
         return actions.stream()
                 .filter(a -> a.getType() == ActionType.REMOTE_ACCESS)
                 .toList();
+    }
+
+    /** 死信记录：优先用链路入口保存的原始输入，缺失时退回当前 body。 */
+    private void recordDeadLetter(Exchange exchange, Job job) {
+        Object input = exchange.getProperty("edge.originalInput", Object.class);
+        if (input == null) {
+            input = exchange.getMessage().getBody();
+        }
+        deadLetterService.record(
+                job.getId(),
+                exchange.getProperty("edge.actionIndex", Integer.class),
+                input,
+                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class));
     }
 
     private FieldMappingConfig fieldMapping(List<Action> actions) {
