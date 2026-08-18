@@ -98,12 +98,14 @@ public class RouteGenerator {
                         .process(exchange -> deadLetterService.record(
                                 job.getId(),
                                 exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getMessage().getBody(),
+                                exchange.getProperty("edge.originalInput",
+                                        exchange.getMessage().getBody()),
                                 exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
                         .handled(false); // 重放失败必须上抛，让调用方（重投）感知
                 from("direct:" + job.getId())
                         .routeId(routeId)
                         .process(exchange -> {
+                            exchange.setProperty("edge.originalInput", exchange.getMessage().getBody());
                             exchange.setProperty("edge.actionIndex", mappingIndex);
                             Map<String, Object> source = exchange.getMessage().getBody(Map.class);
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
@@ -159,7 +161,8 @@ public class RouteGenerator {
                         .process(exchange -> deadLetterService.record(
                                 job.getId(),
                                 exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getMessage().getBody(),
+                                exchange.getProperty("edge.originalInput",
+                                        exchange.getMessage().getBody()),
                                 exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
                         .handled(false); // 失败即停：异常继续上抛，执行状态 FAILED，水位不推进
                 // 主链路：direct 入口供手动执行（可携带任务输入）
@@ -175,6 +178,7 @@ public class RouteGenerator {
                         .process(exchange -> {
                             exchange.setProperty("edge.actionIndex", mappingIndex);
                             Map<String, Object> source = exchange.getMessage().getBody(Map.class);
+                            exchange.setProperty("edge.originalInput", source);
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
                         })
                         .marshal().json()
@@ -229,7 +233,8 @@ public class RouteGenerator {
                         .process(exchange -> deadLetterService.record(
                                 job.getId(),
                                 exchange.getProperty("edge.actionIndex", Integer.class),
-                                exchange.getMessage().getBody(),
+                                exchange.getProperty("edge.originalInput",
+                                        exchange.getMessage().getBody()),
                                 exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
                         .handled(true); // MQ 消费：记录死信后视为已处理，避免 broker 无限重投
                 from("spring-rabbitmq:" + mqDataSource.getName()
@@ -239,6 +244,7 @@ public class RouteGenerator {
                         .process(exchange -> {
                             exchange.setProperty("edge.actionIndex", mappingIndex);
                             Map<String, Object> source = exchange.getMessage().getBody(Map.class);
+                            exchange.setProperty("edge.originalInput", source);
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
                         })
                         .process(exchange -> {
