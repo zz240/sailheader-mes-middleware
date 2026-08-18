@@ -55,10 +55,10 @@ public class RouteRegistry {
                 .eq(Action::getJobId, jobId)
                 .orderByAsc(Action::getActionIndex));
         try {
+            removeIfExists(routeId(jobId));
+            removeIfExists(timerRouteId(jobId));
+            removeIfExists(directRouteId(jobId));
             for (RouteBuilder builder : routeGenerator.build(job, actions)) { // 配置问题抛 IllegalArgumentException -> 400
-                removeIfExists(routeId(jobId));
-                removeIfExists(timerRouteId(jobId));
-                removeIfExists(directRouteId(jobId));
                 camelContext.addRoutes(builder);
             }
         } catch (Exception e) {
