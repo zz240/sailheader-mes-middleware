@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: edge-gateway-spike
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher # SPA 回退 /{path:...} 模式需要（PathPatternParser 不支持 /**/ 后接匹配段）
   datasource:
     url: jdbc:mysql://localhost:3306/edge_gateway?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8
     username: gateway
