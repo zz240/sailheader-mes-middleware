@@ -97,7 +97,7 @@ public class RouteGenerator {
                         .redeliveryDelay(backoff)
                         .process(exchange -> recordDeadLetter(exchange, job))
                         .handled(false); // 重放失败必须上抛，让调用方（重投）感知
-                from("direct:" + job.getId())
+                from("direct:job-" + job.getId())
                         .routeId(routeId)
                         .process(exchange -> {
                             exchange.setProperty("edge.originalInput", exchange.getMessage().getBody());

@@ -166,7 +166,7 @@ class RouteGeneratorTest {
         assertThat(context.getRouteDefinitions()).hasSize(2);
         RouteDefinition replay = findRoute(context, "direct-9");
         assertThat(replay).isNotNull();
-        assertThat(replay.getInput().getUri()).isEqualTo("direct:9");
+        assertThat(replay.getInput().getUri()).isEqualTo("direct:job-9");
         long[] count = new long[1];
         collect(route, new ArrayList<>(), count);
         long processCount = count[0];
