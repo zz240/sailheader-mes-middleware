@@ -44,11 +44,17 @@ public class RouteGenerator {
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
     private final JdbcTemplate jdbcTemplate;
+    private final DeadLetterService deadLetterService;
 
-    public RouteGenerator(DataSourceMapper dataSourceMapper, WatermarkStore watermarkStore, JdbcTemplate jdbcTemplate) {
+    public RouteGenerator(
+            DataSourceMapper dataSourceMapper,
+            WatermarkStore watermarkStore,
+            JdbcTemplate jdbcTemplate,
+            DeadLetterService deadLetterService) {
         this.dataSourceMapper = dataSourceMapper;
         this.watermarkStore = watermarkStore;
         this.jdbcTemplate = jdbcTemplate;
+        this.deadLetterService = deadLetterService;
     }
 
     public RouteBuilder build(Job job, List<Action> actions) {
@@ -81,6 +87,13 @@ public class RouteGenerator {
                 DataSourceConfig.from(writeDataSource.getType(), writeDataSource.getAddition());
         FieldMappingConfig mapping = fieldMapping(actions);
         FieldMapper fieldMapper = new FieldMapper(List.of());
+        int readIndex = remoteActions(actions).get(0).getActionIndex();
+        int writeIndex = remoteActions(actions).get(remoteActions(actions).size() - 1).getActionIndex();
+        int mappingIndex = actions.stream()
+                .filter(a -> a.getType() == ActionType.FIELD_MAPPING)
+                .findFirst()
+                .map(Action::getActionIndex)
+                .orElse(-1);
 
         String sql = read.sql().replace("{watermark}", watermarkPredicate(job));
         String authHeader = http.token() == null || http.token().isBlank()
@@ -90,14 +103,25 @@ public class RouteGenerator {
         return new RouteBuilder() {
             @Override
             public void configure() {
+                onException(Exception.class)
+                        .process(exchange -> deadLetterService.record(
+                                job.getId(),
+                                exchange.getProperty("edge.actionIndex", Integer.class),
+                                exchange.getMessage().getBody(),
+                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .handled(false); // 失败即停：异常继续上抛，执行状态 FAILED，水位不推进
                 // 主链路：direct 入口供手动执行（可携带任务输入）
                 from("direct:" + routeId)
                         .routeId(routeId)
-                        .process(exchange -> readWatermark(exchange, job))
+                        .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", readIndex);
+                            readWatermark(exchange, job);
+                        })
                         .to("sql:" + sql + "?dataSource=#dataSource&outputType=SelectList")
                         .process(exchange -> computeMax(exchange, job))
                         .split(body())
                         .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", mappingIndex);
                             Map<String, Object> source = exchange.getMessage().getBody(Map.class);
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
                         })
@@ -105,6 +129,7 @@ public class RouteGenerator {
                         .setHeader(Exchange.HTTP_METHOD, constant(http.method()))
                         .setHeader(Exchange.CONTENT_TYPE, constant("application/json"))
                         .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", writeIndex);
                             if (authHeader != null) {
                                 exchange.getMessage().setHeader("Authorization", authHeader);
                             }
@@ -133,19 +158,37 @@ public class RouteGenerator {
         String idempotencyKey = str(writeAddition.get("idempotencyKey"));
         FieldMappingConfig mapping = fieldMapping(actions);
         FieldMapper fieldMapper = new FieldMapper(List.of());
+        int consumerIndex = actions.get(0).getActionIndex();
+        int writeIndex = remoteActions(actions).get(remoteActions(actions).size() - 1).getActionIndex();
+        int mappingIndex = actions.stream()
+                .filter(a -> a.getType() == ActionType.FIELD_MAPPING)
+                .findFirst()
+                .map(Action::getActionIndex)
+                .orElse(-1);
 
         return new RouteBuilder() {
             @Override
             public void configure() {
+                onException(Exception.class)
+                        .process(exchange -> deadLetterService.record(
+                                job.getId(),
+                                exchange.getProperty("edge.actionIndex", Integer.class),
+                                exchange.getMessage().getBody(),
+                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .handled(true); // MQ 消费：记录死信后视为已处理，避免 broker 无限重投
                 from("spring-rabbitmq:" + mqDataSource.getName()
                         + "?queues=" + mq.queue() + "&routingKey=" + mq.queue() + "&autoDeclare=true")
                         .routeId(routeId)
                         .unmarshal().json()
                         .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", mappingIndex);
                             Map<String, Object> source = exchange.getMessage().getBody(Map.class);
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
                         })
-                        .process(exchange -> upsert(exchange, table, idempotencyKey))
+                        .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", writeIndex);
+                            upsert(exchange, table, idempotencyKey);
+                        })
                         .log(routeId + " upserted ${body}");
             }
         };

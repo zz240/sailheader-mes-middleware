@@ -32,7 +32,8 @@ class RouteGeneratorTest {
     @BeforeEach
     void setUp() {
         dataSourceMapper = mock(DataSourceMapper.class);
-        generator = new RouteGenerator(dataSourceMapper, mock(WatermarkStore.class), mock(JdbcTemplate.class));
+        generator = new RouteGenerator(
+                dataSourceMapper, mock(WatermarkStore.class), mock(JdbcTemplate.class), mock(DeadLetterService.class));
     }
 
     private DataSource mysqlDataSource(Long id) {
