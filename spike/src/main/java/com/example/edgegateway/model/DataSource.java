@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.example.edgegateway.security.SensitiveAdditionTypeHandler;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 
 import java.util.Map;
 
@@ -26,7 +26,7 @@ public class DataSource {
 
     private String address;
 
-    @TableField(typeHandler = SensitiveAdditionTypeHandler.class) // 敏感字段加密存储，读写透明加解密
+    @TableField(typeHandler = JacksonTypeHandler.class) // MySQL JSON 列，读写自动序列化/反序列化
     private Map<String, Object> addition;
 
     public Long getId() {
