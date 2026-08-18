@@ -43,15 +43,21 @@ public class ConnectionTester {
     }
 
     private TestResult testHttp(String address, HttpDataSourceConfig config) throws Exception {
-        // HTTP：访问目标地址，3 秒超时；能拿到任何响应码都算连通
+        // HTTP：访问目标地址，3 秒超时；配置了 token 时带 Authorization: Bearer 头；401 视为鉴权失败
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
-        HttpRequest request = HttpRequest.newBuilder(URI.create(address))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(address))
                 .timeout(Duration.ofSeconds(3))
-                .method(config.method(), HttpRequest.BodyPublishers.noBody())
-                .build();
+                .method(config.method(), HttpRequest.BodyPublishers.noBody());
+        if (config.token() != null && !config.token().isBlank()) {
+            builder.header("Authorization", "Bearer " + config.token());
+        }
+        HttpRequest request = builder.build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 401) {
+            return new TestResult(false, "HTTP 401 鉴权失败，请检查 token");
+        }
         return new TestResult(true, "HTTP " + response.statusCode());
     }
 

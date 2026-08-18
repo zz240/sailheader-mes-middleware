@@ -83,6 +83,9 @@ public class RouteGenerator {
         FieldMapper fieldMapper = new FieldMapper(List.of());
 
         String sql = read.sql().replace("{watermark}", watermarkPredicate(job));
+        String authHeader = http.token() == null || http.token().isBlank()
+                ? null
+                : "Bearer " + http.token();
 
         return new RouteBuilder() {
             @Override
@@ -101,6 +104,11 @@ public class RouteGenerator {
                         .marshal().json()
                         .setHeader(Exchange.HTTP_METHOD, constant(http.method()))
                         .setHeader(Exchange.CONTENT_TYPE, constant("application/json"))
+                        .process(exchange -> {
+                            if (authHeader != null) {
+                                exchange.getMessage().setHeader("Authorization", authHeader);
+                            }
+                        })
                         .to(writeDataSource.getAddress())
                         .end()
                         .process(exchange -> updateWatermark(exchange, job));
