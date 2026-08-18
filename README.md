@@ -21,23 +21,40 @@
 │   ├── mock-contract.md        # 环境 mock 契约
 │   ├── adr/                    # 架构决策记录
 │   └── agents/                 # issue tracker / triage / domain 配置
+├── frontend/                   # 前端工程（Vue 3 + TS + Vite + Element Plus）
 └── spike/                      # Spring Boot + Camel Spike 工程
-    ├── docker-compose.yml      # 本地 MySQL + RabbitMQ
+    ├── docker-compose.yml      # MySQL + RabbitMQ + app（多阶段构建）
+    ├── Dockerfile              # 多阶段构建（node 构建前端 → mvn 打包 → JRE 镜像）
     ├── db/init.sql             # 建表与种子数据
     └── src/                    # 两条演示链路 + 字段映射 + mock MES
 ```
 
-## 快速运行 Spike
+## 快速运行
 
-前置：JDK 21、Docker。
+前置：JDK 21、Node 22、Docker。
+
+### 一键交付（推荐）
 
 ```powershell
-# 1. 启动本地 MySQL 和 RabbitMQ
 cd spike
-docker compose up -d
+docker compose up -d --build   # 构建并启动 MySQL + RabbitMQ + app（前端后端一体镜像）
+# 访问 http://localhost:8080
+```
 
-# 2. 启动网关
+### 开发模式（前后端分离）
+
+```powershell
+# 1. 本地 MySQL 和 RabbitMQ
+cd spike
+docker compose up -d mysql rabbitmq
+
+# 2. 后端（8080）
 ..\.tools\apache-maven-3.9.9\bin\mvn.cmd spring-boot:run
+
+# 3. 前端（5173，代理 /api 到 8080，热更新）
+cd ..\frontend
+npm install
+npm run dev
 ```
 
 验证：
