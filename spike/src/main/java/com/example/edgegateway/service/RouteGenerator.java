@@ -94,6 +94,8 @@ public class RouteGenerator {
                 .findFirst()
                 .map(Action::getActionIndex)
                 .orElse(-1);
+        int retries = job.getRetryCount() == null ? 0 : job.getRetryCount();
+        long backoff = job.getBackoffMs() == null ? 1000L : job.getBackoffMs();
 
         String sql = read.sql().replace("{watermark}", watermarkPredicate(job));
         String authHeader = http.token() == null || http.token().isBlank()
@@ -104,6 +106,8 @@ public class RouteGenerator {
             @Override
             public void configure() {
                 onException(Exception.class)
+                        .maximumRedeliveries(retries)
+                        .redeliveryDelay(backoff)
                         .process(exchange -> deadLetterService.record(
                                 job.getId(),
                                 exchange.getProperty("edge.actionIndex", Integer.class),
@@ -165,11 +169,15 @@ public class RouteGenerator {
                 .findFirst()
                 .map(Action::getActionIndex)
                 .orElse(-1);
+        int retries = job.getRetryCount() == null ? 0 : job.getRetryCount();
+        long backoff = job.getBackoffMs() == null ? 1000L : job.getBackoffMs();
 
         return new RouteBuilder() {
             @Override
             public void configure() {
                 onException(Exception.class)
+                        .maximumRedeliveries(retries)
+                        .redeliveryDelay(backoff)
                         .process(exchange -> deadLetterService.record(
                                 job.getId(),
                                 exchange.getProperty("edge.actionIndex", Integer.class),
