@@ -41,7 +41,7 @@ class RouteRegistryTest {
             public void configure() {
             }
         };
-        when(routeGenerator.build(any(Job.class), anyList())).thenReturn(builder);
+        when(routeGenerator.build(any(Job.class), anyList())).thenReturn(List.of(builder));
 
         registry.enable(1L);
 
@@ -52,14 +52,17 @@ class RouteRegistryTest {
     void disableStopsAndRemovesRoute() throws Exception {
         when(camelContext.getRoute("job-1")).thenReturn(mock(Route.class));
         when(camelContext.getRoute("timer-job-1")).thenReturn(mock(Route.class));
+        when(camelContext.getRoute("direct-1")).thenReturn(mock(Route.class));
         when(camelContext.getRouteController()).thenReturn(routeController);
 
         registry.disable(1L);
 
         verify(routeController).stopRoute("job-1");
         verify(routeController).stopRoute("timer-job-1");
+        verify(routeController).stopRoute("direct-1");
         verify(camelContext).removeRoute("job-1");
         verify(camelContext).removeRoute("timer-job-1");
+        verify(camelContext).removeRoute("direct-1");
     }
 
     @Test

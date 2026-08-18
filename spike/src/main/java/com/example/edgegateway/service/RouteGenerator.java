@@ -57,16 +57,64 @@ public class RouteGenerator {
         this.deadLetterService = deadLetterService;
     }
 
-    public RouteBuilder build(Job job, List<Action> actions) {
+    public List<RouteBuilder> build(Job job, List<Action> actions) {
         if (actions == null || actions.isEmpty()) {
             throw new IllegalArgumentException("任务没有动作，无法生成路由");
         }
         List<Action> sorted = actions.stream()
                 .sorted(Comparator.comparing(Action::getActionIndex))
                 .toList();
-        return isRabbitConsumer(sorted.get(0))
-                ? buildSouthbound(job, sorted)
-                : buildNorthbound(job, sorted);
+        if (isRabbitConsumer(sorted.get(0))) {
+            // 南向：MQ 消费主路由 + direct 重放路由（供死信重投/manual 执行）
+            return List.of(buildSouthbound(job, sorted), buildSouthboundReplay(job, sorted));
+        }
+        return List.of(buildNorthbound(job, sorted));
+    }
+
+    /** 南向重放路由：direct 入口接收已解析的输入（死信重投/手动执行），跑映射 + upsert。 */
+    private RouteBuilder buildSouthboundReplay(Job job, List<Action> actions) {
+        String routeId = "direct-" + job.getId();
+        RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).get(remoteActions(actions).size() - 1)));
+        Map<String, Object> writeAddition = addition(remoteActions(actions).get(remoteActions(actions).size() - 1));
+        String table = str(writeAddition.get("tableName"));
+        String idempotencyKey = str(writeAddition.get("idempotencyKey"));
+        FieldMappingConfig mapping = fieldMapping(actions);
+        FieldMapper fieldMapper = new FieldMapper(List.of());
+        int writeIndex = remoteActions(actions).get(remoteActions(actions).size() - 1).getActionIndex();
+        int mappingIndex = actions.stream()
+                .filter(a -> a.getType() == ActionType.FIELD_MAPPING)
+                .findFirst()
+                .map(Action::getActionIndex)
+                .orElse(-1);
+        int retries = job.getRetryCount() == null ? 0 : job.getRetryCount();
+        long backoff = job.getBackoffMs() == null ? 1000L : job.getBackoffMs();
+
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                onException(Exception.class)
+                        .maximumRedeliveries(retries)
+                        .redeliveryDelay(backoff)
+                        .process(exchange -> deadLetterService.record(
+                                job.getId(),
+                                exchange.getProperty("edge.actionIndex", Integer.class),
+                                exchange.getMessage().getBody(String.class),
+                                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)))
+                        .handled(false); // 重放失败必须上抛，让调用方（重投）感知
+                from("direct:" + job.getId())
+                        .routeId(routeId)
+                        .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", mappingIndex);
+                            Map<String, Object> source = exchange.getMessage().getBody(Map.class);
+                            exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
+                        })
+                        .process(exchange -> {
+                            exchange.setProperty("edge.actionIndex", writeIndex);
+                            upsert(exchange, table, idempotencyKey);
+                        })
+                        .log(routeId + " replayed ${body}");
+            }
+        };
     }
 
     private boolean isRabbitConsumer(Action action) {

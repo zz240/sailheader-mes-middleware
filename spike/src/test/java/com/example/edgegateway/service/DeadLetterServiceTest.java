@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.DeadLetterMapper;
 import com.example.edgegateway.model.DeadLetter;
+import com.example.edgegateway.model.Job;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,9 @@ import static org.mockito.Mockito.when;
 class DeadLetterServiceTest {
 
     private final DeadLetterMapper mapper = mock(DeadLetterMapper.class);
-    private final DeadLetterService service = new DeadLetterService(mapper, new ObjectMapper());
+    private final JobExecutionService jobExecutionService = mock(JobExecutionService.class);
+    private final DeadLetterService service =
+            new DeadLetterService(mapper, new ObjectMapper(), jobExecutionService);
 
     @Test
     void recordsFailureWithInputAndError() {
@@ -47,5 +50,45 @@ class DeadLetterServiceTest {
         when(mapper.selectById(99L)).thenReturn(null);
         assertThatThrownBy(() -> service.get(99L))
                 .isInstanceOf(NoSuchElementException.class);
+    }
+
+    @Test
+    void redeliverMarksSuccessAsRedelivered() {
+        DeadLetter deadLetter = new DeadLetter();
+        deadLetter.setId(1L);
+        deadLetter.setJobId(7L);
+        deadLetter.setInputJson("{\"orderNo\":\"MO-1\",\"material\":\"M-9\",\"qty\":10}");
+        deadLetter.setStatus("FAILED");
+        when(mapper.selectById(1L)).thenReturn(deadLetter);
+        Job job = new Job();
+        job.setId(7L);
+        job.setLastRunStatus("SUCCESS");
+        when(jobExecutionService.execute(7L, Map.of("orderNo", "MO-1", "material", "M-9", "qty", 10)))
+                .thenReturn(job);
+
+        Job result = service.redeliver(1L);
+
+        assertThat(result.getLastRunStatus()).isEqualTo("SUCCESS");
+        assertThat(deadLetter.getStatus()).isEqualTo("REDELIVERED");
+        org.mockito.Mockito.verify(mapper).updateById(deadLetter);
+    }
+
+    @Test
+    void redeliverKeepsFailedStatusWhenExecutionFails() {
+        DeadLetter deadLetter = new DeadLetter();
+        deadLetter.setId(1L);
+        deadLetter.setJobId(7L);
+        deadLetter.setInputJson("{\"orderNo\":\"MO-1\"}");
+        deadLetter.setStatus("FAILED");
+        when(mapper.selectById(1L)).thenReturn(deadLetter);
+        Job job = new Job();
+        job.setLastRunStatus("FAILED");
+        job.setLastError("Connection refused");
+        when(jobExecutionService.execute(7L, Map.of("orderNo", "MO-1"))).thenReturn(job);
+
+        assertThatThrownBy(() -> service.redeliver(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("重投失败");
+        assertThat(deadLetter.getStatus()).isEqualTo("FAILED");
     }
 }

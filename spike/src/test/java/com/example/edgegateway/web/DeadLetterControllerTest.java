@@ -1,6 +1,7 @@
 package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.DeadLetter;
+import com.example.edgegateway.model.Job;
 import com.example.edgegateway.service.DeadLetterService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,7 +12,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,5 +56,19 @@ class DeadLetterControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.inputJson").value("{\"order_no\":\"PO-1\"}"))
                 .andExpect(jsonPath("$.error").value("HTTP 500"));
+    }
+
+    @Test
+    void redeliversDeadLetter() throws Exception {
+        Job job = new Job();
+        job.setId(7L);
+        job.setLastRunStatus("SUCCESS");
+        when(deadLetterService.redeliver(1L)).thenReturn(job);
+
+        mockMvc.perform(post("/api/dead-letters/1/redeliver"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastRunStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.deadLetterStatus").value("REDELIVERED"));
+        verify(deadLetterService).redeliver(1L);
     }
 }

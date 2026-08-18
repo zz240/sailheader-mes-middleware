@@ -9,6 +9,7 @@ import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.WatermarkType;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.ProcessDefinition;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.ToDefinition;
@@ -89,7 +90,9 @@ class RouteGeneratorTest {
                 action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L)));
 
         DefaultCamelContext context = new DefaultCamelContext();
-        context.addRoutes(generator.build(job, actions));
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
         assertThat(context.getRouteDefinitions()).hasSize(2);
 
         RouteDefinition route = findRoute(context, "job-7");
@@ -127,7 +130,9 @@ class RouteGeneratorTest {
                 action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L)));
 
         DefaultCamelContext context = new DefaultCamelContext();
-        context.addRoutes(generator.build(job, actions));
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
 
         RouteDefinition route = findRoute(context, "job-8");
         List<String> toUris = new ArrayList<>();
@@ -151,10 +156,17 @@ class RouteGeneratorTest {
                         "dataSourceId", 2L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
 
         DefaultCamelContext context = new DefaultCamelContext();
-        context.addRoutes(generator.build(job, actions));
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
 
         RouteDefinition route = context.getRouteDefinitions().get(0);
         assertThat(route.getInput().getUri()).contains("spring-rabbitmq").contains("mes.to.edge");
+        // 南向应有 MQ 主路由 + direct 重放路由（供死信重投）
+        assertThat(context.getRouteDefinitions()).hasSize(2);
+        RouteDefinition replay = findRoute(context, "direct-9");
+        assertThat(replay).isNotNull();
+        assertThat(replay.getInput().getUri()).isEqualTo("direct:9");
         long[] count = new long[1];
         collect(route, new ArrayList<>(), count);
         long processCount = count[0];

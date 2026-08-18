@@ -54,11 +54,13 @@ public class RouteRegistry {
         List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
                 .eq(Action::getJobId, jobId)
                 .orderByAsc(Action::getActionIndex));
-        RouteBuilder builder = routeGenerator.build(job, actions); // 配置问题抛 IllegalArgumentException -> 400
         try {
-            removeIfExists(routeId(jobId));
-            removeIfExists(timerRouteId(jobId));
-            camelContext.addRoutes(builder);
+            for (RouteBuilder builder : routeGenerator.build(job, actions)) { // 配置问题抛 IllegalArgumentException -> 400
+                removeIfExists(routeId(jobId));
+                removeIfExists(timerRouteId(jobId));
+                removeIfExists(directRouteId(jobId));
+                camelContext.addRoutes(builder);
+            }
         } catch (Exception e) {
             throw new IllegalStateException("注册路由失败: " + jobId, e);
         }
@@ -67,6 +69,7 @@ public class RouteRegistry {
     public void disable(Long jobId) {
         removeIfExists(routeId(jobId));
         removeIfExists(timerRouteId(jobId));
+        removeIfExists(directRouteId(jobId));
     }
 
     private void removeIfExists(String routeId) {
@@ -86,5 +89,9 @@ public class RouteRegistry {
 
     private String timerRouteId(Long jobId) {
         return "timer-job-" + jobId;
+    }
+
+    private String directRouteId(Long jobId) {
+        return "direct-" + jobId;
     }
 }
