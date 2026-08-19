@@ -62,6 +62,7 @@ public class RouteRegistry {
                 camelContext.addRoutes(builder);
             }
         } catch (Exception e) {
+            LOG.error("注册路由失败 job={}", jobId, e);
             throw new IllegalStateException("注册路由失败: " + jobId, e);
         }
     }
