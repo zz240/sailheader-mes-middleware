@@ -44,8 +44,8 @@ class StructureProbeControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sample\":{\"order_no\":\"PO-1\"}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sourceKey").value("sample"))
-                .andExpect(jsonPath("$.fields[0].name").value("order_no"));
+                .andExpect(jsonPath("$.data.sourceKey").value("sample"))
+                .andExpect(jsonPath("$.data.fields[0].name").value("order_no"));
     }
 
     @Test
@@ -60,7 +60,7 @@ class StructureProbeControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"table\":\"po_order\",\"sample\":{\"order_no\":\"PO-1\"}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sourceKey").value("sample"));
+                .andExpect(jsonPath("$.data.sourceKey").value("sample"));
     }
 
     @Test
@@ -69,6 +69,6 @@ class StructureProbeControllerTest {
 
         mockMvc.perform(get("/api/data-sources/1/suggest-table"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.table").value("po_order"));
+                .andExpect(jsonPath("$.data.table").value("po_order"));
     }
 }

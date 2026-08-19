@@ -59,7 +59,7 @@ class TemplateServiceTest {
         when(templateMapper.selectCount(any())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.create(request("po-sync", "1", Map.of("a", 1))))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已存在");
     }
 

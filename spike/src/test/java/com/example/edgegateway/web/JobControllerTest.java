@@ -5,7 +5,8 @@ import com.example.edgegateway.model.ActionType;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.service.ActionService;
-import com.example.edgegateway.service.ConflictException;
+import com.example.edgegateway.service.BusinessCode;
+import com.example.edgegateway.service.BusinessException;
 import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
 import com.example.edgegateway.service.JobValidationService;
@@ -67,7 +68,7 @@ class JobControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(JOB_BODY))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("po-sync"));
+                .andExpect(jsonPath("$.data.name").value("po-sync"));
     }
 
     @Test
@@ -78,18 +79,20 @@ class JobControllerTest {
         mockMvc.perform(post("/api/jobs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(JOB_BODY))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PARAM_INVALID"));
     }
 
     @Test
     void rejectsDuplicateJob() throws Exception {
         when(jobService.create(any(JobRequest.class)))
-                .thenThrow(new ConflictException("任务名称已存在"));
+                .thenThrow(new BusinessException(BusinessCode.DUPLICATE_NAME, "任务名称已存在"));
 
         mockMvc.perform(post("/api/jobs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(JOB_BODY))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_NAME"));
     }
 
     @Test
@@ -103,7 +106,7 @@ class JobControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":1}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value(1));
+                .andExpect(jsonPath("$.data.status").value(1));
     }
 
     @Test
@@ -115,7 +118,7 @@ class JobControllerTest {
 
         mockMvc.perform(get("/api/jobs").param("name", "po"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("po-sync"));
+                .andExpect(jsonPath("$.data[0].name").value("po-sync"));
     }
 
     @Test
@@ -132,7 +135,7 @@ class JobControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":{}}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.index").value(1));
+                .andExpect(jsonPath("$.data.index").value(1));
     }
 
     @Test
@@ -160,7 +163,7 @@ class JobControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"map\",\"type\":\"FIELD_MAPPING\",\"index\":3,\"addition\":{}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.index").value(3));
+                .andExpect(jsonPath("$.data.index").value(3));
     }
 
     @Test
@@ -181,7 +184,7 @@ class JobControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderNo\":\"PO-1\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lastRunStatus").value("SUCCESS"));
+                .andExpect(jsonPath("$.data.lastRunStatus").value("SUCCESS"));
     }
 
     @Test

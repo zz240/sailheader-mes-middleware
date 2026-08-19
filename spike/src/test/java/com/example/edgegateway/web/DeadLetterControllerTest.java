@@ -44,8 +44,8 @@ class DeadLetterControllerTest {
 
         mockMvc.perform(get("/api/dead-letters").param("jobId", "7").param("status", "FAILED"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].jobId").value(7))
-                .andExpect(jsonPath("$[0].status").value("FAILED"));
+                .andExpect(jsonPath("$.data[0].jobId").value(7))
+                .andExpect(jsonPath("$.data[0].status").value("FAILED"));
     }
 
     @Test
@@ -54,8 +54,8 @@ class DeadLetterControllerTest {
 
         mockMvc.perform(get("/api/dead-letters/1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.inputJson").value("{\"order_no\":\"PO-1\"}"))
-                .andExpect(jsonPath("$.error").value("HTTP 500"));
+                .andExpect(jsonPath("$.data.inputJson").value("{\"order_no\":\"PO-1\"}"))
+                .andExpect(jsonPath("$.data.error").value("HTTP 500"));
     }
 
     @Test
@@ -67,8 +67,8 @@ class DeadLetterControllerTest {
 
         mockMvc.perform(post("/api/dead-letters/1/redeliver"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lastRunStatus").value("SUCCESS"))
-                .andExpect(jsonPath("$.deadLetterStatus").value("REDELIVERED"));
+                .andExpect(jsonPath("$.data.lastRunStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.deadLetterStatus").value("REDELIVERED"));
         verify(deadLetterService).redeliver(1L);
     }
 }

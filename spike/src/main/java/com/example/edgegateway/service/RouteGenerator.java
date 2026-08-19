@@ -64,7 +64,7 @@ public class RouteGenerator {
         List<Action> sorted = actions.stream()
                 .sorted(Comparator.comparing(Action::getActionIndex))
                 .toList();
-        if (isRabbitConsumer(sorted.get(0))) {
+        if (isRabbitConsumer(sorted.getFirst())) {
             // 南向：MQ 消费主路由 + direct 重放路由（供死信重投/manual 执行）
             return List.of(buildSouthbound(job, sorted), buildSouthboundReplay(job, sorted));
         }
@@ -193,19 +193,19 @@ public class RouteGenerator {
 
     private RouteBuilder buildSouthbound(Job job, List<Action> actions) {
         String routeId = "job-" + job.getId();
-        RemoteAccessConfig consumer = RemoteAccessConfig.from(addition(actions.get(0)));
+        RemoteAccessConfig consumer = RemoteAccessConfig.from(addition(actions.getFirst()));
         DataSource mqDataSource = dataSourceMapper.selectById(consumer.dataSourceId());
         RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
                 DataSourceConfig.from(mqDataSource.getType(), mqDataSource.getAddition());
 
-        RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).get(remoteActions(actions).size() - 1)));
-        Map<String, Object> writeAddition = addition(remoteActions(actions).get(remoteActions(actions).size() - 1));
+        RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).getLast()));
+        Map<String, Object> writeAddition = addition(remoteActions(actions).getLast());
         String table = str(writeAddition.get("tableName"));
         String idempotencyKey = str(writeAddition.get("idempotencyKey"));
         FieldMappingConfig mapping = fieldMapping(actions);
         FieldMapper fieldMapper = new FieldMapper(List.of());
-        int consumerIndex = actions.get(0).getActionIndex();
-        int writeIndex = remoteActions(actions).get(remoteActions(actions).size() - 1).getActionIndex();
+        int consumerIndex = actions.getFirst().getActionIndex();
+        int writeIndex = remoteActions(actions).getLast().getActionIndex();
         int mappingIndex = actions.stream()
                 .filter(a -> a.getType() == ActionType.FIELD_MAPPING)
                 .findFirst()

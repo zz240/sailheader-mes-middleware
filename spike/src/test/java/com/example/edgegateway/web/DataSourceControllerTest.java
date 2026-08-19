@@ -2,7 +2,8 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
-import com.example.edgegateway.service.ConflictException;
+import com.example.edgegateway.service.BusinessCode;
+import com.example.edgegateway.service.BusinessException;
 import com.example.edgegateway.service.ConnectionTester;
 import com.example.edgegateway.service.DataSourceService;
 import com.example.edgegateway.web.dto.DataSourceRequest;
@@ -56,7 +57,7 @@ class DataSourceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("erp")))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("erp"));
+                .andExpect(jsonPath("$.data.name").value("erp"));
     }
 
     @Test
@@ -73,7 +74,7 @@ class DataSourceControllerTest {
     @Test
     void rejectsDuplicateDataSource() throws Exception {
         when(dataSourceService.create(any(DataSourceRequest.class)))
-                .thenThrow(new ConflictException("数据源名称已存在"));
+                .thenThrow(new BusinessException(BusinessCode.DUPLICATE_NAME, "数据源名称已存在"));
 
         mockMvc.perform(post("/api/data-sources")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -92,7 +93,7 @@ class DataSourceControllerTest {
 
         mockMvc.perform(get("/api/data-sources").param("name", "erp"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("erp"));
+                .andExpect(jsonPath("$.data[0].name").value("erp"));
     }
 
     @Test
@@ -105,7 +106,7 @@ class DataSourceControllerTest {
 
         mockMvc.perform(post("/api/data-sources/1/test"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ok").value(true));
+                .andExpect(jsonPath("$.data.ok").value(true));
     }
 
     @Test

@@ -15,7 +15,7 @@ import java.util.NoSuchElementException;
 /**
  * 数据源业务：负责配置校验（必填项、类型相关字段、JSON 合法性）、
  * CRUD 与"同站点重名"冲突检测。校验失败抛 IllegalArgumentException（400），
- * 重名抛 ConflictException（409），不存在抛 NoSuchElementException（404）。
+ * 重名抛 BusinessException(DUPLICATE_NAME)（409），不存在抛 NoSuchElementException（404）。
  */
 @Service
 public class DataSourceService {
@@ -29,7 +29,7 @@ public class DataSourceService {
         validate(request);
         // 同一站点下数据源名唯一，作为业务键
         if (exists(request.siteId(), request.name(), null)) {
-            throw new ConflictException("数据源名称已存在: " + request.name());
+            throw BusinessException.of(BusinessCode.DUPLICATE_NAME, "数据源名称已存在: " + request.name());
         }
         DataSource dataSource = toEntity(request);
         dataSourceMapper.insert(dataSource);
@@ -40,7 +40,7 @@ public class DataSourceService {
         validate(request);
         DataSource existing = get(id);
         if (exists(request.siteId(), request.name(), id)) {
-            throw new ConflictException("数据源名称已存在: " + request.name());
+            throw BusinessException.of(BusinessCode.DUPLICATE_NAME, "数据源名称已存在: " + request.name());
         }
         existing.setSiteId(request.siteId());
         existing.setName(request.name());

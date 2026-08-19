@@ -56,7 +56,7 @@ class JobServiceTest {
         when(mapper.selectCount(any())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.create(request("dup")))
-                .isInstanceOf(ConflictException.class);
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test

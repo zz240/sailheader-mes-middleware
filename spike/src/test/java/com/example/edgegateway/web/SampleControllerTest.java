@@ -23,7 +23,7 @@ class SampleControllerTest {
                         .content("{\"sample\":{\"order_no\":\"PO-1\","
                                 + "\"data\":{\"items\":[{\"name\":\"x\"}]}}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0]").value("order_no"))
-                .andExpect(jsonPath("$[1]").value("data.items[0].name"));
+                .andExpect(jsonPath("$.data[0]").value("order_no"))
+                .andExpect(jsonPath("$.data[1]").value("data.items[0].name"));
     }
 }

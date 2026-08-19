@@ -48,8 +48,8 @@ class TemplateControllerTest {
 
         mockMvc.perform(get("/api/templates"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("po-sync"))
-                .andExpect(jsonPath("$[0].version").value("1"));
+                .andExpect(jsonPath("$.data[0].name").value("po-sync"))
+                .andExpect(jsonPath("$.data[0].version").value("1"));
     }
 
     @Test
@@ -60,7 +60,7 @@ class TemplateControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"po-sync\",\"configJson\":{\"job\":{\"name\":\"po-sync\"}}}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.version").value("1"));
+                .andExpect(jsonPath("$.data.version").value("1"));
     }
 
     @Test
@@ -69,15 +69,15 @@ class TemplateControllerTest {
 
         mockMvc.perform(get("/api/templates/1/export"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.version").value("1"))
-                .andExpect(jsonPath("$.configJson.job.name").value("po-sync"));
+                .andExpect(jsonPath("$.data.version").value("1"))
+                .andExpect(jsonPath("$.data.configJson.job.name").value("po-sync"));
 
         when(templateService.importTemplate(any(TemplateRequest.class))).thenReturn(template(2L, "po-sync", "2"));
         mockMvc.perform(post("/api/templates/import")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"po-sync\",\"configJson\":{\"job\":{\"name\":\"po-sync\"}}}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.version").value("2"));
+                .andExpect(jsonPath("$.data.version").value("2"));
     }
 
     @Test

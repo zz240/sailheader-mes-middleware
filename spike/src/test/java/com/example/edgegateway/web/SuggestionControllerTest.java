@@ -42,8 +42,8 @@ class SuggestionControllerTest {
                                 + "\"nullable\":true,\"samples\":[\"PO-1\"]}]},"
                                 + "\"targets\":[{\"name\":\"sheet_no\",\"required\":true}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].sourcePath").value("order_no"))
-                .andExpect(jsonPath("$[0].targetName").value("sheet_no"))
-                .andExpect(jsonPath("$[0].matchSource").value("EXACT"));
+                .andExpect(jsonPath("$.data[0].sourcePath").value("order_no"))
+                .andExpect(jsonPath("$.data[0].targetName").value("sheet_no"))
+                .andExpect(jsonPath("$.data[0].matchSource").value("EXACT"));
     }
 }

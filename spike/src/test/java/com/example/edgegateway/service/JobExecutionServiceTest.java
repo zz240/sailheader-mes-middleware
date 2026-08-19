@@ -55,7 +55,7 @@ class JobExecutionServiceTest {
         when(jobMapper.selectById(1L)).thenReturn(job);
 
         assertThatThrownBy(() -> service.execute(1L, null))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未启用");
     }
 

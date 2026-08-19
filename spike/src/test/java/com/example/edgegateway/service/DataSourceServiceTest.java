@@ -63,6 +63,6 @@ class DataSourceServiceTest {
         when(mapper.selectCount(any())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, Map.of("method", "GET"))))
-                .isInstanceOf(ConflictException.class);
+                .isInstanceOf(BusinessException.class);
     }
 }

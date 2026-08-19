@@ -62,7 +62,7 @@ class ExternalTriggerServiceTest {
         when(apiKeyService.matches(5L, null)).thenReturn(false);
 
         assertThatThrownBy(() -> service.trigger(1L, null, Map.of()))
-                .isInstanceOf(UnauthorizedException.class);
+                .isInstanceOf(BusinessException.class);
         verify(jobExecutionService, never()).execute(any(), any());
     }
 
@@ -73,7 +73,7 @@ class ExternalTriggerServiceTest {
         when(apiKeyService.matches(5L, "wrong")).thenReturn(false);
 
         assertThatThrownBy(() -> service.trigger(1L, "wrong", Map.of()))
-                .isInstanceOf(UnauthorizedException.class);
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test

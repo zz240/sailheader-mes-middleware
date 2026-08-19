@@ -102,7 +102,7 @@ public class TemplateService {
             wrapper.ne(Template::getId, excludeId);
         }
         if (templateMapper.selectCount(wrapper) > 0) {
-            throw new ConflictException("模板已存在: " + name + " v" + version);
+            throw BusinessException.of(BusinessCode.DUPLICATE_NAME, "模板已存在: " + name + " v" + version);
         }
     }
 

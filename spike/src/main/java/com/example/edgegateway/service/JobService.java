@@ -24,7 +24,7 @@ public class JobService {
     public Job create(JobRequest request) {
         validate(request);
         if (exists(request.siteId(), request.name(), null)) {
-            throw new ConflictException("任务名称已存在: " + request.name());
+            throw BusinessException.of(BusinessCode.DUPLICATE_NAME, "任务名称已存在: " + request.name());
         }
         Job job = toEntity(request);
         jobMapper.insert(job);
@@ -35,7 +35,7 @@ public class JobService {
         validate(request);
         Job existing = get(id);
         if (exists(request.siteId(), request.name(), id)) {
-            throw new ConflictException("任务名称已存在: " + request.name());
+            throw BusinessException.of(BusinessCode.DUPLICATE_NAME, "任务名称已存在: " + request.name());
         }
         apply(existing, request);
         jobMapper.updateById(existing);

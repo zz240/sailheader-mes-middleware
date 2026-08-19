@@ -35,7 +35,7 @@ class SiteControllerTest {
 
         mockMvc.perform(post("/api/sites/1/api-key"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.apiKey").value("raw-key-once"));
+                .andExpect(jsonPath("$.data.apiKey").value("raw-key-once"));
     }
 
     @Test
@@ -48,8 +48,8 @@ class SiteControllerTest {
 
         mockMvc.perform(get("/api/sites"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("演示客户"))
-                .andExpect(jsonPath("$[0].hasApiKey").value(true))
-                .andExpect(jsonPath("$[0].apiKey").doesNotExist());
+                .andExpect(jsonPath("$.data[0].name").value("演示客户"))
+                .andExpect(jsonPath("$.data[0].hasApiKey").value(true))
+                .andExpect(jsonPath("$.data[0].apiKey").doesNotExist());
     }
 }

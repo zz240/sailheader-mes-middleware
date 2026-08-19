@@ -35,7 +35,7 @@ public class JobExecutionService {
             throw new NoSuchElementException("任务不存在: " + jobId);
         }
         if (job.getStatus() == null || job.getStatus() != 1) {
-            throw new IllegalArgumentException("任务未启用，无法执行");
+            throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法执行");
         }
         String endpoint = "direct:job-" + jobId;
         try (ProducerTemplate producer = camelContext.createProducerTemplate()) {

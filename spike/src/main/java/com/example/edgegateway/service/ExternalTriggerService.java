@@ -34,7 +34,7 @@ public class ExternalTriggerService {
             throw new NoSuchElementException("任务不存在: " + jobId);
         }
         if (!apiKeyService.matches(job.getSiteId(), apiKey)) {
-            throw new UnauthorizedException("API Key 缺失或无效");
+            throw BusinessException.of(BusinessCode.UNAUTHORIZED, "API Key 缺失或无效");
         }
         return JobView.from(jobExecutionService.execute(jobId, input));
     }

@@ -2,7 +2,8 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.service.ExternalTriggerService;
-import com.example.edgegateway.service.UnauthorizedException;
+import com.example.edgegateway.service.BusinessCode;
+import com.example.edgegateway.service.BusinessException;
 import com.example.edgegateway.web.dto.JobView;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,18 +46,19 @@ class ExternalTriggerControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("po-sync"));
+                .andExpect(jsonPath("$.data.name").value("po-sync"));
     }
 
     @Test
     void returns401WhenKeyInvalid() throws Exception {
         when(triggerService.trigger(eq(1L), eq("bad-key"), any()))
-                .thenThrow(new UnauthorizedException("API Key 缺失或无效"));
+                .thenThrow(new BusinessException(BusinessCode.UNAUTHORIZED, "API Key 缺失或无效"));
 
         mockMvc.perform(post("/api/external/jobs/1/trigger")
                         .header("X-API-Key", "bad-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 }
