@@ -4,7 +4,7 @@ import com.example.edgegateway.mapping.suggest.SourceStructure;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import org.junit.jupiter.api.Test;
@@ -68,7 +68,7 @@ class StructureProbeServiceTest {
     @Test
     void suggestTableExtractsFromJobReadSql() {
         Action action = new Action();
-        action.setType(ActionType.REMOTE_ACCESS);
+        action.setType(ActionKind.READ_SQL);
         action.setAddition(Map.of("dataSourceId", 7, "sql", "SELECT * FROM po_order WHERE id > {watermark}"));
         when(actionMapper.selectList(any())).thenReturn(List.of(action));
 

@@ -1,15 +1,16 @@
 package com.example.edgegateway.service;
 
+import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.MysqlDataSourceConfig;
-import com.example.edgegateway.config.RemoteAccessConfig;
+import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.NameNormalizer;
 import com.example.edgegateway.mapping.suggest.SourceStructure;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
@@ -23,8 +24,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 任务级配置期校验：数据源连通性 + SQL 静态/只读真校验 + 北向映射字段存在性（探测结果对照）。
- * errors 阻断启用，warnings 仅提示（对应「引擎侧结构校验」决策）。
+ * 任务级配置期校验：数据源连通性 + READ_SQL 静态/只读真校验 + 北向映射字段存在性（探测结果对照）。
+ * errors 阻断启用，warnings 仅提示。
  */
 @Service
 public class JobValidationService {
@@ -61,7 +62,7 @@ public class JobValidationService {
     public ValidationResult validate(Long jobId) {
         List<ValidationResult.Issue> errors = new ArrayList<>();
         List<ValidationResult.Issue> warnings = new ArrayList<>();
-        Job job = jobService.get(jobId);
+        jobService.get(jobId);
         List<Action> actions = actionService.list(jobId);
         if (actions.isEmpty()) {
             errors.add(new ValidationResult.Issue("job", "actions", "任务没有动作，无法启用"));
@@ -70,7 +71,7 @@ public class JobValidationService {
         SyncDirection direction = historyService.inferDirection(actions);
 
         for (Action action : actions) {
-            if (action.getType() != ActionType.REMOTE_ACCESS) {
+            if (!hasDataSource(action.getType())) {
                 continue;
             }
             validateRemoteAction(action, errors);
@@ -81,9 +82,18 @@ public class JobValidationService {
         return new ValidationResult(errors.isEmpty(), errors, warnings);
     }
 
+    private boolean hasDataSource(ActionKind kind) {
+        return kind != ActionKind.FIELD_MAP;
+    }
+
     private void validateRemoteAction(Action action, List<ValidationResult.Issue> errors) {
-        RemoteAccessConfig config = RemoteAccessConfig.from(addition(action));
-        DataSource ds = config.dataSourceId() == null ? null : dataSourceMapper.selectById(config.dataSourceId());
+        ActionConfig config = ActionConfig.from(action.getType(), addition(action));
+        Object rawId = config.toMap().get("dataSourceId");
+        if (rawId == null) {
+            errors.add(new ValidationResult.Issue("action", action.getName(), "缺少 dataSourceId"));
+            return;
+        }
+        DataSource ds = dataSourceMapper.selectById(Long.valueOf(rawId.toString()));
         if (ds == null) {
             errors.add(new ValidationResult.Issue("action", action.getName(), "引用的数据源不存在"));
             return;
@@ -93,17 +103,22 @@ public class JobValidationService {
             errors.add(new ValidationResult.Issue("data-source", ds.getName(), "连接失败: " + test.message()));
             return;
         }
-        if (ds.getType() == DataSourceType.MYSQL && config.sql() != null && !config.sql().isBlank()) {
-            validateSql(ds, action, config, errors);
+        if (action.getType() == ActionKind.READ_SQL && ds.getType() == DataSourceType.MYSQL) {
+            ReadSqlConfig read = (ReadSqlConfig) config;
+            validateSql(ds, action, read, errors);
         }
     }
 
     private void validateSql(
             DataSource ds,
             Action action,
-            RemoteAccessConfig config,
+            ReadSqlConfig read,
             List<ValidationResult.Issue> errors) {
-        String sql = config.sql();
+        String sql = read.sql();
+        if (sql == null || sql.isBlank()) {
+            errors.add(new ValidationResult.Issue("sql", action.getName(), "读 SQL 动作需要 sql"));
+            return;
+        }
         if (sql.contains(";")) {
             errors.add(new ValidationResult.Issue("sql", action.getName(), "SQL 不允许多语句（分号）"));
             return;
@@ -120,21 +135,18 @@ public class JobValidationService {
         }
     }
 
-    /** 北向映射字段存在性：探测读表结构，映射源路径不在探测结果中给警告（常量规则跳过）。 */
+    /** 北向映射字段存在性：探测 READ_SQL 表结构，FIELD_MAP 源路径不在探测结果中给警告。 */
     private void checkNorthMappingFields(List<Action> actions, List<ValidationResult.Issue> warnings) {
         Action read = actions.stream()
-                .filter(a -> a.getType() == ActionType.REMOTE_ACCESS)
-                .filter(a -> {
-                    RemoteAccessConfig c = RemoteAccessConfig.from(addition(a));
-                    return c.sql() != null && !c.sql().isBlank();
-                })
+                .filter(a -> a.getType() == ActionKind.READ_SQL)
                 .findFirst()
                 .orElse(null);
         if (read == null) {
             return;
         }
-        RemoteAccessConfig config = RemoteAccessConfig.from(addition(read));
-        DataSource ds = dataSourceMapper.selectById(config.dataSourceId());
+        ReadSqlConfig config = (ReadSqlConfig) ActionConfig.from(ActionKind.READ_SQL, addition(read));
+        DataSource ds = config.dataSourceId() == null ? null
+                : dataSourceMapper.selectById(config.dataSourceId());
         String table = MappingHistoryService.extractTable(config.sql());
         if (ds == null || table == null) {
             return;
@@ -151,10 +163,11 @@ public class JobValidationService {
                 .map(f -> normalizePath(f.name()))
                 .toList();
         for (Action action : actions) {
-            if (action.getType() != ActionType.FIELD_MAPPING) {
+            if (action.getType() != ActionKind.FIELD_MAP) {
                 continue;
             }
-            FieldMappingConfig mapping = FieldMappingConfig.from(addition(action));
+            FieldMappingConfig mapping = (FieldMappingConfig)
+                    ActionConfig.from(ActionKind.FIELD_MAP, addition(action));
             for (var rule : mapping.rules()) {
                 if (rule.transform() == TransformType.CONSTANT) {
                     continue;

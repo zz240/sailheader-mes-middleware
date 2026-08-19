@@ -30,9 +30,37 @@ public class FieldMapper {
         return applyRules(source, rules);
     }
 
-    /** 用类型化映射规则（来自字段映射动作配置）执行映射。 */
-    public Map<String, Object> apply(Map<String, Object> source, List<FieldMappingRule> rules) {
-        return applyRules(source, rules.stream().map(this::toMappingRule).toList());
+    /** 上下文映射（DS-8）：每条规则的 sourceStep 指向 context 中的源动作输出（0 = 任务输入）。 */
+    public Map<String, Object> apply(Map<Integer, Object> context, List<FieldMappingRule> rules) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (FieldMappingRule rule : rules) {
+            out.put(rule.target(), convert(resolveSource(context, rule.sourceStep()), rule));
+        }
+        return out;
+    }
+
+    private Map<String, Object> resolveSource(Map<Integer, Object> context, Integer sourceStep) {
+        Object obj = context.get(sourceStep == null ? 0 : sourceStep);
+        return obj instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+    }
+
+    private Object convert(Map<String, Object> source, FieldMappingRule rule) {
+        return switch (rule.transform()) {
+            case CONSTANT -> rule.constant();
+            case INT -> {
+                Object raw = resolve(source, rule.source());
+                yield raw == null ? null : Integer.valueOf(raw.toString());
+            }
+            case DATE -> {
+                Object raw = resolve(source, rule.source());
+                yield raw == null ? null : formatDate(raw, rule.datePattern());
+            }
+            case ENUM -> {
+                Object raw = resolve(source, rule.source());
+                yield raw == null ? null : rule.enumMap().get(raw.toString());
+            }
+            default -> resolve(source, rule.source());
+        };
     }
 
     private Map<String, Object> applyRules(Map<String, Object> source, List<MappingRule> rules) {

@@ -8,7 +8,7 @@ import com.example.edgegateway.mapper.MappingHistoryMapper;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.HistoryMapping;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
@@ -45,7 +45,7 @@ class MappingHistoryServiceTest {
 
     private Action remote(Long dsId, String sql, int index) {
         Action action = new Action();
-        action.setType(ActionType.REMOTE_ACCESS);
+        action.setType(sql != null ? ActionKind.READ_SQL : ActionKind.MQ_CONSUME);
         action.setActionIndex(index);
         Map<String, Object> addition = new java.util.HashMap<>();
         addition.put("dataSourceId", dsId);
@@ -99,14 +99,18 @@ class MappingHistoryServiceTest {
     @Test
     void sourceKeySouthUsesQueueName() {
         when(dataSourceMapper.selectById(8L)).thenReturn(mqDs());
-        List<Action> actions = List.of(remote(8L, null, 1));
+        Action action = new Action();
+        action.setType(ActionKind.MQ_CONSUME);
+        action.setActionIndex(1);
+        action.setAddition(Map.of("dataSourceId", 8L, "queue", "mes.to.edge"));
+        List<Action> actions = List.of(action);
         assertThat(service.inferSourceKey(actions, SyncDirection.SOUTH)).isEqualTo("mq:mes.to.edge");
     }
 
     @Test
     void sourceKeySouthPrefersActionQueue() {
         Action action = new Action();
-        action.setType(ActionType.REMOTE_ACCESS);
+        action.setType(ActionKind.MQ_CONSUME);
         action.setActionIndex(1);
         action.setAddition(Map.of("dataSourceId", 8L, "queue", "action.queue"));
 
@@ -125,7 +129,7 @@ class MappingHistoryServiceTest {
                 List.of(remote(7L, "SELECT * FROM po_order", 1)));
         when(historyMapper.selectOne(any())).thenReturn(null);
 
-        service.recordFromAction(1L, List.of(new FieldMappingRule(
+        service.recordFromAction(1L, List.of(new FieldMappingRule(null,
                 "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null)));
 
         verify(historyMapper).insert(any(MappingHistory.class));
@@ -145,7 +149,7 @@ class MappingHistoryServiceTest {
         existing.setHitCount(3);
         when(historyMapper.selectOne(any())).thenReturn(existing);
 
-        service.recordFromAction(1L, List.of(new FieldMappingRule(
+        service.recordFromAction(1L, List.of(new FieldMappingRule(null,
                 "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null)));
 
         assertThat(existing.getHitCount()).isEqualTo(4);

@@ -30,10 +30,6 @@ public class Job {
 
     private Long backoffMs;
 
-    private WatermarkType watermarkType; // 水位策略：TIMESTAMP（时间列）或 SEQUENCE（自增列）
-
-    private String watermarkColumn; // 对应的增量列名，路由生成器据此生成 where 条件
-
     private String remarks;
 
     /** 最近一次执行结果：SUCCESS / FAILED；由执行服务写入，配置接口不维护。 */
@@ -105,22 +101,6 @@ public class Job {
 
     public void setBackoffMs(Long backoffMs) {
         this.backoffMs = backoffMs;
-    }
-
-    public WatermarkType getWatermarkType() {
-        return watermarkType;
-    }
-
-    public void setWatermarkType(WatermarkType watermarkType) {
-        this.watermarkType = watermarkType;
-    }
-
-    public String getWatermarkColumn() {
-        return watermarkColumn;
-    }
-
-    public void setWatermarkColumn(String watermarkColumn) {
-        this.watermarkColumn = watermarkColumn;
     }
 
     public String getRemarks() {

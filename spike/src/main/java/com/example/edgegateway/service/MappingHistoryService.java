@@ -1,10 +1,10 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.edgegateway.config.DataSourceConfig;
+import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.FieldMappingRule;
-import com.example.edgegateway.config.RabbitMqDataSourceConfig;
-import com.example.edgegateway.config.RemoteAccessConfig;
+import com.example.edgegateway.config.MqConsumeConfig;
+import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
@@ -13,9 +13,7 @@ import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.HistoryMapping;
 import com.example.edgegateway.mapping.suggest.TransformKind;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
-import com.example.edgegateway.model.DataSource;
-import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.MappingHistory;
 import com.example.edgegateway.model.SyncDirection;
@@ -31,11 +29,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 映射历史服务：保存字段映射动作时把最终确认的规则 upsert 进历史表（资产沉淀），
- * 并按 站点 + 方向 + 源结构指纹 供映射建议器查询。
+ * 映射历史服务：保存 FIELD_MAP 动作时把确认规则 upsert 进历史表（资产沉淀），
+ * 按 站点 + 方向 + 源结构指纹 供映射建议器查询。
  *
- * <p>方向由动作链推断：首动作消费 RabbitMQ 为南向，否则北向。
- * 源结构指纹：南向取队列名（mq:queue），北向从读 SQL 提取表名（db:table）。</p>
+ * <p>方向由动作链推断：首动作为 MQ_CONSUME 为南向，否则北向。
+ * 源结构指纹：南向取 MQ_CONSUME 队列名（mq:queue），北向从 READ_SQL 提取表名（db:table）。</p>
  */
 @Service
 public class MappingHistoryService {
@@ -46,7 +44,6 @@ public class MappingHistoryService {
     private final MappingHistoryMapper historyMapper;
     private final JobMapper jobMapper;
     private final ActionMapper actionMapper;
-    private final DataSourceMapper dataSourceMapper;
 
     public MappingHistoryService(
             MappingHistoryMapper historyMapper,
@@ -56,7 +53,6 @@ public class MappingHistoryService {
         this.historyMapper = historyMapper;
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
-        this.dataSourceMapper = dataSourceMapper;
     }
 
     /** 保存字段映射动作后调用：把确认的映射规则记录为历史（同键 upsert，最近确认优先）。 */
@@ -66,8 +62,9 @@ public class MappingHistoryService {
             return;
         }
         List<Action> actions = listActions(jobId);
-        if (actions.stream().noneMatch(a -> a.getType() == ActionType.REMOTE_ACCESS)) {
-            return; // 动作链还没有远程动作，方向/源结构无法推断，历史记录跳过
+        if (actions.stream().noneMatch(a -> a.getType() == ActionKind.READ_SQL
+                || a.getType() == ActionKind.MQ_CONSUME)) {
+            return; // 动作链还没有读入口，方向/源结构无法推断，历史记录跳过
         }
         SyncDirection direction = inferDirection(actions);
         String sourceKey = inferSourceKey(actions, direction);
@@ -97,7 +94,7 @@ public class MappingHistoryService {
         return result;
     }
 
-    /** 方向推断：首动作消费 RabbitMQ 为南向，否则北向（与 RouteGenerator 一致）。 */
+    /** 方向推断：首动作为 MQ_CONSUME 为南向，否则北向（与 RouteGenerator 一致）。 */
     public SyncDirection inferDirection(List<Action> actions) {
         List<Action> sorted = actions.stream()
                 .sorted(Comparator.comparing(Action::getActionIndex))
@@ -105,7 +102,9 @@ public class MappingHistoryService {
         if (sorted.isEmpty()) {
             return SyncDirection.NORTH;
         }
-        return isRabbitConsumer(sorted.get(0)) ? SyncDirection.SOUTH : SyncDirection.NORTH;
+        return sorted.get(0).getType() == ActionKind.MQ_CONSUME
+                ? SyncDirection.SOUTH
+                : SyncDirection.NORTH;
     }
 
     /** 源结构指纹：南向 = mq:队列名；北向 = db:读 SQL 的表名（提取失败回退 db:数据源ID）。 */
@@ -114,19 +113,13 @@ public class MappingHistoryService {
                 .sorted(Comparator.comparing(Action::getActionIndex))
                 .toList();
         if (direction == SyncDirection.SOUTH) {
-            RemoteAccessConfig consumer = remoteConfig(firstRemote(sorted));
-            String queue = consumer.queue();
-            if (queue == null || queue.isBlank()) {
-                DataSource ds = dataSource(consumer.dataSourceId());
-                if (ds != null) {
-                    RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
-                            DataSourceConfig.from(ds.getType(), ds.getAddition());
-                    queue = mq.queue();
-                }
-            }
-            return "mq:" + (queue == null ? "unknown" : queue);
+            MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
+                    ActionKind.MQ_CONSUME, addition(sorted.get(0)));
+            String queue = consume.queue();
+            return "mq:" + (queue == null || queue.isBlank() ? "unknown" : queue);
         }
-        RemoteAccessConfig read = remoteConfig(firstRemote(sorted));
+        ReadSqlConfig read = (ReadSqlConfig) ActionConfig.from(
+                ActionKind.READ_SQL, addition(firstRead(sorted)));
         String table = extractTable(read.sql());
         return table != null ? "db:" + table : "db:ds-" + read.dataSourceId();
     }
@@ -171,26 +164,15 @@ public class MappingHistoryService {
                 .orderByAsc(Action::getActionIndex));
     }
 
-    private boolean isRabbitConsumer(Action action) {
-        RemoteAccessConfig config = remoteConfig(action);
-        DataSource ds = dataSource(config.dataSourceId());
-        return ds != null && ds.getType() == DataSourceType.RABBITMQ;
-    }
-
-    private Action firstRemote(List<Action> actions) {
+    private Action firstRead(List<Action> actions) {
         return actions.stream()
-                .filter(a -> a.getType() == ActionType.REMOTE_ACCESS)
+                .filter(a -> a.getType() == ActionKind.READ_SQL)
                 .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("任务没有远程访问动作"));
+                .orElseThrow(() -> new NoSuchElementException("任务没有 READ_SQL 动作"));
     }
 
-    private RemoteAccessConfig remoteConfig(Action action) {
-        Map<String, Object> addition = action.getAddition() == null ? Map.of() : action.getAddition();
-        return RemoteAccessConfig.from(addition);
-    }
-
-    private DataSource dataSource(Long id) {
-        return id == null ? null : dataSourceMapper.selectById(id);
+    private Map<String, Object> addition(Action action) {
+        return action.getAddition() == null ? Map.of() : action.getAddition();
     }
 
     public static String extractTable(String sql) {

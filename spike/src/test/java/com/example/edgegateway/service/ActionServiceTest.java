@@ -1,16 +1,20 @@
 package com.example.edgegateway.service;
 
+import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.MqConsumeConfig;
+import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.web.dto.ActionRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -37,10 +41,12 @@ class ActionServiceTest {
         dataSourceMapper = mock(DataSourceMapper.class);
         mappingHistoryService = mock(MappingHistoryService.class);
         service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService);
+        when(actionMapper.selectList(any())).thenReturn(List.of());
     }
 
-    private ActionRequest request(Integer index, Map<String, Object> addition) {
-        return new ActionRequest("read", ActionType.REMOTE_ACCESS, index, addition);
+    private ActionRequest readRequest(Integer index, Long dsId) {
+        return new ActionRequest("read", ActionKind.READ_SQL, index,
+                new ReadSqlConfig(dsId, "SELECT * FROM po_order WHERE {watermark}", null, null));
     }
 
     @Test
@@ -53,19 +59,20 @@ class ActionServiceTest {
             inv.getArgument(0, Action.class).setId(1L);
             return 1;
         });
+        when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
 
-        Action saved = service.add(1L, request(1, Map.of()));
+        Action saved = service.add(1L, readRequest(1, 7L));
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getJobId()).isEqualTo(1L);
-        assertThat(saved.getType()).isEqualTo(ActionType.REMOTE_ACCESS);
+        assertThat(saved.getType()).isEqualTo(ActionKind.READ_SQL);
     }
 
     @Test
     void rejectsActionWhenJobMissing() {
         when(jobMapper.selectById(99L)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.add(99L, request(1, Map.of())))
+        assertThatThrownBy(() -> service.add(99L, readRequest(1, 7L)))
                 .isInstanceOf(NoSuchElementException.class);
     }
 
@@ -76,7 +83,7 @@ class ActionServiceTest {
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service.add(1L, request(1, Map.of())))
+        assertThatThrownBy(() -> service.add(1L, readRequest(1, 7L)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("序号");
     }
@@ -89,23 +96,9 @@ class ActionServiceTest {
         when(actionMapper.selectCount(any())).thenReturn(0L);
         when(dataSourceMapper.selectById(99L)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.add(1L, request(1, Map.of("dataSourceId", 99))))
+        assertThatThrownBy(() -> service.add(1L, readRequest(1, 99L)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("数据源");
-    }
-
-    @Test
-    void acceptsKnownDataSourceReference() {
-        Job job = new Job();
-        job.setId(1L);
-        when(jobMapper.selectById(1L)).thenReturn(job);
-        when(actionMapper.selectCount(any())).thenReturn(0L);
-        when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
-        when(actionMapper.insert(any(Action.class))).thenReturn(1);
-
-        Action saved = service.add(1L, request(1, Map.of("dataSourceId", 7)));
-
-        assertThat(saved.getJobId()).isEqualTo(1L);
     }
 
     @Test
@@ -115,7 +108,8 @@ class ActionServiceTest {
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectCount(any())).thenReturn(0L);
 
-        ActionRequest request = new ActionRequest("map", ActionType.FIELD_MAPPING, 2, Map.of());
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of()));
 
         assertThatThrownBy(() -> service.add(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -130,9 +124,9 @@ class ActionServiceTest {
         when(actionMapper.selectCount(any())).thenReturn(0L);
         when(actionMapper.insert(any(Action.class))).thenReturn(1);
 
-        ActionRequest request = new ActionRequest("map", ActionType.FIELD_MAPPING, 2,
-                Map.of("rules", java.util.List.of(Map.of(
-                        "source", "order_no", "target", "sheet_no", "transform", "STRING"))));
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(Map.of(
+                        "source", "order_no", "target", "sheet_no", "transform", "STRING")))));
 
         service.add(1L, request);
 
@@ -141,7 +135,7 @@ class ActionServiceTest {
     }
 
     @Test
-    void remoteAccessSaveDoesNotRecordMappingHistory() {
+    void readSqlSaveDoesNotRecordMappingHistory() {
         Job job = new Job();
         job.setId(1L);
         when(jobMapper.selectById(1L)).thenReturn(job);
@@ -149,8 +143,21 @@ class ActionServiceTest {
         when(actionMapper.insert(any(Action.class))).thenReturn(1);
         when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
 
-        service.add(1L, request(1, Map.of("dataSourceId", 7)));
+        service.add(1L, readRequest(1, 7L));
 
         verify(mappingHistoryService, never()).recordFromAction(any(), any());
+    }
+
+    @Test
+    void rejectsMqConsumeNotFirstInChain() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        ActionRequest request = new ActionRequest("consume", ActionKind.MQ_CONSUME, 2,
+                new MqConsumeConfig(1L, "q", null, null));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("链首");
     }
 }

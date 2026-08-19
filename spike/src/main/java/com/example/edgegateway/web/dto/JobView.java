@@ -1,11 +1,10 @@
 package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.Job;
-import com.example.edgegateway.model.WatermarkType;
 
 import java.time.LocalDateTime;
 
-/** 任务接口响应体。 */
+/** 任务接口响应体（水位策略已移至 READ_SQL 动作，DS-7）。 */
 public record JobView(
         Long id,
         Long siteId,
@@ -15,8 +14,6 @@ public record JobView(
         String timezone,
         Integer retryCount,
         Long backoffMs,
-        WatermarkType watermarkType,
-        String watermarkColumn,
         String remarks,
         String lastRunStatus,
         LocalDateTime lastRunAt,
@@ -33,8 +30,6 @@ public record JobView(
                 job.getTimezone(),
                 job.getRetryCount(),
                 job.getBackoffMs(),
-                job.getWatermarkType(),
-                job.getWatermarkColumn(),
                 job.getRemarks(),
                 job.getLastRunStatus(),
                 job.getLastRunAt(),

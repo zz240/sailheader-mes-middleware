@@ -3,12 +3,11 @@ package com.example.edgegateway.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.RemoteAccessConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.web.dto.ActionRequest;
 import org.springframework.stereotype.Service;
 
@@ -17,8 +16,9 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * 动作业务：绑定/更新/删除/列表，校验动作序号在任务内唯一，
- * 并在远程访问动作引用 dataSourceId 时校验数据源存在。
+ * 动作业务：绑定/更新/删除/列表，校验动作序号唯一、动作种类合法与链约束
+ * （MQ_CONSUME 只能链首、最多一个 MQ_CONSUME + 一个带水位 READ_SQL），
+ * 引用数据源的动作校验数据源存在。
  */
 @Service
 public class ActionService {
@@ -44,11 +44,12 @@ public class ActionService {
             throw new NoSuchElementException("任务不存在: " + jobId);
         }
         validate(request);
-        ActionConfig.from(request.type(), request.addition()).validate();
+        request.addition().validate();
+        validateChain(jobId, request, null);
         if (indexExists(jobId, request.index(), null)) {
             throw new IllegalArgumentException("同任务下动作序号不能重复: " + request.index());
         }
-        checkDataSourceReference(request.type(), request.addition());
+        checkDataSourceReference(request.addition());
         Action action = new Action();
         action.setJobId(jobId);
         apply(action, request);
@@ -60,11 +61,12 @@ public class ActionService {
     public Action update(Long id, ActionRequest request) {
         Action action = get(id);
         validate(request);
-        ActionConfig.from(request.type(), request.addition()).validate();
+        request.addition().validate();
+        validateChain(action.getJobId(), request, action.getId());
         if (indexExists(action.getJobId(), request.index(), id)) {
             throw new IllegalArgumentException("同任务下动作序号不能重复: " + request.index());
         }
-        checkDataSourceReference(request.type(), request.addition());
+        checkDataSourceReference(request.addition());
         apply(action, request);
         actionMapper.updateById(action);
         recordMappingHistory(action.getJobId(), request);
@@ -112,11 +114,12 @@ public class ActionService {
         }
     }
 
-    private void checkDataSourceReference(ActionType type, Map<String, Object> addition) {
-        ActionConfig config = ActionConfig.from(type, addition);
-        if (config instanceof RemoteAccessConfig remote && remote.dataSourceId() != null) {
-            if (dataSourceMapper.selectById(remote.dataSourceId()) == null) {
-                throw new IllegalArgumentException("引用的数据源不存在: " + remote.dataSourceId());
+    private void checkDataSourceReference(ActionConfig config) {
+        Object rawId = config.toMap().get("dataSourceId");
+        if (rawId != null) {
+            Long id = Long.valueOf(rawId.toString());
+            if (dataSourceMapper.selectById(id) == null) {
+                throw new IllegalArgumentException("引用的数据源不存在: " + id);
             }
         }
     }
@@ -125,14 +128,45 @@ public class ActionService {
         action.setName(request.name());
         action.setType(request.type());
         action.setActionIndex(request.index());
-        action.setAddition(request.addition());
+        action.setAddition(request.addition().toMap());
     }
 
     /** 字段映射动作保存/更新后，把最终确认的映射规则沉淀进映射历史。 */
     private void recordMappingHistory(Long jobId, ActionRequest request) {
-        if (request.type() == ActionType.FIELD_MAPPING) {
+        if (request.type() == ActionKind.FIELD_MAP) {
             mappingHistoryService.recordFromAction(
-                    jobId, FieldMappingConfig.from(request.addition()).rules());
+                    jobId, ((FieldMappingConfig) request.addition()).rules());
+        }
+    }
+
+    /** 链约束（DS-8 MVP）：MQ_CONSUME 只能链首；最多一个 MQ_CONSUME + 一个带水位 READ_SQL。 */
+    private void validateChain(Long jobId, ActionRequest request, Long excludeId) {
+        if (request.type() == ActionKind.MQ_CONSUME && request.index() != null && request.index() != 1) {
+            throw new IllegalArgumentException("MQ_CONSUME 只能作为链首（序号 1）");
+        }
+        long mqConsume = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                        .eq(Action::getJobId, jobId)
+                        .eq(Action::getType, ActionKind.MQ_CONSUME))
+                .stream()
+                .filter(a -> excludeId == null || !a.getId().equals(excludeId))
+                .count();
+        // 包含当前请求：新增时 +1，更新时按自身种类替换
+        long current = request.type() == ActionKind.MQ_CONSUME ? 1 : 0;
+        if (mqConsume + current > 1) {
+            throw new IllegalArgumentException("一条任务最多一个 MQ_CONSUME 动作");
+        }
+        boolean hasWatermarkRead = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                        .eq(Action::getJobId, jobId))
+                .stream()
+                .filter(a -> excludeId == null || !a.getId().equals(excludeId))
+                .map(a -> a.getType() == ActionKind.READ_SQL
+                        ? (Map<String, Object>) a.getAddition()
+                        : Map.<String, Object>of())
+                .anyMatch(m -> m.containsKey("watermarkColumn"));
+        boolean currentWatermark = request.type() == ActionKind.READ_SQL
+                && request.addition().toMap().containsKey("watermarkColumn");
+        if (hasWatermarkRead && currentWatermark) {
+            throw new IllegalArgumentException("一条任务最多一个带水位的 READ_SQL 动作");
         }
     }
 }

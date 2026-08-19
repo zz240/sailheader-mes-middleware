@@ -1,7 +1,7 @@
 package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 
 import java.util.Map;
 
@@ -10,7 +10,7 @@ public record ActionView(
         Long id,
         Long jobId,
         String name,
-        ActionType type,
+        ActionKind type,
         Integer index,
         Map<String, Object> addition
 ) {

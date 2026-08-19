@@ -2,7 +2,6 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Job;
-import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.web.dto.JobRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +25,7 @@ class JobServiceTest {
 
     private JobRequest request(String name) {
         return new JobRequest(name, 1L, 0, "0 0/30 * * * ?", "Asia/Shanghai",
-                3, 1000L, WatermarkType.SEQUENCE, "id", "备注");
+                3, 1000L, "备注");
     }
 
     @Test
@@ -41,8 +40,6 @@ class JobServiceTest {
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getName()).isEqualTo("po-sync");
-        assertThat(saved.getWatermarkType()).isEqualTo(WatermarkType.SEQUENCE);
-        assertThat(saved.getWatermarkColumn()).isEqualTo("id");
     }
 
     @Test
@@ -59,15 +56,6 @@ class JobServiceTest {
                 .isInstanceOf(BusinessException.class);
     }
 
-    @Test
-    void rejectsWatermarkColumnMissingWhenTypeSet() {
-        JobRequest req = new JobRequest("job", 1L, 0, null, null,
-                0, 0L, WatermarkType.TIMESTAMP, null, null);
-
-        assertThatThrownBy(() -> service.create(req))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("watermarkColumn");
-    }
 
     @Test
     void setsStatus() {

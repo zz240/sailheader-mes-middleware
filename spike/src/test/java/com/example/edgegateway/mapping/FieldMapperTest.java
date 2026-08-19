@@ -70,7 +70,7 @@ class FieldMapperTest {
         FieldMapper mapper = new FieldMapper(List.of());
 
         Map<String, Object> out = mapper.apply(
-                Map.of("order_no", "PO-1", "status", "ACTIVE"), config.rules());
+                Map.of(0, (Object) Map.of("order_no", "PO-1", "status", "ACTIVE")), config.rules());
 
         assertEquals("PO-1", out.get("sheet_no"));
         assertEquals(1, out.get("status"));

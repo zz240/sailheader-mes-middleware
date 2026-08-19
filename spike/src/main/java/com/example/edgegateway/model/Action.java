@@ -22,7 +22,7 @@ public class Action {
 
     private String name;
 
-    private ActionType type; // 动作类型：远程访问 / 字段映射，按名字存 VARCHAR
+    private ActionKind type; // 动作种类（DS-8）：MQ_CONSUME/READ_SQL/FIELD_MAP/WRITE_UPSERT/HTTP_CALL/MQ_PUBLISH
 
     @TableField("action_index") // 字段名 index 与列名 action_index 不对应，显式映射
     private Integer actionIndex;
@@ -54,11 +54,11 @@ public class Action {
         this.name = name;
     }
 
-    public ActionType getType() {
+    public ActionKind getType() {
         return type;
     }
 
-    public void setType(ActionType type) {
+    public void setType(ActionKind type) {
         this.type = type;
     }
 

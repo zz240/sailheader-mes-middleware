@@ -1,22 +1,31 @@
 package com.example.edgegateway.config;
 
 import com.example.edgegateway.mapping.TransformType;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-/** 字段映射动作配置：一组结构化映射规则。 */
+/** 字段映射动作配置（FIELD_MAP）：一组结构化映射规则。 */
 public record FieldMappingConfig(List<FieldMappingRule> rules) implements ActionConfig {
 
     public static FieldMappingConfig from(Map<String, Object> addition) {
+        Map<String, Object> map = addition == null ? Map.of() : addition;
+        map.keySet().stream()
+                .filter(k -> !Set.of("rules").contains(k))
+                .findFirst()
+                .ifPresent(k -> {
+                    throw new IllegalArgumentException("未知字段: " + k);
+                });
         List<FieldMappingRule> rules = new ArrayList<>();
-        Object raw = addition.get("rules");
+        Object raw = map.get("rules");
         if (raw instanceof List<?> list) {
             for (Object item : list) {
-                if (item instanceof Map<?, ?> map) {
-                    rules.add(FieldMappingRule.from(ConfigValues.map(map)));
+                if (item instanceof Map<?, ?> ruleMap) {
+                    rules.add(FieldMappingRule.from(ConfigValues.map(ruleMap)));
                 }
             }
         }
@@ -24,8 +33,8 @@ public record FieldMappingConfig(List<FieldMappingRule> rules) implements Action
     }
 
     @Override
-    public ActionType type() {
-        return ActionType.FIELD_MAPPING;
+    public ActionKind type() {
+        return ActionKind.FIELD_MAP;
     }
 
     @Override
@@ -49,5 +58,32 @@ public record FieldMappingConfig(List<FieldMappingRule> rules) implements Action
                 throw new IllegalArgumentException("映射规则缺少来源字段 source");
             }
         }
+    }
+
+    @Override
+    public Map<String, Object> toMap() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("rules", rules.stream().map(r -> {
+            Map<String, Object> rule = new LinkedHashMap<>();
+            if (r.sourceStep() != null) {
+                rule.put("sourceStep", r.sourceStep());
+            }
+            if (r.source() != null) {
+                rule.put("source", r.source());
+            }
+            rule.put("target", r.target());
+            rule.put("transform", r.transform().name());
+            if (r.constant() != null) {
+                rule.put("constant", r.constant());
+            }
+            if (r.enumMap() != null && !r.enumMap().isEmpty()) {
+                rule.put("enumMap", r.enumMap());
+            }
+            if (r.datePattern() != null) {
+                rule.put("datePattern", r.datePattern());
+            }
+            return rule;
+        }).toList());
+        return map;
     }
 }

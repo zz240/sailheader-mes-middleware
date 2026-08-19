@@ -1,7 +1,7 @@
 package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.service.ActionService;
@@ -53,15 +53,13 @@ class JobControllerTest {
     private static final String JOB_BODY =
             "{\"name\":\"po-sync\",\"siteId\":1,\"status\":0,"
                     + "\"crontab\":\"0 0/30 * * * ?\",\"timezone\":\"Asia/Shanghai\","
-                    + "\"retryCount\":3,\"backoffMs\":1000,"
-                    + "\"watermarkType\":\"SEQUENCE\",\"watermarkColumn\":\"id\",\"remarks\":\"备注\"}";
+                    + "\"retryCount\":3,\"backoffMs\":1000,\"remarks\":\"备注\"}";
 
     @Test
     void createsJob() throws Exception {
         Job job = new Job();
         job.setId(1L);
         job.setName("po-sync");
-        job.setWatermarkType(WatermarkType.SEQUENCE);
         when(jobService.create(any(JobRequest.class))).thenReturn(job);
 
         mockMvc.perform(post("/api/jobs")
@@ -127,13 +125,14 @@ class JobControllerTest {
         action.setId(1L);
         action.setJobId(1L);
         action.setName("read");
-        action.setType(ActionType.REMOTE_ACCESS);
+        action.setType(ActionKind.READ_SQL);
         action.setActionIndex(1);
         when(actionService.add(any(), any(ActionRequest.class))).thenReturn(action);
 
         mockMvc.perform(post("/api/jobs/1/actions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":{}}"))
+                        .content("{\"name\":\"read\",\"type\":\"READ_SQL\",\"index\":1,"
+                                + "\"addition\":{\"dataSourceId\":1,\"sql\":\"select * from po_order\"}}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.index").value(1));
     }
@@ -145,7 +144,8 @@ class JobControllerTest {
 
         mockMvc.perform(post("/api/jobs/1/actions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"read\",\"type\":\"REMOTE_ACCESS\",\"index\":1,\"addition\":{}}"))
+                        .content("{\"name\":\"read\",\"type\":\"READ_SQL\",\"index\":1,"
+                                + "\"addition\":{\"dataSourceId\":1,\"sql\":\"select * from po_order\"}}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -155,13 +155,14 @@ class JobControllerTest {
         action.setId(1L);
         action.setJobId(1L);
         action.setName("map");
-        action.setType(ActionType.FIELD_MAPPING);
+        action.setType(ActionKind.FIELD_MAP);
         action.setActionIndex(3);
         when(actionService.update(any(), any(ActionRequest.class))).thenReturn(action);
 
         mockMvc.perform(put("/api/actions/1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"map\",\"type\":\"FIELD_MAPPING\",\"index\":3,\"addition\":{}}"))
+                        .content("{\"name\":\"map\",\"type\":\"FIELD_MAP\",\"index\":3,"
+                                + "\"addition\":{\"rules\":[{\"source\":\"a\",\"target\":\"b\"}]}}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.index").value(3));
     }

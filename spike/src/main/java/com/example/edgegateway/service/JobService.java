@@ -93,10 +93,6 @@ public class JobService {
         if (request.siteId() == null) {
             throw new IllegalArgumentException("站点不能为空");
         }
-        if (request.watermarkType() != null
-                && (request.watermarkColumn() == null || request.watermarkColumn().isBlank())) {
-            throw new IllegalArgumentException("设置了水位策略必须填写 watermarkColumn");
-        }
     }
 
     private Job toEntity(JobRequest request) {
@@ -113,8 +109,6 @@ public class JobService {
         job.setTimezone(request.timezone());
         job.setRetryCount(request.retryCount());
         job.setBackoffMs(request.backoffMs());
-        job.setWatermarkType(request.watermarkType());
-        job.setWatermarkColumn(request.watermarkColumn());
         job.setRemarks(request.remarks());
     }
 }

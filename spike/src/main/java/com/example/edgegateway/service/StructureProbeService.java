@@ -2,13 +2,14 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.MysqlDataSourceConfig;
-import com.example.edgegateway.config.RemoteAccessConfig;
+import com.example.edgegateway.config.ActionConfig;
+import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.mapping.suggest.SourceStructure;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -73,14 +74,14 @@ public class StructureProbeService {
         return new SourceStructure("sample", fields);
     }
 
-    /** 从引用该数据源的远程读动作 SQL 推断表名（用于探测时预填），无则返回 null。 */
+    /** 从引用该数据源的 READ_SQL 动作 SQL 推断表名（用于探测时预填），无则返回 null。 */
     public String suggestTable(Long dataSourceId) {
         List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                .eq(Action::getType, ActionType.REMOTE_ACCESS)
+                .eq(Action::getType, ActionKind.READ_SQL)
                 .orderByAsc(Action::getActionIndex));
         for (Action action : actions) {
-            RemoteAccessConfig config = RemoteAccessConfig.from(
-                    action.getAddition() == null ? Map.of() : action.getAddition());
+            ReadSqlConfig config = (ReadSqlConfig) ActionConfig.from(
+                    ActionKind.READ_SQL, action.getAddition() == null ? Map.of() : action.getAddition());
             if (config.dataSourceId() != null && config.dataSourceId().equals(dataSourceId)
                     && config.sql() != null) {
                 String table = MappingHistoryService.extractTable(config.sql());

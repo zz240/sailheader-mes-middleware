@@ -2,7 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.Action;
-import com.example.edgegateway.model.ActionType;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
@@ -46,7 +46,7 @@ class JobValidationServiceTest {
     private Action remote(String sql, Map<String, Object> addition) {
         Action action = new Action();
         action.setName("read");
-        action.setType(ActionType.REMOTE_ACCESS);
+        action.setType(ActionKind.READ_SQL);
         action.setActionIndex(1);
         Map<String, Object> add = new java.util.HashMap<>(addition);
         add.put("dataSourceId", 7L);
