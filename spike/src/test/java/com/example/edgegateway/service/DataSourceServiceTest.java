@@ -1,6 +1,9 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.DataSourceMapper;
+import com.example.edgegateway.config.DataSourceConfig;
+import com.example.edgegateway.config.HttpDataSourceConfig;
+import com.example.edgegateway.config.MysqlDataSourceConfig;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.web.dto.DataSourceRequest;
@@ -26,7 +29,7 @@ class DataSourceServiceTest {
         service = new DataSourceService(mapper);
     }
 
-    private DataSourceRequest request(String name, DataSourceType type, Map<String, Object> addition) {
+    private DataSourceRequest request(String name, DataSourceType type, DataSourceConfig addition) {
         return new DataSourceRequest(name, 1L, type, "http://localhost:8080/mock", addition);
     }
 
@@ -38,7 +41,7 @@ class DataSourceServiceTest {
             return 1;
         });
 
-        DataSource saved = service.create(request("erp", DataSourceType.HTTP, Map.of("method", "GET")));
+        DataSource saved = service.create(request("erp", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null)));
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getName()).isEqualTo("erp");
@@ -47,13 +50,14 @@ class DataSourceServiceTest {
 
     @Test
     void rejectsBlankName() {
-        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, Map.of("method", "GET"))))
+        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void rejectsMissingRequiredAdditionField() {
-        assertThatThrownBy(() -> service.create(request("mysql", DataSourceType.MYSQL, Map.of("username", "sa"))))
+        assertThatThrownBy(() -> service.create(request("mysql", DataSourceType.MYSQL,
+                new MysqlDataSourceConfig(null, "sa", null))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("url");
     }
@@ -62,7 +66,7 @@ class DataSourceServiceTest {
     void rejectsDuplicateNameInSite() {
         when(mapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, Map.of("method", "GET"))))
+        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null))))
                 .isInstanceOf(BusinessException.class);
     }
 }

@@ -46,7 +46,7 @@ public class DataSourceService {
         existing.setName(request.name());
         existing.setType(request.type());
         existing.setAddress(request.address());
-        existing.setAddition(request.addition());
+        existing.setAddition(request.addition().toMap());
         dataSourceMapper.updateById(existing);
         return existing;
     }
@@ -92,7 +92,7 @@ public class DataSourceService {
         dataSource.setName(request.name());
         dataSource.setType(request.type());
         dataSource.setAddress(request.address());
-        dataSource.setAddition(request.addition());
+        dataSource.setAddition(request.addition().toMap());
         return dataSource;
     }
 
@@ -110,7 +110,10 @@ public class DataSourceService {
             throw new IllegalArgumentException("数据源地址不能为空");
         }
         // 按类型校验 addition：交给类型化配置各自的 validate()
-        Map<String, Object> addition = request.addition() == null ? Map.of() : request.addition();
-        DataSourceConfig.from(request.type(), addition).validate();
+        DataSourceConfig config = request.addition();
+        if (config == null) {
+            throw new IllegalArgumentException("addition 不能为空");
+        }
+        config.validate();
     }
 }
