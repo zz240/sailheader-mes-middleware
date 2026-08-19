@@ -232,7 +232,7 @@ public class RouteGenerator {
                             }
                         })
                         .marshal().json()
-                        .to("spring-rabbitmq:" + exchange + "?routingKey=" + routingKey);
+                        .to("spring-rabbitmq:" + exchange + "?routingKey=" + routingKey + "&requestTimeout=0");
             }
             case READ_SQL -> current.process(ex -> {
                 Map<Integer, Object> context = context(ex);
