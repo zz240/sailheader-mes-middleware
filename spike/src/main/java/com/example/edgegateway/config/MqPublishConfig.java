@@ -37,6 +37,9 @@ public record MqPublishConfig(
         if (dataSourceId == null) {
             throw new IllegalArgumentException("MQ 发布动作需要 dataSourceId");
         }
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException("MQ 发布动作需要 exchange（如 edge.notify，绑定到目标队列）");
+        }
     }
 
     @Override

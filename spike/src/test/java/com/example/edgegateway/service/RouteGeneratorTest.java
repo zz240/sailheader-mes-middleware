@@ -185,12 +185,12 @@ class RouteGeneratorTest {
                 action(2, ActionKind.FIELD_MAP, Map.of("rules",
                         List.of(Map.of("sourceStep", 1, "source", "order_no", "target", "sheet_no")))),
                 action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/mock", "method", "POST")),
-                action(4, ActionKind.MQ_PUBLISH, Map.of("dataSourceId", 3L, "queue", "notify.q")));
+                action(4, ActionKind.MQ_PUBLISH, Map.of("dataSourceId", 3L, "exchange", "edge.notify", "routingKey", "notify.q")));
 
         DefaultCamelContext context = buildContext(job, actions);
         List<String> uris = collectUris(findRoute(context, "job-10"));
         assertThat(uris).anyMatch(u -> u.equals("http://localhost:8080/mock"));
-        assertThat(uris).anyMatch(u -> u.contains("spring-rabbitmq") && u.contains("routingKey=notify.q"));
+        assertThat(uris).anyMatch(u -> u.contains("spring-rabbitmq") && u.contains("edge.notify"));
     }
 
     private RouteDefinition findRoute(DefaultCamelContext context, String routeId) {

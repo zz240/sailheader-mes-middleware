@@ -210,7 +210,7 @@ public class RouteGenerator {
             }
             case MQ_PUBLISH -> {
                 MqPublishConfig publish = (MqPublishConfig) config;
-                String exchange = publish.exchange() == null ? "amq.default" : publish.exchange();
+                String exchange = publish.exchange();
                 String routingKey = publish.routingKey() == null
                         ? (publish.queue() == null ? "" : publish.queue())
                         : publish.routingKey();
