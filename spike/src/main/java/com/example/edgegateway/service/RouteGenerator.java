@@ -215,7 +215,22 @@ public class RouteGenerator {
                         ? (publish.queue() == null ? "" : publish.queue())
                         : publish.routingKey();
                 yield current
-                        .process(ex -> ex.setProperty(ACTION_INDEX, index))
+                        .process(ex -> {
+                            ex.setProperty(ACTION_INDEX, index);
+                            // bodySourceStep 缺省取上下文中最近一次输出（同步+通知场景 = FIELD_MAP 结果）
+                            Map<Integer, Object> context = context(ex);
+                            Integer step = publish.bodySourceStep();
+                            if (step == null) {
+                                step = context.keySet().stream()
+                                        .filter(k -> k > 0)
+                                        .max(Integer::compareTo)
+                                        .orElse(0);
+                            }
+                            Object source = context.get(step);
+                            if (source != null) {
+                                ex.getMessage().setBody(source);
+                            }
+                        })
                         .marshal().json()
                         .to("spring-rabbitmq:" + exchange + "?routingKey=" + routingKey);
             }
