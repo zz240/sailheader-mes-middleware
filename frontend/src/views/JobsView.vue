@@ -87,7 +87,7 @@
         <el-form-item label="序号"><el-input-number v-model="actionForm.index" :min="1" /></el-form-item>
         <el-form-item v-if="actionForm.type === 'REMOTE_ACCESS'" label="addition">
           <el-input v-model="actionAdditionText" type="textarea" :rows="4"
-                    placeholder='{"dataSourceId":1,"sql":"..."} 或 {"dataSourceId":1,"tableName":"...","idempotencyKey":"..."}' />
+                    placeholder='MySQL 读 {"dataSourceId":1,"sql":"..."}；MySQL 写 {"dataSourceId":1,"tableName":"...","idempotencyKey":"..."}；HTTP 写 {"dataSourceId":1,"path":"/mock/...","method":"POST"}；MQ 消费 {"dataSourceId":1,"queue":"mes.to.edge"}' />
         </el-form-item>
         <el-form-item v-else label="映射规则">
           <MappingEditor ref="mappingEditorRef" :job-id="selectedJob!.id" @validate="validateSelected" />

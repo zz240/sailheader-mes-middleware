@@ -16,15 +16,15 @@ class DataSourceConfigTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    void buildsHttpConfigAndRejectsMissingMethod() {
+    void buildsHttpConfigWithToken() {
         HttpDataSourceConfig config =
-                (HttpDataSourceConfig) DataSourceConfig.from(DataSourceType.HTTP, Map.of("method", "GET"));
-        assertThat(config.method()).isEqualTo("GET");
+                (HttpDataSourceConfig) DataSourceConfig.from(DataSourceType.HTTP, Map.of("token", "abc"));
+        assertThat(config.token()).isEqualTo("abc");
         assertThatCode(config::validate).doesNotThrowAnyException();
 
-        assertThatThrownBy(() -> DataSourceConfig.from(DataSourceType.HTTP, Map.of()).validate())
+        assertThatThrownBy(() -> DataSourceConfig.from(DataSourceType.HTTP, Map.of("method", "GET")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("method");
+                .hasMessageContaining("未知字段");
     }
 
     @Test
@@ -63,7 +63,7 @@ class DataSourceConfigTest {
     @Test
     void rejectsUnknownAdditionKey() {
         assertThatThrownBy(() -> mapper.readValue("""
-                {"name":"erp","siteId":1,"type":"HTTP","address":"http://x","addition":{"method":"GET","timeout":"abc"}}
+                {"name":"erp","siteId":1,"type":"HTTP","address":"http://x","addition":{"token":"t","timeout":"abc"}}
                 """, DataSourceRequest.class))
                 .isInstanceOf(Exception.class)
                 .hasMessageContaining("timeout");

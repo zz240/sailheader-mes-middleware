@@ -33,7 +33,7 @@ class ConnectionTesterIntegrationTest {
             DataSource ds = new DataSource();
             ds.setType(DataSourceType.HTTP);
             ds.setAddress("http://127.0.0.1:" + server.getAddress().getPort() + "/ping");
-            ds.setAddition(Map.of("method", "GET"));
+            ds.setAddition(Map.of());
 
             ConnectionTester.TestResult result = tester.test(ds);
 

@@ -143,6 +143,8 @@ public class RouteGenerator {
         long backoff = job.getBackoffMs() == null ? 1000L : job.getBackoffMs();
 
         String sql = read.sql().replace("{watermark}", watermarkPredicate(job));
+        String writeUrl = composeUrl(writeDataSource.getAddress(), write.path());
+        String writeMethod = write.method() == null || write.method().isBlank() ? "POST" : write.method();
         String authHeader = http.token() == null || http.token().isBlank()
                 ? null
                 : "Bearer " + http.token();
@@ -172,7 +174,7 @@ public class RouteGenerator {
                             exchange.getMessage().setBody(fieldMapper.apply(source, mapping.rules()));
                         })
                         .marshal().json()
-                        .setHeader(Exchange.HTTP_METHOD, constant(http.method()))
+                        .setHeader(Exchange.HTTP_METHOD, constant(writeMethod))
                         .setHeader(Exchange.CONTENT_TYPE, constant("application/json"))
                         .process(exchange -> {
                             exchange.setProperty("edge.actionIndex", writeIndex);
@@ -180,7 +182,7 @@ public class RouteGenerator {
                                 exchange.getMessage().setHeader("Authorization", authHeader);
                             }
                         })
-                        .to(writeDataSource.getAddress())
+                        .to(writeUrl)
                         .end()
                         .process(exchange -> updateWatermark(exchange, job));
                 // 定时入口：timer 触发后转发到 direct
@@ -197,6 +199,8 @@ public class RouteGenerator {
         DataSource mqDataSource = dataSourceMapper.selectById(consumer.dataSourceId());
         RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
                 DataSourceConfig.from(mqDataSource.getType(), mqDataSource.getAddition());
+        String queue = consumer.queue() == null || consumer.queue().isBlank() ? mq.queue() : consumer.queue();
+        String routingKey = consumer.routingKey() == null || consumer.routingKey().isBlank() ? queue : consumer.routingKey();
 
         RemoteAccessConfig write = RemoteAccessConfig.from(addition(remoteActions(actions).getLast()));
         Map<String, Object> writeAddition = addition(remoteActions(actions).getLast());
@@ -223,7 +227,7 @@ public class RouteGenerator {
                         .process(exchange -> recordDeadLetter(exchange, job))
                         .handled(true); // MQ 消费：记录死信后视为已处理，避免 broker 无限重投
                 from("spring-rabbitmq:" + mqDataSource.getName()
-                        + "?queues=" + mq.queue() + "&routingKey=" + mq.queue() + "&autoDeclare=true")
+                        + "?queues=" + queue + "&routingKey=" + routingKey + "&autoDeclare=true")
                         .routeId(routeId)
                         .unmarshal().json()
                         .process(exchange -> {
@@ -341,5 +345,16 @@ public class RouteGenerator {
 
     private String str(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    /** 组装连接级地址：base（根地址）+ 动作 path（ADR-0007）。 */
+    private static String composeUrl(String base, String path) {
+        if (path == null || path.isBlank()) {
+            return base;
+        }
+        if (base.endsWith("/")) {
+            return base + path.replaceFirst("^/", "");
+        }
+        return base + (path.startsWith("/") ? path : "/" + path);
     }
 }

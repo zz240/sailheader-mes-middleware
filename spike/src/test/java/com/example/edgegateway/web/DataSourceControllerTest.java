@@ -39,7 +39,7 @@ class DataSourceControllerTest {
 
     private static String body(String name) {
         return "{\"name\":\"" + name + "\",\"siteId\":1,\"type\":\"HTTP\","
-                + "\"address\":\"http://localhost:8080/mock\",\"addition\":{\"method\":\"GET\"}}";
+                + "\"address\":\"http://localhost:8080\",\"addition\":{}}";
     }
 
     @Test
@@ -50,7 +50,7 @@ class DataSourceControllerTest {
         ds.setSiteId(1L);
         ds.setType(DataSourceType.HTTP);
         ds.setAddress("http://localhost:8080/mock");
-        ds.setAddition(Map.of("method", "GET"));
+        ds.setAddition(Map.of());
         when(dataSourceService.create(any(DataSourceRequest.class))).thenReturn(ds);
 
         mockMvc.perform(post("/api/data-sources")

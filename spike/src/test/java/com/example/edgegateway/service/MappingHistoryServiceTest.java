@@ -104,6 +104,17 @@ class MappingHistoryServiceTest {
     }
 
     @Test
+    void sourceKeySouthPrefersActionQueue() {
+        Action action = new Action();
+        action.setType(ActionType.REMOTE_ACCESS);
+        action.setActionIndex(1);
+        action.setAddition(Map.of("dataSourceId", 8L, "queue", "action.queue"));
+
+        assertThat(service.inferSourceKey(List.of(action), SyncDirection.SOUTH))
+                .isEqualTo("mq:action.queue");
+    }
+
+    @Test
     void recordFromActionInsertsNewHistory() {
         Job job = new Job();
         job.setId(1L);

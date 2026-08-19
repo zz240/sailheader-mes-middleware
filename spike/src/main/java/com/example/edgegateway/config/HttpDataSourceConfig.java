@@ -5,15 +5,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** HTTP 数据源配置：请求方法必填，token 可选（北向 Bearer Token 鉴权）。 */
-public record HttpDataSourceConfig(String method, String token) implements DataSourceConfig {
+/**
+ * HTTP 数据源配置（连接级，ADR-0007）：address 为根地址，token 为鉴权凭证；
+ * path/method 移入动作 addition。
+ */
+public record HttpDataSourceConfig(String token) implements DataSourceConfig {
 
     public static HttpDataSourceConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("method", "token"));
-        return new HttpDataSourceConfig(
-                ConfigValues.str(map.get("method")),
-                ConfigValues.str(map.get("token")));
+        rejectUnknownKeys(map, Set.of("token"));
+        return new HttpDataSourceConfig(ConfigValues.str(map.get("token")));
     }
 
     @Override
@@ -23,15 +24,12 @@ public record HttpDataSourceConfig(String method, String token) implements DataS
 
     @Override
     public void validate() {
-        if (method == null || method.isBlank()) {
-            throw new IllegalArgumentException("HTTP 数据源需要 method");
-        }
+        // 无必填字段：地址在根上，鉴权 token 可选
     }
 
     @Override
     public Map<String, Object> toMap() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("method", method);
         if (token != null) {
             map.put("token", token);
         }

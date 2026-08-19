@@ -50,8 +50,8 @@ class RouteGeneratorTest {
         DataSource ds = new DataSource();
         ds.setId(id);
         ds.setType(DataSourceType.HTTP);
-        ds.setAddress("http://localhost:8080/mock");
-        ds.setAddition(Map.of("method", "GET"));
+        ds.setAddress("http://localhost:8080");
+        ds.setAddition(Map.of());
         return ds;
     }
 
@@ -87,7 +87,7 @@ class RouteGeneratorTest {
                         "sql", "select id, order_no, status from po_order where {watermark} order by id")),
                 action(2, ActionType.FIELD_MAPPING, Map.of("rules",
                         List.of(Map.of("source", "order_no", "target", "sheet_no")))),
-                action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L)));
+                action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L, "path", "/mock", "method", "POST")));
 
         DefaultCamelContext context = new DefaultCamelContext();
         for (RouteBuilder builder : generator.build(job, actions)) {
@@ -127,7 +127,7 @@ class RouteGeneratorTest {
                         "sql", "select id from po_order where {watermark}")),
                 action(2, ActionType.FIELD_MAPPING, Map.of("rules",
                         List.of(Map.of("source", "id", "target", "id")))),
-                action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L)));
+                action(3, ActionType.REMOTE_ACCESS, Map.of("dataSourceId", 2L, "path", "/mock", "method", "POST")));
 
         DefaultCamelContext context = new DefaultCamelContext();
         for (RouteBuilder builder : generator.build(job, actions)) {

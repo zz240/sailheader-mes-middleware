@@ -41,7 +41,7 @@ class DataSourceServiceTest {
             return 1;
         });
 
-        DataSource saved = service.create(request("erp", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null)));
+        DataSource saved = service.create(request("erp", DataSourceType.HTTP, new HttpDataSourceConfig(null)));
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getName()).isEqualTo("erp");
@@ -50,7 +50,7 @@ class DataSourceServiceTest {
 
     @Test
     void rejectsBlankName() {
-        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null))))
+        assertThatThrownBy(() -> service.create(request("", DataSourceType.HTTP, new HttpDataSourceConfig(null))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -66,7 +66,7 @@ class DataSourceServiceTest {
     void rejectsDuplicateNameInSite() {
         when(mapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, new HttpDataSourceConfig("GET", null))))
+        assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, new HttpDataSourceConfig(null))))
                 .isInstanceOf(BusinessException.class);
     }
 }

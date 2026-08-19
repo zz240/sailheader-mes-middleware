@@ -35,7 +35,7 @@
         </el-form-item>
         <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
         <el-form-item label="addition">
-          <el-input v-model="additionText" type="textarea" :rows="5" placeholder="JSON 配置：HTTP 需 method(/token)，MySQL 需 url/username/password，RabbitMQ 需 queue" />
+          <el-input v-model="additionText" type="textarea" :rows="5" placeholder='连接级配置：HTTP 填 {"token":"..."}（可选，地址为根地址，path/method 在动作里配）；MySQL 填 url/username/password；RabbitMQ 填 host/port/账号密码（queue 在动作里配）' />
         </el-form-item>
       </el-form>
       <template #footer>

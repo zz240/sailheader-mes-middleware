@@ -49,7 +49,7 @@ public class ConnectionTester {
                 .build();
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(address))
                 .timeout(Duration.ofSeconds(3))
-                .method(config.method(), HttpRequest.BodyPublishers.noBody());
+                .method("GET", HttpRequest.BodyPublishers.noBody());
         if (config.token() != null && !config.token().isBlank()) {
             builder.header("Authorization", "Bearer " + config.token());
         }

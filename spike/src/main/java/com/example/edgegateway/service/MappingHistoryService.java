@@ -115,13 +115,16 @@ public class MappingHistoryService {
                 .toList();
         if (direction == SyncDirection.SOUTH) {
             RemoteAccessConfig consumer = remoteConfig(firstRemote(sorted));
-            DataSource ds = dataSource(consumer.dataSourceId());
-            if (ds != null) {
-                RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
-                        DataSourceConfig.from(ds.getType(), ds.getAddition());
-                return "mq:" + mq.queue();
+            String queue = consumer.queue();
+            if (queue == null || queue.isBlank()) {
+                DataSource ds = dataSource(consumer.dataSourceId());
+                if (ds != null) {
+                    RabbitMqDataSourceConfig mq = (RabbitMqDataSourceConfig)
+                            DataSourceConfig.from(ds.getType(), ds.getAddition());
+                    queue = mq.queue();
+                }
             }
-            return "mq:unknown";
+            return "mq:" + (queue == null ? "unknown" : queue);
         }
         RemoteAccessConfig read = remoteConfig(firstRemote(sorted));
         String table = extractTable(read.sql());

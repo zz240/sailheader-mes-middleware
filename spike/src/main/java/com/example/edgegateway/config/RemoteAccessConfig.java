@@ -4,14 +4,30 @@ import com.example.edgegateway.model.ActionType;
 
 import java.util.Map;
 
-/** 远程访问动作配置：可引用数据源（dataSourceId）或自带 SQL/地址。 */
-public record RemoteAccessConfig(Long dataSourceId, String sql) implements ActionConfig {
+/**
+ * 远程访问动作配置（ADR-0007 连接级统一后）：数据源 = 连接实例，
+ * 资源归动作——HTTP 写带 path/method、MQ 消费带 queue/exchange/routingKey、MySQL 读带 sql。
+ */
+public record RemoteAccessConfig(
+        Long dataSourceId,
+        String sql,
+        String path,
+        String method,
+        String queue,
+        String exchange,
+        String routingKey
+) implements ActionConfig {
 
     public static RemoteAccessConfig from(Map<String, Object> addition) {
         Object id = addition.get("dataSourceId");
         return new RemoteAccessConfig(
                 id == null ? null : Long.valueOf(id.toString()),
-                ConfigValues.str(addition.get("sql")));
+                ConfigValues.str(addition.get("sql")),
+                ConfigValues.str(addition.get("path")),
+                ConfigValues.str(addition.get("method")),
+                ConfigValues.str(addition.get("queue")),
+                ConfigValues.str(addition.get("exchange")),
+                ConfigValues.str(addition.get("routingKey")));
     }
 
     @Override

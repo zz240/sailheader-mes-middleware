@@ -45,7 +45,7 @@ class ConnectionTesterTest {
             DataSource ds = new DataSource();
             ds.setType(DataSourceType.HTTP);
             ds.setAddress("http://127.0.0.1:" + server.getAddress().getPort() + "/token");
-            ds.setAddition(Map.of("method", "GET", "token", "abc123"));
+            ds.setAddition(Map.of("token", "abc123"));
 
             ConnectionTester.TestResult result = tester.test(ds);
 
@@ -68,7 +68,7 @@ class ConnectionTesterTest {
             DataSource ds = new DataSource();
             ds.setType(DataSourceType.HTTP);
             ds.setAddress("http://127.0.0.1:" + server.getAddress().getPort() + "/deny");
-            ds.setAddition(Map.of("method", "GET", "token", "bad"));
+            ds.setAddition(Map.of("token", "bad"));
 
             ConnectionTester.TestResult result = tester.test(ds);
 
