@@ -11,6 +11,13 @@
     </div>
 
     <el-table :data="rows" border size="small">
+      <el-table-column label="来源步骤" width="120">
+        <template #default="{ row }">
+          <el-select v-model="row.sourceStep" placeholder="来源动作">
+            <el-option v-for="s in sourceSteps" :key="s" :value="s" :label="s === 0 ? '任务输入' : `动作 ${s}`" />
+          </el-select>
+        </template>
+      </el-table-column>
       <el-table-column label="来源字段">
         <template #default="{ row }">
           <el-input v-model="row.source" list="field-paths" placeholder="来源字段路径" />
@@ -39,7 +46,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-button size="small" @click="addRow()">添加映射行</el-button>
+    <el-button size="small" @click="addRow(defaultStep())">添加映射行</el-button>
 
     <datalist id="field-paths"><option v-for="p in fieldPaths" :key="p" :value="p" /></datalist>
     <datalist id="target-list"><option v-for="t in targetFields" :key="t" :value="t" /></datalist>
@@ -65,11 +72,11 @@ import { ElMessage } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { MappingSuggestion, ProbeResult } from '../types'
 
-const props = defineProps<{ jobId: number }>()
+const props = defineProps<{ jobId: number; sourceSteps?: number[]; previousStep?: number }>()
 const emit = defineEmits<{ (e: 'validate'): void }>()
 
 const transforms = ['STRING', 'INT', 'DATE', 'ENUM', 'CONSTANT']
-const rows = reactive<{ source: string; target: string; transform: string; extra: string }[]>([])
+const rows = reactive<{ sourceStep: number; source: string; target: string; transform: string; extra: string }[]>([])
 const sourceSample = ref('')
 const targetSample = ref('')
 const fieldPaths = ref<string[]>([])
@@ -84,8 +91,8 @@ const byTarget = computed(() => {
   return map
 })
 
-function addRow(source = '', target = '', transform = 'STRING', extra = '') {
-  rows.push({ source, target, transform, extra })
+function addRow(sourceStep: number, source = '', target = '', transform = 'STRING', extra = '') {
+  rows.push({ sourceStep, source, target, transform, extra })
 }
 
 async function loadSampleFields() {
@@ -133,13 +140,14 @@ function applySuggestion(s: MappingSuggestion) {
   if (!row) {
     row = rows.find(r => !r.target)
     if (!row) {
-      addRow()
+      addRow(defaultStep())
       row = rows[rows.length - 1]
     }
   }
   if (row.target && row.target !== s.targetName) return
   row.source = s.sourcePath
   row.target = s.targetName
+  row.sourceStep = defaultStep()
   row.transform = transformSelectValue(s.transform)
   row.extra = extraFor(s)
 }
@@ -157,9 +165,10 @@ function autoFill() {
   Object.values(top1).forEach(s => {
     const existing = rows.find(r => r.target === s.targetName)
     if (existing) return
-    const row = rows.find(r => !r.target) || (addRow(), rows[rows.length - 1])
+    const row = rows.find(r => !r.target) || (addRow(defaultStep()), rows[rows.length - 1])
     row.source = s.sourcePath
     row.target = s.targetName
+    row.sourceStep = defaultStep()
     row.transform = transformSelectValue(s.transform)
     row.extra = extraFor(s)
     filled++
@@ -183,6 +192,7 @@ function getRules() {
     .filter(r => r.target.trim())
     .map(r => {
       const rule: Record<string, any> = {
+        sourceStep: r.sourceStep,
         source: r.source.trim(),
         target: r.target.trim(),
         transform: r.transform,
@@ -197,8 +207,14 @@ function getRules() {
 
 function setRules(rules: Record<string, any>[]) {
   rows.length = 0
-  rules.forEach(r => addRow(r.source ?? '', r.target ?? '', r.transform ?? 'STRING',
+  rules.forEach(r => addRow(r.sourceStep ?? defaultStep(), r.source ?? '', r.target ?? '', r.transform ?? 'STRING',
     r.constant ?? (r.enumMap ? JSON.stringify(r.enumMap) : '') ?? r.datePattern ?? ''))
+}
+
+function defaultStep() {
+  if (props.previousStep != null) return props.previousStep
+  const steps = props.sourceSteps ?? []
+  return steps.length ? steps[steps.length - 1] : 0
 }
 
 defineExpose({ getRules, setRules, loadSampleFields })

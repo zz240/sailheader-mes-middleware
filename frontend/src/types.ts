@@ -26,7 +26,7 @@ export interface Job {
   lastError?: string | null
 }
 
-export type ActionType = 'REMOTE_ACCESS' | 'FIELD_MAPPING'
+export type ActionType = 'READ_SQL' | 'WRITE_UPSERT' | 'HTTP_CALL' | 'MQ_CONSUME' | 'MQ_PUBLISH' | 'FIELD_MAP'
 
 export interface Action {
   id: number

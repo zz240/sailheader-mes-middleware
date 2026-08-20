@@ -10,6 +10,9 @@
     <el-table :data="jobs" border stripe>
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="名称" min-width="140" />
+      <el-table-column label="站点" width="140">
+        <template #default="{ row }">{{ siteName(row.siteId) }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="80">
         <template #default="{ row }">
           <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -34,17 +37,14 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="jobFormVisible" :title="editingJob ? '编辑任务' : '新建任务'" width="560px">
+    <el-dialog v-model="jobFormVisible" :title="editingJob ? '编辑任务' : '新建任务'" width="520px">
       <el-form label-width="100px">
         <el-form-item label="名称"><el-input v-model="jobForm.name" /></el-form-item>
-        <el-form-item label="站点 ID"><el-input-number v-model="jobForm.siteId" :min="1" /></el-form-item>
-        <el-form-item label="水位策略">
-          <el-select v-model="jobForm.watermarkType">
-            <el-option label="自增列" value="SEQUENCE" />
-            <el-option label="时间列" value="TIMESTAMP" />
+        <el-form-item label="站点">
+          <el-select v-model="jobForm.siteId" placeholder="选择站点" style="width: 100%">
+            <el-option v-for="s in sites" :key="s.id" :value="s.id" :label="`#${s.id} ${s.name}（${s.timezone || '默认时区'}）`" />
           </el-select>
         </el-form-item>
-        <el-form-item label="水位列"><el-input v-model="jobForm.watermarkColumn" placeholder="如 id / updated_at" /></el-form-item>
         <el-form-item label="cron"><el-input v-model="jobForm.crontab" placeholder="可选" /></el-form-item>
         <el-form-item label="重试次数"><el-input-number v-model="jobForm.retryCount" :min="0" /></el-form-item>
         <el-form-item label="退避(ms)"><el-input-number v-model="jobForm.backoffMs" :min="0" /></el-form-item>
@@ -61,8 +61,15 @@
       <el-table :data="actions" border size="small">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column prop="type" label="类型" width="140" />
+        <el-table-column label="类型" width="130">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.type }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="index" label="序号" width="70" />
+        <el-table-column label="数据源" min-width="130">
+          <template #default="{ row }">{{ dsName(row.addition?.dataSourceId) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button size="small" @click="openActionEdit(row)">编辑</el-button>
@@ -76,21 +83,67 @@
     </div>
 
     <el-dialog v-model="actionFormVisible" :title="editingAction ? '编辑动作' : '添加动作'" width="720px">
-      <el-form label-width="90px">
+      <el-form label-width="100px">
         <el-form-item label="名称"><el-input v-model="actionForm.name" /></el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="actionForm.type" @change="actionTypeChanged">
-            <el-option label="远程访问" value="REMOTE_ACCESS" />
-            <el-option label="字段映射" value="FIELD_MAPPING" />
+          <el-select v-model="actionForm.type" @change="resetKindFields" style="width: 100%">
+            <el-option v-for="k in kinds" :key="k" :value="k" :label="k" />
           </el-select>
         </el-form-item>
         <el-form-item label="序号"><el-input-number v-model="actionForm.index" :min="1" /></el-form-item>
-        <el-form-item v-if="actionForm.type === 'REMOTE_ACCESS'" label="addition">
-          <el-input v-model="actionAdditionText" type="textarea" :rows="4"
-                    placeholder='MySQL 读 {"dataSourceId":1,"sql":"..."}；MySQL 写 {"dataSourceId":1,"tableName":"...","idempotencyKey":"..."}；HTTP 写 {"dataSourceId":1,"path":"/mock/...","method":"POST"}；MQ 消费 {"dataSourceId":1,"queue":"mes.to.edge"}' />
-        </el-form-item>
-        <el-form-item v-else label="映射规则">
-          <MappingEditor ref="mappingEditorRef" :job-id="selectedJob!.id" @validate="validateSelected" />
+
+        <template v-if="kindNeedsDataSource">
+          <el-form-item label="数据源">
+            <el-select v-model="kindForm.dataSourceId" placeholder="选择数据源" style="width: 100%">
+              <el-option v-for="ds in filteredDataSources" :key="ds.id" :value="ds.id"
+                         :label="`#${ds.id} ${ds.name}（${ds.type}）`" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <template v-if="actionForm.type === 'READ_SQL'">
+          <el-form-item label="SQL"><el-input v-model="kindForm.sql" type="textarea" :rows="3" placeholder="SELECT * FROM po_order WHERE {watermark}" /></el-form-item>
+          <el-form-item label="水位策略">
+            <el-select v-model="kindForm.watermarkType" style="width: 100%">
+              <el-option label="自增列" value="SEQUENCE" />
+              <el-option label="时间列" value="TIMESTAMP" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="水位列"><el-input v-model="kindForm.watermarkColumn" placeholder="如 id / updated_at" /></el-form-item>
+        </template>
+
+        <template v-if="actionForm.type === 'WRITE_UPSERT'">
+          <el-form-item label="表名"><el-input v-model="kindForm.tableName" /></el-form-item>
+          <el-form-item label="幂等键"><el-input v-model="kindForm.idempotencyKey" placeholder="业务主键，如 order_no" /></el-form-item>
+        </template>
+
+        <template v-if="actionForm.type === 'HTTP_CALL'">
+          <el-form-item label="路径"><el-input v-model="kindForm.path" placeholder="/mock/mes/purchase-order" /></el-form-item>
+          <el-form-item label="方法">
+            <el-select v-model="kindForm.method" style="width: 100%">
+              <el-option label="POST" value="POST" />
+              <el-option label="GET" value="GET" />
+              <el-option label="PUT" value="PUT" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <template v-if="actionForm.type === 'MQ_CONSUME'">
+          <el-form-item label="队列"><el-input v-model="kindForm.queue" placeholder="mes.to.edge" /></el-form-item>
+          <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="可选" /></el-form-item>
+          <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="可选，缺省=队列" /></el-form-item>
+        </template>
+
+        <template v-if="actionForm.type === 'MQ_PUBLISH'">
+          <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="如 edge.notify（需绑定目标队列）" /></el-form-item>
+          <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="缺省=queue" /></el-form-item>
+          <el-form-item label="queue"><el-input v-model="kindForm.queue" placeholder="可选，routingKey 缺省时用" /></el-form-item>
+          <el-form-item label="body 步骤"><el-input-number v-model="kindForm.bodySourceStep" :min="0" placeholder="缺省=最近映射输出" /></el-form-item>
+        </template>
+
+        <el-form-item v-if="actionForm.type === 'FIELD_MAP'" label="映射规则">
+          <MappingEditor ref="mappingEditorRef" :job-id="selectedJob!.id"
+                         :source-steps="actionIndices" :previous-step="previousStep" @validate="validateSelected" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -120,29 +173,54 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
-import type { Action, Job, ValidationResult } from '../types'
+import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import MappingEditor from '../components/MappingEditor.vue'
 
+const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP']
+
 const jobs = ref<Job[]>([])
+const sites = ref<SiteInfo[]>([])
+const dataSources = ref<DataSource[]>([])
 const selectedJob = ref<Job | null>(null)
 const actions = ref<Action[]>([])
 const received = ref<any[]>([])
 
 const jobFormVisible = ref(false)
 const editingJob = ref<Job | null>(null)
-const jobForm = reactive({ name: '', siteId: 1, watermarkType: 'SEQUENCE', watermarkColumn: '', crontab: '', retryCount: 0, backoffMs: 1000 })
+const jobForm = reactive({ name: '', siteId: 1, crontab: '', retryCount: 0, backoffMs: 1000 })
 
 const actionFormVisible = ref(false)
 const editingAction = ref<Action | null>(null)
-const actionForm = reactive({ name: '', type: 'REMOTE_ACCESS' as string, index: 1 })
-const actionAdditionText = ref('{}')
+const actionForm = reactive({ name: '', type: 'READ_SQL' as string, index: 1 })
+const kindForm = reactive<Record<string, any>>({})
 const mappingEditorRef = ref<InstanceType<typeof MappingEditor> | null>(null)
 
 const validateVisible = ref(false)
 const validation = ref<ValidationResult | null>(null)
+
+const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
+
+const filteredDataSources = computed(() => {
+  const typeFilter: Record<string, string[]> = {
+    READ_SQL: ['MYSQL'],
+    WRITE_UPSERT: ['MYSQL'],
+    HTTP_CALL: ['HTTP'],
+    MQ_CONSUME: ['RABBITMQ'],
+    MQ_PUBLISH: ['RABBITMQ'],
+    FIELD_MAP: [],
+  }
+  const allowed = typeFilter[actionForm.type] ?? []
+  return dataSources.value.filter(ds => allowed.includes(ds.type))
+})
+
+const actionIndices = computed(() => actions.value.map(a => a.index).sort((a, b) => a - b))
+const previousStep = computed(() => {
+  const idx = actionForm.index ?? 0
+  return actionIndices.value.filter(i => i < idx).pop() ?? 0
+})
 
 async function load() {
   jobs.value = await api<Job[]>('/jobs')
@@ -153,17 +231,30 @@ async function load() {
   }
 }
 
+async function loadMeta() {
+  sites.value = await api<SiteInfo[]>('/sites')
+  dataSources.value = await api<DataSource[]>('/data-sources')
+}
+
+function siteName(id: number) {
+  return sites.value.find(s => s.id === id)?.name ?? `#${id}`
+}
+
+function dsName(id: number | null | undefined) {
+  if (!id) return '-'
+  return dataSources.value.find(d => d.id === id)?.name ?? `#${id}`
+}
+
 function openCreate() {
   editingJob.value = null
-  Object.assign(jobForm, { name: '', siteId: 1, watermarkType: 'SEQUENCE', watermarkColumn: '', crontab: '', retryCount: 0, backoffMs: 1000 })
+  Object.assign(jobForm, { name: '', siteId: sites.value[0]?.id ?? 1, crontab: '', retryCount: 0, backoffMs: 1000 })
   jobFormVisible.value = true
 }
 
 function openEdit(row: Job) {
   editingJob.value = row
   Object.assign(jobForm, {
-    name: row.name, siteId: row.siteId, watermarkType: row.watermarkType ?? 'SEQUENCE',
-    watermarkColumn: row.watermarkColumn ?? '', crontab: row.crontab ?? '',
+    name: row.name, siteId: row.siteId, crontab: row.crontab ?? '',
     retryCount: row.retryCount ?? 0, backoffMs: row.backoffMs ?? 1000,
   })
   jobFormVisible.value = true
@@ -172,7 +263,6 @@ function openEdit(row: Job) {
 async function saveJob() {
   const body = {
     name: jobForm.name, siteId: jobForm.siteId, status: editingJob.value?.status ?? 0,
-    watermarkType: jobForm.watermarkType, watermarkColumn: jobForm.watermarkColumn || null,
     crontab: jobForm.crontab || null, retryCount: jobForm.retryCount, backoffMs: jobForm.backoffMs,
   }
   try {
@@ -218,44 +308,48 @@ async function execute(row: Job) {
   }
 }
 
+function resetKindFields() {
+  Object.keys(kindForm).forEach(k => delete kindForm[k])
+  kindForm.dataSourceId = filteredDataSources.value[0]?.id
+}
+
 function openActionCreate() {
   editingAction.value = null
-  Object.assign(actionForm, { name: '', type: 'REMOTE_ACCESS', index: actions.value.length + 1 })
-  actionAdditionText.value = '{}'
+  Object.assign(actionForm, { name: '', type: 'READ_SQL', index: actions.value.length + 1 })
+  resetKindFields()
   actionFormVisible.value = true
 }
 
 function openActionEdit(row: Action) {
   editingAction.value = row
   Object.assign(actionForm, { name: row.name, type: row.type, index: row.index })
-  if (row.type === 'FIELD_MAPPING') {
+  resetKindFields()
+  const a = row.addition ?? {}
+  Object.keys(a).forEach(k => { kindForm[k] = a[k] })
+  if (row.type === 'FIELD_MAP') {
     actionFormVisible.value = true
-    setTimeout(() => mappingEditorRef.value?.setRules((row.addition?.rules as Record<string, any>[]) ?? []), 0)
+    setTimeout(() => mappingEditorRef.value?.setRules((a.rules as Record<string, any>[]) ?? []), 0)
   } else {
-    actionAdditionText.value = JSON.stringify(row.addition || {}, null, 2)
     actionFormVisible.value = true
   }
 }
 
-function actionTypeChanged() {
-  if (actionForm.type === 'FIELD_MAPPING') {
-    setTimeout(() => mappingEditorRef.value?.setRules([]), 0)
+function buildActionAddition(): Record<string, any> {
+  if (actionForm.type === 'FIELD_MAP') {
+    return { rules: mappingEditorRef.value?.getRules() ?? [] }
   }
+  const out: Record<string, any> = {}
+  Object.entries(kindForm).forEach(([k, v]) => {
+    if (v !== '' && v != null) out[k] = v
+  })
+  return out
 }
 
 async function saveAction() {
   if (!selectedJob.value) return
-  let body: Record<string, any>
-  if (actionForm.type === 'FIELD_MAPPING') {
-    body = {
-      name: actionForm.name, type: 'FIELD_MAPPING', index: actionForm.index,
-      addition: { rules: mappingEditorRef.value?.getRules() ?? [] },
-    }
-  } else {
-    body = {
-      name: actionForm.name, type: 'REMOTE_ACCESS', index: actionForm.index,
-      addition: JSON.parse(actionAdditionText.value || '{}'),
-    }
+  const body = {
+    name: actionForm.name, type: actionForm.type, index: actionForm.index,
+    addition: buildActionAddition(),
   }
   try {
     if (editingAction.value) await api(`/actions/${editingAction.value.id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -282,7 +376,7 @@ async function loadReceived() {
   received.value = await fetch('/mock/mes/received').then(r => r.json())
 }
 
-onMounted(() => { load(); loadReceived() })
+onMounted(() => { loadMeta(); load(); loadReceived() })
 </script>
 
 <style scoped>
