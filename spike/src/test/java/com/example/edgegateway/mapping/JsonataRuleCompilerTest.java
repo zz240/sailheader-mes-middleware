@@ -197,7 +197,7 @@ class JsonataRuleCompilerTest {
 
         FieldMappingRule topIndex = new FieldMappingRule(1, "$index", "lineNo", TransformType.INDEX,
                 null, Map.of(), null, null, null, null, 1);
-        assertThatThrownBy(() -> new FieldMappingConfig(List.of(topIndex)).validate())
+        assertThatThrownBy(() -> new FieldMappingConfig(null, null, List.of(topIndex)).validate())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("INDEX 转换只能在数组组内使用");
 
@@ -206,13 +206,13 @@ class JsonataRuleCompilerTest {
                 List.of(new FieldMappingRule(1, "name", "name", TransformType.STRING,
                         null, Map.of(), null, null, null, null, null)),
                 null, null);
-        assertThatThrownBy(() -> new FieldMappingConfig(List.of(badChild)).validate())
+        assertThatThrownBy(() -> new FieldMappingConfig(null, null, List.of(badChild)).validate())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("子规则不允许再选 sourceStep");
 
         FieldMappingRule emptyConcat = new FieldMappingRule(1, null, "code",
                 TransformType.CONCAT, null, Map.of(), null, null, null, List.of(), null);
-        assertThatThrownBy(() -> new FieldMappingConfig(List.of(emptyConcat)).validate())
+        assertThatThrownBy(() -> new FieldMappingConfig(null, null, List.of(emptyConcat)).validate())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("CONCAT 转换需要 parts");
     }
@@ -225,7 +225,7 @@ class JsonataRuleCompilerTest {
                 List.of(new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
                         null, Map.of(), null, null, null, null, 2)),
                 null, null);
-        FieldMappingConfig config = new FieldMappingConfig(List.of(CONCAT, group));
+        FieldMappingConfig config = new FieldMappingConfig(null, null, List.of(CONCAT, group));
 
         config.validate();
         FieldMappingConfig restored = FieldMappingConfig.from(config.toMap());
@@ -237,6 +237,51 @@ class JsonataRuleCompilerTest {
         FieldMappingRule restoredConcat = restored.rules().get(0);
         assertThat(restoredConcat.transform()).isEqualTo(TransformType.CONCAT);
         assertThat(restoredConcat.parts()).containsExactly("BOM-", Map.of("path", "product.productCode"));
+    }
+
+    /** mode=EXPRESSION：手写 JSONata 逃生通道——保存校验、往返、执行。 */
+    @Test
+    void expressionModeRunsHandWrittenJsonata() {
+        String expr = """
+                $map($s_1.items, function($v, $i) {
+                  {
+                    "lineNo": $i + 1,
+                    "item": $v.name
+                  }
+                })
+                """;
+        FieldMappingConfig config = new FieldMappingConfig("EXPRESSION", expr, List.of());
+        config.validate();
+
+        // 往返
+        FieldMappingConfig restored = FieldMappingConfig.from(config.toMap());
+        assertThat(restored.mode()).isEqualTo("EXPRESSION");
+        assertThat(restored.expression()).isEqualTo(expr);
+
+        JsonataFieldMapper mapper = JsonataFieldMapper.fromExpression(expr);
+        Object result = mapper.apply(Map.of(1, Map.of(
+                "items", List.of(Map.of("name", "a"), Map.of("name", "b")))));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) result;
+        assertThat(lines).hasSize(2);
+        assertThat(lines.get(0)).containsEntry("lineNo", 1).containsEntry("item", "a");
+        assertThat(lines.get(1)).containsEntry("lineNo", 2).containsEntry("item", "b");
+    }
+
+    /** mode=EXPRESSION 校验：缺表达式报错；RULES 模式带 expression 报错。 */
+    @Test
+    void expressionModeValidation() {
+        assertThatThrownBy(() -> new FieldMappingConfig("EXPRESSION", null, List.of()).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("需要 expression");
+        assertThatThrownBy(() -> new FieldMappingConfig("EXPRESSION", " ", List.of()).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("需要 expression");
+        assertThatThrownBy(() -> new FieldMappingConfig(null, "some expr", List.of()).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("只有 mode=EXPRESSION 才允许 expression");
+        assertThatThrownBy(() -> JsonataFieldMapper.fromExpression(null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // ---------- helpers ----------

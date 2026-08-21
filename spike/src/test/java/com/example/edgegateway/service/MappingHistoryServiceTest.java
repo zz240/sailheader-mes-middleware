@@ -22,6 +22,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -183,6 +184,33 @@ class MappingHistoryServiceTest {
 
         assertThat(existing.getHitCount()).isEqualTo(4);
         verify(historyMapper).updateById(existing);
+    }
+
+    /** DS-10.2：递归规则（组节点）历史兼容——组行落库，组内 INDEX 子规则不入库。 */
+    @Test
+    void recordFromActionHandlesGroupRules() {
+        Job job = new Job();
+        job.setId(1L);
+        job.setSiteId(5L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        when(dataSourceMapper.selectById(7L)).thenReturn(mysqlDs());
+        when(actionMapper.selectList(any())).thenReturn(
+                List.of(remote(7L, "SELECT * FROM po_order", 1)));
+        when(historyMapper.selectOne(any())).thenReturn(null);
+
+        FieldMappingRule group = new FieldMappingRule(1, "bomItems", "bomLines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
+                                null, Map.of(), null, null, null, null, 1),
+                        new FieldMappingRule(null, "materialCode", "materialCode", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null)),
+                null, null);
+        service.recordFromAction(1L, List.of(group));
+
+        verify(historyMapper).insert(argThat((MappingHistory row) ->
+                "bomItems".equals(row.getSourcePath())
+                        && "bomLines".equals(row.getTargetName())));
     }
 
     @Test

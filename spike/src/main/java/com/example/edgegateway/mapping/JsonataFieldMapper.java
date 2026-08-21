@@ -3,10 +3,8 @@ package com.example.edgegateway.mapping;
 import com.dashjoin.jsonata.Jsonata;
 import com.example.edgegateway.config.FieldMappingRule;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 字段映射执行器（DS-10.2 S1）：路由生成时编译一次 rules → JSONata 表达式，
@@ -18,37 +16,37 @@ import java.util.Set;
 public final class JsonataFieldMapper {
 
     private final Jsonata expression;
-    private final Set<Integer> steps;
 
     public JsonataFieldMapper(List<FieldMappingRule> rules) {
-        String compiled = JsonataRuleCompiler.compile(rules);
+        this(JsonataRuleCompiler.compile(rules));
+    }
+
+    /** mode=EXPRESSION：直接使用手写 JSONata 表达式（逃生通道），同样注册 DATE 自定义函数。 */
+    public static JsonataFieldMapper fromExpression(String expression) {
+        if (expression == null || expression.isBlank()) {
+            throw new IllegalArgumentException("mode=EXPRESSION 需要 expression 表达式");
+        }
+        return new JsonataFieldMapper(expression);
+    }
+
+    private JsonataFieldMapper(String compiled) {
         try {
             this.expression = Jsonata.jsonata(compiled);
             this.expression.registerFunction("dateFormat", JsonataFunctions.dateFormat());
         } catch (Exception e) {
             throw new IllegalArgumentException("字段映射编译失败: " + e.getMessage(), e);
         }
-        this.steps = collectSteps(rules);
     }
 
-    /** 规则树里引用的全部 sourceStep（含组内继承），执行时逐一绑定为 $s_<step> 变量。 */
-    private static Set<Integer> collectSteps(List<FieldMappingRule> rules) {
-        Set<Integer> steps = new LinkedHashSet<>();
-        for (FieldMappingRule rule : rules) {
-            steps.add(rule.sourceStep() != null ? rule.sourceStep() : 0);
-            if (rule.children() != null) {
-                steps.addAll(collectSteps(rule.children()));
-            }
-        }
-        return steps;
-    }
-
-    /** 用上下文求值：空输入根 + frame 绑定 $s_<step>，返回映射结果。 */
+    /**
+     * 用上下文求值：上下文各步骤绑定为 $s_<step> 变量，上下文 Map 作为求值根
+     * （规则模式表达式只引用 $s_<step>；EXPRESSION 模式可用 $ / $$ 引用根）。
+     */
     public Object apply(Map<Integer, Object> context) {
         Jsonata.Frame frame = expression.createFrame();
-        for (Integer step : steps) {
-            frame.bind("s_" + step, context.getOrDefault(step, Map.of()));
+        for (Map.Entry<Integer, Object> entry : context.entrySet()) {
+            frame.bind("s_" + entry.getKey(), entry.getValue());
         }
-        return expression.evaluate(Map.of(), frame);
+        return expression.evaluate(context, frame);
     }
 }

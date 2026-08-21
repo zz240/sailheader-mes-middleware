@@ -184,7 +184,9 @@ public class RouteGenerator {
             case FIELD_MAP -> {
                 FieldMappingConfig mapping = (FieldMappingConfig) config;
                 // DS-10.2 S1：结构化规则编译为 JSONata 表达式（路由构建时编译一次），执行器跨消息复用
-                JsonataFieldMapper fieldMapper = new JsonataFieldMapper(mapping.rules());
+                JsonataFieldMapper fieldMapper = "EXPRESSION".equals(mapping.mode())
+                        ? JsonataFieldMapper.fromExpression(mapping.expression())
+                        : new JsonataFieldMapper(mapping.rules());
                 yield current.process(ex -> {
                     ex.setProperty(ACTION_INDEX, index);
                     Map<Integer, Object> context = context(ex);

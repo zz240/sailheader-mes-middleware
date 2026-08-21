@@ -9,13 +9,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 字段映射动作配置（FIELD_MAP）：一组结构化映射规则。 */
-public record FieldMappingConfig(List<FieldMappingRule> rules) implements ActionConfig {
+/**
+ * 字段映射动作配置（FIELD_MAP）。
+ *
+ * <p>两种模式：默认 RULES（结构化规则树，编译为 JSONata 执行）；EXPRESSION（手写 JSONata
+ * 表达式逃生通道，配置了 expression 时跳过规则树）。</p>
+ */
+public record FieldMappingConfig(
+        String mode,
+        String expression,
+        List<FieldMappingRule> rules) implements ActionConfig {
 
     public static FieldMappingConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
         map.keySet().stream()
-                .filter(k -> !Set.of("rules").contains(k))
+                .filter(k -> !Set.of("rules", "mode", "expression").contains(k))
                 .findFirst()
                 .ifPresent(k -> {
                     throw new IllegalArgumentException("未知字段: " + k);
@@ -29,7 +37,10 @@ public record FieldMappingConfig(List<FieldMappingRule> rules) implements Action
                 }
             }
         }
-        return new FieldMappingConfig(rules);
+        return new FieldMappingConfig(
+                ConfigValues.str(map.get("mode")),
+                ConfigValues.str(map.get("expression")),
+                rules);
     }
 
     @Override
@@ -39,6 +50,15 @@ public record FieldMappingConfig(List<FieldMappingRule> rules) implements Action
 
     @Override
     public void validate() {
+        if ("EXPRESSION".equals(mode)) {
+            if (expression == null || expression.isBlank()) {
+                throw new IllegalArgumentException("mode=EXPRESSION 需要 expression 表达式");
+            }
+            return; // 手写表达式模式不校验规则树
+        }
+        if (expression != null) {
+            throw new IllegalArgumentException("只有 mode=EXPRESSION 才允许 expression");
+        }
         if (rules == null || rules.isEmpty()) {
             throw new IllegalArgumentException("字段映射动作需要至少一条映射规则");
         }
@@ -109,6 +129,12 @@ public record FieldMappingConfig(List<FieldMappingRule> rules) implements Action
     @Override
     public Map<String, Object> toMap() {
         Map<String, Object> map = new LinkedHashMap<>();
+        if (mode != null) {
+            map.put("mode", mode);
+        }
+        if (expression != null) {
+            map.put("expression", expression);
+        }
         map.put("rules", rules.stream().map(this::ruleMap).toList());
         return map;
     }
