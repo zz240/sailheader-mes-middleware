@@ -3,6 +3,7 @@ package com.example.edgegateway.mapping;
 import com.dashjoin.jsonata.Jsonata;
 import com.example.edgegateway.config.FieldMappingRule;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -44,9 +45,13 @@ public final class JsonataFieldMapper {
      */
     public Object apply(Map<Integer, Object> context) {
         Jsonata.Frame frame = expression.createFrame();
+        // READ_SQL 行可能含 LocalDateTime/Timestamp 等非 JSON 类型，先规范化再求值
+        Map<Integer, Object> safe = new LinkedHashMap<>();
         for (Map.Entry<Integer, Object> entry : context.entrySet()) {
-            frame.bind("s_" + entry.getKey(), entry.getValue());
+            Object normalized = JsonataInputs.normalize(entry.getValue());
+            safe.put(entry.getKey(), normalized);
+            frame.bind("s_" + entry.getKey(), normalized);
         }
-        return expression.evaluate(context, frame);
+        return expression.evaluate(safe, frame);
     }
 }

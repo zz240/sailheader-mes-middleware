@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -282,6 +283,22 @@ class JsonataRuleCompilerTest {
                 .hasMessageContaining("只有 mode=EXPRESSION 才允许 expression");
         assertThatThrownBy(() -> JsonataFieldMapper.fromExpression(null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** READ_SQL 行里的 JDBC 日期类型（LocalDateTime）在求值前规范化为字符串（本地实测发现）。 */
+    @Test
+    void jdbcDateValuesAreNormalizedBeforeEvaluation() {
+        JsonataFieldMapper mapper = new JsonataFieldMapper(List.of(
+                leaf(1, "name", "name", TransformType.STRING),
+                leaf(1, "createdAt", "createdAt", TransformType.STRING)));
+
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("name", "PO-1");
+        source.put("createdAt", LocalDateTime.of(2026, 8, 21, 10, 0));
+
+        Map<String, Object> out = applyMap(mapper, context(1, source));
+        assertThat(out.get("name")).isEqualTo("PO-1");
+        assertThat(out.get("createdAt")).isEqualTo("2026-08-21T10:00");
     }
 
     // ---------- helpers ----------
