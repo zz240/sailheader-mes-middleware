@@ -335,7 +335,7 @@ function openActionEdit(row: Action) {
   Object.keys(a).forEach(k => { kindForm[k] = a[k] })
   if (row.type === 'FIELD_MAP') {
     actionFormVisible.value = true
-    setTimeout(() => mappingEditorRef.value?.setRules((a.rules as Record<string, any>[]) ?? []), 0)
+    setTimeout(() => mappingEditorRef.value?.setConfig(a), 0)
   } else {
     actionFormVisible.value = true
   }
@@ -343,7 +343,7 @@ function openActionEdit(row: Action) {
 
 function buildActionAddition(): Record<string, any> {
   if (actionForm.type === 'FIELD_MAP') {
-    return { rules: mappingEditorRef.value?.getRules() ?? [] }
+    return mappingEditorRef.value?.getConfig() ?? { rules: [] }
   }
   const out: Record<string, any> = {}
   Object.entries(kindForm).forEach(([k, v]) => {
