@@ -84,11 +84,11 @@
         </el-table-column>
       </el-table>
       <el-button size="small" type="primary" @click="openActionCreate">添加动作</el-button>
-      <el-button size="small" @click="validateSelected">校验任务</el-button>
+      <el-button size="small" @click="validateSelected">校验配置</el-button>
       <el-button size="small" @click="loadReceived">刷新 MES 接收</el-button>
     </div>
 
-    <el-dialog v-model="actionFormVisible" :title="editingAction ? '编辑动作' : '添加动作'" width="720px">
+    <el-dialog v-model="actionFormVisible" :title="editingAction ? '编辑动作' : '添加动作'" :width="actionDialogWidth">
       <el-form label-width="100px">
         <el-form-item label="名称"><el-input v-model="actionForm.name" /></el-form-item>
         <el-form-item label="类型">
@@ -208,6 +208,8 @@ const validateVisible = ref(false)
 const validation = ref<ValidationResult | null>(null)
 
 const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
+/** 字段映射编辑区较大，弹窗加宽；其余动作保持常规宽度。 */
+const actionDialogWidth = computed(() => (actionForm.type === 'FIELD_MAP' ? '1280px' : '720px'))
 
 const filteredDataSources = computed(() => {
   const typeFilter: Record<string, string[]> = {
