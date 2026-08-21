@@ -95,6 +95,14 @@
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-timer-starter</artifactId>
         </dependency>
+        <!-- DS-10.2 S0：JSONata 执行引擎（dashjoin/jsonata-java，Camel 4.10.2 camel-jsonata 同源引擎的独立版；
+             直调引擎而非 camel-jsonata 组件：4.10.2 的组件仅支持 classpath/URL specName，
+             不支持从 header/变量传入表达式（CAMEL-22112 在 4.11.0 才修复），动态表达式走直调） -->
+        <dependency>
+            <groupId>com.dashjoin</groupId>
+            <artifactId>jsonata</artifactId>
+            <version>0.9.10</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
