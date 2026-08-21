@@ -45,6 +45,12 @@
             <el-option v-for="s in sites" :key="s.id" :value="s.id" :label="`#${s.id} ${s.name}（${s.timezone || '默认时区'}）`" />
           </el-select>
         </el-form-item>
+        <el-form-item label="方向">
+          <el-select v-model="jobForm.direction" placeholder="选择方向" style="width: 100%">
+            <el-option label="北向（客户 → MES）" value="NORTH" />
+            <el-option label="南向（MES → 客户）" value="SOUTH" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="cron"><el-input v-model="jobForm.crontab" placeholder="可选" /></el-form-item>
         <el-form-item label="重试次数"><el-input-number v-model="jobForm.retryCount" :min="0" /></el-form-item>
         <el-form-item label="退避(ms)"><el-input-number v-model="jobForm.backoffMs" :min="0" /></el-form-item>
@@ -190,7 +196,7 @@ const received = ref<any[]>([])
 
 const jobFormVisible = ref(false)
 const editingJob = ref<Job | null>(null)
-const jobForm = reactive({ name: '', siteId: 1, crontab: '', retryCount: 0, backoffMs: 1000 })
+const jobForm = reactive({ name: '', siteId: 1, direction: 'NORTH' as 'NORTH' | 'SOUTH', crontab: '', retryCount: 0, backoffMs: 1000 })
 
 const actionFormVisible = ref(false)
 const editingAction = ref<Action | null>(null)
@@ -247,14 +253,14 @@ function dsName(id: number | null | undefined) {
 
 function openCreate() {
   editingJob.value = null
-  Object.assign(jobForm, { name: '', siteId: sites.value[0]?.id ?? 1, crontab: '', retryCount: 0, backoffMs: 1000 })
+  Object.assign(jobForm, { name: '', siteId: sites.value[0]?.id ?? 1, direction: 'NORTH', crontab: '', retryCount: 0, backoffMs: 1000 })
   jobFormVisible.value = true
 }
 
 function openEdit(row: Job) {
   editingJob.value = row
   Object.assign(jobForm, {
-    name: row.name, siteId: row.siteId, crontab: row.crontab ?? '',
+    name: row.name, siteId: row.siteId, direction: row.direction ?? 'NORTH', crontab: row.crontab ?? '',
     retryCount: row.retryCount ?? 0, backoffMs: row.backoffMs ?? 1000,
   })
   jobFormVisible.value = true
@@ -263,6 +269,7 @@ function openEdit(row: Job) {
 async function saveJob() {
   const body = {
     name: jobForm.name, siteId: jobForm.siteId, status: editingJob.value?.status ?? 0,
+    direction: jobForm.direction,
     crontab: jobForm.crontab || null, retryCount: jobForm.retryCount, backoffMs: jobForm.backoffMs,
   }
   try {

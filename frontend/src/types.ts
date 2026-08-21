@@ -14,6 +14,7 @@ export interface Job {
   siteId: number
   name: string
   status: number
+  direction?: 'NORTH' | 'SOUTH' | null
   crontab?: string | null
   timezone?: string | null
   retryCount?: number | null
