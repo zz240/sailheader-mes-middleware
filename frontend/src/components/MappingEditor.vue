@@ -52,16 +52,43 @@
     <datalist id="target-list"><option v-for="t in targetFields" :key="t" :value="t" /></datalist>
 
     <div v-if="suggestions.length" class="suggest-panel">
-      <div class="suggest-title">推荐候选（点击采用填入该行）</div>
-      <div v-for="(arr, target) in byTarget" :key="target" class="suggest-group">
-        <b>{{ target }}</b>
-        <span v-for="s in arr" :key="s.sourcePath + s.score" class="chip">
-          {{ s.sourcePath }}
-          <el-tag size="small">{{ Math.round(s.score * 100) }}</el-tag>
-          {{ s.matchSource }} {{ s.transform }}
-          <el-button size="small" @click="applySuggestion(s)">采用</el-button>
-        </span>
-      </div>
+      <div class="suggest-title">推荐候选（点击“采用”填入映射行；已填写的目标字段自动标记为已采用）</div>
+      <el-table :data="paginatedSuggestions" border size="small" max-height="320">
+        <el-table-column label="目标字段" width="140">
+          <template #default="{ row }">
+            <span :class="{ 'target-adopted': isAdopted(row.targetName) }">{{ row.targetName }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源路径" min-width="180">
+          <template #default="{ row }"><code class="src-path">{{ row.sourcePath }}</code></template>
+        </el-table-column>
+        <el-table-column label="匹配方式" width="110">
+          <template #default="{ row }">{{ row.matchSource }}</template>
+        </el-table-column>
+        <el-table-column label="转换" min-width="120">
+          <template #default="{ row }">{{ transformLabel(row) }}</template>
+        </el-table-column>
+        <el-table-column label="置信度" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="scoreType(row.score)">{{ Math.round(row.score * 100) }}%</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center">
+          <template #default="{ row }">
+            <el-button v-if="!isAdopted(row.targetName)" size="small" type="primary" @click="applySuggestion(row)">采用</el-button>
+            <el-tag v-else size="small" type="success">已采用</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination
+        v-if="suggestions.length > pageSize"
+        v-model:current-page="suggestPage"
+        :page-size="pageSize"
+        :total="suggestions.length"
+        layout="prev, pager, next, total"
+        small
+        class="suggest-pager"
+      />
     </div>
   </div>
 </template>
@@ -82,14 +109,32 @@ const targetSample = ref('')
 const fieldPaths = ref<string[]>([])
 const targetFields = ref<string[]>([])
 const suggestions = ref<MappingSuggestion[]>([])
+const suggestPage = ref(1)
+const pageSize = 8
 
-const byTarget = computed(() => {
-  const map: Record<string, MappingSuggestion[]> = {}
-  suggestions.value.forEach(s => {
-    ;(map[s.targetName] = map[s.targetName] || []).push(s)
-  })
-  return map
+const paginatedSuggestions = computed(() => {
+  const start = (suggestPage.value - 1) * pageSize
+  return suggestions.value.slice(start, start + pageSize)
 })
+
+const adoptedTargets = computed(() => new Set(rows.filter(r => r.target.trim()).map(r => r.target.trim())))
+
+function isAdopted(target: string) {
+  return adoptedTargets.value.has(target)
+}
+
+function scoreType(score: number): 'success' | 'warning' | 'info' {
+  if (score >= 0.8) return 'success'
+  if (score >= 0.5) return 'warning'
+  return 'info'
+}
+
+function transformLabel(s: MappingSuggestion) {
+  if (s.transform === 'CONSTANT') return `常量「${s.constant ?? ''}」`
+  if (s.transform === 'ENUM' && s.enumMap) return `枚举（${Object.keys(s.enumMap).length} 项）`
+  if (s.transform === 'DATE' && s.datePattern) return `日期 ${s.datePattern}`
+  return s.transform
+}
 
 function addRow(sourceStep: number, source = '', target = '', transform = 'STRING', extra = '') {
   rows.push({ sourceStep, source, target, transform, extra })
@@ -130,6 +175,7 @@ async function fetchSuggestions() {
         targets: targetFields.value.map(name => ({ name, required: true })),
       }),
     })
+    suggestPage.value = 1
   } catch (e) {
     ElMessage.error((e as ApiError).message)
   }
@@ -188,27 +234,40 @@ function extraFor(s: MappingSuggestion) {
 }
 
 function getRules() {
-  return rows
-    .filter(r => r.target.trim())
-    .map(r => {
-      const rule: Record<string, any> = {
-        sourceStep: r.sourceStep,
-        source: r.source.trim(),
-        target: r.target.trim(),
-        transform: r.transform,
+  const rules: Record<string, any>[] = []
+  rows.forEach((r, idx) => {
+    if (!r.target.trim()) return
+    const rule: Record<string, any> = {
+      sourceStep: r.sourceStep,
+      source: r.source.trim(),
+      target: r.target.trim(),
+      transform: r.transform,
+    }
+    const extra = r.extra.trim()
+    if (r.transform === 'CONSTANT') rule.constant = extra
+    if (r.transform === 'ENUM' && extra) {
+      try {
+        rule.enumMap = JSON.parse(extra)
+      } catch {
+        throw new Error(`第 ${idx + 1} 行映射：枚举映射必须是合法 JSON，如 {"1":"已处理"}，当前输入：${extra}`)
       }
-      const extra = r.extra.trim()
-      if (r.transform === 'CONSTANT') rule.constant = extra
-      if (r.transform === 'ENUM' && extra) rule.enumMap = JSON.parse(extra)
-      if (r.transform === 'DATE' && extra) rule.datePattern = extra
-      return rule
-    })
+    }
+    if (r.transform === 'DATE' && extra) rule.datePattern = extra
+    rules.push(rule)
+  })
+  return rules
 }
 
 function setRules(rules: Record<string, any>[]) {
   rows.length = 0
-  rules.forEach(r => addRow(r.sourceStep ?? defaultStep(), r.source ?? '', r.target ?? '', r.transform ?? 'STRING',
-    r.constant ?? (r.enumMap ? JSON.stringify(r.enumMap) : '') ?? r.datePattern ?? ''))
+  rules.forEach(r => addRow(r.sourceStep ?? defaultStep(), r.source ?? '', r.target ?? '', r.transform ?? 'STRING', extraOf(r)))
+}
+
+function extraOf(rule: Record<string, any>) {
+  if (rule.constant != null) return String(rule.constant)
+  if (rule.enumMap != null) return JSON.stringify(rule.enumMap)
+  if (rule.datePattern != null) return String(rule.datePattern)
+  return ''
 }
 
 function defaultStep() {
@@ -225,6 +284,7 @@ defineExpose({ getRules, setRules, loadSampleFields })
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .suggest-panel { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; }
 .suggest-title { font-size: 12px; color: #555; margin-bottom: 4px; }
-.suggest-group { margin: 4px 0; font-size: 12px; }
-.chip { border: 1px solid #e5e7eb; border-radius: 4px; padding: 1px 5px; margin-right: 6px; display: inline-flex; align-items: center; gap: 4px; }
+.suggest-pager { margin-top: 6px; justify-content: flex-end; }
+.src-path { font-family: Consolas, monospace; font-size: 12px; }
+.target-adopted { color: #67c23a; font-weight: 600; }
 </style>

@@ -354,9 +354,16 @@ function buildActionAddition(): Record<string, any> {
 
 async function saveAction() {
   if (!selectedJob.value) return
+  let addition: Record<string, any>
+  try {
+    addition = buildActionAddition()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+    return
+  }
   const body = {
     name: actionForm.name, type: actionForm.type, index: actionForm.index,
-    addition: buildActionAddition(),
+    addition,
   }
   try {
     if (editingAction.value) await api(`/actions/${editingAction.value.id}`, { method: 'PUT', body: JSON.stringify(body) })
