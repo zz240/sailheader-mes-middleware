@@ -71,7 +71,8 @@ public final class TransformInferrer {
                 && distinct.size() < values.size() * 0.5) {
             return Inference.of(TransformKind.ENUM);
         }
-        if (distinct.size() == 1) {
+        // DS-10.4：仅当字段出现多次且值全部相同才建议 CONSTANT；单值样例按 STRING 直接映射
+        if (distinct.size() == 1 && values.size() > 1) {
             return new Inference(TransformKind.CONSTANT, null, distinct.iterator().next());
         }
         return Inference.of(TransformKind.STRING);
