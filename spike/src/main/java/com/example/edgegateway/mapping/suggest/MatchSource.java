@@ -5,5 +5,7 @@ public enum MatchSource {
     HISTORY,
     EXACT,
     SIMILAR,
-    LLM
+    LLM,
+    /** 源/目标数组结构匹配（S4 组建议）。 */
+    ARRAY
 }

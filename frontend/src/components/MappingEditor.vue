@@ -286,7 +286,10 @@ async function fetchSuggestions() {
       body: JSON.stringify({
         jobId: props.jobId,
         source,
-        targets: targetFields.value.map(name => ({ name, required: true })),
+        targets: [
+          ...targetFields.value.map(name => ({ name, required: true })),
+          ...arrayTargetPaths.value.map(name => ({ name, required: false, array: true })),
+        ],
       }),
     })
     suggestPage.value = 1
@@ -295,7 +298,33 @@ async function fetchSuggestions() {
   }
 }
 
+/** 目标树里的数组节点路径（如 bom.bomLines）——参与组建议。 */
+const arrayTargetPaths = computed(() => {
+  const out: string[] = []
+  const walk = (nodes: FieldNode[]) => {
+    nodes.forEach(n => {
+      if (n.isArray) out.push(n.path)
+      if (n.children?.length) walk(n.children)
+    })
+  }
+  walk(targetTree.value)
+  return out
+})
+
 function applySuggestion(s: MappingSuggestion) {
+  if (s.children?.length) {
+    const group = rows.find(r => r.target.trim() === s.targetName && r.iterate === 'FOR_EACH')
+    const row = group ?? createGroupRow(defaultStep(), s.sourcePath, s.targetName)
+    if (!group) rows.push(row)
+    row.children = s.children.map(c => createRow(
+      null,
+      c.sourcePath,
+      c.targetName,
+      transformSelectValue(c.transform),
+      extraFor(c),
+    ))
+    return
+  }
   let row = rows.find(r => r.target === s.targetName)
   if (!row) {
     row = rows.find(r => !r.target)

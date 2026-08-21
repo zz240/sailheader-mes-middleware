@@ -43,9 +43,18 @@ public final class RuleMappingSuggester implements MappingSuggester {
     ) {
         Map<HistoryKey, HistoryMapping> historyByKey = indexHistory(history);
         Map<String, NameNormalizer.Normalized> normCache = new HashMap<>();
+        // 源数组索引：数组路径（去 [0]）-> 相对叶子字段（S4 组建议）
+        Map<String, List<SourceField>> sourceArrays = indexSourceArrays(source.fields());
 
         List<MappingSuggestion> all = new ArrayList<>();
         for (TargetField target : targetFields) {
+            if (target.array()) {
+                MappingSuggestion group = suggestArrayGroup(target, sourceArrays, normCache);
+                if (group != null) {
+                    all.add(group);
+                }
+                continue; // 数组目标不再走扁平匹配（扁平路径不含数组本身）
+            }
             if (!target.required()) {
                 continue;
             }
@@ -83,7 +92,8 @@ public final class RuleMappingSuggester implements MappingSuggester {
                     history.datePattern(),
                     history.constant(),
                     history.enumMap(),
-                    MatchSource.HISTORY
+                    MatchSource.HISTORY,
+                    null
             );
             return new Candidate(suggestion, history.hitCount(), history.updatedAt());
         }
@@ -113,8 +123,85 @@ public final class RuleMappingSuggester implements MappingSuggester {
                 inference.datePattern(),
                 inference.constant(),
                 null,
-                matchSource
+                matchSource,
+                null
         );
+    }
+
+    /** 数组源字段索引：`items[0].name` → 数组路径 `items` + 相对字段 `name`。 */
+    private static Map<String, List<SourceField>> indexSourceArrays(List<SourceField> fields) {
+        Map<String, List<SourceField>> arrays = new HashMap<>();
+        for (SourceField field : fields) {
+            int idx = field.name().indexOf("[0]");
+            if (idx < 0) {
+                continue;
+            }
+            String arrayPath = field.name().substring(0, idx);
+            String relative = field.name().substring(idx + 4); // 跳过 "[0]."
+            if (arrayPath.isBlank() || relative.isBlank()) {
+                continue;
+            }
+            arrays.computeIfAbsent(arrayPath, k -> new ArrayList<>())
+                    .add(new SourceField(relative, field.type(), field.nullable(), field.samples()));
+        }
+        return arrays;
+    }
+
+    /**
+     * 数组目标 → 组建议：源数组路径按名称匹配（精确/相似），children 用相对路径，
+     * 子目标名取相对字段同名启发（候选，需工程师确认/调整）。
+     */
+    private MappingSuggestion suggestArrayGroup(
+            TargetField target,
+            Map<String, List<SourceField>> sourceArrays,
+            Map<String, NameNormalizer.Normalized> normCache
+    ) {
+        String bestArray = null;
+        double bestScore = 0;
+        for (String arrayPath : sourceArrays.keySet()) {
+            // 数组名比较用最后一段（源 product.bomItems ↔ 目标 bom.bomLines）
+            NameNormalizer.Normalized s = norm(normCache, lastSegment(arrayPath));
+            NameNormalizer.Normalized tt = norm(normCache, lastSegment(target.name()));
+            double score = (!s.tokens().isEmpty() && s.tokens().equals(tt.tokens()))
+                    ? 1.0
+                    : jaroWinkler.apply(s.compact(), tt.compact());
+            if (score >= threshold && score > bestScore) {
+                bestScore = score;
+                bestArray = arrayPath;
+            }
+        }
+        if (bestArray == null) {
+            return null;
+        }
+        List<MappingSuggestion> children = new ArrayList<>();
+        for (SourceField field : sourceArrays.get(bestArray)) {
+            TransformInferrer.Inference inference = TransformInferrer.infer(field.samples());
+            children.add(new MappingSuggestion(
+                    field.name(),
+                    field.name(),
+                    1.0,
+                    inference.kind(),
+                    inference.datePattern(),
+                    inference.constant(),
+                    null,
+                    MatchSource.ARRAY,
+                    null));
+        }
+        return new MappingSuggestion(
+                bestArray,
+                target.name(),
+                bestScore,
+                TransformKind.STRING,
+                null,
+                null,
+                null,
+                MatchSource.ARRAY,
+                children);
+    }
+
+    private static String lastSegment(String path) {
+        int dot = path.lastIndexOf('.');
+        return dot < 0 ? path : path.substring(dot + 1);
     }
 
     private static NameNormalizer.Normalized norm(Map<String, NameNormalizer.Normalized> cache, String name) {

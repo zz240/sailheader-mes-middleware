@@ -108,7 +108,8 @@ public class LlmMappingSuggester implements MappingSuggester {
                         node.has("enumMap") && node.get("enumMap").isObject()
                                 ? objectMapper.convertValue(node.get("enumMap"), Map.class)
                                 : null,
-                        MatchSource.LLM));
+                        MatchSource.LLM,
+                        null));
             }
         }
         return suggestions;

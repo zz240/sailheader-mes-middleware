@@ -33,7 +33,7 @@ class SuggestionControllerTest {
     void returnsSuggestions() throws Exception {
         when(suggestionService.suggest(any(SuggestionRequest.class))).thenReturn(List.of(
                 new MappingSuggestion("order_no", "sheet_no", 1.0,
-                        TransformKind.STRING, null, null, null, MatchSource.EXACT)));
+                        TransformKind.STRING, null, null, null, MatchSource.EXACT, null)));
 
         mockMvc.perform(post("/api/mapping-suggestions")
                         .contentType(MediaType.APPLICATION_JSON)

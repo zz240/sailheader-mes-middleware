@@ -1,6 +1,7 @@
 package com.example.edgegateway.mapping.suggest;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 一条映射建议：源字段路径 → 目标字段 + 转换，带得分与来源标签。
@@ -9,6 +10,7 @@ import java.util.Map;
  * @param datePattern 日期格式（DATE 时；历史复用时为上次确认的格式）
  * @param constant    常量值（CONSTANT 时）
  * @param enumMap     枚举映射（ENUM 时；历史复用时为上次确认的映射）
+ * @param children    数组组建议的子映射（sourcePath 为相对路径；非空即组建议）
  */
 public record MappingSuggestion(
         String sourcePath,
@@ -18,6 +20,7 @@ public record MappingSuggestion(
         String datePattern,
         String constant,
         Map<String, Object> enumMap,
-        MatchSource matchSource
+        MatchSource matchSource,
+        List<MappingSuggestion> children
 ) {
 }

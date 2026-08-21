@@ -83,6 +83,7 @@ export interface MappingSuggestion {
   constant?: string | null
   enumMap?: Record<string, any> | null
   matchSource: string
+  children?: MappingSuggestion[] | null
 }
 
 export interface ValidationIssue {

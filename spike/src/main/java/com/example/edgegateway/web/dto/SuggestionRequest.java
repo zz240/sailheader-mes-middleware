@@ -15,6 +15,6 @@ public record SuggestionRequest(
     public record Field(String name, String type, Boolean nullable, List<Object> samples) {
     }
 
-    public record Target(String name, Boolean required) {
+    public record Target(String name, Boolean required, Boolean array) {
     }
 }

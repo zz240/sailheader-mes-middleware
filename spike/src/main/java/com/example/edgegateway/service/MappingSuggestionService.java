@@ -58,7 +58,10 @@ public class MappingSuggestionService {
         SourceStructure source = toSource(request.source());
         List<TargetField> targets = new ArrayList<>();
         for (SuggestionRequest.Target t : request.targets()) {
-            targets.add(new TargetField(t.name(), t.required() == null || t.required()));
+            targets.add(new TargetField(
+                    t.name(),
+                    t.required() == null || t.required(),
+                    t.array() != null && t.array()));
         }
         return router.forSite(job.getSiteId()).suggest(source, targets, history);
     }
