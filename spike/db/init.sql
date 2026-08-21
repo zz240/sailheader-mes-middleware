@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS job (
     site_id BIGINT NOT NULL,
     name VARCHAR(255) NOT NULL,
     status INT NOT NULL,
+    direction VARCHAR(16),
     crontab VARCHAR(128),
     timezone VARCHAR(64),
     retry_count INT,

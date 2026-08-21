@@ -32,8 +32,8 @@ import java.util.regex.Pattern;
  * 映射历史服务：保存 FIELD_MAP 动作时把确认规则 upsert 进历史表（资产沉淀），
  * 按 站点 + 方向 + 源结构指纹 供映射建议器查询。
  *
- * <p>方向由动作链推断：首动作为 MQ_CONSUME 为南向，否则北向。
- * 源结构指纹：南向取 MQ_CONSUME 队列名（mq:queue），北向从 READ_SQL 提取表名（db:table）。</p>
+ * <p>方向为任务显式声明的业务标签（DS-9）；源结构指纹从实际源动作推导：
+ * READ_SQL → db:表名，MQ_CONSUME → mq:队列名，与方向解耦。</p>
  */
 @Service
 public class MappingHistoryService {
@@ -66,8 +66,8 @@ public class MappingHistoryService {
                 || a.getType() == ActionKind.MQ_CONSUME)) {
             return; // 动作链还没有读入口，方向/源结构无法推断，历史记录跳过
         }
-        SyncDirection direction = inferDirection(actions);
-        String sourceKey = inferSourceKey(actions, direction);
+        SyncDirection direction = job.getDirection() != null ? job.getDirection() : inferDirection(actions);
+        String sourceKey = inferSourceKey(actions);
         for (FieldMappingRule rule : rules) {
             upsert(job.getSiteId(), direction, sourceKey, rule);
         }
@@ -107,21 +107,24 @@ public class MappingHistoryService {
                 : SyncDirection.NORTH;
     }
 
-    /** 源结构指纹：南向 = mq:队列名；北向 = db:读 SQL 的表名（提取失败回退 db:数据源ID）。 */
-    public String inferSourceKey(List<Action> actions, SyncDirection direction) {
+    /** 源结构指纹：从实际源动作推导（READ_SQL → db:表名；MQ_CONSUME → mq:队列名），与方向解耦。 */
+    public String inferSourceKey(List<Action> actions) {
         List<Action> sorted = actions.stream()
                 .sorted(Comparator.comparing(Action::getActionIndex))
                 .toList();
-        if (direction == SyncDirection.SOUTH) {
-            MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
-                    ActionKind.MQ_CONSUME, addition(sorted.get(0)));
-            String queue = consume.queue();
+        Action read = sorted.stream().filter(a -> a.getType() == ActionKind.READ_SQL).findFirst().orElse(null);
+        if (read != null) {
+            ReadSqlConfig readConfig = (ReadSqlConfig) ActionConfig.from(ActionKind.READ_SQL, addition(read));
+            String table = extractTable(readConfig.sql());
+            return table != null ? "db:" + table : "db:ds-" + readConfig.dataSourceId();
+        }
+        Action consume = sorted.stream().filter(a -> a.getType() == ActionKind.MQ_CONSUME).findFirst().orElse(null);
+        if (consume != null) {
+            MqConsumeConfig consumeConfig = (MqConsumeConfig) ActionConfig.from(ActionKind.MQ_CONSUME, addition(consume));
+            String queue = consumeConfig.queue();
             return "mq:" + (queue == null || queue.isBlank() ? "unknown" : queue);
         }
-        ReadSqlConfig read = (ReadSqlConfig) ActionConfig.from(
-                ActionKind.READ_SQL, addition(firstRead(sorted)));
-        String table = extractTable(read.sql());
-        return table != null ? "db:" + table : "db:ds-" + read.dataSourceId();
+        throw new NoSuchElementException("任务没有 READ_SQL 或 MQ_CONSUME 源动作");
     }
 
     private void upsert(Long siteId, SyncDirection direction, String sourceKey, FieldMappingRule rule) {
@@ -162,13 +165,6 @@ public class MappingHistoryService {
         return actionMapper.selectList(new LambdaQueryWrapper<Action>()
                 .eq(Action::getJobId, jobId)
                 .orderByAsc(Action::getActionIndex));
-    }
-
-    private Action firstRead(List<Action> actions) {
-        return actions.stream()
-                .filter(a -> a.getType() == ActionKind.READ_SQL)
-                .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("任务没有 READ_SQL 动作"));
     }
 
     private Map<String, Object> addition(Action action) {

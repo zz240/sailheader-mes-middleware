@@ -93,6 +93,9 @@ public class JobService {
         if (request.siteId() == null) {
             throw new IllegalArgumentException("站点不能为空");
         }
+        if (request.direction() == null) {
+            throw new IllegalArgumentException("任务需要声明方向（NORTH/SOUTH）");
+        }
     }
 
     private Job toEntity(JobRequest request) {
@@ -105,6 +108,7 @@ public class JobService {
         job.setSiteId(request.siteId());
         job.setName(request.name());
         job.setStatus(request.status() == null ? 0 : request.status());
+        job.setDirection(request.direction());
         job.setCrontab(request.crontab());
         job.setTimezone(request.timezone());
         job.setRetryCount(request.retryCount());

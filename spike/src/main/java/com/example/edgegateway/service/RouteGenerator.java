@@ -39,8 +39,8 @@ import java.util.stream.Collectors;
 /**
  * 路由生成器（DS-8 片段组合）：按动作种类逐段追加 Camel 片段。
  *
- * <p>入口：链首为 MQ_CONSUME → 南向（MQ 消费主路由 + direct 重放路由）；否则北向
- * （direct + 定时入口）。READ_SQL 会 split(body())，其后的片段在行内执行。
+ * <p>入口：链首为 MQ_CONSUME → 消费入口（MQ 消费主路由 + direct 重放路由）；否则
+ * 轮询入口（direct + 定时）。READ_SQL 会 split(body())，其后的片段在行内执行。
  * 错误处理统一：onException（重试/退避）+ 死信记录。</p>
  */
 @Component
@@ -72,14 +72,14 @@ public class RouteGenerator {
         if (sorted.isEmpty()) {
             throw new IllegalArgumentException("任务没有动作，无法生成路由");
         }
-        if (sorted.get(0).getType() == ActionKind.MQ_CONSUME) {
-            return List.of(buildSouthbound(job, sorted), buildReplay(job, sorted));
+        if (sorted.getFirst().getType() == ActionKind.MQ_CONSUME) {
+            return List.of(buildConsumerEntry(job, sorted), buildReplay(job, sorted));
         }
-        return List.of(buildNorthbound(job, sorted));
+        return List.of(buildPollingEntry(job, sorted));
     }
 
-    /** 北向：direct 入口 + 定时入口，按片段组合。 */
-    private RouteBuilder buildNorthbound(Job job, List<Action> actions) {
+    /** 轮询入口：direct + 定时，按片段组合。 */
+    private RouteBuilder buildPollingEntry(Job job, List<Action> actions) {
         String routeId = "job-" + job.getId();
         return new RouteBuilder() {
             @Override
@@ -94,11 +94,11 @@ public class RouteGenerator {
         };
     }
 
-    /** 南向：MQ 消费主路由（MQ_CONSUME 为入口）。 */
-    private RouteBuilder buildSouthbound(Job job, List<Action> actions) {
+    /** 消费入口：MQ 消费主路由（MQ_CONSUME 为入口）。 */
+    private RouteBuilder buildConsumerEntry(Job job, List<Action> actions) {
         String routeId = "job-" + job.getId();
         MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
-                ActionKind.MQ_CONSUME, actions.get(0).getAddition());
+                ActionKind.MQ_CONSUME, actions.getFirst().getAddition());
         DataSource mqDs = dataSourceMapper.selectById(consume.dataSourceId());
         return new RouteBuilder() {
             @Override
@@ -110,20 +110,30 @@ public class RouteGenerator {
                                 + (consume.routingKey() == null ? consume.queue() : consume.routingKey())
                                 + "&autoDeclare=true")
                         .routeId(routeId)
-                        .unmarshal().json();
+                        .unmarshal().json()
+                        .process(ex -> {
+                            Map<Integer, Object> context = context(ex);
+                            context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
+                            ex.setProperty(CONTEXT, context);
+                        });
                 appendChain(route, actions.subList(1, actions.size()), job);
             }
         };
     }
 
-    /** 南向重放路由：direct 入口接收已解析输入（死信重投/手动执行）。 */
+    /** 重放路由：direct 入口接收已解析输入（死信重投/手动执行）。 */
     private RouteBuilder buildReplay(Job job, List<Action> actions) {
         return new RouteBuilder() {
             @Override
             public void configure() {
                 configureErrorHandling(this, job, false);
                 RouteDefinition route = from("direct:job-" + job.getId())
-                        .routeId("direct-" + job.getId());
+                        .routeId("direct-" + job.getId())
+                        .process(ex -> {
+                            Map<Integer, Object> context = context(ex);
+                            context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
+                            ex.setProperty(CONTEXT, context);
+                        });
                 appendChain(route, actions.subList(1, actions.size()), job);
             }
         };

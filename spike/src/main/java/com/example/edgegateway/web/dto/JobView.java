@@ -1,6 +1,7 @@
 package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.SyncDirection;
 
 import java.time.LocalDateTime;
 
@@ -10,6 +11,7 @@ public record JobView(
         Long siteId,
         String name,
         Integer status,
+        SyncDirection direction,
         String crontab,
         String timezone,
         Integer retryCount,
@@ -26,6 +28,7 @@ public record JobView(
                 job.getSiteId(),
                 job.getName(),
                 job.getStatus(),
+                job.getDirection(),
                 job.getCrontab(),
                 job.getTimezone(),
                 job.getRetryCount(),

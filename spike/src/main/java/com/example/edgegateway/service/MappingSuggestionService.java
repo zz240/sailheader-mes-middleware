@@ -50,7 +50,9 @@ public class MappingSuggestionService {
         List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
                 .eq(Action::getJobId, request.jobId())
                 .orderByAsc(Action::getActionIndex));
-        SyncDirection direction = historyService.inferDirection(actions);
+        SyncDirection direction = job.getDirection() != null
+                ? job.getDirection()
+                : historyService.inferDirection(actions);
         List<HistoryMapping> history = historyService.listByScope(job.getSiteId(), direction);
 
         SourceStructure source = toSource(request.source());

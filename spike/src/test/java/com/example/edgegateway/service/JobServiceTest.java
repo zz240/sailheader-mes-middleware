@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.SyncDirection;
 import com.example.edgegateway.web.dto.JobRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ class JobServiceTest {
     }
 
     private JobRequest request(String name) {
-        return new JobRequest(name, 1L, 0, "0 0/30 * * * ?", "Asia/Shanghai",
+        return new JobRequest(name, 1L, 0, SyncDirection.NORTH, "0 0/30 * * * ?", "Asia/Shanghai",
                 3, 1000L, "备注");
     }
 
@@ -54,6 +55,15 @@ class JobServiceTest {
 
         assertThatThrownBy(() -> service.create(request("dup")))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void rejectsMissingDirection() {
+        JobRequest req = new JobRequest("job", 1L, 0, null, null, null, 0, 0L, null);
+
+        assertThatThrownBy(() -> service.create(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("方向");
     }
 
 

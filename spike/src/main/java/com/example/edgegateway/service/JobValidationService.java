@@ -14,7 +14,6 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
-import com.example.edgegateway.model.SyncDirection;
 import com.example.edgegateway.web.dto.ValidationResult;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +38,6 @@ public class JobValidationService {
     private final DataSourceMapper dataSourceMapper;
     private final ConnectionTester connectionTester;
     private final StructureProbeService probeService;
-    private final MappingHistoryService historyService;
     private final ReadOnlySqlValidator sqlValidator;
 
     public JobValidationService(
@@ -48,14 +46,12 @@ public class JobValidationService {
             DataSourceMapper dataSourceMapper,
             ConnectionTester connectionTester,
             StructureProbeService probeService,
-            MappingHistoryService historyService,
             ReadOnlySqlValidator sqlValidator) {
         this.jobService = jobService;
         this.actionService = actionService;
         this.dataSourceMapper = dataSourceMapper;
         this.connectionTester = connectionTester;
         this.probeService = probeService;
-        this.historyService = historyService;
         this.sqlValidator = sqlValidator;
     }
 
@@ -68,17 +64,13 @@ public class JobValidationService {
             errors.add(new ValidationResult.Issue("job", "actions", "任务没有动作，无法启用"));
             return new ValidationResult(false, errors, warnings);
         }
-        SyncDirection direction = historyService.inferDirection(actions);
-
         for (Action action : actions) {
             if (!hasDataSource(action.getType())) {
                 continue;
             }
             validateRemoteAction(action, errors);
         }
-        if (direction == SyncDirection.NORTH) {
-            checkNorthMappingFields(actions, warnings);
-        }
+        checkNorthMappingFields(actions, warnings);
         return new ValidationResult(errors.isEmpty(), errors, warnings);
     }
 

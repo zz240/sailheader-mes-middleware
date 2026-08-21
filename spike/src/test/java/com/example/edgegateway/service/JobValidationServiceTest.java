@@ -26,7 +26,6 @@ class JobValidationServiceTest {
     private DataSourceMapper dataSourceMapper;
     private ConnectionTester connectionTester;
     private StructureProbeService probeService;
-    private MappingHistoryService historyService;
     private ReadOnlySqlValidator sqlValidator;
     private JobValidationService service;
 
@@ -37,10 +36,9 @@ class JobValidationServiceTest {
         dataSourceMapper = mock(DataSourceMapper.class);
         connectionTester = mock(ConnectionTester.class);
         probeService = mock(StructureProbeService.class);
-        historyService = mock(MappingHistoryService.class);
         sqlValidator = mock(ReadOnlySqlValidator.class);
         service = new JobValidationService(jobService, actionService, dataSourceMapper,
-                connectionTester, probeService, historyService, sqlValidator);
+                connectionTester, probeService, sqlValidator);
     }
 
     private Action remote(String sql, Map<String, Object> addition) {
@@ -60,8 +58,6 @@ class JobValidationServiceTest {
     @BeforeEach
     void defaults() {
         when(jobService.get(1L)).thenReturn(new Job());
-        when(historyService.inferDirection(any())).thenReturn(
-                com.example.edgegateway.model.SyncDirection.NORTH);
         when(dataSourceMapper.selectById(7L)).thenReturn(mysqlDs());
         when(connectionTester.test(any())).thenReturn(new ConnectionTester.TestResult(true, "ok"));
         when(probeService.probeFromDb(any(), any(), anyBoolean())).thenReturn(

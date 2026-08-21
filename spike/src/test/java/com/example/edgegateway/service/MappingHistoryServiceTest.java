@@ -93,7 +93,7 @@ class MappingHistoryServiceTest {
     void sourceKeyNorthUsesTableFromSql() {
         when(dataSourceMapper.selectById(7L)).thenReturn(mysqlDs());
         List<Action> actions = List.of(remote(7L, "SELECT * FROM po_order WHERE id > {watermark}", 1));
-        assertThat(service.inferSourceKey(actions, SyncDirection.NORTH)).isEqualTo("db:po_order");
+        assertThat(service.inferSourceKey(actions)).isEqualTo("db:po_order");
     }
 
     @Test
@@ -104,7 +104,7 @@ class MappingHistoryServiceTest {
         action.setActionIndex(1);
         action.setAddition(Map.of("dataSourceId", 8L, "queue", "mes.to.edge"));
         List<Action> actions = List.of(action);
-        assertThat(service.inferSourceKey(actions, SyncDirection.SOUTH)).isEqualTo("mq:mes.to.edge");
+        assertThat(service.inferSourceKey(actions)).isEqualTo("mq:mes.to.edge");
     }
 
     @Test
@@ -114,8 +114,34 @@ class MappingHistoryServiceTest {
         action.setActionIndex(1);
         action.setAddition(Map.of("dataSourceId", 8L, "queue", "action.queue"));
 
-        assertThat(service.inferSourceKey(List.of(action), SyncDirection.SOUTH))
-                .isEqualTo("mq:action.queue");
+        assertThat(service.inferSourceKey(List.of(action))).isEqualTo("mq:action.queue");
+    }
+
+    @Test
+    void sourceKeyDecoupledFromDirection() {
+        // DS-9：入口是 MQ_CONSUME 但方向是 NORTH（客户发 MQ → 消费 → 推 MES HTTP）
+        Action action = new Action();
+        action.setType(ActionKind.MQ_CONSUME);
+        action.setActionIndex(1);
+        action.setAddition(Map.of("dataSourceId", 8L, "queue", "customer.in"));
+
+        assertThat(service.inferDirection(List.of(action))).isEqualTo(SyncDirection.SOUTH);
+        assertThat(service.inferSourceKey(List.of(action))).isEqualTo("mq:customer.in");
+
+        Job job = new Job();
+        job.setId(1L);
+        job.setSiteId(5L);
+        job.setDirection(SyncDirection.NORTH);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        when(actionMapper.selectList(any())).thenReturn(List.of(action));
+
+        service.recordFromAction(1L, List.of(new FieldMappingRule(null,
+                "orderNo", "order_no", TransformType.STRING, null, Map.of(), null)));
+
+        // 历史按 job.direction（NORTH）落库，sourceKey 按源动作（mq:customer.in）
+        org.mockito.Mockito.verify(historyMapper).insert(org.mockito.ArgumentMatchers.argThat((MappingHistory row) ->
+                row.getDirection() == SyncDirection.NORTH
+                        && "mq:customer.in".equals(row.getSourceKey())));
     }
 
     @Test
