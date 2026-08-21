@@ -1,6 +1,7 @@
 package com.example.edgegateway.config;
 
 import java.util.Map;
+import java.util.List;
 
 /** 配置 Map 的取值小工具：统一 null 处理和类型转换。 */
 final class ConfigValues {
@@ -15,6 +16,10 @@ final class ConfigValues {
     @SuppressWarnings("unchecked")
     static Map<String, Object> map(Object value) {
         return value instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+    }
+
+    static List<Object> list(Object value) {
+        return value instanceof List<?> l ? new java.util.ArrayList<>(l) : List.of();
     }
 
     static int intValue(Object value, int defaultValue) {

@@ -192,6 +192,8 @@ public class MappingHistoryService {
                 case DATE -> TransformKind.DATE;
                 case ENUM -> TransformKind.ENUM;
                 case CONSTANT -> TransformKind.CONSTANT;
+                // DS-10.2 层级场景新增类型：历史只记录基础推断，INDEX/CONCAT 归为 STRING 兜底
+                case INDEX, CONCAT -> TransformKind.STRING;
             };
         } catch (IllegalArgumentException e) {
             return TransformKind.STRING;

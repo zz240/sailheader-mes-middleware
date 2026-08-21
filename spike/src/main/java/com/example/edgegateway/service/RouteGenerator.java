@@ -12,6 +12,7 @@ import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.config.WriteUpsertConfig;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapping.FieldMapper;
+import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
@@ -182,11 +183,12 @@ public class RouteGenerator {
         return switch (action.getType()) {
             case FIELD_MAP -> {
                 FieldMappingConfig mapping = (FieldMappingConfig) config;
-                FieldMapper fieldMapper = new FieldMapper(List.of());
+                // DS-10.2 S1：结构化规则编译为 JSONata 表达式（路由构建时编译一次），执行器跨消息复用
+                JsonataFieldMapper fieldMapper = new JsonataFieldMapper(mapping.rules());
                 yield current.process(ex -> {
                     ex.setProperty(ACTION_INDEX, index);
                     Map<Integer, Object> context = context(ex);
-                    ex.getMessage().setBody(fieldMapper.apply(context, mapping.rules()));
+                    ex.getMessage().setBody(fieldMapper.apply(context));
                     context.put(index, ex.getMessage().getBody());
                     ex.setProperty(CONTEXT, context);
                 });

@@ -1,0 +1,281 @@
+package com.example.edgegateway.mapping;
+
+import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.FieldMappingRule;
+import org.junit.jupiter.api.Test;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/** DS-10.2 S1：rules → JSONata 编译器 + JsonataFieldMapper 执行器测试。 */
+class JsonataRuleCompilerTest {
+
+    private static final FieldMappingRule CONCAT = new FieldMappingRule(1, "product.productCode",
+            "bom.bomNo", TransformType.CONCAT, null, Map.of(), null, null, null,
+            List.of("BOM-", Map.of("path", "product.productCode")), null);
+
+    /** §4.3 规则树（制品→BOM），用 JsonataFieldMapper 端到端执行。 */
+    @Test
+    void bomRulesCompileAndExecute() {
+        FieldMappingRule group = new FieldMappingRule(1, "product.bomItems", "bom.bomLines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
+                                null, Map.of(), null, null, null, null, 1),
+                        new FieldMappingRule(null, "materialCode", "materialCode", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null),
+                        new FieldMappingRule(null, "materialName", "materialName", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null),
+                        new FieldMappingRule(null, "qty", "qty", TransformType.INT,
+                                null, Map.of(), null, null, null, null, null),
+                        new FieldMappingRule(null, "unit", "unit", TransformType.ENUM,
+                                null, Map.of("PCS", "件", "SET", "套"), null, null, null, null, null)),
+                null, null);
+
+        List<FieldMappingRule> rules = List.of(
+                CONCAT,
+                leaf(1, "product.productCode", "bom.productCode", TransformType.STRING),
+                leaf(1, "product.productName", "bom.productName", TransformType.STRING),
+                group);
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(rules);
+        Object result = mapper.apply(context(1, sourceProduct()));
+
+        Map<String, Object> bom = bom(result);
+        assertThat(bom.get("bomNo")).isEqualTo("BOM-PRD-BUMPER-001");
+        assertThat(bom.get("productCode")).isEqualTo("PRD-BUMPER-001");
+        assertThat(bom.get("productName")).isEqualTo("前保险杠");
+
+        List<Map<String, Object>> lines = bomLines(bom);
+        assertThat(lines).hasSize(2);
+        assertThat(lines.get(0)).containsEntry("lineNo", 1)
+                .containsEntry("materialCode", "MAT-718H")
+                .containsEntry("materialName", "718H模具钢")
+                .containsEntry("unit", "件");
+        assertThat(((Number) lines.get(0).get("qty")).intValue()).isEqualTo(1);
+        assertThat(lines.get(1)).containsEntry("lineNo", 2).containsEntry("materialName", "SKD61");
+        assertThat(((Number) lines.get(1).get("qty")).intValue()).isEqualTo(24);
+    }
+
+    /** 旧版扁平规则（含数组下标路径）经 JSONata 引擎执行，结果与自研 FieldMapper 一致。 */
+    @Test
+    void legacyFlatRulesBehaveAsBefore() {
+        List<FieldMappingRule> rules = List.of(
+                leaf(null, "order_no", "sheet_no", TransformType.STRING),
+                leaf(null, "order_date", "sheet_date", TransformType.DATE),
+                new FieldMappingRule(null, "status", "status", TransformType.ENUM,
+                        null, Map.of("ACTIVE", 1), null, null, null, null, null),
+                new FieldMappingRule(null, null, "source", TransformType.CONSTANT,
+                        "MES", Map.of(), null, null, null, null, null),
+                leaf(null, "qty", "qty", TransformType.INT),
+                leaf(null, "data.items[0].name", "firstName", TransformType.STRING));
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(rules);
+        Map<String, Object> source = Map.of(
+                "order_no", "PO-001",
+                "order_date", "2026-08-21",
+                "status", "ACTIVE",
+                "qty", "3",
+                "data", Map.of("items", List.of(Map.of("name", "张三"))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> out = (Map<String, Object>) mapper.apply(context(0, source));
+
+        assertThat(out).containsEntry("sheet_no", "PO-001")
+                .containsEntry("sheet_date", "2026-08-21")
+                .containsEntry("status", 1)
+                .containsEntry("source", "MES")
+                .containsEntry("firstName", "张三");
+        assertThat(((Number) out.get("qty")).intValue()).isEqualTo(3);
+    }
+
+    /** 多来源步骤：步骤 1 头字段 + 步骤 2 行数组，合并进同一目标对象。 */
+    @Test
+    void multiStepRulesMergeSources() {
+        FieldMappingRule group = new FieldMappingRule(2, "lines", "order.lines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
+                                null, Map.of(), null, null, null, null, 1),
+                        new FieldMappingRule(null, "itemCode", "itemCode", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null)),
+                null, null);
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(List.of(
+                leaf(1, "orderNo", "order.orderNo", TransformType.STRING),
+                group));
+
+        Map<Integer, Object> context = new LinkedHashMap<>();
+        context.put(1, Map.of("orderNo", "PO-9"));
+        context.put(2, Map.of("lines", List.of(
+                Map.of("itemCode", "A1"), Map.of("itemCode", "A2"))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> order = (Map<String, Object>) applyMap(mapper, context).get("order");
+        assertThat(order.get("orderNo")).isEqualTo("PO-9");
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) order.get("lines");
+        assertThat(lines.get(0)).containsEntry("lineNo", 1).containsEntry("itemCode", "A1");
+        assertThat(lines.get(1)).containsEntry("lineNo", 2).containsEntry("itemCode", "A2");
+    }
+
+    /** $root：组内子规则引用头字段（每个数组元素带出父级 bomNo）。 */
+    @Test
+    void rootReferencePullsHeaderIntoEachLine() {
+        FieldMappingRule group = new FieldMappingRule(1, "items", "bom.lines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "$root.bomNo", "bomNo", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null),
+                        new FieldMappingRule(null, "name", "name", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null)),
+                null, null);
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(List.of(group));
+        Map<String, Object> source = Map.of("bomNo", "BOM-X",
+                "items", List.of(Map.of("name", "a"), Map.of("name", "b")));
+
+        Map<String, Object> bom = bom(mapper.apply(context(1, source)));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) bom.get("lines");
+        assertThat(lines.get(0)).containsEntry("bomNo", "BOM-X").containsEntry("name", "a");
+        assertThat(lines.get(1)).containsEntry("bomNo", "BOM-X").containsEntry("name", "b");
+    }
+
+    /** 嵌套组：sections → items 两层数组迭代。 */
+    @Test
+    void nestedGroupsSupportTwoLevels() {
+        FieldMappingRule inner = new FieldMappingRule(null, "items", "lines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
+                                null, Map.of(), null, null, null, null, 1),
+                        new FieldMappingRule(null, "name", "name", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null)),
+                null, null);
+        FieldMappingRule outer = new FieldMappingRule(1, "sections", "doc.sections",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(
+                        new FieldMappingRule(null, "title", "title", TransformType.STRING,
+                                null, Map.of(), null, null, null, null, null),
+                        inner),
+                null, null);
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(List.of(outer));
+        Map<String, Object> source = Map.of("sections", List.of(
+                Map.of("title", "S1", "items", List.of(Map.of("name", "x"))),
+                Map.of("title", "S2", "items", List.of(Map.of("name", "y"), Map.of("name", "z")))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> doc = (Map<String, Object>) applyMap(mapper, context(1, source)).get("doc");
+        List<Map<String, Object>> sections = (List<Map<String, Object>>) doc.get("sections");
+        assertThat(sections).hasSize(2);
+        assertThat(sections.get(0)).containsEntry("title", "S1");
+        List<Map<String, Object>> lines0 = (List<Map<String, Object>>) sections.get(0).get("lines");
+        assertThat(lines0.get(0)).containsEntry("lineNo", 1).containsEntry("name", "x");
+        List<Map<String, Object>> lines1 = (List<Map<String, Object>>) sections.get(1).get("lines");
+        assertThat(lines1.get(1)).containsEntry("lineNo", 2).containsEntry("name", "z");
+    }
+
+    /** 编译期冲突与配置校验：重复目标 / 前缀冲突 / INDEX 顶层 / 组内 sourceStep / 空 CONCAT。 */
+    @Test
+    void rejectsInvalidRules() {
+        assertThatThrownBy(() -> new JsonataFieldMapper(List.of(
+                leaf(1, "a", "x.y", TransformType.STRING),
+                leaf(1, "b", "x.y", TransformType.STRING))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("重复映射");
+
+        assertThatThrownBy(() -> new JsonataFieldMapper(List.of(
+                leaf(1, "a", "x", TransformType.STRING),
+                leaf(1, "b", "x.y", TransformType.STRING))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("前缀冲突");
+
+        FieldMappingRule topIndex = new FieldMappingRule(1, "$index", "lineNo", TransformType.INDEX,
+                null, Map.of(), null, null, null, null, 1);
+        assertThatThrownBy(() -> new FieldMappingConfig(List.of(topIndex)).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("INDEX 转换只能在数组组内使用");
+
+        FieldMappingRule badChild = new FieldMappingRule(1, "items", "lines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(new FieldMappingRule(1, "name", "name", TransformType.STRING,
+                        null, Map.of(), null, null, null, null, null)),
+                null, null);
+        assertThatThrownBy(() -> new FieldMappingConfig(List.of(badChild)).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("子规则不允许再选 sourceStep");
+
+        FieldMappingRule emptyConcat = new FieldMappingRule(1, null, "code",
+                TransformType.CONCAT, null, Map.of(), null, null, null, List.of(), null);
+        assertThatThrownBy(() -> new FieldMappingConfig(List.of(emptyConcat)).validate())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("CONCAT 转换需要 parts");
+    }
+
+    /** FieldMappingConfig 往返：新字段（children/iterate/parts/startAt）不丢。 */
+    @Test
+    void configRoundTripKeepsHierarchy() {
+        FieldMappingRule group = new FieldMappingRule(1, "product.bomItems", "bom.bomLines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(new FieldMappingRule(null, "$index", "lineNo", TransformType.INDEX,
+                        null, Map.of(), null, null, null, null, 2)),
+                null, null);
+        FieldMappingConfig config = new FieldMappingConfig(List.of(CONCAT, group));
+
+        config.validate();
+        FieldMappingConfig restored = FieldMappingConfig.from(config.toMap());
+        FieldMappingRule restoredGroup = restored.rules().get(1);
+        assertThat(restoredGroup.iterate()).isEqualTo("FOR_EACH");
+        assertThat(restoredGroup.children()).hasSize(1);
+        assertThat(restoredGroup.children().get(0).transform()).isEqualTo(TransformType.INDEX);
+        assertThat(restoredGroup.children().get(0).startAt()).isEqualTo(2);
+        FieldMappingRule restoredConcat = restored.rules().get(0);
+        assertThat(restoredConcat.transform()).isEqualTo(TransformType.CONCAT);
+        assertThat(restoredConcat.parts()).containsExactly("BOM-", Map.of("path", "product.productCode"));
+    }
+
+    // ---------- helpers ----------
+
+    private static FieldMappingRule leaf(Integer step, String source, String target, TransformType type) {
+        return new FieldMappingRule(step, source, target, type, null, Map.of(), null,
+                null, null, null, null);
+    }
+
+    private static Map<Integer, Object> context(int step, Object value) {
+        Map<Integer, Object> context = new LinkedHashMap<>();
+        context.put(step, value);
+        return context;
+    }
+
+    private static Map<String, Object> sourceProduct() {
+        return Map.of(
+                "product", Map.of(
+                        "productCode", "PRD-BUMPER-001",
+                        "productName", "前保险杠",
+                        "bomItems", List.of(
+                                Map.of("materialCode", "MAT-718H", "materialName", "718H模具钢",
+                                        "qty", 1, "unit", "PCS"),
+                                Map.of("materialCode", "MAT-SKD61", "materialName", "SKD61",
+                                        "qty", 24, "unit", "PCS"))));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> applyMap(JsonataFieldMapper mapper, Map<Integer, Object> context) {
+        return (Map<String, Object>) mapper.apply(context);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> bom(Object result) {
+        return (Map<String, Object>) ((Map<String, Object>) result).get("bom");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> bomLines(Map<String, Object> bom) {
+        return (List<Map<String, Object>>) bom.get("bomLines");
+    }
+}

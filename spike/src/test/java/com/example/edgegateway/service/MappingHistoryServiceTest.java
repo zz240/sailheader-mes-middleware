@@ -136,7 +136,8 @@ class MappingHistoryServiceTest {
         when(actionMapper.selectList(any())).thenReturn(List.of(action));
 
         service.recordFromAction(1L, List.of(new FieldMappingRule(null,
-                "orderNo", "order_no", TransformType.STRING, null, Map.of(), null)));
+                "orderNo", "order_no", TransformType.STRING, null, Map.of(), null,
+                null, null, null, null)));
 
         // 历史按 job.direction（NORTH）落库，sourceKey 按源动作（mq:customer.in）
         org.mockito.Mockito.verify(historyMapper).insert(org.mockito.ArgumentMatchers.argThat((MappingHistory row) ->
@@ -156,7 +157,8 @@ class MappingHistoryServiceTest {
         when(historyMapper.selectOne(any())).thenReturn(null);
 
         service.recordFromAction(1L, List.of(new FieldMappingRule(null,
-                "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null)));
+                "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null,
+                null, null, null, null)));
 
         verify(historyMapper).insert(any(MappingHistory.class));
     }
@@ -176,7 +178,8 @@ class MappingHistoryServiceTest {
         when(historyMapper.selectOne(any())).thenReturn(existing);
 
         service.recordFromAction(1L, List.of(new FieldMappingRule(null,
-                "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null)));
+                "order_no", "sheet_no", TransformType.STRING, null, Map.of(), null,
+                null, null, null, null)));
 
         assertThat(existing.getHitCount()).isEqualTo(4);
         verify(historyMapper).updateById(existing);
