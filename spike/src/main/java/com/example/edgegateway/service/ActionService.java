@@ -8,6 +8,7 @@ import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
+import com.example.edgegateway.model.Job;
 import com.example.edgegateway.web.dto.ActionRequest;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +19,8 @@ import java.util.NoSuchElementException;
 /**
  * 动作业务：绑定/更新/删除/列表，校验动作序号唯一、动作种类合法与链约束
  * （MQ_CONSUME 只能链首、最多一个 MQ_CONSUME + 一个带水位 READ_SQL），
- * 引用数据源的动作校验数据源存在。
+ * 引用数据源的动作校验数据源存在；动作变更后若任务处于启用状态，
+ * 自动重建该任务的 Camel 路由（否则已运行路由不感知配置变化）。
  */
 @Service
 public class ActionService {
@@ -27,16 +29,19 @@ public class ActionService {
     private final JobMapper jobMapper;
     private final DataSourceMapper dataSourceMapper;
     private final MappingHistoryService mappingHistoryService;
+    private final RouteRegistry routeRegistry;
 
     public ActionService(
             ActionMapper actionMapper,
             JobMapper jobMapper,
             DataSourceMapper dataSourceMapper,
-            MappingHistoryService mappingHistoryService) {
+            MappingHistoryService mappingHistoryService,
+            RouteRegistry routeRegistry) {
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.dataSourceMapper = dataSourceMapper;
         this.mappingHistoryService = mappingHistoryService;
+        this.routeRegistry = routeRegistry;
     }
 
     public Action add(Long jobId, ActionRequest request) {
@@ -55,6 +60,7 @@ public class ActionService {
         apply(action, request);
         actionMapper.insert(action);
         recordMappingHistory(jobId, request);
+        rebuildRoutesIfEnabled(jobId);
         return action;
     }
 
@@ -70,12 +76,32 @@ public class ActionService {
         apply(action, request);
         actionMapper.updateById(action);
         recordMappingHistory(action.getJobId(), request);
+        rebuildRoutesIfEnabled(action.getJobId());
         return action;
     }
 
     public void delete(Long id) {
-        get(id);
+        Action action = get(id);
         actionMapper.deleteById(id);
+        rebuildRoutesIfEnabled(action.getJobId());
+    }
+
+    /**
+     * 动作变更后自动生效：任务处于启用状态时重建其 Camel 路由。
+     * 重建失败（如新配置编译不过）会把任务自动置为停用，避免"启用但无路由"的悬空状态。
+     */
+    private void rebuildRoutesIfEnabled(Long jobId) {
+        Job job = jobMapper.selectById(jobId);
+        if (job == null || job.getStatus() == null || job.getStatus() != 1) {
+            return;
+        }
+        try {
+            routeRegistry.enable(jobId);
+        } catch (RuntimeException e) {
+            job.setStatus(0);
+            jobMapper.updateById(job);
+            throw new IllegalArgumentException("动作已保存，但路由重建失败，任务已自动停用: " + e.getMessage(), e);
+        }
     }
 
     public Action get(Long id) {
