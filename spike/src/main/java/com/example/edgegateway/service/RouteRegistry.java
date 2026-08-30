@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class RouteRegistry {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(3)
     public void reloadEnabledJobs() {
         for (Job job : jobMapper.selectList(new LambdaQueryWrapper<Job>().eq(Job::getStatus, 1))) {
             try {

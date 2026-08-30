@@ -16,17 +16,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DataSourceServiceTest {
 
     private DataSourceMapper mapper;
+    private DataSourceManager manager;
     private DataSourceService service;
 
     @BeforeEach
     void setUp() {
         mapper = mock(DataSourceMapper.class);
-        service = new DataSourceService(mapper);
+        manager = mock(DataSourceManager.class);
+        service = new DataSourceService(mapper, manager);
     }
 
     private DataSourceRequest request(String name, DataSourceType type, DataSourceConfig addition) {
@@ -68,5 +71,35 @@ class DataSourceServiceTest {
 
         assertThatThrownBy(() -> service.create(request("dup", DataSourceType.HTTP, new HttpDataSourceConfig(null))))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void deleteInvalidatesPoolAfterRemoval() {
+        DataSource ds = new DataSource();
+        ds.setId(1L);
+        ds.setSiteId(1L);
+        ds.setName("erp");
+        ds.setType(DataSourceType.HTTP);
+        when(mapper.selectById(1L)).thenReturn(ds);
+
+        service.delete(1L);
+
+        verify(mapper).deleteById(1L);
+        verify(manager).invalidate(1L);
+    }
+
+    @Test
+    void updateInvalidatesPoolWhenConnectionParamsChange() {
+        DataSource ds = new DataSource();
+        ds.setId(1L);
+        ds.setSiteId(1L);
+        ds.setName("erp");
+        ds.setType(DataSourceType.HTTP);
+        when(mapper.selectById(1L)).thenReturn(ds);
+        when(mapper.selectCount(any())).thenReturn(0L);
+
+        service.update(1L, request("erp", DataSourceType.HTTP, new HttpDataSourceConfig(null)));
+
+        verify(manager).invalidate(1L);
     }
 }

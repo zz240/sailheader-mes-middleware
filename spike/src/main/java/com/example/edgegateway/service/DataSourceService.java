@@ -21,8 +21,11 @@ import java.util.NoSuchElementException;
 public class DataSourceService {
 
     private final DataSourceMapper dataSourceMapper;
-    public DataSourceService(DataSourceMapper dataSourceMapper) {
+    private final DataSourceManager dataSourceManager;
+
+    public DataSourceService(DataSourceMapper dataSourceMapper, DataSourceManager dataSourceManager) {
         this.dataSourceMapper = dataSourceMapper;
+        this.dataSourceManager = dataSourceManager;
     }
 
     public DataSource create(DataSourceRequest request) {
@@ -48,12 +51,15 @@ public class DataSourceService {
         existing.setAddress(request.address());
         existing.setAddition(request.addition().toMap());
         dataSourceMapper.updateById(existing);
+        // 连接参数可能已变化，旧池失效；路由级联动（#68）后续再做
+        dataSourceManager.invalidate(id);
         return existing;
     }
 
     public void delete(Long id) {
         get(id);
         dataSourceMapper.deleteById(id);
+        dataSourceManager.invalidate(id);
     }
 
     public DataSource get(Long id) {
