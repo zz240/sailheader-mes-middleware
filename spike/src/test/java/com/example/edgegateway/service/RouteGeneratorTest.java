@@ -15,7 +15,6 @@ import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.ToDefinition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,20 +22,25 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** 片段组合生成器：按动作种类组合，现有北向/南向链路行为不变 + MQ_PUBLISH 新组合。 */
 class RouteGeneratorTest {
 
     private DataSourceMapper dataSourceMapper;
+    private DataSourceManager dataSourceManager;
     private RouteGenerator generator;
 
     @BeforeEach
     void setUp() {
         dataSourceMapper = mock(DataSourceMapper.class);
+        dataSourceManager = mock(DataSourceManager.class);
         generator = new RouteGenerator(
-                dataSourceMapper, mock(WatermarkStore.class), mock(JdbcTemplate.class), mock(DeadLetterService.class));
+                dataSourceMapper, mock(WatermarkStore.class), mock(DeadLetterService.class), dataSourceManager);
     }
 
     private DataSource mysqlDataSource(Long id) {
@@ -102,6 +106,7 @@ class RouteGeneratorTest {
     void generatesNorthboundChainWithReadMapHttp() throws Exception {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
+        when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
 
         Job job = new Job();
         job.setId(7L);
@@ -131,6 +136,7 @@ class RouteGeneratorTest {
     void generatesTimestampWatermarkFromReadSqlAction() throws Exception {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
+        when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
 
         Job job = new Job();
         job.setId(8L);
@@ -148,9 +154,30 @@ class RouteGeneratorTest {
     }
 
     @Test
+    void readSqlRoutesToActionSelectedCustomerDataSource() throws Exception {
+        when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
+        when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
+
+        Job job = new Job();
+        job.setId(11L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select id from po_order where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 1, "source", "id", "target", "id")))));
+
+        DefaultCamelContext context = buildContext(job, actions);
+        List<String> uris = collectUris(findRoute(context, "job-11"));
+        // 数据源引用应指向动作选定的客户库 bean，而非网关自身配置库
+        assertThat(uris).anyMatch(u -> u.contains("sql:") && u.contains("dataSource=#edge-ds-1"));
+    }
+
+    @Test
     void generatesSouthboundChainWithConsumeMapUpsert() throws Exception {
         when(dataSourceMapper.selectById(1L)).thenReturn(rabbitDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(mysqlDataSource(2L));
+        when(dataSourceManager.get(2L)).thenReturn(mock(javax.sql.DataSource.class));
 
         Job job = new Job();
         job.setId(9L);
@@ -170,6 +197,43 @@ class RouteGeneratorTest {
         RouteDefinition replay = findRoute(context, "direct-9");
         assertThat(replay).isNotNull();
         assertThat(replay.getInput().getUri()).isEqualTo("direct:job-9");
+        // WRITE_UPSERT 必须用动作选定客户库的连接池构造 JdbcTemplate（#67），而非全局配置库；
+        // 消费主路由 + 重放路由各构建一次动作链
+        verify(dataSourceManager, times(2)).get(2L);
+    }
+
+    /** #67 幂等 upsert SQL：动态列 + 业务键 ON DUPLICATE KEY UPDATE，同业务键重复执行不产生重复行。 */
+    @Test
+    void writeUpsertBuildsIdempotentSqlByBusinessKey() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("order_no", "PO-1");
+        row.put("qty", 2);
+        row.put("product", "M-1");
+
+        String sql = generator.buildUpsertSql(row, "po_receipt", "order_no");
+        assertThat(sql).startsWith("insert into po_receipt (");
+        assertThat(sql).contains("on duplicate key update");
+        assertThat(sql).contains("qty = values(qty)");
+        assertThat(sql).contains("product = values(product)");
+        // 业务键不作 update 目标，避免覆盖主键语义
+        assertThat(sql).doesNotContain("order_no = values(order_no)");
+    }
+
+    /** WRITE_UPSERT 引用的客户库不可用（非 MySQL/未配置）时应在注册期快速失败，避免写入静默落到配置库（#67 AC1）。 */
+    @Test
+    void writeUpsertWithUnavailableCustomerDataSourceFailsAtRouteBuild() {
+        when(dataSourceManager.get(2L)).thenReturn(null);
+
+        Job job = new Job();
+        job.setId(12L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 2L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
+
+        // 触发 addRoutes/configure 才会逐动作构建，进而走 customerWriteJdbc 的注册期校验
+        assertThatThrownBy(() -> buildContext(job, actions))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("数据源不可用");
     }
 
     /** 重放入口必须把原始输入存为 edge.originalInput，死信重投才能用原始输入重跑整条链。 */
@@ -206,6 +270,7 @@ class RouteGeneratorTest {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
         when(dataSourceMapper.selectById(3L)).thenReturn(rabbitDataSource(3L));
+        when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
 
         Job job = new Job();
         job.setId(10L);

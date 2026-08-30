@@ -53,18 +53,18 @@ public class RouteGenerator {
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
-    private final JdbcTemplate jdbcTemplate;
     private final DeadLetterService deadLetterService;
+    private final DataSourceManager dataSourceManager;
 
     public RouteGenerator(
             DataSourceMapper dataSourceMapper,
             WatermarkStore watermarkStore,
-            JdbcTemplate jdbcTemplate,
-            DeadLetterService deadLetterService) {
+            DeadLetterService deadLetterService,
+            DataSourceManager dataSourceManager) {
         this.dataSourceMapper = dataSourceMapper;
         this.watermarkStore = watermarkStore;
-        this.jdbcTemplate = jdbcTemplate;
         this.deadLetterService = deadLetterService;
+        this.dataSourceManager = dataSourceManager;
     }
 
     public List<RouteBuilder> build(Job job, List<Action> actions) {
@@ -153,13 +153,15 @@ public class RouteGenerator {
             ActionConfig config = ActionConfig.from(kind, action.getAddition());
             if (kind == ActionKind.READ_SQL && !inSplit) {
                 ReadSqlConfig read = (ReadSqlConfig) config;
+                // 确保动作选定的客户库连接池已建立并绑定 edge-ds-<id> bean，路由启动才能按名解析
+                customerDataSource(read.dataSourceId());
                 String sql = read.sql().replace("{watermark}", watermarkPredicate(read));
                 current = current
                         .process(ex -> {
                             ex.setProperty(ACTION_INDEX, action.getActionIndex());
                             readWatermark(ex, job, read);
                         })
-                        .to("sql:" + sql + "?dataSource=#dataSource&outputType=SelectList")
+                        .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
                         .process(ex -> computeMax(ex, job, read))
                         .split(ExpressionBuilder.bodyExpression());
                 inSplit = true;
@@ -200,9 +202,10 @@ public class RouteGenerator {
             }
             case WRITE_UPSERT -> {
                 WriteUpsertConfig write = (WriteUpsertConfig) config;
+                JdbcTemplate writeJdbc = new JdbcTemplate(customerDataSource(write.dataSourceId()));
                 yield current.process(ex -> {
                     ex.setProperty(ACTION_INDEX, index);
-                    upsert(ex, write.tableName(), write.idempotencyKey());
+                    upsert(ex, writeJdbc, write.tableName(), write.idempotencyKey());
                 });
             }
             case HTTP_CALL -> {
@@ -342,8 +345,16 @@ public class RouteGenerator {
         }
     }
 
-    private void upsert(Exchange exchange, String table, String idempotencyKey) {
+    private void upsert(Exchange exchange, JdbcTemplate jdbc, String table, String idempotencyKey) {
         Map<String, Object> row = exchange.getMessage().getBody(Map.class);
+        jdbc.update(buildUpsertSql(row, table, idempotencyKey), row.values().toArray());
+    }
+
+    /**
+     * 生成幂等 upsert SQL（#67）：动态列 + 业务键 {@code ON DUPLICATE KEY UPDATE}。
+     * 包内可见以便单测校验幂等语义（同业务键重复执行不产生重复行）。
+     */
+    String buildUpsertSql(Map<String, Object> row, String table, String idempotencyKey) {
         List<String> columns = new ArrayList<>(row.keySet());
         String columnList = String.join(",", columns);
         String placeholders = String.join(",", Collections.nCopies(columns.size(), "?"));
@@ -351,10 +362,9 @@ public class RouteGenerator {
                 .filter(c -> !c.equals(idempotencyKey))
                 .map(c -> c + " = values(" + c + ")")
                 .collect(Collectors.joining(", "));
-        String sql = "insert into " + table + " (" + columnList + ") values (" + placeholders + ")"
+        return "insert into " + table + " (" + columnList + ") values (" + placeholders + ")"
                 + " on duplicate key update "
                 + (updates.isEmpty() ? idempotencyKey + " = values(" + idempotencyKey + ")" : updates);
-        jdbcTemplate.update(sql, columns.stream().map(row::get).toArray());
     }
 
     private String composeUrl(String base, String path) {
@@ -365,6 +375,19 @@ public class RouteGenerator {
             return base + path.replaceFirst("^/", "");
         }
         return base + (path.startsWith("/") ? path : "/" + path);
+    }
+
+    /**
+     * 取动作选定的客户库连接池并确保其已登记为 {@code edge-ds-<id>} bean（懒建），
+     * 供 READ_SQL 的 {@code #edge-ds-<id>} 与 WRITE_UPSERT 的 {@link JdbcTemplate} 使用。
+     * 数据源缺失或非 MySQL 时注册期即失败，避免把读写错误落到错误库。
+     */
+    private javax.sql.DataSource customerDataSource(Long dataSourceId) {
+        javax.sql.DataSource pool = dataSourceManager.get(dataSourceId);
+        if (pool == null) {
+            throw new IllegalArgumentException("动作引用的数据源不可用（非 MySQL 或未配置）: " + dataSourceId);
+        }
+        return pool;
     }
 
     private String formatTime(long epochMillis) {
