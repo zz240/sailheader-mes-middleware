@@ -5,15 +5,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** MySQL 数据源配置：url、username、password 都必填。 */
-public record MysqlDataSourceConfig(String url, String username, String password)
+/**
+ * MySQL 数据源配置（连接级，ADR-0007）：连接 url 取数据源 {@code address}，addition 仅存 username/password。
+ */
+public record MysqlDataSourceConfig(String username, String password)
         implements DataSourceConfig {
 
     public static MysqlDataSourceConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("url", "username", "password"));
+        rejectUnknownKeys(map, Set.of("username", "password"));
         return new MysqlDataSourceConfig(
-                ConfigValues.str(map.get("url")),
                 ConfigValues.str(map.get("username")),
                 ConfigValues.str(map.get("password")));
     }
@@ -25,9 +26,6 @@ public record MysqlDataSourceConfig(String url, String username, String password
 
     @Override
     public void validate() {
-        if (url == null || url.isBlank()) {
-            throw new IllegalArgumentException("MySQL 数据源需要 url");
-        }
         if (username == null || username.isBlank()) {
             throw new IllegalArgumentException("MySQL 数据源需要 username");
         }
@@ -39,7 +37,6 @@ public record MysqlDataSourceConfig(String url, String username, String password
     @Override
     public Map<String, Object> toMap() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("url", url);
         map.put("username", username);
         map.put("password", password);
         return map;

@@ -11,7 +11,8 @@
             <el-option label="FAILED" value="FAILED" />
             <el-option label="REDELIVERED" value="REDELIVERED" />
           </el-select>
-          <el-button type="primary" @click="load">查询</el-button>
+          <el-button type="primary" @click="query">查询</el-button>
+          <el-button @click="reset">重置</el-button>
         </div>
       </div>
     </template>
@@ -41,6 +42,17 @@
       </el-table-column>
     </el-table>
 
+    <el-pagination
+      v-model:current-page="currentPage"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="[10, 20, 50, 100]"
+      layout="total, sizes, prev, pager, next, jumper"
+      class="pager"
+      @current-change="load"
+      @size-change="onSizeChange"
+    />
+
     <el-dialog v-model="detailVisible" title="死信详情" width="640px">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="ID">{{ detailRow?.id }}</el-descriptions-item>
@@ -62,12 +74,15 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
-import type { DeadLetter, Job } from '../types'
+import type { DeadLetter, DeadLetterPage, Job } from '../types'
 
 const list = ref<DeadLetter[]>([])
 const jobs = ref<Job[]>([])
 const filterJobId = ref<number | null>(null)
-const filterStatus = ref('')
+const filterStatus = ref('FAILED')
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const detailVisible = ref(false)
 const detailRow = ref<DeadLetter | null>(null)
 
@@ -75,8 +90,29 @@ async function load() {
   const params = new URLSearchParams()
   if (filterJobId.value) params.set('jobId', String(filterJobId.value))
   if (filterStatus.value) params.set('status', filterStatus.value)
+  params.set('page', String(currentPage.value))
+  params.set('size', String(pageSize.value))
   const qs = params.toString()
-  list.value = await api<DeadLetter[]>(`/dead-letters${qs ? '?' + qs : ''}`)
+  const page = await api<DeadLetterPage>(`/dead-letters${qs ? '?' + qs : ''}`)
+  list.value = page.records
+  total.value = page.total
+}
+
+function query() {
+  currentPage.value = 1
+  load()
+}
+
+function reset() {
+  filterJobId.value = null
+  filterStatus.value = 'FAILED'
+  currentPage.value = 1
+  load()
+}
+
+function onSizeChange() {
+  currentPage.value = 1
+  load()
 }
 
 async function detail(row: DeadLetter) {
@@ -104,5 +140,6 @@ onMounted(async () => {
 <style scoped>
 .header { display: flex; justify-content: space-between; align-items: center; }
 .filters { display: flex; gap: 8px; }
+.pager { margin-top: 12px; justify-content: flex-end; }
 .pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
 </style>

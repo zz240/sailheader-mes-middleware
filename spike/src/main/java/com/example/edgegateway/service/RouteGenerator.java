@@ -49,6 +49,7 @@ public class RouteGenerator {
 
     private static final String CONTEXT = "edge.context";
     private static final String ACTION_INDEX = "edge.actionIndex";
+    private static final String ORIGINAL_INPUT = "edge.originalInput";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
@@ -115,6 +116,7 @@ public class RouteGenerator {
                         .process(ex -> {
                             Map<Integer, Object> context = context(ex);
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
+                            ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
                         });
                 appendChain(route, actions.subList(1, actions.size()), job);
@@ -133,6 +135,7 @@ public class RouteGenerator {
                         .process(ex -> {
                             Map<Integer, Object> context = context(ex);
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
+                            ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
                         });
                 appendChain(route, actions.subList(1, actions.size()), job);
@@ -284,7 +287,7 @@ public class RouteGenerator {
     }
 
     private void recordDeadLetter(Exchange exchange, Job job) {
-        Object input = exchange.getProperty("edge.originalInput", Object.class);
+        Object input = exchange.getProperty(ORIGINAL_INPUT, Object.class);
         if (input == null) {
             input = exchange.getMessage().getBody();
         }

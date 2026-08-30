@@ -22,21 +22,46 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="formVisible" :title="editing ? '编辑数据源' : '新建数据源'" width="560px">
+    <el-dialog v-model="formVisible" :title="editing ? '编辑数据源' : '新建数据源'" width="600px">
       <el-form label-width="90px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="站点 ID"><el-input-number v-model="form.siteId" :min="1" /></el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="form.type">
+          <el-select v-model="form.type" @change="onTypeChange">
             <el-option label="HTTP" value="HTTP" />
             <el-option label="MySQL" value="MYSQL" />
             <el-option label="RabbitMQ" value="RABBITMQ" />
           </el-select>
         </el-form-item>
-        <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
-        <el-form-item label="addition">
-          <el-input v-model="additionText" type="textarea" :rows="5" placeholder='连接级配置：HTTP 填 {"token":"..."}（可选，地址为根地址，path/method 在动作里配）；MySQL 填 url/username/password；RabbitMQ 填 host/port/账号密码（queue 在动作里配）' />
+
+        <el-form-item label="地址">
+          <el-input v-model="form.address" :placeholder="addressPlaceholder" />
         </el-form-item>
+
+        <!-- 按类型特化的 addition 字段 -->
+        <template v-if="form.type === 'HTTP'">
+          <el-form-item label="Token">
+            <el-input v-model="addition.token" type="password" show-password placeholder="可选，Bearer 鉴权" />
+          </el-form-item>
+        </template>
+        <template v-else-if="form.type === 'MYSQL'">
+          <el-form-item label="用户名"><el-input v-model="addition.username" placeholder="如 gateway" /></el-form-item>
+          <el-form-item label="密码"><el-input v-model="addition.password" type="password" show-password /></el-form-item>
+        </template>
+        <template v-else-if="form.type === 'RABBITMQ'">
+          <el-form-item label="Host"><el-input v-model="addition.host" placeholder="默认 localhost" /></el-form-item>
+          <el-form-item label="Port"><el-input-number v-model="addition.port" :min="1" :max="65535" /></el-form-item>
+          <el-form-item label="用户名"><el-input v-model="addition.username" placeholder="默认 guest" /></el-form-item>
+          <el-form-item label="密码"><el-input v-model="addition.password" type="password" show-password placeholder="默认 guest" /></el-form-item>
+        </template>
+
+        <div class="hint">path / method / queue 等具体资源在动作里配，不在此处。</div>
+
+        <el-collapse class="advanced">
+          <el-collapse-item title="高级：原始 addition JSON（可选，非空时优先）">
+            <el-input v-model="advancedText" type="textarea" :rows="3" placeholder='直接编辑 JSON 时优先，如 {"token":"..."}' />
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
@@ -67,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { DataSource, ProbeResult } from '../types'
@@ -76,7 +101,18 @@ const list = ref<DataSource[]>([])
 const formVisible = ref(false)
 const editing = ref<DataSource | null>(null)
 const form = reactive({ name: '', siteId: 1, type: 'HTTP' as string, address: '' })
-const additionText = ref('{}')
+
+// 按类型特化的 addition 字段：token / username / password / host / port
+const addition = reactive({ token: '', username: '', password: '', host: '', port: 5672 })
+const advancedText = ref('') // 高级原始 JSON，非空时优先
+
+const addressPlaceholder = computed(() => {
+  switch (form.type) {
+    case 'MYSQL': return 'jdbc:mysql://host:3306/库名（作为连接 url，以 address 为准）'
+    case 'RABBITMQ': return 'amqp://host:5672（broker）'
+    default: return 'http://host:port（根地址，path/method 在动作里配）'
+  }
+})
 
 const probeVisible = ref(false)
 const probeDs = ref<DataSource | null>(null)
@@ -85,6 +121,60 @@ const probeSample = ref('')
 const probeResult = ref<ProbeResult | null>(null)
 const probeMsg = ref('')
 
+function resetAddition() {
+  Object.assign(addition, { token: '', username: '', password: '', host: '', port: 5672 })
+}
+
+function initAddition(ad: Record<string, any> | undefined, type: string) {
+  resetAddition()
+  const a = ad || {}
+  if (type === 'HTTP') {
+    addition.token = a.token ?? ''
+  } else if (type === 'MYSQL') {
+    addition.username = a.username ?? ''
+    addition.password = a.password ?? ''
+  } else if (type === 'RABBITMQ') {
+    addition.host = a.host ?? 'localhost'
+    addition.port = a.port ?? 5672
+    addition.username = a.username ?? 'guest'
+    addition.password = a.password ?? 'guest'
+  }
+}
+
+function buildAddition(): Record<string, any> {
+  const o: Record<string, any> = {}
+  if (form.type === 'HTTP') {
+    if (addition.token) o.token = addition.token
+  } else if (form.type === 'MYSQL') {
+    // url 以 address 为准（后端 MysqlDataSourceConfig 不再接收 url）
+    if (addition.username) o.username = addition.username
+    if (addition.password) o.password = addition.password
+  } else if (form.type === 'RABBITMQ') {
+    if (addition.host) o.host = addition.host
+    const p = Number(addition.port)
+    if (Number.isInteger(p) && p > 0) o.port = p
+    if (addition.username) o.username = addition.username
+    if (addition.password) o.password = addition.password
+  }
+  return o
+}
+
+function formValidate(): string | null {
+  if (!form.address) return '需要填写地址'
+  if (form.type === 'MYSQL') {
+    if (!addition.username) return 'MySQL 需要用户名'
+    if (!addition.password) return 'MySQL 需要密码'
+  }
+  if (form.type === 'RABBITMQ' && addition.port != null && !Number.isInteger(Number(addition.port))) {
+    return '端口必须是整数'
+  }
+  return null
+}
+
+function onTypeChange() {
+  resetAddition()
+}
+
 async function load() {
   list.value = await api<DataSource[]>('/data-sources')
 }
@@ -92,19 +182,37 @@ async function load() {
 function openCreate() {
   editing.value = null
   Object.assign(form, { name: '', siteId: 1, type: 'HTTP', address: '' })
-  additionText.value = '{}'
+  resetAddition()
+  advancedText.value = ''
   formVisible.value = true
 }
 
 function openEdit(row: DataSource) {
   editing.value = row
   Object.assign(form, { name: row.name, siteId: row.siteId, type: row.type, address: row.address })
-  additionText.value = JSON.stringify(row.addition || {}, null, 2)
+  initAddition(row.addition, row.type)
+  advancedText.value = ''
   formVisible.value = true
 }
 
 async function save() {
-  const body = { name: form.name, siteId: form.siteId, type: form.type, address: form.address, addition: JSON.parse(additionText.value || '{}') }
+  const err = formValidate()
+  if (err) {
+    ElMessage.error(err)
+    return
+  }
+  let additionValue: Record<string, any>
+  if (advancedText.value.trim()) {
+    try {
+      additionValue = JSON.parse(advancedText.value)
+    } catch {
+      ElMessage.error('高级 addition 不是合法 JSON')
+      return
+    }
+  } else {
+    additionValue = buildAddition()
+  }
+  const body = { name: form.name, siteId: form.siteId, type: form.type, address: form.address, addition: additionValue }
   try {
     if (editing.value) {
       await api(`/data-sources/${editing.value.id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -163,4 +271,6 @@ onMounted(load)
 .header { display: flex; justify-content: space-between; align-items: center; }
 .probe-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .msg { margin-top: 8px; font-size: 12px; color: #2563eb; white-space: pre-wrap; }
+.hint { margin: 4px 0 8px; font-size: 12px; color: #909399; }
+.advanced { margin-top: 4px; }
 </style>

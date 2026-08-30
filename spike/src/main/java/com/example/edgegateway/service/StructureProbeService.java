@@ -97,7 +97,7 @@ public class StructureProbeService {
         MysqlDataSourceConfig config = (MysqlDataSourceConfig)
                 DataSourceConfig.from(dataSource.getType(), dataSource.getAddition());
         String sql = "SELECT * FROM " + table + " LIMIT " + SAMPLE_LIMIT;
-        try (Connection conn = DriverManager.getConnection(config.url(), config.username(), config.password());
+        try (Connection conn = DriverManager.getConnection(dataSource.getAddress(), config.username(), config.password());
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             ResultSetMetaData meta = rs.getMetaData();

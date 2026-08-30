@@ -34,7 +34,7 @@ public class ConnectionTester {
                     DataSourceConfig.from(dataSource.getType(), dataSource.getAddition());
             return switch (config) {
                 case HttpDataSourceConfig c -> testHttp(dataSource.getAddress(), c);
-                case MysqlDataSourceConfig c -> testMysql(c);
+                case MysqlDataSourceConfig c -> testMysql(dataSource.getAddress(), c);
                 case RabbitMqDataSourceConfig c -> testRabbitMq(c);
             };
         } catch (Exception e) {
@@ -61,11 +61,11 @@ public class ConnectionTester {
         return new TestResult(true, "HTTP " + response.statusCode());
     }
 
-    private TestResult testMysql(MysqlDataSourceConfig config) throws Exception {
-        // MySQL：用类型化配置里的 url/username/password 建立 JDBC 连接
+    private TestResult testMysql(String url, MysqlDataSourceConfig config) throws Exception {
+        // MySQL：url 取数据源 address，username/password 取类型化配置
         DriverManager.setLoginTimeout(3);
         try (var connection =
-                     DriverManager.getConnection(config.url(), config.username(), config.password())) {
+                     DriverManager.getConnection(url, config.username(), config.password())) {
             return new TestResult(true, "数据库连接成功");
         }
     }

@@ -61,8 +61,8 @@ class MappingHistoryServiceTest {
         DataSource ds = new DataSource();
         ds.setId(7L);
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition(Map.of("url", "jdbc:mysql://localhost:3306/x",
-                "username", "u", "password", "p"));
+        ds.setAddress("jdbc:mysql://localhost:3306/x");
+        ds.setAddition(Map.of("username", "u", "password", "p"));
         return ds;
     }
 
@@ -70,7 +70,7 @@ class MappingHistoryServiceTest {
         DataSource ds = new DataSource();
         ds.setId(8L);
         ds.setType(DataSourceType.RABBITMQ);
-        ds.setAddition(Map.of("queue", "mes.to.edge"));
+        ds.setAddition(Map.of("host", "localhost", "port", 5672));
         return ds;
     }
 

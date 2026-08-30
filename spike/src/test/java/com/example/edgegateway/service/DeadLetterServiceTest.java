@@ -3,9 +3,13 @@ package com.example.edgegateway.service;
 import com.example.edgegateway.mapper.DeadLetterMapper;
 import com.example.edgegateway.model.DeadLetter;
 import com.example.edgegateway.model.Job;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.camel.converter.stream.InputStreamCache;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -37,12 +41,42 @@ class DeadLetterServiceTest {
         DeadLetter deadLetter = new DeadLetter();
         deadLetter.setId(1L);
         deadLetter.setStatus("FAILED");
-        when(mapper.selectList(any())).thenReturn(List.of(deadLetter));
+        Page<DeadLetter> page = new Page<>(1, 20);
+        page.setRecords(List.of(deadLetter));
+        page.setTotal(1);
+        when(mapper.selectPage(any(), any())).thenReturn(page);
 
-        List<DeadLetter> list = service.list(7L, "FAILED");
+        Map<String, Object> result = service.list(7L, "FAILED", 1, 20);
 
-        assertThat(list).hasSize(1);
-        assertThat(list.get(0).getStatus()).isEqualTo("FAILED");
+        assertThat(result.get("total")).isEqualTo(1L);
+        assertThat((List<?>) result.get("records")).hasSize(1);
+    }
+
+    @Test
+    void recordConvertsStreamCacheInputToJsonString() throws Exception {
+        String json = "{\"orderNo\":\"MO-1\",\"material\":\"M-9\",\"qty\":10}";
+        try (InputStreamCache cache = new InputStreamCache(json.getBytes(StandardCharsets.UTF_8))) {
+            service.record(7L, 3, cache, new IllegalStateException("boom"));
+        }
+        ArgumentCaptor<DeadLetter> captor = ArgumentCaptor.forClass(DeadLetter.class);
+        verify(mapper).insert(captor.capture());
+
+        assertThat(captor.getValue().getInputJson()).isEqualTo(json);
+        assertThat(captor.getValue().getInputJson()).doesNotContain("InputStreamCache");
+    }
+
+    @Test
+    void redeliverRejectsNonJsonInput() {
+        DeadLetter deadLetter = new DeadLetter();
+        deadLetter.setId(1L);
+        deadLetter.setJobId(7L);
+        deadLetter.setInputJson("org.apache.camel.converter.stream.InputStreamCache@123");
+        deadLetter.setStatus("FAILED");
+        when(mapper.selectById(1L)).thenReturn(deadLetter);
+
+        assertThatThrownBy(() -> service.redeliver(1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不是 JSON 对象");
     }
 
     @Test

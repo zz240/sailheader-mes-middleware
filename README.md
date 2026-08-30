@@ -17,9 +17,12 @@
 ├── CONTEXT.md                  # 领域词汇表
 ├── AGENTS.md                   # 给 agent 的仓库约定
 ├── docs/
-│   ├── edge-gateway-design.md  # 设计文档（已定稿）
+│   ├── user-guide.md           # 用户操作手册（当前功能）
 │   ├── mock-contract.md        # 环境 mock 契约
 │   ├── adr/                    # 架构决策记录
+│   ├── features/               # 功能演化页（现状 + 决策时间线）
+│   ├── flows/                  # 数据流走查地图（业务↔代码对应 + 建议表）
+│   ├── archive/                # 已归档的过时文档（历史草案等）
 │   └── agents/                 # issue tracker / triage / domain 配置
 ├── frontend/                   # 前端工程（Vue 3 + TS + Vite + Element Plus）
 └── spike/                      # Spring Boot + Camel Spike 工程
@@ -64,7 +67,7 @@ npm run dev
 
 ## 状态
 
-- 设计定稿（`docs/edge-gateway-design.md` + ADR-0001~0004）
+- 文档分层：用户看 `docs/user-guide.md`，开发者看 `docs/features/`，决策基线在 `docs/adr/`（历史草案已归档到 `docs/archive/`）
 - Spike 已端到端跑通（MySQL → 字段映射 → mock MES；RabbitMQ → 字段映射 → MySQL 幂等 upsert）
 - 进行中：M0（配置模型 + REST + 路由生成器 + 表单 UI）
 

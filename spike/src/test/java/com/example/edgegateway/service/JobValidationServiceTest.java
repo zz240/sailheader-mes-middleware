@@ -70,8 +70,8 @@ class JobValidationServiceTest {
         DataSource ds = new DataSource();
         ds.setId(7L);
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition(Map.of("url", "jdbc:mysql://localhost:3306/x",
-                "username", "u", "password", "p"));
+        ds.setAddress("jdbc:mysql://localhost:3306/x");
+        ds.setAddition(Map.of("username", "u", "password", "p"));
         return ds;
     }
 

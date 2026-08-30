@@ -9,6 +9,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Map;
 import java.util.List;
 
 import static org.mockito.Mockito.when;
@@ -40,12 +41,24 @@ class DeadLetterControllerTest {
 
     @Test
     void listsDeadLetters() throws Exception {
-        when(deadLetterService.list(7L, "FAILED")).thenReturn(List.of(deadLetter(1L, 7L)));
+        when(deadLetterService.list(7L, "FAILED", 1, 20))
+                .thenReturn(Map.of("total", 1, "records", List.of(deadLetter(1L, 7L))));
 
         mockMvc.perform(get("/api/dead-letters").param("jobId", "7").param("status", "FAILED"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].jobId").value(7))
-                .andExpect(jsonPath("$.data[0].status").value("FAILED"));
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].jobId").value(7))
+                .andExpect(jsonPath("$.data.records[0].status").value("FAILED"));
+    }
+
+    @Test
+    void listsDeadLettersWithPagination() throws Exception {
+        when(deadLetterService.list(null, null, 2, 50))
+                .thenReturn(Map.of("total", 0, "records", List.of()));
+
+        mockMvc.perform(get("/api/dead-letters").param("page", "2").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
     }
 
     @Test

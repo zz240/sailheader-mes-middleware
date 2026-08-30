@@ -1,0 +1,81 @@
+# 南向同步（RabbitMQ 订阅 → 字段映射 → 幂等 upsert 客户 MySQL）
+
+## 场景说明
+
+把云上 MES 下发的消息（`mes.to.edge`）同步到客户侧：**MQ 订阅 → 字段映射 → MySQL 幂等 upsert**。
+入口 = MQ_CONSUME 动作（链首，只能序号 1）；落点 = 客户表 `po_receipt`（键 `order_no`）。
+
+### 交互清单
+
+| 角色 | 动作 | 触发方式 | 期望结果 |
+|---|---|---|---|
+| 云上 MES | 投递业务消息 | 向 `mes.to.edge` 发布 | 网关消费到 |
+| 系统 | 消费并保真原始输入 | 自动（MQ_CONSUME） | 消息体入上下文 + `edge.originalInput` |
+| 系统 | 字段映射 | 自动（FIELD_MAP） | 产出目标结构 |
+| 系统 | 幂等写库 | 自动（WRITE_UPSERT） | `po_receipt` 按 `order_no` upsert；重复消息不产生重复行 |
+
+## 流程详解
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant PUB as 发布方(tools/mq-publish.ps1)
+    participant MQ as RabbitMQ(mes.to.edge)
+    participant RG as buildConsumerEntry
+    participant FM as JsonataFieldMapper
+    participant JDBC as JdbcTemplate
+    participant DB as MySQL(po_receipt)
+
+    PUB->>MQ: 发布 {"orderNo":"MO-1001",...}
+    MQ->>RG: spring-rabbitmq:<数据源名>?queues=mes.to.edge
+    RG->>RG: unmarshal().json() + 存 context[1] + edge.originalInput
+    RG->>FM: FIELD_MAP.apply(context)
+    FM-->>RG: 目标 Map
+    RG->>JDBC: upsert(table, idempotencyKey)
+    JDBC->>DB: insert ... on duplicate key update
+    Note over RG: handled=true（死信后消费侧不重投队列）
+```
+
+### 逐环节代码走查
+
+| 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
+|---|---|---|---|---|---|
+| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:100`） | `from("spring-rabbitmq:<数据源名>?queues=..&routingKey=..&autoDeclare=true")` | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（死信后不重投队列） |
+| 保真 | 存原始输入 | 入口 process（:119） | `context[1]` + `edge.originalInput` | 消息体 → 上下文 + 属性 | — |
+| 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→死信 |
+| 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/死信 |
+
+约束：一条链最多一个 `MQ_CONSUME`（链首）+ 最多一个带水位的 `READ_SQL`（配置期拦截，`ActionService.validateChain`）。
+`sourceKey`（映射历史隔离）按实际源动作推导：`MQ_CONSUME → mq:<queue>`、`READ_SQL → db:<table>`
+（`MappingHistoryService.inferSourceKey`，`service/MappingHistoryService.java:111`）。
+
+## 测试环境
+
+- RabbitMQ（`:5672`，`guest/guest`），消费队列 `mes.to.edge`；客户 MySQL `po_receipt`（`order_no` 唯一）；
+- 应用后端（8080）在跑；发消息用 `tools/mq-publish.ps1`。
+
+## 测试数据与造数指导
+
+| 环节 | 入 | 出 | 验证 |
+|---|---|---|---|
+| 消费 | `tools/mq-publish.ps1 -Queue mes.to.edge -PayloadFile <json>`，消息 `{"orderNo":"MO-1001","material":"M-9","qty":10}` | 消费日志 | 日志显示消费到 |
+| 写库 | 上一条消息 | `po_receipt` 一行（`order_no='MO-1001'`） | `select * from po_receipt` |
+| 幂等（失败/重复） | 重复发布同 `orderNo` 消息 | 仍一行 | 无重复行 |
+| 失败样例 | 发布缺 `order_no`/`qty` 非法枚举的消息 | 死信 `FAILED` | `select * from dead_letter order by id desc limit 1` |
+
+## 验证操作
+
+```powershell
+tools/mq-publish.ps1 -Queue mes.to.edge -PayloadFile <json文件>
+mysql -ugateway -pgateway edge_gateway -e "select * from po_receipt;"
+```
+
+## 建议表
+
+| 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
+|---|---|---|---|---|---|
+| **C8** `WRITE_UPSERT` 的 `dataSourceId` 未生效：`upsert` 用 `jdbcTemplate`（应用数据源），不读动作配置的数据源 | 按 `WriteUpsertConfig.dataSourceId()` 选数据源；或明确"写库仅走网关配置库"并收紧配置面 | 配置面允许每动作选数据源，但运行时可写错库（demo 同库掩蔽） | 缺陷 | 数据源/南向 | 待评估 |
+| 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 如需自定义 exchange/routingKey 绑定需扩展 | `features/transport` 已列为待办 | 业务改进 | 通信模型 | 待评估 |
+| `MQ_PUBLISH` 要求显式 exchange（amq.default 不可靠） | 保持现状并写入文档 | 实测结论 `d7790b1` | 文档偏差 | 通信模型 | 待评估 |
+| 消费成功但 `job.lastRunStatus` 不更新 | 观察项；若需反映则在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |

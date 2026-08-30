@@ -57,9 +57,9 @@ class DataSourceServiceTest {
     @Test
     void rejectsMissingRequiredAdditionField() {
         assertThatThrownBy(() -> service.create(request("mysql", DataSourceType.MYSQL,
-                new MysqlDataSourceConfig(null, "sa", null))))
+                new MysqlDataSourceConfig("sa", null))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("url");
+                .hasMessageContaining("password");
     }
 
     @Test

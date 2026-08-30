@@ -1,14 +1,19 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.edgegateway.mapper.DeadLetterMapper;
 import com.example.edgegateway.model.DeadLetter;
 import com.example.edgegateway.model.Job;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.camel.StreamCache;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
@@ -41,7 +46,7 @@ public class DeadLetterService {
         deadLetterMapper.insert(deadLetter);
     }
 
-    public List<DeadLetter> list(Long jobId, String status) {
+    public Map<String, Object> list(Long jobId, String status, int page, int size) {
         LambdaQueryWrapper<DeadLetter> wrapper = new LambdaQueryWrapper<DeadLetter>()
                 .orderByDesc(DeadLetter::getId);
         if (jobId != null) {
@@ -50,7 +55,10 @@ public class DeadLetterService {
         if (status != null && !status.isBlank()) {
             wrapper.eq(DeadLetter::getStatus, status.trim());
         }
-        return deadLetterMapper.selectList(wrapper);
+        Page<DeadLetter> result = deadLetterMapper.selectPage(new Page<>(page, size), wrapper);
+        return Map.of(
+                "total", result.getTotal(),
+                "records", result.getRecords());
     }
 
     public DeadLetter get(Long id) {
@@ -89,10 +97,32 @@ public class DeadLetterService {
         if (input == null) {
             return null;
         }
-        try {
-            if (input instanceof String s) {
-                return s;
+        if (input instanceof String s) {
+            return s;
+        }
+        // Camel 路由在 marshal 后 body 是 StreamCache/InputStream，直接 toString 是 Java 对象
+        // 串（如 org.apache.camel.converter.stream.InputStreamCache@xxx），必须先读成字符串。
+        if (input instanceof StreamCache cache) {
+            try {
+                cache.reset();
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                cache.writeTo(out);
+                return out.toString(StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return String.valueOf(input);
             }
+        }
+        if (input instanceof InputStream in) {
+            try (InputStream stream = in) {
+                return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return String.valueOf(input);
+            }
+        }
+        if (input instanceof byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        try {
             return objectMapper.writeValueAsString(input);
         } catch (Exception e) {
             return String.valueOf(input);

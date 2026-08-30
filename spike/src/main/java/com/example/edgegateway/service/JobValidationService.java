@@ -121,7 +121,7 @@ public class JobValidationService {
         }
         try {
             MysqlDataSourceConfig db = (MysqlDataSourceConfig) DataSourceConfig.from(ds.getType(), ds.getAddition());
-            sqlValidator.validate(db, sql);
+            sqlValidator.validate(ds.getAddress(), db, sql);
         } catch (Exception e) {
             errors.add(new ValidationResult.Issue("sql", action.getName(), e.getMessage()));
         }

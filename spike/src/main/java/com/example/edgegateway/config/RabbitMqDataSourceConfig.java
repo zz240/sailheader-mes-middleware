@@ -5,9 +5,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** RabbitMQ 数据源配置：queue 必填；host/port/账号密码有默认值。 */
+/**
+ * RabbitMQ 数据源配置（连接级，ADR-0007）：broker 在 address，队列 / exchange / routingKey 在动作里配；
+ * host/port/账号密码有默认值。
+ */
 public record RabbitMqDataSourceConfig(
-        String queue,
         String host,
         int port,
         String username,
@@ -15,9 +17,8 @@ public record RabbitMqDataSourceConfig(
 
     public static RabbitMqDataSourceConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("queue", "host", "port", "username", "password"));
+        rejectUnknownKeys(map, Set.of("host", "port", "username", "password"));
         return new RabbitMqDataSourceConfig(
-                ConfigValues.str(map.get("queue")),
                 ConfigValues.str(map.getOrDefault("host", "localhost")),
                 portValue(map.get("port")),
                 ConfigValues.str(map.getOrDefault("username", "guest")),
@@ -31,15 +32,12 @@ public record RabbitMqDataSourceConfig(
 
     @Override
     public void validate() {
-        if (queue == null || queue.isBlank()) {
-            throw new IllegalArgumentException("RabbitMQ 数据源需要 queue");
-        }
+        // 连接级：broker 在 address，凭证可选（有默认值），无必填字段。
     }
 
     @Override
     public Map<String, Object> toMap() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("queue", queue);
         map.put("host", host);
         map.put("port", port);
         map.put("username", username);

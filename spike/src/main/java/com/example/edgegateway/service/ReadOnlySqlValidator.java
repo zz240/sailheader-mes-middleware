@@ -14,9 +14,9 @@ import java.sql.Statement;
 @Component
 public class ReadOnlySqlValidator {
 
-    public void validate(MysqlDataSourceConfig config, String sql) {
+    public void validate(String url, MysqlDataSourceConfig config, String sql) {
         String probeSql = "SELECT * FROM ( " + sql.replace("{watermark}", "1=1") + " ) __probe LIMIT 0";
-        try (Connection conn = DriverManager.getConnection(config.url(), config.username(), config.password());
+        try (Connection conn = DriverManager.getConnection(url, config.username(), config.password());
              Statement st = conn.createStatement()) {
             st.execute(probeSql);
         } catch (Exception e) {

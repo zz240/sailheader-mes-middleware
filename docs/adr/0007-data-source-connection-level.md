@@ -3,6 +3,11 @@
 - 状态：已接受
 - 日期：2026-08-19
 
+> - 已收紧：2026-08-30 把 `RabbitMqDataSourceConfig` 的 `queue` 移除（不再接受该字段），队列 / exchange /
+>   routingKey 归动作（`MqConsumeConfig` / `MqPublishConfig`）；数据源仅存 broker 与凭证。"动作缺 queue 时回退
+>   数据源原值"的过渡回退一并移除。启用时由 `DataSourceAdditionMigration` 清理存量 `addition` 中的
+>   RABBITMQ `queue`/`exchange`/`routingKey` 与 MYSQL `url`（幂等）。
+
 ## 背景
 
 数据源粒度不一致：MySQL 是连接级（表在动作 SQL），MQ/HTTP 是资源级（队列/接口路径绑死在数据源 addition）。导致同一系统多接口/多队列需要重复配置凭证、模板复用不统一。见代码审查笔记 DS-6。

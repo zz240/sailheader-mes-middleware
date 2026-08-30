@@ -59,10 +59,8 @@ class ConnectionTesterIntegrationTest {
         assumeTrue(portOpen("localhost", 3306), "本地 MySQL 未启动，跳过");
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition(Map.of(
-                "url", "jdbc:mysql://localhost:3306/edge_gateway?useSSL=false&allowPublicKeyRetrieval=true",
-                "username", "gateway",
-                "password", "gateway"));
+        ds.setAddress("jdbc:mysql://localhost:3306/edge_gateway?useSSL=false&allowPublicKeyRetrieval=true");
+        ds.setAddition(Map.of("username", "gateway", "password", "gateway"));
 
         assertThat(tester.test(ds).ok()).isTrue();
     }
@@ -71,10 +69,8 @@ class ConnectionTesterIntegrationTest {
     void mysqlUnreachableReturnsFail() {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition(Map.of(
-                "url", "jdbc:mysql://localhost:33306/edge_gateway?connectTimeout=2000&socketTimeout=2000",
-                "username", "gateway",
-                "password", "gateway"));
+        ds.setAddress("jdbc:mysql://localhost:33306/edge_gateway?connectTimeout=2000&socketTimeout=2000");
+        ds.setAddition(Map.of("username", "gateway", "password", "gateway"));
 
         assertThat(tester.test(ds).ok()).isFalse();
     }
@@ -85,7 +81,7 @@ class ConnectionTesterIntegrationTest {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.RABBITMQ);
         ds.setAddition(Map.of(
-                "queue", "mes.to.edge", "host", "localhost",
+                "host", "localhost",
                 "port", 5672, "username", "guest", "password", "guest"));
 
         assertThat(tester.test(ds).ok()).isTrue();
@@ -96,7 +92,7 @@ class ConnectionTesterIntegrationTest {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.RABBITMQ);
         ds.setAddition(Map.of(
-                "queue", "mes.to.edge", "host", "localhost",
+                "host", "localhost",
                 "port", 55672, "username", "guest", "password", "guest"));
 
         assertThat(tester.test(ds).ok()).isFalse();

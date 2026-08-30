@@ -19,8 +19,6 @@ export interface Job {
   timezone?: string | null
   retryCount?: number | null
   backoffMs?: number | null
-  watermarkType?: string | null
-  watermarkColumn?: string | null
   remarks?: string | null
   lastRunStatus?: string | null
   lastRunAt?: string | null
@@ -45,6 +43,11 @@ export interface DeadLetter {
   inputJson: string | null
   error: string | null
   status: string
+}
+
+export interface DeadLetterPage {
+  total: number
+  records: DeadLetter[]
 }
 
 export interface Template {

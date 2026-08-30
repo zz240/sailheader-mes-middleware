@@ -7,6 +7,7 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
+import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.model.ProcessorDefinition;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -41,8 +43,8 @@ class RouteGeneratorTest {
         DataSource ds = new DataSource();
         ds.setId(id);
         ds.setType(DataSourceType.MYSQL);
-        ds.setAddition(Map.of("url", "jdbc:mysql://localhost:3306/edge_gateway",
-                "username", "gateway", "password", "gateway"));
+        ds.setAddress("jdbc:mysql://localhost:3306/edge_gateway");
+        ds.setAddition(Map.of("username", "gateway", "password", "gateway"));
         return ds;
     }
 
@@ -168,6 +170,35 @@ class RouteGeneratorTest {
         RouteDefinition replay = findRoute(context, "direct-9");
         assertThat(replay).isNotNull();
         assertThat(replay.getInput().getUri()).isEqualTo("direct:job-9");
+    }
+
+    /** 重放入口必须把原始输入存为 edge.originalInput，死信重投才能用原始输入重跑整条链。 */
+    @Test
+    void replayEntryStoresOriginalInputForRedelivery() throws Exception {
+        when(dataSourceMapper.selectById(18L)).thenReturn(rabbitDataSource(18L));
+
+        Job job = new Job();
+        job.setId(7L);
+        job.setStatus(1);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 18L, "queue", "bom.to.edge")));
+
+        DefaultCamelContext context = buildContext(job, actions);
+        // 摘掉 MQ 消费路由，只启动重放路由，避免测试依赖真实 RabbitMQ
+        context.removeRouteDefinition(context.getRouteDefinition("job-7"));
+        context.start();
+        try {
+            Map<String, Object> input = new LinkedHashMap<>();
+            input.put("bomId", "BOM-1");
+            input.put("items", List.of(Map.of("lineNo", 1, "itemCode", "M-1")));
+            Exchange out = context.createProducerTemplate()
+                    .request("direct:job-7", ex -> ex.getMessage().setBody(input));
+
+            assertThat(out.getProperty("edge.originalInput", Object.class)).isEqualTo(input);
+            assertThat(out.getMessage().getBody()).isEqualTo(input);
+        } finally {
+            context.stop();
+        }
     }
 
     @Test

@@ -26,8 +26,6 @@ CREATE TABLE IF NOT EXISTS job (
     timezone VARCHAR(64),
     retry_count INT,
     backoff_ms BIGINT,
-    watermark_type VARCHAR(20),
-    watermark_column VARCHAR(100),
     remarks TEXT,
     last_run_status VARCHAR(16),
     last_run_at TIMESTAMP,

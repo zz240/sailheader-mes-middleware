@@ -10,10 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
 
-/** 死信查看 REST：列表（按 jobId/status 过滤）+ 详情。 */
+/** 死信查看 REST：列表（按 jobId/status 过滤 + 分页）+ 详情。 */
 @RestController
 @RequestMapping("/api/dead-letters")
 public class DeadLetterController {
@@ -25,9 +24,13 @@ public class DeadLetterController {
     }
 
     @GetMapping
-    public List<DeadLetter> list(@RequestParam(required = false) Long jobId,
-                                 @RequestParam(required = false) String status) {
-        return deadLetterService.list(jobId, status);
+    public Map<String, Object> list(@RequestParam(required = false) Long jobId,
+                                    @RequestParam(required = false) String status,
+                                    @RequestParam(defaultValue = "1") int page,
+                                    @RequestParam(defaultValue = "20") int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        return deadLetterService.list(jobId, status, safePage, safeSize);
     }
 
     @GetMapping("/{id}")
