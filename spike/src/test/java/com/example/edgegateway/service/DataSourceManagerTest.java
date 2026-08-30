@@ -6,6 +6,7 @@ import com.example.edgegateway.model.DataSourceType;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.camel.CamelContext;
+import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.spi.Registry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,23 @@ class DataSourceManagerTest {
         manager.invalidate(999L);
 
         verify(registry).unbind("edge-ds-999");
+    }
+
+    /** READ_SQL 的 #edge-ds-<id> 按名解析：get(id) 必须把池登记为同名 bean，invalidate 时移除。 */
+    @Test
+    void getRegistersPoolUnderTheNameReadSqlResolvesFromRealRegistry() {
+        when(mapper.selectById(1L)).thenReturn(mysql(1L));
+        DefaultCamelContext realContext = new DefaultCamelContext();
+        RecordingManager realManager = new RecordingManager(mapper, realContext);
+
+        var pool = realManager.get(1L);
+
+        assertThat(pool).isNotNull();
+        // 路由以 #edge-ds-1 引用，正是 READ_SQL 拼接的 bean 名；此处证明可直接解析到同一池
+        assertThat(realContext.getRegistry().lookupByName("edge-ds-1")).isSameAs(pool);
+
+        realManager.invalidate(1L);
+        assertThat(realContext.getRegistry().lookupByName("edge-ds-1")).isNull();
     }
 
     @Test
