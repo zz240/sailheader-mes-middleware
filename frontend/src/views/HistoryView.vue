@@ -7,7 +7,7 @@
           <el-select v-model="filterJobId" clearable placeholder="按任务过滤" style="width: 180px">
             <el-option v-for="j in jobs" :key="j.id" :value="j.id" :label="`#${j.id} ${j.name}`" />
           </el-select>
-          <el-select v-model="filterStatus" clearable placeholder="按状态过滤" style="width: 140px">
+          <el-select v-model="filterStatus" clearable placeholder="状态（默认全部）" style="width: 150px">
             <el-option label="FAILED" value="FAILED" />
             <el-option label="SUCCESS" value="SUCCESS" />
             <el-option label="REDELIVERED" value="REDELIVERED" />
@@ -180,7 +180,7 @@ const runs = ref<JobRun[]>([])
 const steps = ref<MessageStep[]>([])
 const mode = ref<'runs' | 'steps'>('runs')
 const filterJobId = ref<number | null>(null)
-const filterStatus = ref('FAILED')
+const filterStatus = ref('')
 const filterBusinessKey = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -221,7 +221,7 @@ function query() {
 
 function reset() {
   filterJobId.value = null
-  filterStatus.value = 'FAILED'
+  filterStatus.value = ''
   filterBusinessKey.value = ''
   mode.value = 'runs'
   currentPage.value = 1
