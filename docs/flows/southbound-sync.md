@@ -75,7 +75,7 @@ mysql -ugateway -pgateway edge_gateway -e "select * from po_receipt;"
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| **C8** `WRITE_UPSERT` 的 `dataSourceId` 未生效：`upsert` 用 `jdbcTemplate`（应用数据源），不读动作配置的数据源 | 按 `WriteUpsertConfig.dataSourceId()` 选数据源；或明确"写库仅走网关配置库"并收紧配置面 | 配置面允许每动作选数据源，但运行时可写错库（demo 同库掩蔽） | 缺陷 | 数据源/南向 | 待评估 |
+| C8（已闭环）`WRITE_UPSERT` 已按动作 `dataSourceId` 用客户库 `JdbcTemplate` 执行 | 已由 #67 实现消除（见 ADR-0008） | 不再写网关配置库；客户库 ≠ 配置库也不会写错 | 缺陷 | 数据源/南向 | 已闭环 |
 | 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 如需自定义 exchange/routingKey 绑定需扩展 | `features/transport` 已列为待办 | 业务改进 | 通信模型 | 待评估 |
 | `MQ_PUBLISH` 要求显式 exchange（amq.default 不可靠） | 保持现状并写入文档 | 实测结论 `d7790b1` | 文档偏差 | 通信模型 | 待评估 |
 | 消费成功但 `job.lastRunStatus` 不更新 | 观察项；若需反映则在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |

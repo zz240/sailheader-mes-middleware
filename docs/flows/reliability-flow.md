@@ -141,3 +141,4 @@ curl -X POST http://localhost:8080/api/dead-letters/{id}/redeliver
 | C1 轮询链（北向，链首 `READ_SQL`）`buildPollingEntry` 未设 `edge.originalInput`，且该路由兼作重放路由 | 轮询入口同样设置 `edge.originalInput`；并为轮询链补"跳首动作"重放路由（或明确"北向重投=整体重跑"并同步文档）+ 加测试 | ADR-0003 修正与 `reliability` 页声明"重投按原始输入从首动作之后重跑"，但轮询链实际重跑 `READ_SQL`（读库）且死信入参回落失败时刻 body | 缺陷 | 可靠性 | 待评估 |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 观察项；若需在任务列表反映消费结果，在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |
 | 旧死信（`input_json` 为 Java toString）无法重投 | 启动/后台清理任务或提供清理接口 | 历史测试残留 | 文档偏差 | 可靠性 | 待评估 |
+| 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 明确"至少一次、靠写幂等/MES 按业务键去重"，写进文档与死信；推送链建议 SEQUENCE + 目标端幂等键 | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 待评估 |

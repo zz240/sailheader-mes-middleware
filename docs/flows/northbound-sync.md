@@ -87,7 +87,9 @@ curl http://localhost:8080/mock/mes/received
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| **C8（重要）** `READ_SQL` 的 `dataSourceId` 未生效：camel 端点硬编码 `?dataSource=#dataSource`（应用配置库），不读动作配置的数据源 | 让 SQL 端点按 `ReadSqlConfig.dataSourceId()` 选数据源；或明确"读/写仅走网关配置库"并收紧配置面 | 配置面允许每动作选数据源，但运行时读库用 `#dataSource`；客户库≠配置库时会读到/写错库（demo 里两者同库掩蔽了问题） | 缺陷 | 数据源/北向 | 待评估 |
+| C8（重要，已闭环）`READ_SQL` 已按动作 `dataSourceId` 路由到客户库（端点 `#edge-ds-<id>`，连接池由 `DataSourceManager` 管理） | 已由 #65/#66 实现消除（见 ADR-0008） | 端点不再硬编码 `#dataSource`；客户库 ≠ 配置库也不会读错 | 缺陷 | 数据源/北向 | 已闭环 |
 | C1 轮询链重投/死信入参与契约不符 | 轮询入口补 `edge.originalInput` + 补跳首动作重放路由 + 测试 | ADR-0003 修正与 reliability 页承诺"按原始输入从首动作之后重跑"，轮询链实际重跑 READ_SQL | 缺陷 | 可靠性 | 待评估 |
 | C3 `crontab` 存而未用，轮询硬编码 `period=60000` | 接 cron 或写 ADR 暂缓并同步用户侧文档 | 文档承诺定时，实现仅固定 60s | 缺陷/文档偏差 | job-action-chain | 待评估 |
 | 水位首跑语义（SEQUENCE 初始 0）未在文档说明 | 明确"首次全量后按 id 前进" | 避免误以为跳过首行 | 文档偏差 | 可靠性 | 待评估 |
+| 水位策略重构 + 分批：两种模式——增量（id，`> last` + 每批 max(id)）与刷量（按 `updated_at` 窗口 + 业务键 upsert，幂等，不用墙钟 now）；支持 `batchSize` + keyset 分页（`where {watermark} order by 列 limit n`）、**每批推进水位**，供**首次全量/大增量**；`job.timezone` 用于刷量窗口 | 已定方向，见对应 ticket | 务实收敛：不做侵入式强绑定；更新为主走刷量 upsert；首跑大表必须分批 | 设计改进 | 北向/可靠性 | 采纳 |
+| 删除同步：拉取模型感知不到物理删除 | 逻辑删除靠刷量 upsert 覆盖；物理删除由用户按需触发任务（manual/external trigger）；自动删除检测需新动作，单列增强 | 无法自动感知删除 | 业务改进 | 北向/可靠性 | 待评估 |
