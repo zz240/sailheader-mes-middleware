@@ -16,7 +16,7 @@
 | 同步 + 通知 | 读库 → 映射 → HTTP 推送 + MQ 发布 | 任务 / 动作链 | [notify-push.md](notify-push.md) |
 | 触发流 | 手动执行 / 定时 / 外部 API 触发 | 任务 / 站点（API Key） | [trigger-flow.md](trigger-flow.md) |
 | 字段映射（转换流） | 规则树 → JSONata 编译 → 求值；建议器 | 映射编辑器 / 建议面板 | [transform-flow.md](transform-flow.md) |
-| 可靠性流 | 任务执行失败 → 重试退避 → 死信 → 人工重投 | 死信页 / 任务执行 | [reliability-flow.md](reliability-flow.md) |
+| 可靠性流 | 任务执行失败 → 重试退避 → 消息历史 → 断点重投 | 消息历史页 / 任务执行 | [reliability-flow.md](reliability-flow.md) |
 
 > 七个场景已从项目代码与文档全量归纳；每份产出文件均含业务场景与交互、Mermaid 时序图、逐环节代码走查
 > （文件+行号）、测试环境、造数指导、建议表。

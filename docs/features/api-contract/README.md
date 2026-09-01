@@ -8,7 +8,7 @@
 - **错误码注册表**：`BusinessCode` 枚举集中定义字符串码（OK / PARAM_INVALID / NOT_FOUND / CONFLICT / INTERNAL_ERROR / DUPLICATE_NAME / JOB_NOT_ENABLED / UNAUTHORIZED 等），`code` 稳定不变、`message` 可随文案调整；粒度到“前端需要分支的场景”。
 - **异常体系**：`BusinessException(code, message, field)`；`ApiExceptionHandler` 只处理 BusinessException + `Exception` 兜底 → INTERNAL_ERROR，消灭 Spring 默认格式漏网。
 - **成功包装**：`ApiEnvelopeAdvice`（ResponseBodyAdvice）统一包装成功响应；`/mock/**` 端点与 204 不包装。
-- **分页约定**：列表分页参数 `page/size`，返回 `{total, records}`（目前死信已用，其余列表待统一）。
+- **分页约定**：列表分页参数 `page/size`，返回 `{total, records}`（目前消息历史已用，其余列表待统一）。
 - **代码位置**：`web/ApiEnvelopeAdvice.java`、`web/ApiExceptionHandler.java`、`web/BusinessCode.java`（或 model 下）、`frontend/src/api/client.ts`。
 
 ## 决策时间线
@@ -20,7 +20,7 @@
 
 ## 待办 / 已知限制
 
-- 分页约定尚未推广到 jobs/data-sources 等列表接口（仅死信）；
+- 分页约定尚未推广到 jobs/data-sources 等列表接口（仅消息历史）；
 - 错误体 `field` 字段已设计，前端高亮输入框尚未全面落地。
 
 ## 决策时间线

@@ -6,7 +6,7 @@ const router = createRouter({
     { path: '/', redirect: '/data-sources' },
     { path: '/data-sources', component: () => import('../views/DataSourcesView.vue') },
     { path: '/jobs', component: () => import('../views/JobsView.vue') },
-    { path: '/dead-letters', component: () => import('../views/DeadLettersView.vue') },
+    { path: '/history', component: () => import('../views/HistoryView.vue') },
     { path: '/templates', component: () => import('../views/TemplatesView.vue') },
     { path: '/sites', component: () => import('../views/SitesView.vue') },
   ],

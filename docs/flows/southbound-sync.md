@@ -34,17 +34,17 @@ sequenceDiagram
     FM-->>RG: 目标 Map
     RG->>JDBC: upsert(table, idempotencyKey)
     JDBC->>DB: insert ... on duplicate key update
-    Note over RG: handled=true（死信后消费侧不重投队列）
+    Note over RG: handled=true（失败后消费侧不重投队列）
 ```
 
 ### 逐环节代码走查
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:100`） | `from("spring-rabbitmq:<数据源名>?queues=..&routingKey=..&autoDeclare=true")` | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（死信后不重投队列） |
+| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:100`） | `from("spring-rabbitmq:<数据源名>?queues=..&routingKey=..&autoDeclare=true")` | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
 | 保真 | 存原始输入 | 入口 process（:119） | `context[1]` + `edge.originalInput` | 消息体 → 上下文 + 属性 | — |
-| 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→死信 |
-| 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/死信 |
+| 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→FAILED 消息步 |
+| 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/FAILED 消息步 |
 
 约束：一条链最多一个 `MQ_CONSUME`（链首）+ 最多一个带水位的 `READ_SQL`（配置期拦截，`ActionService.validateChain`）。
 `sourceKey`（映射历史隔离）按实际源动作推导：`MQ_CONSUME → mq:<queue>`、`READ_SQL → db:<table>`
@@ -62,7 +62,7 @@ sequenceDiagram
 | 消费 | `tools/mq-publish.ps1 -Queue mes.to.edge -PayloadFile <json>`，消息 `{"orderNo":"MO-1001","material":"M-9","qty":10}` | 消费日志 | 日志显示消费到 |
 | 写库 | 上一条消息 | `po_receipt` 一行（`order_no='MO-1001'`） | `select * from po_receipt` |
 | 幂等（失败/重复） | 重复发布同 `orderNo` 消息 | 仍一行 | 无重复行 |
-| 失败样例 | 发布缺 `order_no`/`qty` 非法枚举的消息 | 死信 `FAILED` | `select * from dead_letter order by id desc limit 1` |
+| 失败样例 | 发布缺 `order_no`/`qty` 非法枚举的消息 | 消息步 `FAILED` | `select * from message_step where status='FAILED' order by id desc limit 1` |
 
 ## 验证操作
 

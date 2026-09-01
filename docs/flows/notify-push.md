@@ -41,9 +41,9 @@ sequenceDiagram
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
 | 读库 | 增量读 | READ_SQL（`service/RouteGenerator.java:147` `appendChain`） | 同北向 | 行 `Map` | — |
-| 映射 | 字段映射 | FIELD_MAP | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→死信 |
-| HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` | `Map`→JSON→HTTP | 非 2xx→死信 |
-| MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` 缺省取上下文最大正数步骤；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→死信 |
+| 映射 | 字段映射 | FIELD_MAP | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→FAILED 消息步 |
+| HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` | `Map`→JSON→HTTP | 非 2xx→FAILED 消息步 |
+| MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` 缺省取上下文最大正数步骤；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
 
 `bodySourceStep` 缺省逻辑（`service/RouteGenerator.java` MQ_PUBLISH 片段）：`context.keySet().stream().filter(k>0).max()`
 （即最近一次输出，通常就是 FIELD_MAP 结果）；显式配置则取 `context[step]`。`MqPublishConfig.validate` 要求显式
@@ -61,7 +61,7 @@ sequenceDiagram
 | 读库+映射 | `po_order` 源行 | 目标 `Map` | `GET /mock/mes/received` |
 | HTTP 推送 | — | HTTP 请求体 | `%TEMP%\edge-mock\bom-mock.log` |
 | MQ 发布 | — | `edge.notify` 消息 | 消费该队列看消息体与 MES 一致 |
-| 失败样例 | `MQ_PUBLISH` exchange 不存在 | 死信 `FAILED` | `GET /api/dead-letters?status=FAILED` |
+| 失败样例 | `MQ_PUBLISH` exchange 不存在 | 消息步 `FAILED` | `GET /api/history/steps?status=FAILED` |
 
 ## 验证操作
 

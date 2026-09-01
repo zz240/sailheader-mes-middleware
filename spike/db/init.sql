@@ -77,14 +77,36 @@ CREATE TABLE IF NOT EXISTS template (
     CONSTRAINT uk_template_name_version UNIQUE (name, version)
 );
 
-CREATE TABLE IF NOT EXISTS dead_letter (
+CREATE TABLE IF NOT EXISTS job_run (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    job_id BIGINT,
-    action_index INT,
-    input_json TEXT,
+    job_id BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    input_snapshot TEXT,
     error TEXT,
-    status VARCHAR(32)
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS message_step (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    run_id BIGINT NOT NULL,
+    message_id VARCHAR(64) NOT NULL,
+    step INT NOT NULL,
+    action_name VARCHAR(255),
+    status VARCHAR(16) NOT NULL,
+    data_snapshot TEXT,
+    input_snapshot TEXT,
+    error TEXT,
+    created_at TIMESTAMP,
+    attempt INT NOT NULL DEFAULT 1,
+    business_key VARCHAR(255),
+    CONSTRAINT uk_msg_step_run_msg_step UNIQUE (run_id, message_id, step)
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_run_job ON job_run (job_id);
+CREATE INDEX IF NOT EXISTS idx_msg_step_run ON message_step (run_id);
+CREATE INDEX IF NOT EXISTS idx_msg_step_message ON message_step (message_id);
+CREATE INDEX IF NOT EXISTS idx_msg_step_business ON message_step (business_key);
 
 CREATE TABLE IF NOT EXISTS mapping_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

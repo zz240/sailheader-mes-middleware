@@ -51,8 +51,8 @@ sequenceDiagram
 | 增量读 | 查库 | `appendChain`（:147） | `read.sql().replace("{watermark}",...)` → `.to("sql:...?dataSource=#dataSource&outputType=SelectList")`（:162） | `List<Map>` | 只读 SQL 校验（jobId 校验期） |
 | 算新水位 | 取 max | `computeMax`（:320） | SEQUENCE 取 max(水位列)；TIMESTAMP 用当前时间 | — | — |
 | 拆分 | 每行一子交换 | `split(bodyExpression())` | Camel split | `List<Map>` → `Map` | — |
-| 映射 | 源→目标 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→死信 |
-| 推送 | HTTP 出站 | HTTP_CALL（`appendFragment`） | `composeUrl`（:360）+ `marshal().json()` + `.to(url)`（:162 之后的片段） | `Map`→JSON→HTTP | 非 2xx→抛异常→重试/死信 |
+| 映射 | 源→目标 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
+| 推送 | HTTP 出站 | HTTP_CALL（`appendFragment`） | `composeUrl`（:360）+ `marshal().json()` + `.to(url)`（:162 之后的片段） | `Map`→JSON→HTTP | 非 2xx→抛异常→重试/FAILED 消息步 |
 | 水位回写 | 成功后推进 | `updateWatermark`（:338） | `WatermarkStore.put` | — | 失败即停（成功后才更新） |
 
 ## 测试环境
@@ -67,7 +67,7 @@ sequenceDiagram
 | 读库 | `po_order` 一行（`spike/db/init.sql` 种子） | 每行 `Map` | `GET /mock/mes/received` 看到映射结果 |
 | 映射 | 规则 `{"sheet_no":$s_1.order_no,...}` | 目标 JSON | MES 收到 `{"sheet_no":"PO-2026-001",...}` |
 | 推送 | — | HTTP 请求体 | `%TEMP%\edge-mock\bom-mock.log` |
-| 失败样例 | 令 `HTTP_CALL` 指向不可达地址 | 死信 `FAILED` | `GET /api/dead-letters?status=FAILED` |
+| 失败样例 | 令 `HTTP_CALL` 指向不可达地址 | 消息步 `FAILED` | `GET /api/history/steps?status=FAILED` |
 
 映射后期望体（`docs/mock-contract.md`）：
 

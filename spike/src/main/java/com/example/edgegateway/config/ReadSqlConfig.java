@@ -6,23 +6,25 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** MySQL 读动作：数据源 + SQL + 水位策略/列（DS-7 从任务移入动作）。 */
+/** MySQL 读动作：数据源 + SQL + 水位策略/列（DS-7 从任务移入动作）+ 业务键源列（#70）。 */
 public record ReadSqlConfig(
         Long dataSourceId,
         String sql,
         String watermarkType,
-        String watermarkColumn
+        String watermarkColumn,
+        String businessKey
 ) implements ActionConfig {
 
     public static ReadSqlConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("dataSourceId", "sql", "watermarkType", "watermarkColumn"));
+        rejectUnknownKeys(map, Set.of("dataSourceId", "sql", "watermarkType", "watermarkColumn", "businessKey"));
         Object id = map.get("dataSourceId");
         return new ReadSqlConfig(
                 id == null ? null : Long.valueOf(id.toString()),
                 ConfigValues.str(map.get("sql")),
                 ConfigValues.str(map.get("watermarkType")),
-                ConfigValues.str(map.get("watermarkColumn")));
+                ConfigValues.str(map.get("watermarkColumn")),
+                ConfigValues.str(map.get("businessKey")));
     }
 
     @Override
@@ -52,6 +54,9 @@ public record ReadSqlConfig(
         }
         if (watermarkColumn != null) {
             map.put("watermarkColumn", watermarkColumn);
+        }
+        if (businessKey != null) {
+            map.put("businessKey", businessKey);
         }
         return map;
     }

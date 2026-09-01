@@ -1,20 +1,21 @@
-# 可靠性流（失败即停 / 重试退避 / 死信 / 重投）
+# 可靠性流（失败即停 / 重试退避 / 消息历史 / 断点重投）
 
 ## 场景说明
 
 一条已启用的任务在动作链执行中失败时，系统**立即停止后续动作**，按任务配置的 `retryCount`/`backoffMs`
-**重试退避**；反复失败后把**动作上下文、原始输入、错误信息**写进死信（`dead_letter`），供实施工程师在
-"死信"页查看并**人工重投**。链路形态：**执行失败 → 死信记录 → 列表查看 → 重投恢复**。
-决策依据：ADR-0003（失败即停 + 重试 + 死信，不承诺跨系统补偿事务）。
+**重试退避**；反复失败后记录一条 `FAILED` 的**消息步**并把**运行**标为 `FAILED`。全程（成功/失败）都写进
+`job_run`/`message_step`，供实施工程师在**消息历史**页按运行/消息/业务键查看，并从失败消息步**精确断点续跑**。
+链路形态：**执行 → 记录运行与消息步 → 历史检索 → 断点重投**。
+决策依据：ADR-0003（失败即停 + 重试，不承诺跨系统补偿事务）与 ADR-0009（死信升维为消息历史）。
 
 ### 交互清单
 
 | 角色 | 动作 | 触发方式 | 期望结果 |
 |---|---|---|---|
-| 外部系统 / 定时器 / 手动 | 投递输入并触发任务 | MQ 消息 / timer / `POST /jobs/{id}/execute` / 外部 API | 任务按动作链执行 |
-| 系统 | 动作失败即停、重试、最终写死信 | 自动（Camel `onException`） | `dead_letter` 出现一条 `FAILED` 记录，字段可定位 |
-| 实施工程师 | 查看死信列表 | 前端"死信"页 / `GET /api/dead-letters` | 分页看到失败记录，按任务/状态过滤 |
-| 实施工程师 | 修复原因后重投 | 前端"重投" / `POST /api/dead-letters/{id}/redeliver` | 用原始输入重跑，成功后状态 `REDELIVERED` |
+| 外部系统 / 定时器 / 手动 | 投递输入并触发任务 | MQ 消息 / timer / `POST /jobs/{id}/execute` / 外部 API | 任务按动作链执行，产生 `job_run` + `message_step` |
+| 系统 | 动作失败即停、重试、记录消息步 | 自动（Camel `onException`） | 一条 `FAILED` 消息步 + 运行 `FAILED` |
+| 实施工程师 | 查看运行/消息步 | 前端"消息历史"页 / `GET /api/history/runs`、`/api/history/steps` | 分页看到记录，按任务/运行/业务键/状态过滤 |
+| 实施工程师 | 修复原因后断点重投 | 前端"重投" / `POST /api/history/steps/{id}/redeliver` | 用该步数据从该动作重放，成功后原步 `REDELIVERED` |
 
 ## 流程详解
 
@@ -23,122 +24,114 @@
 ```mermaid
 sequenceDiagram
     participant SRC as 触发源(手动/定时/MQ)
-    participant ROUTE as Camel 路由(direct/timer/consumer)
+    participant ROUTE as Camel 路由(direct/timer/consumer/resume)
     participant EH as RouteGenerator.onException
-    participant DL as DeadLetterService
-    participant DB as MySQL(dead_letter / job)
-    participant UI as 前端(死信页)
-    participant EXEC as JobExecutionService
+    participant MH as MessageHistoryService
+    participant DB as MySQL(job_run / message_step / job)
+    participant UI as 前端(消息历史页)
 
     SRC->>ROUTE: 投递输入(direct:job-N / timer / queue)
-    Note over ROUTE: 按动作链逐环节执行
+    Note over ROUTE: beginRun 写入 job_run(RUNNING)；每条消息 beginMessage 生成 messageId + businessKey
+    ROUTE->>MH: recordSuccess(runId, messageId, step, actionName, input, data, businessKey)
     ROUTE->>EH: 动作抛异常 → 失败即停
     EH->>EH: maximumRedeliveries=retryCount 次退避重试
-    EH->>DL: recordDeadLetter(jobId, actionIndex, originalInput, err)
-    DL->>DB: insert dead_letter(status=FAILED)
-    UI->>EXEC: GET /api/dead-letters?status=FAILED&page&size (分页)
-    EXEC->>DB: selectPage(dead_letter)
+    EH->>MH: recordFailure + finishRun(FAILED)
+    MH->>DB: insert/update message_step(FAILED) + job_run(FAILED)
+    UI->>MH: GET /api/history/steps?status=FAILED&page&size (分页/按业务键等过滤)
+    MH->>DB: selectPage(message_step)
     DB-->>UI: { total, records }
-    UI->>EXEC: POST /api/dead-letters/{id}/redeliver
-    EXEC->>DL: redeliver(id)
-    DL->>DB: selectById + 解析 inputJson
-    DL->>EXEC: execute(jobId, input)
-    EXEC->>ROUTE: 投递 direct:job-N
-    Note over ROUTE: 从第 2 个动作按原始输入重跑
-    ROUTE-->>EXEC: 成功 / 失败
-    EXEC-->>UI: 最近执行状态
-    DL->>DB: update dead_letter → REDELIVERED
+    UI->>MH: POST /api/history/steps/{id}/redeliver
+    MH->>DB: selectById + 解析 inputSnapshot
+    MH->>ROUTE: 投递 direct:job-N-resume (body=该步输入, RESUME_FROM=该步序号)
+    Note over ROUTE: 从该动作按该步数据重放（跳过更早步骤）
+    ROUTE-->>MH: 成功 / 失败
+    MH->>DB: 成功则原消息步 → REDELIVERED
 ```
 
 ### 逐环节代码走查
 
 **① 触发执行（任务入口）**
 
-- 业务动作：把输入投递到任务路由并执行；
-- 入口：`RouteGenerator.build`（`spike/src/main/java/com/example/edgegateway/service/RouteGenerator.java:78`）按链首分派——
-  `MQ_CONSUME` → `buildConsumerEntry:100`；其余 → `buildPollingEntry:84`；手动/重投 → `buildReplay:128`；
-- 关键类方法：`JobExecutionService.execute`（`JobExecutionService.java`，`direct:job-<id>` 同步等待）；
-- 数据形态：输入 `Map`/消息体 → 上下文 `edge.context`（序号→输出）+ `edge.originalInput`；
-- 错误处理：任务未启用抛 `JOB_NOT_ENABLED`。
+- 入口：`RouteGenerator.build` 按链首分派——`MQ_CONSUME` → `buildConsumerEntry`；其余 → `buildPollingEntry`；
+  手动执行/重放 → `buildReplay`；断点重投 → `buildResumeRoute`（每条任务都会生成 `direct:job-<id>-resume`）；
+- 每个入口在 route 首部 `beginRun`（写 `job_run`，状态 `RUNNING`）并置 `edge.runId`；`MQ_CONSUME`/重放/断点入口
+  再 `beginMessage`（生成 `messageId`、提取 `businessKey`、置 `edge.stepInput`）；
+- 手动执行走 `JobExecutionService.execute`（`direct:job-<id>` 同步等待），同步回写任务 `lastRunStatus`。
 
 **② 失败即停 + 重试退避**
 
-- 业务动作：任一动作失败即停止后续，按配置重试；
-- 入口：`RouteGenerator.configureErrorHandling`（`RouteGenerator.java:267`）对全链 `onException(Exception.class)`，
+- 入口：`RouteGenerator.configureErrorHandling` 对全链 `onException(Exception.class)`，
   `maximumRedeliveries=job.retryCount`、`redeliveryDelay=job.backoffMs`；
-- 关键类方法：`handled(handled)` —— MQ 消费主路由 `handled=true`（死信后不重投队列）；重放/轮询 `handled=false`
-  （异常抛回调用方，手动执行记 `FAILED`）；
-- 数据形态：异常在 Camel 处理链中传播；
-- 错误处理：最终失败进入 `recordDeadLetter`。
+- `handled(handled)` —— MQ 消费主路由 `handled=true`（失败后不重投队列）；重放/轮询/断点路由 `handled=false`
+  （异常抛回调用方）；
+- 最终失败进入 `recordFailure`：`finishRun(FAILED)` + 若已生成消息则记一条 `FAILED` 消息步。
 
-**③ 死信记录**
+**③ 消息历史记录（成功/失败全程）**
 
-- 业务动作：把失败上下文、原始输入、错误写入死信；
-- 入口：`RouteGenerator.recordDeadLetter`（`RouteGenerator.java:289`）→ `DeadLetterService.record`
-  （`DeadLetterService.java:39`）；
-- 关键类方法：`input = exchange.getProperty("edge.originalInput")`；无则回落失败时刻 body；`DeadLetterService.toJson`
-  处理 `StreamCache`/`InputStream`/`byte[]`（读成 JSON 字符串）后 `insert`；
-- 数据形态：`input`（Map/StreamCache）→ `input_json` 字符串；`status='FAILED'`；`action_index` 由 `edge.actionIndex` 定位；
-- 错误处理：写入失败会包裹在失败处理中；旧数据（`input_json` 为 Java toString）无法重投。
+- `MessageHistoryService`：`startRun`/`finishRun`（job_run）、`recordSuccess`/`recordFailure`（message_step，按
+  `(run_id, message_id, step)` 幂等 upsert）、`redeliver`；`toJson` 处理 `StreamCache`/`InputStream`/`byte[]`。
+- 路由内：`recordSuccessStep` 在每个动作片段成功尾部调用（`input`=进入该步数据，`data`=动作后数据，
+  `businessKey`=`edge.businessKey`）；`READ_SQL` 为源动作，在 `split` 内首部 `beginMessage` 生成消息（不记消息步）。
+- 数据形态：`dataSnapshot`/`inputSnapshot` 为 JSON 字符串；`status ∈ SUCCESS/FAILED/REDELIVERED`；
+  `attempt = redeliveryCounter + 1`。
 
-**④ 死信列表（分页）**
+**④ 历史列表（分页/检索）**
 
-- 业务动作：实施工程师按任务/状态过滤查看失败记录；
-- 入口：`DeadLetterController.list`（`DeadLetterController.java:27`）→ `DeadLetterService.list`
-  （`DeadLetterService.java:49`）；
+- 入口：`HistoryController` → `MessageHistoryService.listRuns`/`listSteps`；
+  `listSteps` 支持 `jobId`（先取该任务 runId 再 in）、`runId`、`messageId`、`businessKey`（like）、`status`；
 - 关键类方法：MyBatis-Plus `selectPage`（需 `MybatisPlusConfig` 注册 `PaginationInnerInterceptor`），返回 `{total, records}`；
-- 数据形态：`List<DeadLetter>` → `Map{total, records}`；过滤 `status`（默认前端 `FAILED`）、分页 `page/size`；
-- 错误处理：`size` 钳制到 `[1,100]`、`page`≥1。
+  数据形态：`Page<JobRun/MessageStep>` → `Map{total, records}`；过滤 `status`（前端默认 `FAILED`）、分页 `page/size`；
+- 错误处理：`page`≥1、`size` 钳制 `[1,100]`。
 
-**⑤ 重投恢复**
+**⑤ 断点重投（精确续跑）**
 
-- 业务动作：用原始输入从失败动作之后重跑；
-- 入口：`DeadLetterController.redeliver`（`DeadLetterController.java:43`）→ `DeadLetterService.redeliver`
-  （`DeadLetterService.java:73`）→ `JobExecutionService.execute`；
-- 关键类方法：`parseInput(inputJson)` → 输送到 `direct:job-<id>`（MQ/手动链为 `buildReplay:128`，从第 2 个动作重跑）；
-- 数据形态：`input_json` 字符串 → `Map` → 请求体；
-- 错误处理：成功 → `dead_letter.status='REDELIVERED'`；失败保持 `FAILED` 并抛"重投失败：<原因>"；
-  输入非 JSON 对象（旧死信）抛 `IllegalArgumentException`。
+- 入口：`HistoryController.redeliver` → `MessageHistoryService.redeliver` → 投递 `direct:job-<id>-resume`，
+  body = 该步 `inputSnapshot`、property `edge.resumeFromStep` = 该步序号；
+- 断点路由：`beginRun` + `beginMessage`（沿用 `edge.businessKey`）→ `appendChain(actions[1..])`，
+  每个片段先判 `isResumeSkipped`（序号 < resumeFromStep 则跳过），从该动作按该步数据重放；
+- 错误处理：成功 → 原消息步 `status='REDELIVERED'`；失败保持 `FAILED` 并抛"重投失败：<原因>"；
+  任务未启用抛 `JOB_NOT_ENABLED`。
 
 ## 测试环境
 
 - 应用后端（8080）与 MySQL（`:3306`/`edge_gateway`）在跑；RabbitMQ（5672）与 MES mock（9099）按需；
 - 需能制造可控失败：令 `HTTP_CALL`/`WRITE_UPSERT` 的目标不可达、或投递非法消息；
-- 死信页（前端）或 REST 可触发重投；`dead_letter` 表可查。
+- 消息历史页（前端）或 REST 可触发断点重投；`job_run`/`message_step` 表可查。
 
 ## 测试数据与造数指导
 
 | 环节 | 入（怎么造） | 出（产物） | 验证（在哪看/看什么） |
 |---|---|---|---|
-| 触发失败 | 造一条含不可达 `HTTP_CALL` 的任务，手动执行：`curl -X POST /api/jobs/{id}/execute -d '{}'`；或向 MQ 发非法字段消息 | 一条 `dead_letter`（`status='FAILED'`，`error` 含连接拒绝/解析失败） | `GET /api/dead-letters?status=FAILED` 或 `select * from dead_letter order by id desc limit 1` |
-| 重试退避 | 任务 `retryCount=2`、`backoffMs=1000` | 失败前重复投递日志 2 次 | 观察日志 `Failed delivery ... attempt: N` / 死信时间戳 |
-| 死信列表分页 | 批量造死信（可脚本逐条 `insert` 或多次触发失败） | `{total, records}` | 前端分页器 / `curl '...?page=2&size=20'` |
-| 重投成功 | 先修复外部依赖，再 `POST /api/dead-letters/{id}/redeliver` | `lastRunStatus='SUCCESS'`；死信 `status='REDELIVERED'` | 再次查询该死信；目标端收到数据 |
-| 重投失败（失败样例） | 依赖仍未恢复时重投 | 保持 `FAILED`，返回"重投失败：<原因>" | `GET /api/dead-letters/{id}` 仍 `FAILED` |
-| 重投非法输入（边界） | 手工把 `input_json` 改成 `org.apache.camel...@123`（旧死信） | 报"不是 JSON 对象" | `POST /api/dead-letters/{id}/redeliver` 返回 400 |
+| 触发失败 | 造一条含不可达 `HTTP_CALL` 的任务，手动执行：`curl -X POST /api/jobs/{id}/execute -d '{}'`；或向 MQ 发非法字段消息 | 一条 `FAILED` 消息步 + `job_run` 为 `FAILED` | `GET /api/history/steps?status=FAILED` 或 `select * from message_step where status='FAILED' order by id desc limit 1` |
+| 重试退避 | 任务 `retryCount=2`、`backoffMs=1000` | 失败前重复投递日志 2 次（`attempt` 递增） | 观察日志 `Failed delivery ... attempt: N` / 消息步 `attempt` |
+| 历史列表分页 | 多次触发产生多条消息步 | `{total, records}` | 前端分页器 / `curl '...?page=2&size=20'` |
+| 断点重投成功 | 先修复外部依赖，再 `POST /api/history/steps/{id}/redeliver` | 新 `job_run` 为 `SUCCESS`；原消息步 `status='REDELIVERED'` | 再次查询该消息步；目标端收到数据 |
+| 重投失败（失败样例） | 依赖仍未恢复时重投 | 保持 `FAILED`，返回"重投失败：<原因>" | `GET /api/history/steps/{id}` 仍 `FAILED` |
+| 按业务键检索 | 源动作配 `businessKey`，触发含该业务键的消息 | 可按业务键过滤到该消息的全部消息步 | `GET /api/history/steps?businessKey=<键>` |
 
 常用直接 SQL（`spike/db/init.sql` 已含表定义）：
 
 ```sql
-SELECT id, job_id, action_index, input_json, status, error FROM dead_letter ORDER BY id DESC LIMIT 10;
--- 清理旧死信（Java toString 无法重投）
-DELETE FROM dead_letter WHERE input_json LIKE 'org.apache.camel%';
+SELECT id, run_id, message_id, step, action_name, status, business_key, error
+FROM message_step ORDER BY id DESC LIMIT 10;
+SELECT id, job_id, status, started_at, finished_at, error FROM job_run ORDER BY id DESC LIMIT 10;
 ```
 
 ## 验证操作
 
 ```powershell
 # 状态过滤 + 分页
-curl "http://localhost:8080/api/dead-letters?status=FAILED&page=1&size=20"
-# 重投
-curl -X POST http://localhost:8080/api/dead-letters/{id}/redeliver
+curl "http://localhost:8080/api/history/steps?status=FAILED&page=1&size=20"
+# 运行列表
+curl "http://localhost:8080/api/history/runs?jobId=7&status=SUCCESS"
+# 断点重投
+curl -X POST http://localhost:8080/api/history/steps/{id}/redeliver
 ```
 
 ## 建议表
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| C1 轮询链（北向，链首 `READ_SQL`）`buildPollingEntry` 未设 `edge.originalInput`，且该路由兼作重放路由 | 轮询入口同样设置 `edge.originalInput`；并为轮询链补"跳首动作"重放路由（或明确"北向重投=整体重跑"并同步文档）+ 加测试 | ADR-0003 修正与 `reliability` 页声明"重投按原始输入从首动作之后重跑"，但轮询链实际重跑 `READ_SQL`（读库）且死信入参回落失败时刻 body | 缺陷 | 可靠性 | 待评估 |
+| 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 在文档/消息步说明；常见写/发动作走 body 不受影响 | 精确断点的上下文约束 | 已知限制 | 可靠性 | 本期接受 |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 观察项；若需在任务列表反映消费结果，在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |
-| 旧死信（`input_json` 为 Java toString）无法重投 | 启动/后台清理任务或提供清理接口 | 历史测试残留 | 文档偏差 | 可靠性 | 待评估 |
-| 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 明确"至少一次、靠写幂等/MES 按业务键去重"，写进文档与死信；推送链建议 SEQUENCE + 目标端幂等键 | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 待评估 |
+| 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 明确"至少一次、靠写幂等/MES 按业务键去重"，写进文档；推送链建议 SEQUENCE + 目标端幂等键 | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 待评估 |

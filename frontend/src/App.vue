@@ -5,7 +5,7 @@
       <el-menu :default-active="$route.path" router>
         <el-menu-item index="/data-sources">数据源</el-menu-item>
         <el-menu-item index="/jobs">任务与映射</el-menu-item>
-        <el-menu-item index="/dead-letters">死信</el-menu-item>
+        <el-menu-item index="/history">消息历史</el-menu-item>
         <el-menu-item index="/templates">模板</el-menu-item>
         <el-menu-item index="/sites">站点与 API Key</el-menu-item>
       </el-menu>

@@ -4,7 +4,7 @@ Vue 3 + TS + Vite + Element Plus 独立前端工程；工程分离、部署合�
 
 ## 当前设计（现状）
 
-- **技术栈（ADR-0006）**：`frontend/` 独立工程（Vue 3 + TypeScript + Vite + Element Plus + vue-router）；页面：数据源 / 任务（含映射编辑器）/ 死信 / 模板 / 站点，路由在 `frontend/src/router/index.ts`。
+- **技术栈（ADR-0006）**：`frontend/` 独立工程（Vue 3 + TypeScript + Vite + Element Plus + vue-router）；页面：数据源 / 任务（含映射编辑器）/ 消息历史 / 模板 / 站点，路由在 `frontend/src/router/index.ts`。
 - **API 客户端**：`frontend/src/api/client.ts` 统一走 `/api` 前缀、解包 `{code,message,data}` 信封，`code!=OK` 抛 `ApiError(code,message)`；`/mock` 代理到后端 mock 端点。
 - **表单特化**：数据源/动作按类型渲染字段（六种 ActionKind 各自表单）；映射编辑器三栏 + 多级表格 + 推荐面板（`MappingEditor.vue`）。
 - **开发期**：Vite dev server 5173 代理 `/api`、`/mock` → 8080，热更新；**部署期**：Docker 多阶段构建（node 构建 dist → 拷入 Spring Boot 镜像），单镜像、同源、无 CORS。
@@ -20,7 +20,7 @@ Vue 3 + TS + Vite + Element Plus 独立前端工程；工程分离、部署合�
 
 ## 待办 / 已知限制
 
-- 死信/模板/站点页面为表格 + 弹窗，交互相对简单。
+- 消息历史/模板/站点页面为表格 + 弹窗，交互相对简单。
 
 ## 决策时间线
 

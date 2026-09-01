@@ -7,6 +7,7 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.JobRun;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
@@ -23,6 +24,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,14 +36,16 @@ class RouteGeneratorTest {
 
     private DataSourceMapper dataSourceMapper;
     private DataSourceManager dataSourceManager;
+    private MessageHistoryService messageHistory;
     private RouteGenerator generator;
 
     @BeforeEach
     void setUp() {
         dataSourceMapper = mock(DataSourceMapper.class);
         dataSourceManager = mock(DataSourceManager.class);
+        messageHistory = mock(MessageHistoryService.class);
         generator = new RouteGenerator(
-                dataSourceMapper, mock(WatermarkStore.class), mock(DeadLetterService.class), dataSourceManager);
+                dataSourceMapper, mock(WatermarkStore.class), messageHistory, dataSourceManager);
     }
 
     private DataSource mysqlDataSource(Long id) {
@@ -120,7 +125,7 @@ class RouteGeneratorTest {
                 action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/mock", "method", "POST")));
 
         DefaultCamelContext context = buildContext(job, actions);
-        assertThat(context.getRouteDefinitions()).hasSize(2);
+        assertThat(context.getRouteDefinitions()).hasSize(3);
 
         RouteDefinition route = findRoute(context, "job-7");
         assertThat(route.getInput().getUri()).isEqualTo("direct:job-7");
@@ -189,7 +194,7 @@ class RouteGeneratorTest {
                         "dataSourceId", 2L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
 
         DefaultCamelContext context = buildContext(job, actions);
-        assertThat(context.getRouteDefinitions()).hasSize(2);
+        assertThat(context.getRouteDefinitions()).hasSize(3);
 
         RouteDefinition route = context.getRouteDefinitions().get(0);
         assertThat(route.getInput().getUri()).contains("spring-rabbitmq").contains("mes.to.edge");
@@ -198,8 +203,8 @@ class RouteGeneratorTest {
         assertThat(replay).isNotNull();
         assertThat(replay.getInput().getUri()).isEqualTo("direct:job-9");
         // WRITE_UPSERT 必须用动作选定客户库的连接池构造 JdbcTemplate（#67），而非全局配置库；
-        // 消费主路由 + 重放路由各构建一次动作链
-        verify(dataSourceManager, times(2)).get(2L);
+        // 消费主路由 + 重放路由 + 断点续跑路由各构建一次动作链
+        verify(dataSourceManager, times(3)).get(2L);
     }
 
     /** #67 幂等 upsert SQL：动态列 + 业务键 ON DUPLICATE KEY UPDATE，同业务键重复执行不产生重复行。 */
@@ -236,7 +241,7 @@ class RouteGeneratorTest {
                 .hasMessageContaining("数据源不可用");
     }
 
-    /** 重放入口必须把原始输入存为 edge.originalInput，死信重投才能用原始输入重跑整条链。 */
+    /** 重放入口必须把原始输入存为 edge.originalInput，断点重放才能用原始输入重跑整条链。 */
     @Test
     void replayEntryStoresOriginalInputForRedelivery() throws Exception {
         when(dataSourceMapper.selectById(18L)).thenReturn(rabbitDataSource(18L));
@@ -248,6 +253,7 @@ class RouteGeneratorTest {
                 action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 18L, "queue", "bom.to.edge")));
 
         DefaultCamelContext context = buildContext(job, actions);
+        when(messageHistory.startRun(anyLong(), any())).thenReturn(new JobRun());
         // 摘掉 MQ 消费路由，只启动重放路由，避免测试依赖真实 RabbitMQ
         context.removeRouteDefinition(context.getRouteDefinition("job-7"));
         context.start();

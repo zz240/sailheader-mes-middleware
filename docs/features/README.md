@@ -22,7 +22,7 @@
 
 每个功能页必须包含 **「当前设计（现状）」** 一节，让新开发者**读这一页就能直接干活**，不需要先翻全部 ADR：
 
-- 数据模型与字段（Job/Action/DeadLetter 等实体）；
+- 数据模型与字段（Job/Action/JobRun/MessageStep 等实体）；
 - 核心规则与约束（必填项、链约束、handled 策略等）；
 - 关键流程（路由怎么生成、重投怎么跑、映射怎么执行）；
 - 代码位置（哪些类/文件）；
@@ -37,7 +37,7 @@ ADR 只提供“为什么”，现状细节写在本页；发现页面与代码�
 | 数据源 | [data-source](data-source/) | DS-2/3/4/6，ADR-0007 |
 | 任务与动作链 | [job-action-chain](job-action-chain/) | DS-7/8/9 |
 | 字段映射 | [field-mapping](field-mapping/) | DS-2/5/10，ADR-0005 |
-| 可靠性（失败/死信/重投） | [reliability](reliability/) | ADR-0003 |
+| 可靠性（失败/消息历史/重投） | [reliability](reliability/) | ADR-0003 / ADR-0009 |
 | 配置界面与部署形态 | [config-ui](config-ui/) | DS-5，ADR-0006 |
 | API 契约 | [api-contract](api-contract/) | DS-1 |
 | 通信模型（南北向） | [transport](transport/) | ADR-0002，DS-9 |

@@ -6,23 +6,25 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** MQ 消费动作（南向入口，只能作链首）：数据源（broker）+ queue/exchange/routingKey。 */
+/** MQ 消费动作（南向入口，只能作链首）：数据源（broker）+ queue/exchange/routingKey + 业务键 JSON 路径（#70）。 */
 public record MqConsumeConfig(
         Long dataSourceId,
         String queue,
         String exchange,
-        String routingKey
+        String routingKey,
+        String businessKey
 ) implements ActionConfig {
 
     public static MqConsumeConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("dataSourceId", "queue", "exchange", "routingKey"));
+        rejectUnknownKeys(map, Set.of("dataSourceId", "queue", "exchange", "routingKey", "businessKey"));
         Object id = map.get("dataSourceId");
         return new MqConsumeConfig(
                 id == null ? null : Long.valueOf(id.toString()),
                 ConfigValues.str(map.get("queue")),
                 ConfigValues.str(map.get("exchange")),
-                ConfigValues.str(map.get("routingKey")));
+                ConfigValues.str(map.get("routingKey")),
+                ConfigValues.str(map.get("businessKey")));
     }
 
     @Override
@@ -52,6 +54,9 @@ public record MqConsumeConfig(
         }
         if (routingKey != null) {
             map.put("routingKey", routingKey);
+        }
+        if (businessKey != null) {
+            map.put("businessKey", businessKey);
         }
         return map;
     }

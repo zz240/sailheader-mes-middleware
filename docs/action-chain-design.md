@@ -63,7 +63,7 @@ for (Action a : sorted(actions)) {
 
 入口判定：链首为 `MQ_CONSUME` → 南向（消费主路由 + direct 重放路由，现状保留）；否则北向（`direct:job-{id}` + 定时入口，cron 就绪后替换硬编码 timer）。
 
-错误处理保持现状：路由级 `onException`（retryCount/backoffMs 重试）+ 死信记录（`edge.actionIndex` 已支持按动作定位），不做改动。
+错误处理保持现状：路由级 `onException`（retryCount/backoffMs 重试）+ 消息步记录（`edge.actionIndex` 按动作定位），不做改动。
 
 ## 4. 迁移路径
 

@@ -116,6 +116,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="水位列"><el-input v-model="kindForm.watermarkColumn" placeholder="如 id / updated_at" /></el-form-item>
+          <el-form-item label="业务键列"><el-input v-model="kindForm.businessKey" placeholder="如 order_no（按业务分组/检索）" /></el-form-item>
         </template>
 
         <template v-if="actionForm.type === 'WRITE_UPSERT'">
@@ -138,6 +139,7 @@
           <el-form-item label="队列"><el-input v-model="kindForm.queue" placeholder="mes.to.edge" /></el-form-item>
           <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="可选" /></el-form-item>
           <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="可选，缺省=队列" /></el-form-item>
+          <el-form-item label="业务键路径"><el-input v-model="kindForm.businessKey" placeholder="如 data.orderNo（按业务分组/检索）" /></el-form-item>
         </template>
 
         <template v-if="actionForm.type === 'MQ_PUBLISH'">

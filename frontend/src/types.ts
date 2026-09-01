@@ -36,18 +36,34 @@ export interface Action {
   addition: Record<string, any>
 }
 
-export interface DeadLetter {
+export interface JobRun {
   id: number
-  jobId: number | null
-  actionIndex: number | null
-  inputJson: string | null
-  error: string | null
+  jobId: number
   status: string
+  inputSnapshot?: string | null
+  error?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
 }
 
-export interface DeadLetterPage {
+export interface MessageStep {
+  id: number
+  runId: number
+  messageId: string
+  step: number
+  actionName?: string | null
+  status: string
+  dataSnapshot?: string | null
+  inputSnapshot?: string | null
+  error?: string | null
+  createdAt?: string | null
+  attempt?: number | null
+  businessKey?: string | null
+}
+
+export interface Page<T> {
   total: number
-  records: DeadLetter[]
+  records: T[]
 }
 
 export interface Template {

@@ -11,7 +11,6 @@ import com.example.edgegateway.config.MqPublishConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.config.WriteUpsertConfig;
 import com.example.edgegateway.mapper.DataSourceMapper;
-import com.example.edgegateway.mapping.FieldMapper;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
@@ -35,6 +34,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -42,28 +42,29 @@ import java.util.stream.Collectors;
  *
  * <p>入口：链首为 MQ_CONSUME → 消费入口（MQ 消费主路由 + direct 重放路由）；否则
  * 轮询入口（direct + 定时）。READ_SQL 会 split(body())，其后的片段在行内执行。
- * 错误处理统一：onException（重试/退避）+ 死信记录。</p>
+ * 错误处理统一：onException（重试/退避）+ 消息步 FAILED 记录 + 运行 FAILED 标记。
+ * 每个任务额外生成"断点续跑路由"（direct:job-&lt;id&gt;-resume），供失败消息步精确重投。</p>
  */
 @Component
 public class RouteGenerator {
 
     private static final String CONTEXT = "edge.context";
-    private static final String ACTION_INDEX = "edge.actionIndex";
     private static final String ORIGINAL_INPUT = "edge.originalInput";
+    private static final String SKIP_FLAG = "edge.skipFragment";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
-    private final DeadLetterService deadLetterService;
+    private final MessageHistoryService messageHistory;
     private final DataSourceManager dataSourceManager;
 
     public RouteGenerator(
             DataSourceMapper dataSourceMapper,
             WatermarkStore watermarkStore,
-            DeadLetterService deadLetterService,
+            MessageHistoryService messageHistory,
             DataSourceManager dataSourceManager) {
         this.dataSourceMapper = dataSourceMapper;
         this.watermarkStore = watermarkStore;
-        this.deadLetterService = deadLetterService;
+        this.messageHistory = messageHistory;
         this.dataSourceManager = dataSourceManager;
     }
 
@@ -74,10 +75,15 @@ public class RouteGenerator {
         if (sorted.isEmpty()) {
             throw new IllegalArgumentException("任务没有动作，无法生成路由");
         }
+        List<RouteBuilder> builders = new ArrayList<>();
         if (sorted.getFirst().getType() == ActionKind.MQ_CONSUME) {
-            return List.of(buildConsumerEntry(job, sorted), buildReplay(job, sorted));
+            builders.add(buildConsumerEntry(job, sorted));
+            builders.add(buildReplay(job, sorted));
+        } else {
+            builders.add(buildPollingEntry(job, sorted));
         }
-        return List.of(buildPollingEntry(job, sorted));
+        builders.add(buildResumeRoute(job, sorted));
+        return builders;
     }
 
     /** 轮询入口：direct + 定时，按片段组合。 */
@@ -88,7 +94,9 @@ public class RouteGenerator {
             public void configure() {
                 configureErrorHandling(this, job, false);
                 RouteDefinition route = from("direct:" + routeId).routeId(routeId);
-                appendChain(route, actions, job);
+                route.process(ex -> beginRun(ex, job));
+                ProcessorDefinition<?> chain = appendChain(route, actions, job);
+                chain.process(ex -> finishRun(ex, "SUCCESS", null));
                 from("timer:" + routeId + "?period=60000&delay=5000")
                         .routeId("timer-" + routeId)
                         .to("direct:" + routeId);
@@ -118,14 +126,19 @@ public class RouteGenerator {
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
                             ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
+                            beginRun(ex, job);
+                            beginMessage(ex, consume.businessKey());
                         });
-                appendChain(route, actions.subList(1, actions.size()), job);
+                ProcessorDefinition<?> chain = appendChain(route, actions.subList(1, actions.size()), job);
+                chain.process(ex -> finishRun(ex, "SUCCESS", null));
             }
         };
     }
 
-    /** 重放路由：direct 入口接收已解析输入（死信重投/手动执行）。 */
+    /** 重放路由：direct 入口接收已解析输入（手动执行/断点重放）。 */
     private RouteBuilder buildReplay(Job job, List<Action> actions) {
+        MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
+                ActionKind.MQ_CONSUME, actions.getFirst().getAddition());
         return new RouteBuilder() {
             @Override
             public void configure() {
@@ -137,14 +150,36 @@ public class RouteGenerator {
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
                             ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
+                            beginRun(ex, job);
+                            beginMessage(ex, consume.businessKey());
                         });
-                appendChain(route, actions.subList(1, actions.size()), job);
+                ProcessorDefinition<?> chain = appendChain(route, actions.subList(1, actions.size()), job);
+                chain.process(ex -> finishRun(ex, "SUCCESS", null));
             }
         };
     }
 
-    /** 按动作种类逐段追加片段；READ_SQL 触发 split，其后的片段在行内执行。 */
-    private void appendChain(ProcessorDefinition<?> route, List<Action> actions, Job job) {
+    /** 断点续跑路由：direct 入口接收失败步数据，从 {@code edge.resumeFromStep} 动作起重放。 */
+    private RouteBuilder buildResumeRoute(Job job, List<Action> actions) {
+        String routeId = "resume-" + job.getId();
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                configureErrorHandling(this, job, false);
+                RouteDefinition route = from("direct:job-" + job.getId() + "-resume")
+                        .routeId(routeId)
+                        .process(ex -> {
+                            beginRun(ex, job);
+                            beginMessage(ex, null); // 业务键已由重投入口写入，直接沿用
+                        });
+                ProcessorDefinition<?> chain = appendChain(route, actions.subList(1, actions.size()), job);
+                chain.process(ex -> finishRun(ex, "SUCCESS", null));
+            }
+        };
+    }
+
+    /** 按动作种类逐段追加片段；READ_SQL 触发 split，其后的片段在行内执行。返回追加后的链节点。 */
+    private ProcessorDefinition<?> appendChain(ProcessorDefinition<?> route, List<Action> actions, Job job) {
         ProcessorDefinition<?> current = route;
         boolean inSplit = false;
         ReadSqlConfig watermarkRead = null;
@@ -158,7 +193,7 @@ public class RouteGenerator {
                 String sql = read.sql().replace("{watermark}", watermarkPredicate(read));
                 current = current
                         .process(ex -> {
-                            ex.setProperty(ACTION_INDEX, action.getActionIndex());
+                            ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
                             readWatermark(ex, job, read);
                         })
                         .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
@@ -166,6 +201,8 @@ public class RouteGenerator {
                         .split(ExpressionBuilder.bodyExpression());
                 inSplit = true;
                 watermarkRead = read;
+                // 源行为"消息创建"时机：每条源行 = 一条消息，在 split 内首部创建消息标识与业务键
+                current = current.process(ex -> beginMessage(ex, read.businessKey()));
             }
             current = appendFragment(current, action, config, job);
         }
@@ -176,9 +213,10 @@ public class RouteGenerator {
                 current = current.process(ex -> updateWatermark(ex, job, read));
             }
         }
+        return current;
     }
 
-    /** 单个动作的片段。 */
+    /** 单个动作的片段；每个片段记录一条消息步（成功），支持断点续跑时跳过。 */
     private ProcessorDefinition<?> appendFragment(
             ProcessorDefinition<?> current,
             Action action,
@@ -193,19 +231,33 @@ public class RouteGenerator {
                         ? JsonataFieldMapper.fromExpression(mapping.expression())
                         : new JsonataFieldMapper(mapping.rules());
                 yield current.process(ex -> {
-                    ex.setProperty(ACTION_INDEX, index);
+                    if (isResumeSkipped(ex, index)) {
+                        return;
+                    }
+                    ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+                    ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                    Object input = ex.getMessage().getBody();
+                    ex.setProperty(MessageHistoryService.STEP_INPUT, input);
                     Map<Integer, Object> context = context(ex);
                     ex.getMessage().setBody(fieldMapper.apply(context));
                     context.put(index, ex.getMessage().getBody());
                     ex.setProperty(CONTEXT, context);
+                    recordSuccessStep(ex, action, input);
                 });
             }
             case WRITE_UPSERT -> {
                 WriteUpsertConfig write = (WriteUpsertConfig) config;
                 JdbcTemplate writeJdbc = new JdbcTemplate(customerDataSource(write.dataSourceId()));
                 yield current.process(ex -> {
-                    ex.setProperty(ACTION_INDEX, index);
+                    if (isResumeSkipped(ex, index)) {
+                        return;
+                    }
+                    ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+                    ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                    Object input = ex.getMessage().getBody();
+                    ex.setProperty(MessageHistoryService.STEP_INPUT, input);
                     upsert(ex, writeJdbc, write.tableName(), write.idempotencyKey());
+                    recordSuccessStep(ex, action, input);
                 });
             }
             case HTTP_CALL -> {
@@ -218,15 +270,28 @@ public class RouteGenerator {
                 String auth = http.token() == null || http.token().isBlank() ? null : "Bearer " + http.token();
                 yield current
                         .process(ex -> {
-                            ex.setProperty(ACTION_INDEX, index);
+                            if (isResumeSkipped(ex, index)) {
+                                ex.setProperty(SKIP_FLAG, true);
+                                return;
+                            }
+                            ex.setProperty(SKIP_FLAG, false);
+                            ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+                            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                            ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
                             ex.getMessage().setHeader(Exchange.HTTP_METHOD, method);
                             ex.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
                             if (auth != null) {
                                 ex.getMessage().setHeader("Authorization", auth);
                             }
                         })
-                        .marshal().json()
-                        .to(url);
+                        .choice()
+                            .when(ex -> !Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class)))
+                                .marshal().json()
+                                .to(url)
+                                .process(ex -> recordSuccessStep(ex, action,
+                                        ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class)))
+                        .endChoice()
+                        .end();
             }
             case MQ_PUBLISH -> {
                 MqPublishConfig publish = (MqPublishConfig) config;
@@ -236,7 +301,14 @@ public class RouteGenerator {
                         : publish.routingKey();
                 yield current
                         .process(ex -> {
-                            ex.setProperty(ACTION_INDEX, index);
+                            if (isResumeSkipped(ex, index)) {
+                                ex.setProperty(SKIP_FLAG, true);
+                                return;
+                            }
+                            ex.setProperty(SKIP_FLAG, false);
+                            ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+                            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                            ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
                             // bodySourceStep 缺省取上下文中最近一次输出（同步+通知场景 = FIELD_MAP 结果）
                             Map<Integer, Object> context = context(ex);
                             Integer step = publish.bodySourceStep();
@@ -251,15 +323,23 @@ public class RouteGenerator {
                                 ex.getMessage().setBody(source);
                             }
                         })
-                        .marshal().json()
-                        .to("spring-rabbitmq:" + exchange + "?routingKey=" + routingKey + "&disableReplyTo=true");
+                        .choice()
+                            .when(ex -> !Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class)))
+                                .marshal().json()
+                                .to("spring-rabbitmq:" + exchange + "?routingKey=" + routingKey + "&disableReplyTo=true")
+                                .process(ex -> recordSuccessStep(ex, action,
+                                        ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class)))
+                        .endChoice()
+                        .end();
             }
             case READ_SQL -> current.process(ex -> {
+                ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                 Map<Integer, Object> context = context(ex);
                 context.put(index, ex.getMessage().getBody());
                 ex.setProperty(CONTEXT, context);
             });
             case MQ_CONSUME -> current.process(ex -> {
+                ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                 Map<Integer, Object> context = context(ex);
                 context.put(index, ex.getMessage().getBody());
                 ex.setProperty(CONTEXT, context);
@@ -273,8 +353,81 @@ public class RouteGenerator {
         builder.onException(Exception.class)
                 .maximumRedeliveries(retries)
                 .redeliveryDelay(backoff)
-                .process(ex -> recordDeadLetter(ex, job))
+                .process(ex -> recordFailure(ex))
                 .handled(handled);
+    }
+
+    private void beginRun(Exchange ex, Job job) {
+        Long runId = messageHistory.startRun(job.getId(), ex.getMessage().getBody()).getId();
+        ex.setProperty(MessageHistoryService.RUN_ID, runId);
+    }
+
+    private void beginMessage(Exchange ex, String businessKeyConfig) {
+        ex.setProperty(MessageHistoryService.MESSAGE_ID, UUID.randomUUID().toString());
+        String existing = ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class);
+        String key = existing != null
+                ? existing
+                : MessageHistoryService.extractBusinessKey(ex.getMessage().getBody(), businessKeyConfig);
+        ex.setProperty(MessageHistoryService.BUSINESS_KEY, key);
+        ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
+    }
+
+    private void recordSuccessStep(Exchange ex, Action action, Object input) {
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
+        if (runId == null || messageId == null) {
+            return; // 源动作阶段（如 READ_SQL 批量读）无消息，不记消息步
+        }
+        messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
+                input, ex.getMessage().getBody(),
+                ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attempt(ex));
+    }
+
+    private void recordFailure(Exchange ex) {
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        if (runId != null) {
+            messageHistory.finishRun(runId, "FAILED", rootMessage(ex));
+        }
+        String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
+        Integer index = ex.getProperty(MessageHistoryService.ACTION_INDEX, Integer.class);
+        if (messageId != null && index != null) {
+            messageHistory.recordFailure(runId, messageId, index,
+                    ex.getProperty(MessageHistoryService.ACTION_NAME, String.class),
+                    rootMessage(ex),
+                    ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class),
+                    ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class),
+                    attempt(ex));
+        }
+    }
+
+    private void finishRun(Exchange ex, String status, String error) {
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        if (runId != null) {
+            messageHistory.finishRun(runId, status, error);
+        }
+    }
+
+    private boolean isResumeSkipped(Exchange ex, int index) {
+        Integer resumeFrom = ex.getProperty(MessageHistoryService.RESUME_FROM, Integer.class);
+        return resumeFrom != null && index < resumeFrom;
+    }
+
+    private int attempt(Exchange exchange) {
+        Integer counter = exchange.getProperty(Exchange.REDELIVERY_COUNTER, Integer.class);
+        return (counter == null ? 0 : counter) + 1;
+    }
+
+    private String rootMessage(Exchange exchange) {
+        Throwable cause = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
+        if (cause == null) {
+            return null;
+        }
+        Throwable t = cause;
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        String message = t.getMessage();
+        return message == null || message.isBlank() ? cause.getMessage() : message;
     }
 
     @SuppressWarnings("unchecked")
@@ -287,18 +440,6 @@ public class RouteGenerator {
         context.put(0, exchange.getMessage().getBody());
         exchange.setProperty(CONTEXT, context);
         return context;
-    }
-
-    private void recordDeadLetter(Exchange exchange, Job job) {
-        Object input = exchange.getProperty(ORIGINAL_INPUT, Object.class);
-        if (input == null) {
-            input = exchange.getMessage().getBody();
-        }
-        deadLetterService.record(
-                job.getId(),
-                exchange.getProperty(ACTION_INDEX, Integer.class),
-                input,
-                exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class));
     }
 
     private String watermarkPredicate(ReadSqlConfig read) {

@@ -49,7 +49,7 @@ class ActionServiceTest {
 
     private ActionRequest readRequest(Integer index, Long dsId) {
         return new ActionRequest("read", ActionKind.READ_SQL, index,
-                new ReadSqlConfig(dsId, "SELECT * FROM po_order WHERE {watermark}", null, null));
+                new ReadSqlConfig(dsId, "SELECT * FROM po_order WHERE {watermark}", null, null, null));
     }
 
     @Test
@@ -157,7 +157,7 @@ class ActionServiceTest {
         job.setId(1L);
         when(jobMapper.selectById(1L)).thenReturn(job);
         ActionRequest request = new ActionRequest("consume", ActionKind.MQ_CONSUME, 2,
-                new MqConsumeConfig(1L, "q", null, null));
+                new MqConsumeConfig(1L, "q", null, null, null));
 
         assertThatThrownBy(() -> service.add(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)

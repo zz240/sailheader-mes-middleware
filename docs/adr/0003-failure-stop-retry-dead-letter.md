@@ -4,6 +4,7 @@
 
 > - 状态：已接受
 > - Amended by：死信输入快照（2026-08-26）——死信存**原始输入**（edge.originalInput），重投按原始输入从首动作之后重跑，避免二次映射；死信列表分页、输入转 JSON 字符串存储。
+> - Amended by：ADR-0009（2026-09-01）——死信升维为 **消息历史（运行/消息步）**，本文的"死信表 + 死信页 + 整体重投"由 `job_run`/`message_step` + `message_step` 精确断点续跑取代（旧 `dead_letter` 弃用、无迁移）。
 
 ## Considered Options
 
