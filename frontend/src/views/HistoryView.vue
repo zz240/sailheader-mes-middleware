@@ -25,7 +25,7 @@
     </el-radio-group>
 
     <!-- 按运行展开 -->
-    <el-table v-if="mode === 'runs'" :data="runs" border stripe row-key="id">
+    <el-table v-if="mode === 'runs'" :data="runs" border stripe row-key="id" @expand-change="onExpand">
       <el-table-column type="expand" width="40">
         <template #default="{ row }">
           <div class="run-detail">
