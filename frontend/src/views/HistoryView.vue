@@ -72,6 +72,13 @@
                     <el-table-column label="错误" min-width="180" show-overflow-tooltip>
                       <template #default="{ row }">{{ row.error }}</template>
                     </el-table-column>
+                    <el-table-column label="操作" width="90">
+                      <template #default="{ row }">
+                        <el-button size="small" type="primary" :disabled="row.status !== 'FAILED'" @click="redeliver(row)">
+                          重投
+                        </el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </el-collapse-item>
               </el-collapse>
@@ -117,9 +124,12 @@
         <template #default="{ row }">{{ row.error }}</template>
       </el-table-column>
       <el-table-column prop="createdAt" label="时间" min-width="160" />
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openStep(row)">详情</el-button>
+          <el-button size="small" type="primary" :disabled="row.status !== 'FAILED'" @click="redeliver(row)">
+            重投
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -164,9 +174,9 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import VueJsonPretty from 'vue-json-pretty'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import type { Job, JobRun, MessageStep, Page } from '../types'
 
 interface MessageGroup {
@@ -291,6 +301,22 @@ async function copyId(id: string) {
 async function openStep(row: MessageStep) {
   detailRow.value = await api<MessageStep>(`/history/steps/${row.id}`)
   detailVisible.value = true
+}
+
+async function redeliver(row: MessageStep) {
+  await ElMessageBox.confirm(`从失败消息步 #${row.id}（${row.actionName}）断点续跑？`, '确认重投')
+  try {
+    const r = await api<{ status: string }>(`/history/steps/${row.id}/redeliver`, { method: 'POST' })
+    ElMessage.success(`重投完成：消息步状态 ${r.status}`)
+    // 刷新当前视图；runs 模式下同时刷新已展开运行的消息步缓存
+    if (mode.value === 'runs' && row.runId) {
+      const page = await api<Page<MessageStep>>(`/history/steps?runId=${row.runId}&size=100`)
+      runSteps[row.runId] = page.records
+    }
+    await load()
+  } catch (e) {
+    ElMessage.error((e as ApiError).message)
+  }
 }
 
 onMounted(async () => {
