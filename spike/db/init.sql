@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS job_run (
     input_snapshot TEXT,
     error TEXT,
     started_at TIMESTAMP,
-    finished_at TIMESTAMP
+    finished_at TIMESTAMP,
+    INDEX idx_job_run_job (job_id)
 );
 
 CREATE TABLE IF NOT EXISTS message_step (
@@ -100,13 +101,11 @@ CREATE TABLE IF NOT EXISTS message_step (
     created_at TIMESTAMP,
     attempt INT NOT NULL DEFAULT 1,
     business_key VARCHAR(255),
-    CONSTRAINT uk_msg_step_run_msg_step UNIQUE (run_id, message_id, step)
+    CONSTRAINT uk_msg_step_run_msg_step UNIQUE (run_id, message_id, step),
+    INDEX idx_msg_step_run (run_id),
+    INDEX idx_msg_step_message (message_id),
+    INDEX idx_msg_step_business (business_key)
 );
-
-CREATE INDEX IF NOT EXISTS idx_job_run_job ON job_run (job_id);
-CREATE INDEX IF NOT EXISTS idx_msg_step_run ON message_step (run_id);
-CREATE INDEX IF NOT EXISTS idx_msg_step_message ON message_step (message_id);
-CREATE INDEX IF NOT EXISTS idx_msg_step_business ON message_step (business_key);
 
 CREATE TABLE IF NOT EXISTS mapping_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
