@@ -21,9 +21,11 @@ import org.mockito.ArgumentCaptor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.sql.SQLException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -140,6 +142,43 @@ class MessageHistoryExecutionTest {
         }
     }
 
+    /** #71 AC3：跑一条会失败的链 → 表中出现一条 FAILED run + 一条 FAILED 消息步（含动作序号/错误）。 */
+    @Test
+    void failedChainRecordsOneRunAndOneFailedStep() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(13L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "bom.to.edge")),
+                action(2, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 2L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
+        stubConsumeDataSource();
+
+        // WRITE_UPSERT 连接会在执行时抛 SQLException → 触发 onException → 记 FAILED 步
+        javax.sql.DataSource broken = mock(javax.sql.DataSource.class);
+        when(broken.getConnection()).thenThrow(new SQLException("connection broken"));
+        when(dataSourceManager.get(2L)).thenReturn(broken);
+
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
+        context.removeRouteDefinition(context.getRouteDefinition("job-13"));
+        context.start();
+        try {
+            assertThatThrownBy(() ->
+                    context.createProducerTemplate().requestBody("direct:job-13", Map.of("order_no", "PO-1")))
+                    .isInstanceOf(Exception.class);
+        } finally {
+            context.stop();
+        }
+
+        assertThat(runs.values()).anyMatch(r -> r.getJobId().equals(13L) && "FAILED".equals(r.getStatus()));
+        assertThat(steps.values()).anyMatch(s -> "FAILED".equals(s.getStatus())
+                && s.getStep() == 2 && "upsert".equals(s.getActionName()));
+    }
+
     private void bindInMemory() {
         when(jobRunMapper.insert(any(JobRun.class))).thenAnswer(inv -> {
             JobRun run = inv.getArgument(0);
@@ -193,7 +232,14 @@ class MessageHistoryExecutionTest {
     private Action action(int index, ActionKind kind, Map<String, Object> addition) {
         Action action = new Action();
         action.setActionIndex(index);
-        action.setName(kind == ActionKind.FIELD_MAP ? "map" : "consume");
+        action.setName(switch (kind) {
+            case READ_SQL -> "read";
+            case FIELD_MAP -> "map";
+            case WRITE_UPSERT -> "upsert";
+            case HTTP_CALL -> "call";
+            case MQ_CONSUME -> "consume";
+            case MQ_PUBLISH -> "publish";
+        });
         action.setType(kind);
         action.setAddition(addition);
         return action;
