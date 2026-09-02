@@ -17,6 +17,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -177,6 +178,61 @@ class MessageHistoryExecutionTest {
         assertThat(runs.values()).anyMatch(r -> r.getJobId().equals(13L) && "FAILED".equals(r.getStatus()));
         assertThat(steps.values()).anyMatch(s -> "FAILED".equals(s.getStatus())
                 && s.getStep() == 2 && "upsert".equals(s.getActionName()));
+    }
+
+    /** #73 AC：成功链 每消息×每动作 一条 SUCCESS 步，同消息各步共享 message_id，businessKey 提取正确。 */
+    @Test
+    void successChainRecordsPerMessagePerActionWithSharedMessageIdAndBusinessKey() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(14L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of(
+                        "dataSourceId", 1L, "queue", "bom.to.edge", "businessKey", "orderNo")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "orderNo", "target", "order_no"),
+                        Map.of("sourceStep", 1, "source", "material", "target", "material")))),
+                action(3, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 2L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
+        stubConsumeDataSource();
+
+        // WRITE_UPSERT 用一个 H2(MySQL 模式) 内存库真正落库，验证成功链可全程记录
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:msgHist;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        try (java.sql.Connection c = h2.getConnection(); java.sql.Statement st = c.createStatement()) {
+            st.execute("create table if not exists po_receipt(order_no varchar(64) primary key, material varchar(64))");
+        }
+        when(dataSourceManager.get(2L)).thenReturn(h2);
+
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
+        context.removeRouteDefinition(context.getRouteDefinition("job-14"));
+        context.start();
+        try {
+            context.createProducerTemplate().requestBody("direct:job-14", Map.of("orderNo", "PO-1", "material", "M-1"));
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runs.values().stream()
+                .filter(r -> r.getJobId().equals(14L))
+                .findFirst()
+                .orElse(null);
+        assertThat(run).isNotNull();
+        assertThat(run.getStatus()).isEqualTo("SUCCESS");
+
+        List<MessageStep> runSteps2 = steps.values().stream()
+                .filter(s -> s.getRunId().equals(run.getId()))
+                .toList();
+        assertThat(runSteps2).hasSize(2);
+        assertThat(runSteps2).allMatch(s -> "SUCCESS".equals(s.getStatus()));
+        assertThat(runSteps2).extracting(MessageStep::getMessageId)
+                .containsOnly(runSteps2.get(0).getMessageId());
+        assertThat(runSteps2).allMatch(s -> "PO-1".equals(s.getBusinessKey()));
+        assertThat(runSteps2).extracting(MessageStep::getStep).containsExactlyInAnyOrder(2, 3);
     }
 
     private void bindInMemory() {
