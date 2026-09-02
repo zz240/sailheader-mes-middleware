@@ -194,6 +194,9 @@ public class RouteGenerator {
                 current = current
                         .process(ex -> {
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
+                            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                            // READ 失败（未产生任何源行）时用于落一条 FAILED 消息步的占位消息 id
+                            ex.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
                             readWatermark(ex, job, read);
                         })
                         .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
@@ -203,6 +206,8 @@ public class RouteGenerator {
                 watermarkRead = read;
                 // 源行为"消息创建"时机：每条源行 = 一条消息，在 split 内首部创建消息标识与业务键
                 current = current.process(ex -> beginMessage(ex, read.businessKey()));
+                // 读取动作本身也作为链上一步：每条源行记一条 SUCCESS 消息步（无输入快照，data=该行）
+                current = current.process(ex -> recordSuccessStep(ex, action, null));
             }
             current = appendFragment(current, action, config, job);
         }
@@ -376,7 +381,7 @@ public class RouteGenerator {
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
         String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
         if (runId == null || messageId == null) {
-            return; // 源动作阶段（如 READ_SQL 批量读）无消息，不记消息步
+            return; // 未创建消息（如 MQ_CONSUME 入口反序列化失败）时不记消息步
         }
         messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
                 input, ex.getMessage().getBody(),
@@ -389,6 +394,10 @@ public class RouteGenerator {
             messageHistory.finishRun(runId, "FAILED", rootMessage(ex));
         }
         String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
+        if (messageId == null) {
+            // READ_SQL 源在 split 前失败：未产生任何源行，用批量占位消息 id 记一条 FAILED 步
+            messageId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
+        }
         Integer index = ex.getProperty(MessageHistoryService.ACTION_INDEX, Integer.class);
         if (messageId != null && index != null) {
             messageHistory.recordFailure(runId, messageId, index,

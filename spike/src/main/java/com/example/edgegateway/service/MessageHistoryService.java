@@ -45,6 +45,8 @@ public class MessageHistoryService {
     public static final String ACTION_NAME = "edge.actionName";
     public static final String STEP_INPUT = "edge.stepInput";
     public static final String RESUME_FROM = "edge.resumeFromStep";
+    /** READ_SQL 源动作在失败（未产生任何源行）时用作消息占位 id，让失败也能落一条 FAILED 消息步。 */
+    public static final String BATCH_MSG_ID = "edge.batchMessageId";
 
     public static final String SUCCESS = "SUCCESS";
     public static final String FAILED = "FAILED";

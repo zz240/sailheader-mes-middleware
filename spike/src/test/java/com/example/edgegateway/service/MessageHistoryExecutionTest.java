@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.sql.SQLException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -233,6 +234,105 @@ class MessageHistoryExecutionTest {
                 .containsOnly(runSteps2.get(0).getMessageId());
         assertThat(runSteps2).allMatch(s -> "PO-1".equals(s.getBusinessKey()));
         assertThat(runSteps2).extracting(MessageStep::getStep).containsExactlyInAnyOrder(2, 3);
+    }
+
+    /** #73 AC1 按用户意见：源动作 READ_SQL 也作为链上一步——每条源行记一条 SUCCESS 步（无输入快照）。 */
+    @Test
+    void readChainRecordsSourceActionStepPerMessage() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(15L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select id, order_no, vendor_code from po_order where {watermark} order by id",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id", "businessKey", "order_no")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "order_no", "target", "order_no"),
+                        Map.of("sourceStep", 1, "source", "vendor_code", "target", "material")))),
+                action(3, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 1L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
+
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:readHist;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        try (java.sql.Connection c = h2.getConnection(); java.sql.Statement st = c.createStatement()) {
+            st.execute("create table po_order(id bigint primary key, order_no varchar(64), vendor_code varchar(64))");
+            st.execute("create table po_receipt(order_no varchar(64) primary key, material varchar(64))");
+            st.execute("insert into po_order(id, order_no, vendor_code) values (1,'PO-1','V1'), (2,'PO-2','V2')");
+        }
+        when(dataSourceManager.get(1L)).thenReturn(h2);
+        // READ 的 sql: 组件按 `#edge-ds-1` bean 解析数据源（真实应用由 DataSourceManager 注册）
+        context.getRegistry().bind("edge-ds-1", h2);
+
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
+        context.start();
+        try {
+            context.createProducerTemplate().requestBody("direct:job-15", Map.of());
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runs.values().stream()
+                .filter(r -> r.getJobId().equals(15L))
+                .findFirst()
+                .orElse(null);
+        assertThat(run).isNotNull();
+        assertThat(run.getStatus()).isEqualTo("SUCCESS");
+
+        List<MessageStep> all = steps.values().stream()
+                .filter(s -> s.getRunId().equals(run.getId()))
+                .toList();
+        assertThat(all).hasSize(6); // 2 条源行 × 3 动作（read/map/upsert）
+
+        Map<String, List<MessageStep>> byMsg = all.stream().collect(Collectors.groupingBy(MessageStep::getMessageId));
+        assertThat(byMsg).hasSize(2);
+        byMsg.forEach((messageId, list) -> {
+            assertThat(list).hasSize(3);
+            assertThat(list).allMatch(s -> "SUCCESS".equals(s.getStatus()));
+            assertThat(list).extracting(MessageStep::getStep).containsExactlyInAnyOrder(1, 2, 3);
+            assertThat(list).allMatch(s -> s.getBusinessKey() != null); // order_no 提取
+            MessageStep readStep = list.stream().filter(s -> s.getStep() == 1).findFirst().orElseThrow();
+            assertThat(readStep.getActionName()).isEqualTo("read");
+            assertThat(readStep.getInputSnapshot()).isNull(); // 源动作无输入快照
+        });
+    }
+
+    /** #73 按用户意见：READ_SQL 源失败也应记一条 FAILED 消息步（用批量占位消息 id，无输入快照）。 */
+    @Test
+    void failedReadRecordsFailedSourceStep() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(16L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select * from no_such_table where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id")));
+
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:failRead;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        when(dataSourceManager.get(1L)).thenReturn(h2);
+        context.getRegistry().bind("edge-ds-1", h2);
+
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
+        context.start();
+        try {
+            assertThatThrownBy(() ->
+                    context.createProducerTemplate().requestBody("direct:job-16", Map.of()))
+                    .isInstanceOf(Exception.class);
+        } finally {
+            context.stop();
+        }
+
+        assertThat(runs.values()).anyMatch(r -> r.getJobId().equals(16L) && "FAILED".equals(r.getStatus()));
+        assertThat(steps.values()).anyMatch(s -> "FAILED".equals(s.getStatus())
+                && s.getStep() == 1 && "read".equals(s.getActionName()));
     }
 
     private void bindInMemory() {
