@@ -11,7 +11,7 @@
   - `message_step`：一条消息 × 一个动作（runId/messageId/step/actionName/status/data_snapshot/input_snapshot/error/created_at/attempt/businessKey），`status ∈ SUCCESS/FAILED/REDELIVERED`（RETRYING/SUPPRESSED 预留）；按 `(run_id, message_id, step)` 唯一。
 - **业务键**：源动作新增 `businessKey`（READ_SQL=源列；MQ_CONSUME/任务输入=JSON 路径），在**消息创建时**提取；可为空（不分组/去重）。
 - **断点续跑**：从一条 `FAILED` 消息步精确重投（用该步数据从该动作重放，不整链重跑），成功后原步状态 `REDELIVERED`。
-- **列表分页**：`GET /api/history/runs` 与 `GET /api/history/steps`（默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤。
+- **列表分页**：`GET /api/history/runs`（运行）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
 - **代码位置**：`service/MessageHistoryService.java`（核心）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`spike/db/init.sql`、`schema.sql`。
 
 ## 决策时间线

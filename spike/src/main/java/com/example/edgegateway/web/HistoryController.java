@@ -23,6 +23,19 @@ public class HistoryController {
         this.messageHistoryService = messageHistoryService;
     }
 
+    /** 历史列表（#74 契约）：按 jobId/runId/messageId/businessKey/status 过滤 + 分页，等价于 /steps。 */
+    @GetMapping
+    public Map<String, Object> listHistory(@RequestParam(required = false) Long jobId,
+                                           @RequestParam(required = false) Long runId,
+                                           @RequestParam(required = false) String messageId,
+                                           @RequestParam(required = false) String businessKey,
+                                           @RequestParam(required = false) String status,
+                                           @RequestParam(defaultValue = "1") int page,
+                                           @RequestParam(defaultValue = "20") int size) {
+        return messageHistoryService.listSteps(jobId, runId, messageId, businessKey, status,
+                safePage(page), safeSize(size));
+    }
+
     @GetMapping("/runs")
     public Map<String, Object> listRuns(@RequestParam(required = false) Long jobId,
                                         @RequestParam(required = false) String status,
@@ -50,6 +63,12 @@ public class HistoryController {
 
     @GetMapping("/steps/{id}")
     public MessageStep getStep(@PathVariable Long id) {
+        return messageHistoryService.getStep(id);
+    }
+
+    /** 消息步详情（#74 契约）：等价于 /steps/{id}。 */
+    @GetMapping("/{id}")
+    public MessageStep getHistory(@PathVariable Long id) {
         return messageHistoryService.getStep(id);
     }
 

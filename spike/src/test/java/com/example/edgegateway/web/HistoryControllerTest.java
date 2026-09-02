@@ -73,6 +73,32 @@ class HistoryControllerTest {
     }
 
     @Test
+    void listsHistoryRootAsSteps() throws Exception {
+        MessageStep step = new MessageStep();
+        step.setId(1L);
+        step.setStatus("SUCCESS");
+        when(messageHistoryService.listSteps(anyLong(), nullable(Long.class), nullable(String.class),
+                nullable(String.class), nullable(String.class), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 1L, "records", List.of(step)));
+
+        mockMvc.perform(get("/api/history").param("jobId", "7").param("status", "SUCCESS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].id").value(1));
+    }
+
+    @Test
+    void getsHistoryDetailAsStep() throws Exception {
+        MessageStep step = new MessageStep();
+        step.setId(9L);
+        step.setStatus("FAILED");
+        when(messageHistoryService.getStep(9L)).thenReturn(step);
+
+        mockMvc.perform(get("/api/history/9"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(9));
+    }
+
+    @Test
     void redeliversFailedStep() throws Exception {
         MessageStep step = new MessageStep();
         step.setId(5L);

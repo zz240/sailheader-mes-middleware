@@ -7,7 +7,7 @@
           <el-select v-model="filterJobId" clearable placeholder="按任务过滤" style="width: 180px">
             <el-option v-for="j in jobs" :key="j.id" :value="j.id" :label="`#${j.id} ${j.name}`" />
           </el-select>
-          <el-select v-model="filterStatus" clearable placeholder="状态（默认全部）" style="width: 150px">
+          <el-select v-model="filterStatus" clearable placeholder="状态（消息步默认 FAILED）" style="width: 190px">
             <el-option label="FAILED" value="FAILED" />
             <el-option label="SUCCESS" value="SUCCESS" />
             <el-option label="REDELIVERED" value="REDELIVERED" />
@@ -205,9 +205,9 @@ async function load() {
   const params = new URLSearchParams()
   if (filterJobId.value) params.set('jobId', String(filterJobId.value))
   if (mode.value === 'runs') {
-    if (filterStatus.value) params.set('status', filterStatus.value)
+    if (filterStatus.value) params.set('status', filterStatus.value) // 运行视图默认不过滤，选了才过滤
   } else {
-    if (filterStatus.value) params.set('status', filterStatus.value)
+    params.set('status', filterStatus.value || 'FAILED') // 消息步检索默认 FAILED（#74）
     if (filterBusinessKey.value) params.set('businessKey', filterBusinessKey.value)
   }
   params.set('page', String(currentPage.value))
