@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.test.autoconfigure.MybatisPlusTest;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.ScheduleType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,6 +34,9 @@ class JobActionMapperTest {
         job.setName("po-sync");
         job.setStatus(1);
         job.setCrontab("0 0/30 * * * ?");
+        job.setScheduleType(ScheduleType.INTERVAL);
+        job.setIntervalValue(10);
+        job.setIntervalUnit("MINUTES");
         job.setTimezone("Asia/Shanghai");
         job.setRetryCount(3);
         job.setBackoffMs(1000L);
@@ -55,6 +59,9 @@ class JobActionMapperTest {
         Job found = jobMapper.selectOne(
                 new LambdaQueryWrapper<Job>().eq(Job::getName, "po-sync"));
         assertThat(found.getRetryCount()).isEqualTo(3);
+        assertThat(found.getScheduleType()).isEqualTo(ScheduleType.INTERVAL);
+        assertThat(found.getIntervalValue()).isEqualTo(10);
+        assertThat(found.getIntervalUnit()).isEqualTo("MINUTES");
 
         List<Action> actions = actionMapper.selectList(
                 new LambdaQueryWrapper<Action>()

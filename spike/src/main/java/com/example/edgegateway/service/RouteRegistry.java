@@ -29,13 +29,15 @@ public class RouteRegistry {
     private final JobMapper jobMapper;
     private final ActionMapper actionMapper;
     private final RouteGenerator routeGenerator;
+    private final JobScheduler jobScheduler;
 
     public RouteRegistry(CamelContext camelContext, JobMapper jobMapper,
-                         ActionMapper actionMapper, RouteGenerator routeGenerator) {
+                         ActionMapper actionMapper, RouteGenerator routeGenerator, JobScheduler jobScheduler) {
         this.camelContext = camelContext;
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
         this.routeGenerator = routeGenerator;
+        this.jobScheduler = jobScheduler;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -58,11 +60,11 @@ public class RouteRegistry {
                 .orderByAsc(Action::getActionIndex));
         try {
             removeIfExists(routeId(jobId));
-            removeIfExists(timerRouteId(jobId));
             removeIfExists(directRouteId(jobId));
             for (RouteBuilder builder : routeGenerator.build(job, actions)) { // 配置问题抛 IllegalArgumentException -> 400
                 camelContext.addRoutes(builder);
             }
+            jobScheduler.reconcile(jobId); // 依调度配置登记自动触发（不自动/MQ_CONSUME/停用则不登记）
         } catch (Exception e) {
             LOG.error("注册路由失败 job={}", jobId, e);
             throw new IllegalStateException("注册路由失败: " + jobId, e);
@@ -71,8 +73,8 @@ public class RouteRegistry {
 
     public void disable(Long jobId) {
         removeIfExists(routeId(jobId));
-        removeIfExists(timerRouteId(jobId));
         removeIfExists(directRouteId(jobId));
+        jobScheduler.reconcile(jobId); // 停用后注销调度（reconcile 依状态判定）
     }
 
     private void removeIfExists(String routeId) {
@@ -88,10 +90,6 @@ public class RouteRegistry {
 
     private String routeId(Long jobId) {
         return "job-" + jobId;
-    }
-
-    private String timerRouteId(Long jobId) {
-        return "timer-job-" + jobId;
     }
 
     private String directRouteId(Long jobId) {

@@ -52,7 +52,8 @@ class JobControllerTest {
 
     private static final String JOB_BODY =
             "{\"name\":\"po-sync\",\"siteId\":1,\"status\":0,"
-                    + "\"crontab\":\"0 0/30 * * * ?\",\"timezone\":\"Asia/Shanghai\","
+                    + "\"scheduleType\":\"INTERVAL\",\"intervalValue\":30,\"intervalUnit\":\"MINUTES\","
+                    + "\"timezone\":\"Asia/Shanghai\","
                     + "\"direction\":\"NORTH\",\"retryCount\":3,\"backoffMs\":1000,\"remarks\":\"备注\"}";
 
     @Test

@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
  * 路由生成器（DS-8 片段组合）：按动作种类逐段追加 Camel 片段。
  *
  * <p>入口：链首为 MQ_CONSUME → 消费入口（MQ 消费主路由 + direct 重放路由）；否则
- * 轮询入口（direct + 定时）。READ_SQL 会 split(body())，其后的片段在行内执行。
+ * 直连入口（direct；自动触发由 JobScheduler 依调度配置投递）。READ_SQL 会 split(body())，其后的片段在行内执行。
  * 错误处理统一：onException（重试/退避）+ 消息步 FAILED 记录 + 运行 FAILED 标记。
  * 每个任务额外生成"断点续跑路由"（direct:job-&lt;id&gt;-resume），供失败消息步精确重投。</p>
  */
@@ -86,7 +86,7 @@ public class RouteGenerator {
         return builders;
     }
 
-    /** 轮询入口：direct + 定时，按片段组合。 */
+    /** 直连入口：仅构建 direct（手动/外部/自动调度共用一个执行入口）；自动触发由 JobScheduler 依调度配置投递。 */
     private RouteBuilder buildPollingEntry(Job job, List<Action> actions) {
         String routeId = "job-" + job.getId();
         return new RouteBuilder() {
@@ -97,9 +97,6 @@ public class RouteGenerator {
                 route.process(ex -> beginRun(ex, job));
                 ProcessorDefinition<?> chain = appendChain(route, actions, job);
                 chain.process(ex -> finishRun(ex, "SUCCESS", null));
-                from("timer:" + routeId + "?period=60000&delay=5000")
-                        .routeId("timer-" + routeId)
-                        .to("direct:" + routeId);
             }
         };
     }

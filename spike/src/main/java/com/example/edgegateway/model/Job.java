@@ -8,7 +8,9 @@ import java.time.LocalDateTime;
 
 /**
  * 任务：一条可执行的数据同步流程，由动作链（Action）按 index 顺序组成。
- * 支持 cron 定时、手动、HTTP、MQ 四种触发；水位策略决定增量同步方式。
+ * 支持手动、HTTP、MQ 与自动调度（不自动/间隔/每天/每周）触发；水位策略决定增量同步方式。
+ * 自动调度以结构化字段承载（scheduleType 与 interval/schedule 系列字段），内部编译为
+ * fixedRate 或 cron（见 ScheduleCompiler），cron 仅内部表达、不对用户展示/编辑。
  */
 @TableName("job")
 public class Job {
@@ -23,6 +25,21 @@ public class Job {
     private Integer status; // 0 停用，1 启用
 
     private String crontab;
+
+    /** 自动触发方式：NONE/INTERVAL/DAILY/WEEKLY；NONE 只保留 direct（手动/外部/重投）。 */
+    private ScheduleType scheduleType;
+
+    /** 间隔值（INTERVAL）：正整数 N。 */
+    private Integer intervalValue;
+
+    /** 间隔单位（INTERVAL）：MINUTES / HOURS。 */
+    private String intervalUnit;
+
+    /** 每日/每周执行时间（DAILY/WEEKLY）：HH:MM。 */
+    private String scheduleTime;
+
+    /** 每周执行周几（WEEKLY）：1=周一 … 7=周日。 */
+    private Integer scheduleWeekday;
 
     private String timezone;
 
@@ -80,6 +97,46 @@ public class Job {
 
     public void setCrontab(String crontab) {
         this.crontab = crontab;
+    }
+
+    public ScheduleType getScheduleType() {
+        return scheduleType;
+    }
+
+    public void setScheduleType(ScheduleType scheduleType) {
+        this.scheduleType = scheduleType;
+    }
+
+    public Integer getIntervalValue() {
+        return intervalValue;
+    }
+
+    public void setIntervalValue(Integer intervalValue) {
+        this.intervalValue = intervalValue;
+    }
+
+    public String getIntervalUnit() {
+        return intervalUnit;
+    }
+
+    public void setIntervalUnit(String intervalUnit) {
+        this.intervalUnit = intervalUnit;
+    }
+
+    public String getScheduleTime() {
+        return scheduleTime;
+    }
+
+    public void setScheduleTime(String scheduleTime) {
+        this.scheduleTime = scheduleTime;
+    }
+
+    public Integer getScheduleWeekday() {
+        return scheduleWeekday;
+    }
+
+    public void setScheduleWeekday(Integer scheduleWeekday) {
+        this.scheduleWeekday = scheduleWeekday;
     }
 
     public String getTimezone() {

@@ -125,7 +125,7 @@ class RouteGeneratorTest {
                 action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/mock", "method", "POST")));
 
         DefaultCamelContext context = buildContext(job, actions);
-        assertThat(context.getRouteDefinitions()).hasSize(3);
+        assertThat(context.getRouteDefinitions()).hasSize(2);
 
         RouteDefinition route = findRoute(context, "job-7");
         assertThat(route.getInput().getUri()).isEqualTo("direct:job-7");
@@ -133,8 +133,8 @@ class RouteGeneratorTest {
         assertThat(uris).anyMatch(u -> u.contains("sql:") && u.contains("id > :#lastId"));
         assertThat(uris).anyMatch(u -> u.equals("http://localhost:8080/mock"));
 
-        RouteDefinition timer = findRoute(context, "timer-job-7");
-        assertThat(timer.getInput().getUri()).startsWith("timer:job-7");
+        // 自动触发已外置到 JobScheduler；默认（不自动）不再生成 timer 路由
+        assertThat(findRoute(context, "timer-job-7")).isNull();
     }
 
     @Test

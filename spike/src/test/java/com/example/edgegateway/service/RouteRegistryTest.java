@@ -24,8 +24,9 @@ class RouteRegistryTest {
     private final JobMapper jobMapper = mock(JobMapper.class);
     private final ActionMapper actionMapper = mock(ActionMapper.class);
     private final RouteGenerator routeGenerator = mock(RouteGenerator.class);
+    private final JobScheduler jobScheduler = mock(JobScheduler.class);
     private final RouteRegistry registry =
-            new RouteRegistry(camelContext, jobMapper, actionMapper, routeGenerator);
+            new RouteRegistry(camelContext, jobMapper, actionMapper, routeGenerator, jobScheduler);
     private final RouteController routeController = mock(RouteController.class);
 
     @Test
@@ -46,23 +47,22 @@ class RouteRegistryTest {
         registry.enable(1L);
 
         verify(camelContext).addRoutes(builder);
+        verify(jobScheduler).reconcile(1L);
     }
 
     @Test
     void disableStopsAndRemovesRoute() throws Exception {
         when(camelContext.getRoute("job-1")).thenReturn(mock(Route.class));
-        when(camelContext.getRoute("timer-job-1")).thenReturn(mock(Route.class));
         when(camelContext.getRoute("direct-1")).thenReturn(mock(Route.class));
         when(camelContext.getRouteController()).thenReturn(routeController);
 
         registry.disable(1L);
 
         verify(routeController).stopRoute("job-1");
-        verify(routeController).stopRoute("timer-job-1");
         verify(routeController).stopRoute("direct-1");
         verify(camelContext).removeRoute("job-1");
-        verify(camelContext).removeRoute("timer-job-1");
         verify(camelContext).removeRoute("direct-1");
+        verify(jobScheduler).reconcile(1L);
     }
 
     @Test

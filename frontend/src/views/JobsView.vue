@@ -41,7 +41,7 @@
       <el-form label-width="100px">
         <el-form-item label="名称"><el-input v-model="jobForm.name" /></el-form-item>
         <el-form-item label="站点">
-          <el-select v-model="jobForm.siteId" placeholder="选择站点" style="width: 100%">
+          <el-select v-model="jobForm.siteId" placeholder="选择站点" style="width: 100%" @change="applySiteTimezone">
             <el-option v-for="s in sites" :key="s.id" :value="s.id" :label="`#${s.id} ${s.name}（${s.timezone || '默认时区'}）`" />
           </el-select>
         </el-form-item>
@@ -51,7 +51,32 @@
             <el-option label="南向（MES → 客户）" value="SOUTH" />
           </el-select>
         </el-form-item>
-        <el-form-item label="cron"><el-input v-model="jobForm.crontab" placeholder="可选" /></el-form-item>
+        <el-form-item label="调度">
+          <el-select v-model="jobForm.scheduleType" style="width: 100%">
+            <el-option label="不自动" value="NONE" />
+            <el-option label="每 N 分钟/小时" value="INTERVAL" />
+            <el-option label="每天" value="DAILY" />
+            <el-option label="每周" value="WEEKLY" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="jobForm.scheduleType === 'INTERVAL'" label="间隔">
+          <el-input-number v-model="jobForm.intervalValue" :min="1" />
+          <el-select v-model="jobForm.intervalUnit" style="width: 110px; margin-left: 8px">
+            <el-option label="分钟" value="MINUTES" />
+            <el-option label="小时" value="HOURS" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="jobForm.scheduleType === 'DAILY' || jobForm.scheduleType === 'WEEKLY'" label="执行时间">
+          <el-time-picker v-model="jobForm.scheduleTime" value-format="HH:mm" format="HH:mm" placeholder="HH:MM" />
+        </el-form-item>
+        <el-form-item v-if="jobForm.scheduleType === 'WEEKLY'" label="周几">
+          <el-select v-model="jobForm.scheduleWeekday" style="width: 100%">
+            <el-option v-for="(name, i) in weekdays" :key="i + 1" :label="name" :value="i + 1" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="jobForm.scheduleType === 'DAILY' || jobForm.scheduleType === 'WEEKLY'" label="时区">
+          <el-input :model-value="jobForm.timezone || '默认时区'" readonly />
+        </el-form-item>
         <el-form-item label="重试次数"><el-input-number v-model="jobForm.retryCount" :min="0" /></el-form-item>
         <el-form-item label="退避(ms)"><el-input-number v-model="jobForm.backoffMs" :min="0" /></el-form-item>
       </el-form>
@@ -201,7 +226,13 @@ const received = ref<any[]>([])
 
 const jobFormVisible = ref(false)
 const editingJob = ref<Job | null>(null)
-const jobForm = reactive({ name: '', siteId: 1, direction: 'NORTH' as 'NORTH' | 'SOUTH', crontab: '', retryCount: 0, backoffMs: 1000 })
+const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const jobForm = reactive({
+  name: '', siteId: 1, direction: 'NORTH' as 'NORTH' | 'SOUTH',
+  scheduleType: 'NONE', intervalValue: 30, intervalUnit: 'MINUTES' as 'MINUTES' | 'HOURS',
+  scheduleTime: '00:00', scheduleWeekday: 1, timezone: '',
+  retryCount: 0, backoffMs: 1000,
+})
 
 const actionFormVisible = ref(false)
 const editingAction = ref<Action | null>(null)
@@ -258,26 +289,51 @@ function dsName(id: number | null | undefined) {
   return dataSources.value.find(d => d.id === id)?.name ?? `#${id}`
 }
 
+function applySiteTimezone() {
+  const site = sites.value.find(s => s.id === jobForm.siteId)
+  jobForm.timezone = site?.timezone ?? ''
+}
+
 function openCreate() {
   editingJob.value = null
-  Object.assign(jobForm, { name: '', siteId: sites.value[0]?.id ?? 1, direction: 'NORTH', crontab: '', retryCount: 0, backoffMs: 1000 })
+  const first = sites.value[0]
+  Object.assign(jobForm, {
+    name: '', siteId: first?.id ?? 1, direction: 'NORTH',
+    scheduleType: 'NONE', intervalValue: 30, intervalUnit: 'MINUTES',
+    scheduleTime: '00:00', scheduleWeekday: 1, timezone: first?.timezone ?? '',
+    retryCount: 0, backoffMs: 1000,
+  })
   jobFormVisible.value = true
 }
 
 function openEdit(row: Job) {
   editingJob.value = row
+  const site = sites.value.find(s => s.id === row.siteId)
   Object.assign(jobForm, {
-    name: row.name, siteId: row.siteId, direction: row.direction ?? 'NORTH', crontab: row.crontab ?? '',
+    name: row.name, siteId: row.siteId, direction: row.direction ?? 'NORTH',
+    scheduleType: row.scheduleType ?? 'NONE',
+    intervalValue: row.intervalValue ?? 30,
+    intervalUnit: row.intervalUnit ?? 'MINUTES',
+    scheduleTime: row.scheduleTime ?? '00:00',
+    scheduleWeekday: row.scheduleWeekday ?? 1,
+    timezone: row.timezone ?? site?.timezone ?? '',
     retryCount: row.retryCount ?? 0, backoffMs: row.backoffMs ?? 1000,
   })
   jobFormVisible.value = true
 }
 
 async function saveJob() {
+  const isTimeBased = jobForm.scheduleType === 'DAILY' || jobForm.scheduleType === 'WEEKLY'
   const body = {
     name: jobForm.name, siteId: jobForm.siteId, status: editingJob.value?.status ?? 0,
     direction: jobForm.direction,
-    crontab: jobForm.crontab || null, retryCount: jobForm.retryCount, backoffMs: jobForm.backoffMs,
+    scheduleType: jobForm.scheduleType || 'NONE',
+    intervalValue: jobForm.scheduleType === 'INTERVAL' ? jobForm.intervalValue : null,
+    intervalUnit: jobForm.scheduleType === 'INTERVAL' ? jobForm.intervalUnit : null,
+    scheduleTime: isTimeBased ? jobForm.scheduleTime : null,
+    scheduleWeekday: jobForm.scheduleType === 'WEEKLY' ? jobForm.scheduleWeekday : null,
+    timezone: jobForm.timezone || null,
+    retryCount: jobForm.retryCount, backoffMs: jobForm.backoffMs,
   }
   try {
     if (editingJob.value) await api(`/jobs/${editingJob.value.id}`, { method: 'PUT', body: JSON.stringify(body) })

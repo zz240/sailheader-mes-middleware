@@ -15,7 +15,11 @@ export interface Job {
   name: string
   status: number
   direction?: 'NORTH' | 'SOUTH' | null
-  crontab?: string | null
+  scheduleType?: 'NONE' | 'INTERVAL' | 'DAILY' | 'WEEKLY' | null
+  intervalValue?: number | null
+  intervalUnit?: 'MINUTES' | 'HOURS' | null
+  scheduleTime?: string | null
+  scheduleWeekday?: number | null
   timezone?: string | null
   retryCount?: number | null
   backoffMs?: number | null

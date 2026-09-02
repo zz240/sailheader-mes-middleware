@@ -1,18 +1,23 @@
 package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.ScheduleType;
 import com.example.edgegateway.model.SyncDirection;
 
 import java.time.LocalDateTime;
 
-/** 任务接口响应体（水位策略已移至 READ_SQL 动作，DS-7）。 */
+/** 任务接口响应体（水位策略已移至 READ_SQL 动作，DS-7）；cron 已内部化、不对外展示。 */
 public record JobView(
         Long id,
         Long siteId,
         String name,
         Integer status,
         SyncDirection direction,
-        String crontab,
+        ScheduleType scheduleType,
+        Integer intervalValue,
+        String intervalUnit,
+        String scheduleTime,
+        Integer scheduleWeekday,
         String timezone,
         Integer retryCount,
         Long backoffMs,
@@ -29,7 +34,11 @@ public record JobView(
                 job.getName(),
                 job.getStatus(),
                 job.getDirection(),
-                job.getCrontab(),
+                job.getScheduleType(),
+                job.getIntervalValue(),
+                job.getIntervalUnit(),
+                job.getScheduleTime(),
+                job.getScheduleWeekday(),
                 job.getTimezone(),
                 job.getRetryCount(),
                 job.getBackoffMs(),
