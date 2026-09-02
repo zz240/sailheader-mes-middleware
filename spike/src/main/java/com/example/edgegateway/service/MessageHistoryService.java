@@ -2,9 +2,12 @@ package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.JobRunMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
@@ -55,6 +58,7 @@ public class MessageHistoryService {
     private final JobRunMapper jobRunMapper;
     private final MessageStepMapper messageStepMapper;
     private final JobMapper jobMapper;
+    private final ActionMapper actionMapper;
     private final ObjectMapper objectMapper;
     private final CamelContext camelContext;
 
@@ -62,11 +66,13 @@ public class MessageHistoryService {
             JobRunMapper jobRunMapper,
             MessageStepMapper messageStepMapper,
             JobMapper jobMapper,
+            ActionMapper actionMapper,
             ObjectMapper objectMapper,
             CamelContext camelContext) {
         this.jobRunMapper = jobRunMapper;
         this.messageStepMapper = messageStepMapper;
         this.jobMapper = jobMapper;
+        this.actionMapper = actionMapper;
         this.objectMapper = objectMapper;
         this.camelContext = camelContext;
     }
@@ -213,6 +219,10 @@ public class MessageHistoryService {
         if (job == null || job.getStatus() == null || job.getStatus() != 1) {
             throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法重投");
         }
+        // 源动作（READ_SQL/MQ_CONSUME）失败时没有断点数据可续跑：再重投会用空数据跑下游而连坐失败
+        if (isSourceAction(run.getJobId(), step.getStep())) {
+            throw new IllegalStateException("源动作（READ_SQL/MQ_CONSUME）失败无断点数据，无法断点重投；请重新执行任务");
+        }
         Object input = parseJson(step.getInputSnapshot());
         try (ProducerTemplate producer = camelContext.createProducerTemplate()) {
             producer.request("direct:job-" + job.getId() + "-resume", ex -> {
@@ -227,6 +237,18 @@ public class MessageHistoryService {
         step.setStatus(REDELIVERED);
         messageStepMapper.updateById(step);
         return step;
+    }
+
+    /** 该消息步是否为链首源动作（READ_SQL/MQ_CONSUME）：此类失败没有可续跑的数据。 */
+    private boolean isSourceAction(Long jobId, Integer step) {
+        if (step == null) {
+            return false;
+        }
+        return actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                        .eq(Action::getJobId, jobId)
+                        .eq(Action::getActionIndex, step))
+                .stream()
+                .anyMatch(a -> a.getType() == ActionKind.READ_SQL || a.getType() == ActionKind.MQ_CONSUME);
     }
 
     // ---------- 工具 ----------

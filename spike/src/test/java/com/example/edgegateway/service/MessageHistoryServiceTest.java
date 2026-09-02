@@ -1,8 +1,11 @@
 package com.example.edgegateway.service;
 
+import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.mapper.JobRunMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
@@ -42,14 +45,16 @@ class MessageHistoryServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, MessageStep.class);
         TableInfoHelper.initTableInfo(assistant, JobRun.class);
+        TableInfoHelper.initTableInfo(assistant, Action.class);
     }
 
     private final JobRunMapper jobRunMapper = mock(JobRunMapper.class);
     private final MessageStepMapper messageStepMapper = mock(MessageStepMapper.class);
     private final JobMapper jobMapper = mock(JobMapper.class);
+    private final ActionMapper actionMapper = mock(ActionMapper.class);
     private final CamelContext camelContext = mock(CamelContext.class);
     private final MessageHistoryService service = new MessageHistoryService(
-            jobRunMapper, messageStepMapper, jobMapper, new ObjectMapper(), camelContext);
+            jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), camelContext);
 
     @Test
     void startRunInsertsRunningRun() {
@@ -228,6 +233,32 @@ class MessageHistoryServiceTest {
         assertThatThrownBy(() -> service.redeliver(6L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("仅失败");
+    }
+
+    @Test
+    void redeliverRejectsSourceActionStep() {
+        MessageStep step = new MessageStep();
+        step.setId(7L);
+        step.setRunId(3L);
+        step.setStep(1);
+        step.setStatus("FAILED");
+        step.setInputSnapshot("{}");
+        when(messageStepMapper.selectById(7L)).thenReturn(step);
+        JobRun run = new JobRun();
+        run.setId(3L);
+        run.setJobId(7L);
+        when(jobRunMapper.selectById(3L)).thenReturn(run);
+        Job job = new Job();
+        job.setId(7L);
+        job.setStatus(1);
+        when(jobMapper.selectById(7L)).thenReturn(job);
+        Action source = new Action();
+        source.setType(ActionKind.READ_SQL);
+        when(actionMapper.selectList(any())).thenReturn(List.of(source));
+
+        assertThatThrownBy(() -> service.redeliver(7L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("源动作");
     }
 
     @Test

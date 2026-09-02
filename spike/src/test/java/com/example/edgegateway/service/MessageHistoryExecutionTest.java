@@ -1,6 +1,7 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.WatermarkStore;
+import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.mapper.JobRunMapper;
@@ -12,9 +13,13 @@ import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -41,9 +46,18 @@ import static org.mockito.Mockito.when;
  */
 class MessageHistoryExecutionTest {
 
+    @BeforeAll
+    static void initEntityTableInfo() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, MessageStep.class);
+        TableInfoHelper.initTableInfo(assistant, JobRun.class);
+        TableInfoHelper.initTableInfo(assistant, Action.class);
+    }
+
     private final DataSourceMapper dataSourceMapper = mock(DataSourceMapper.class);
     private final WatermarkStore watermarkStore = mock(WatermarkStore.class);
     private final DataSourceManager dataSourceManager = mock(DataSourceManager.class);
+    private final ActionMapper actionMapper = mock(ActionMapper.class);
     private final JobRunMapper jobRunMapper = mock(JobRunMapper.class);
     private final MessageStepMapper messageStepMapper = mock(MessageStepMapper.class);
     private final JobMapper jobMapper = mock(JobMapper.class);
@@ -56,7 +70,7 @@ class MessageHistoryExecutionTest {
 
     private MessageHistoryService service(DefaultCamelContext context) {
         MessageHistoryService s = new MessageHistoryService(
-                jobRunMapper, messageStepMapper, jobMapper, new ObjectMapper(), context);
+                jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), context);
         return s;
     }
 
