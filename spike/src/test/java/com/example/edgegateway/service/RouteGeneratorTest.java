@@ -241,9 +241,9 @@ class RouteGeneratorTest {
                 .hasMessageContaining("数据源不可用");
     }
 
-    /** 重放入口必须把原始输入存为 edge.originalInput，断点重放才能用原始输入重跑整条链。 */
+    /** 重放入口：创建运行与消息上下文，body 原样透传（手动执行/断点重放共用）；重投走 resume 路由，不再依赖 edge.originalInput。 */
     @Test
-    void replayEntryStoresOriginalInputForRedelivery() throws Exception {
+    void replayEntryCreatesRunAndMessageContext() throws Exception {
         when(dataSourceMapper.selectById(18L)).thenReturn(rabbitDataSource(18L));
 
         Job job = new Job();
@@ -264,8 +264,9 @@ class RouteGeneratorTest {
             Exchange out = context.createProducerTemplate()
                     .request("direct:job-7", ex -> ex.getMessage().setBody(input));
 
-            assertThat(out.getProperty("edge.originalInput", Object.class)).isEqualTo(input);
             assertThat(out.getMessage().getBody()).isEqualTo(input);
+            assertThat(out.getProperty(MessageHistoryService.MESSAGE_ID, Object.class)).isNotNull();
+            verify(messageHistory).startRun(anyLong(), any());
         } finally {
             context.stop();
         }

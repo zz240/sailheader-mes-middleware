@@ -49,8 +49,8 @@ import java.util.stream.Collectors;
 public class RouteGenerator {
 
     private static final String CONTEXT = "edge.context";
-    private static final String ORIGINAL_INPUT = "edge.originalInput";
     private static final String SKIP_FLAG = "edge.skipFragment";
+    private static final String WATERMARK_VALUE = "watermarkValue";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
@@ -124,7 +124,6 @@ public class RouteGenerator {
                         .process(ex -> {
                             Map<Integer, Object> context = context(ex);
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
-                            ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
                             beginRun(ex, job);
                             beginMessage(ex, consume.businessKey());
@@ -148,7 +147,6 @@ public class RouteGenerator {
                         .process(ex -> {
                             Map<Integer, Object> context = context(ex);
                             context.put(actions.getFirst().getActionIndex(), ex.getMessage().getBody());
-                            ex.setProperty(ORIGINAL_INPUT, ex.getMessage().getBody());
                             ex.setProperty(CONTEXT, context);
                             beginRun(ex, job);
                             beginMessage(ex, consume.businessKey());
@@ -485,11 +483,11 @@ public class RouteGenerator {
         } else {
             value = System.currentTimeMillis();
         }
-        exchange.setProperty("watermarkValue", value);
+        exchange.setProperty(WATERMARK_VALUE, value);
     }
 
     private void updateWatermark(Exchange exchange, Job job, ReadSqlConfig read) {
-        Long value = exchange.getProperty("watermarkValue", Long.class);
+        Long value = exchange.getProperty(WATERMARK_VALUE, Long.class);
         if (value != null) {
             watermarkStore.put("job:" + job.getId(), value);
         }

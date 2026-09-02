@@ -10,7 +10,7 @@
 | 角色 | 动作 | 触发方式 | 期望结果 |
 |---|---|---|---|
 | 云上 MES | 投递业务消息 | 向 `mes.to.edge` 发布 | 网关消费到 |
-| 系统 | 消费并保真原始输入 | 自动（MQ_CONSUME） | 消息体入上下文 + `edge.originalInput` |
+| 系统 | 消费并把消息体落入上下文 | 自动（MQ_CONSUME） | 消息体入上下文 `context[1]` |
 | 系统 | 字段映射 | 自动（FIELD_MAP） | 产出目标结构 |
 | 系统 | 幂等写库 | 自动（WRITE_UPSERT） | `po_receipt` 按 `order_no` upsert；重复消息不产生重复行 |
 
@@ -29,7 +29,7 @@ sequenceDiagram
 
     PUB->>MQ: 发布 {"orderNo":"MO-1001",...}
     MQ->>RG: spring-rabbitmq:<数据源名>?queues=mes.to.edge
-    RG->>RG: unmarshal().json() + 存 context[1] + edge.originalInput
+    RG->>RG: unmarshal().json() + 存 context[1]
     RG->>FM: FIELD_MAP.apply(context)
     FM-->>RG: 目标 Map
     RG->>JDBC: upsert(table, idempotencyKey)
@@ -42,7 +42,7 @@ sequenceDiagram
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
 | 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:100`） | `from("spring-rabbitmq:<数据源名>?queues=..&routingKey=..&autoDeclare=true")` | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
-| 保真 | 存原始输入 | 入口 process（:119） | `context[1]` + `edge.originalInput` | 消息体 → 上下文 + 属性 | — |
+| 保真 | 存消息体 | 入口 process（:119） | `context[1]` | 消息体 → 上下文 | — |
 | 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→FAILED 消息步 |
 | 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/FAILED 消息步 |
 
