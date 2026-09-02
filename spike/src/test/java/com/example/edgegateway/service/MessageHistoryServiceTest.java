@@ -219,6 +219,18 @@ class MessageHistoryServiceTest {
     }
 
     @Test
+    void redeliverRejectsAlreadyRedeliveredStep() {
+        MessageStep step = new MessageStep();
+        step.setId(6L);
+        step.setStatus("REDELIVERED");
+        when(messageStepMapper.selectById(6L)).thenReturn(step);
+
+        assertThatThrownBy(() -> service.redeliver(6L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("仅失败");
+    }
+
+    @Test
     void redeliverThrowsWhenExecutionFails() throws Exception {
         MessageStep step = new MessageStep();
         step.setId(5L);
