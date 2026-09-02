@@ -40,6 +40,10 @@ public record MqConsumeConfig(
         if (queue == null || queue.isBlank()) {
             throw new IllegalArgumentException("MQ 消费动作需要 queue");
         }
+        if (businessKey != null && !businessKey.isBlank()
+                && !businessKey.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*")) {
+            throw new IllegalArgumentException("业务键应为点分 JSON 路径（如 data.orderNo，禁止空段/非法字符）: " + businessKey);
+        }
     }
 
     @Override

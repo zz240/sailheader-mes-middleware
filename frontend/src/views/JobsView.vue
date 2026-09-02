@@ -76,6 +76,9 @@
         <el-table-column label="数据源" min-width="130">
           <template #default="{ row }">{{ dsName(row.addition?.dataSourceId) }}</template>
         </el-table-column>
+        <el-table-column label="业务键" min-width="110">
+          <template #default="{ row }">{{ row.addition?.businessKey ?? '-' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button size="small" @click="openActionEdit(row)">编辑</el-button>

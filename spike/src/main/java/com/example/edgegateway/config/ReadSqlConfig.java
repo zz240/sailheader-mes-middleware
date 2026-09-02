@@ -40,6 +40,9 @@ public record ReadSqlConfig(
         if (sql == null || sql.isBlank()) {
             throw new IllegalArgumentException("读 SQL 动作需要 sql");
         }
+        if (businessKey != null && !businessKey.isBlank() && !businessKey.matches("[A-Za-z0-9_]+")) {
+            throw new IllegalArgumentException("业务键应为源表列名（字母/数字/下划线，点号/空格非法）: " + businessKey);
+        }
     }
 
     @Override
