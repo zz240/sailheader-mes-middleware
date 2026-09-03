@@ -14,7 +14,7 @@
   - `buildReplay`：`direct:job-<id>` 重放（手动执行/断点重放共用）。
 - **上下文列表**：动作输出按序号存入 exchange 属性 `edge.context`，`FIELD_MAP.sourceStep` 指向来源步骤（0=任务输入）；MQ 消费入口把消息体放 `context[1]`。
 - **生命周期**：任务启用时 `RouteRegistry` 注册路由、停用移除、启动自动重载；**动作增/改/删后自动重建路由**（6d0895a），重建失败自动停用任务。
-- **代码位置**：`model/Job.java`、`model/Action.java`、`service/RouteGenerator.java`、`service/RouteRegistry.java`、`service/ActionService.java`、`service/JobExecutionService.java`。
+- **代码位置**：`model/Job.java`、`model/ScheduleConfig.java`（调度值类型：解析/校验/编译）、`model/Action.java`、`service/RouteGenerator.java`、`service/RouteRegistry.java`、`service/JobScheduler.java`、`service/ActionService.java`、`service/JobExecutionService.java`。
 
 ## 决策时间线
 

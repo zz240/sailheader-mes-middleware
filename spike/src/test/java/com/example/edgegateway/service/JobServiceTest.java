@@ -28,7 +28,7 @@ class JobServiceTest {
     void setUp() {
         mapper = mock(JobMapper.class);
         routeRegistry = mock(RouteRegistry.class);
-        service = new JobService(mapper, new ScheduleCompiler(), routeRegistry);
+        service = new JobService(mapper, routeRegistry);
     }
 
     private JobRequest request(String name) {

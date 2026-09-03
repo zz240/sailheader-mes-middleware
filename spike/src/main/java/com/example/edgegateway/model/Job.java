@@ -9,8 +9,9 @@ import java.time.LocalDateTime;
 /**
  * 任务：一条可执行的数据同步流程，由动作链（Action）按 index 顺序组成。
  * 支持手动、HTTP、MQ 与自动调度（不自动/间隔/每天/每周）触发；水位策略决定增量同步方式。
- * 自动调度以结构化字段承载（scheduleType 与 interval/schedule 系列字段），内部编译为
- * fixedRate 或 cron（见 ScheduleCompiler），cron 仅内部表达、不对用户展示/编辑。
+ * 自动调度以结构化字段承载（scheduleType 与 interval/schedule 系列字段），领域层用
+ * ScheduleConfig 值类型包装（见 getSchedule/setSchedule），内部编译为 fixedRate 或 cron，
+ * cron 仅内部表达、不对用户展示/编辑。
  */
 @TableName("job")
 public class Job {
@@ -137,6 +138,24 @@ public class Job {
 
     public void setScheduleWeekday(Integer scheduleWeekday) {
         this.scheduleWeekday = scheduleWeekday;
+    }
+
+    /** 领域层视角：本任务的调度配置（含时区）。 */
+    public ScheduleConfig getSchedule() {
+        return ScheduleConfig.from(this);
+    }
+
+    /** 用调度配置批量写入扁平字段（含时区）；null 视为 NONE。 */
+    public void setSchedule(ScheduleConfig schedule) {
+        ScheduleConfig normalized = schedule == null
+                ? ScheduleConfig.of(ScheduleType.NONE, null, null, null, null, null)
+                : schedule;
+        this.scheduleType = normalized.type();
+        this.intervalValue = normalized.intervalValue();
+        this.intervalUnit = normalized.intervalUnit() == null ? null : normalized.intervalUnit().name();
+        this.scheduleTime = normalized.scheduleTime();
+        this.scheduleWeekday = normalized.scheduleWeekday();
+        this.timezone = normalized.timezone();
     }
 
     public String getTimezone() {

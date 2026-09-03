@@ -48,7 +48,7 @@ class JobSchedulerTest {
                 .thenReturn(mock(ScheduledFuture.class));
         when(actionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         scheduler = new JobScheduler(taskScheduler, camelContext,
-                jobMapper, actionMapper, new ScheduleCompiler());
+                jobMapper, actionMapper);
     }
 
     private Job enabledJob(ScheduleType type) {

@@ -6,6 +6,7 @@ import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.ScheduleConfig;
 import org.apache.camel.CamelContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,16 +35,14 @@ public class JobScheduler {
     private final CamelContext camelContext;
     private final JobMapper jobMapper;
     private final ActionMapper actionMapper;
-    private final ScheduleCompiler scheduleCompiler;
     private final Map<Long, ScheduledFuture<?>> futures = new ConcurrentHashMap<>();
 
     public JobScheduler(TaskScheduler taskScheduler, CamelContext camelContext,
-                        JobMapper jobMapper, ActionMapper actionMapper, ScheduleCompiler scheduleCompiler) {
+                        JobMapper jobMapper, ActionMapper actionMapper) {
         this.taskScheduler = taskScheduler;
         this.camelContext = camelContext;
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
-        this.scheduleCompiler = scheduleCompiler;
     }
 
     /** 依据任务当前状态登记/注销调度；由 RouteRegistry 在启用/停用时调用。 */
@@ -60,7 +59,7 @@ public class JobScheduler {
         if (job.getStatus() == null || job.getStatus() != 1) {
             return false;
         }
-        if (!scheduleCompiler.recurring(job)) {
+        if (!ScheduleConfig.from(job).recurring()) {
             return false;
         }
         Action first = actionMapper.selectList(new LambdaQueryWrapper<Action>()
@@ -75,13 +74,14 @@ public class JobScheduler {
         cancel(job.getId());
         Long id = job.getId();
         Runnable task = () -> fire(id);
+        ScheduleConfig config = ScheduleConfig.from(job);
+        ScheduleConfig.Plan plan = config.plan();
         ScheduledFuture<?> future;
-        if (scheduleCompiler.interval(job)) {
-            long period = scheduleCompiler.fixedRateMs(job);
+        if (plan.isFixedRate()) {
             future = taskScheduler.scheduleAtFixedRate(
-                    task, Instant.now().plusMillis(INITIAL_DELAY_MS), Duration.ofMillis(period));
+                    task, Instant.now().plusMillis(INITIAL_DELAY_MS), Duration.ofMillis(plan.fixedRateMs()));
         } else {
-            future = taskScheduler.schedule(task, new CronTrigger(scheduleCompiler.cron(job), scheduleCompiler.zone(job)));
+            future = taskScheduler.schedule(task, new CronTrigger(plan.cron(), plan.zone()));
         }
         futures.put(id, future);
         LOG.info("已登记任务调度 job={} schedule={}", id, describe(job));
@@ -103,8 +103,9 @@ public class JobScheduler {
     }
 
     private String describe(Job job) {
-        return scheduleCompiler.interval(job)
-                ? job.getIntervalValue() + " " + job.getIntervalUnit()
-                : job.getScheduleWeekday() + "/" + job.getScheduleTime();
+        ScheduleConfig config = ScheduleConfig.from(job);
+        return config.interval()
+                ? config.intervalValue() + " " + config.intervalUnit()
+                : config.scheduleWeekday() + "/" + config.scheduleTime();
     }
 }
