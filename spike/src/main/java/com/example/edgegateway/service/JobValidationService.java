@@ -106,6 +106,12 @@ public class JobValidationService {
             Action action,
             ReadSqlConfig read,
             List<ValidationResult.Issue> errors) {
+        try {
+            read.validate(); // 定位 batchSize/watermarkType/水位列 等配置错误
+        } catch (IllegalArgumentException e) {
+            errors.add(new ValidationResult.Issue("read", action.getName(), e.getMessage()));
+            return;
+        }
         String sql = read.sql();
         if (sql == null || sql.isBlank()) {
             errors.add(new ValidationResult.Issue("sql", action.getName(), "读 SQL 动作需要 sql"));

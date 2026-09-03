@@ -43,7 +43,7 @@
 
 | 类型 | 必填字段 | 说明 |
 |---|---|---|
-| READ_SQL | 数据源（MySQL）、SQL、水位策略、水位列 | 增量读取；SQL 里可用 `{watermark}` 占位 |
+| READ_SQL | 数据源（MySQL）、SQL、水位策略、水位列、批大小 | 增量/刷量读取；SQL 里可用 `{watermark}` 占位，`batchSize`（缺省 500）控制每批行数 |
 | WRITE_UPSERT | 数据源（MySQL）、表名、幂等键 | 按业务主键 upsert |
 | HTTP_CALL | 数据源（HTTP）、路径、方法 | 地址取数据源根地址 + 路径 |
 | MQ_CONSUME | 数据源（RabbitMQ）、队列 | **只能作为链首（序号 1）**；exchange/routingKey 可选 |

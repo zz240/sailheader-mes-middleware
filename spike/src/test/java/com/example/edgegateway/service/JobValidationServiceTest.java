@@ -110,7 +110,7 @@ class JobValidationServiceTest {
     @Test
     void passesWhenConnectionAndSqlValid() {
         when(actionService.list(1L)).thenReturn(
-                List.of(remote("SELECT * FROM po_order WHERE id > {watermark}", Map.of())));
+                List.of(remote("SELECT * FROM po_order", Map.of())));
 
         ValidationResult result = service.validate(1L);
 

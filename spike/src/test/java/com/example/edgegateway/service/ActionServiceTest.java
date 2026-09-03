@@ -48,7 +48,7 @@ class ActionServiceTest {
 
     private ActionRequest readRequest(Integer index, Long dsId) {
         return new ActionRequest("read", ActionKind.READ_SQL, index,
-                new ReadSqlConfig(dsId, "SELECT * FROM po_order WHERE {watermark}", null, null, null));
+                new ReadSqlConfig(dsId, "SELECT * FROM po_order", null, null, null, null));
     }
 
     @Test
