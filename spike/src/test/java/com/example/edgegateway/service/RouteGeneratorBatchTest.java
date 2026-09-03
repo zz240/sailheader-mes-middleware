@@ -54,6 +54,7 @@ class RouteGeneratorBatchTest {
         h2Jdbc = new JdbcTemplate(ds);
         h2Jdbc.execute("create table if not exists watermark (job_key varchar(64) primary key, wm_value bigint not null)");
         h2Jdbc.execute("create table if not exists po_order (id bigint primary key auto_increment, order_no varchar(32), status varchar(16), updated_at datetime null)");
+        h2Jdbc.execute("create table if not exists po_receipt (order_no varchar(64) primary key, id bigint, updated_at datetime null)");
         for (int i = 1; i <= 7; i++) {
             h2Jdbc.update("insert into po_order(order_no, status, updated_at) values (?, ?, ?)",
                     "PO-" + i, "ACTIVE", "2026-08-14 10:" + zeroPad(i) + ":00");
@@ -152,6 +153,32 @@ class RouteGeneratorBatchTest {
 
         // 刷量窗口下界以任务时区格式化（而非墙钟/系统默认），证明 job.timezone 生效
         verify(batcher, atLeastOnce()).formatTimeBound(anyLong(), eq(ZoneId.of("Asia/Shanghai")));
+    }
+
+    @Test
+    void refreshUpsertIsIdempotentOnRepeatFullRun() throws Exception {
+        Job job = new Job();
+        job.setId(1L);
+        job.setTimezone("Asia/Shanghai");
+        // 增量（id）刷新链：READ_SQL（TIMESTAMP，updated_at）+ WRITE_UPSERT（幂等键 order_no）
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of(
+                        "dataSourceId", 1L,
+                        "sql", "select id, order_no, updated_at from po_order where {watermark}",
+                        "watermarkType", "TIMESTAMP", "watermarkColumn", "updated_at", "batchSize", 3)),
+                action(2, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 1L, "tableName", "po_receipt", "idempotencyKey", "order_no")));
+
+        // 首跑：7 行全部落库
+        run(job, actions);
+        assertThat(h2Jdbc.queryForObject("select count(*) from po_receipt", Integer.class)).isEqualTo(7);
+
+        // 清空水位后整表重跑：按业务键 order_no upsert，重复执行不产生重复行
+        h2Jdbc.update("delete from watermark");
+        run(job, actions);
+
+        assertThat(h2Jdbc.queryForObject("select count(*) from po_receipt", Integer.class)).isEqualTo(7);
+        assertThat(h2Jdbc.queryForObject("select count(*) from po_receipt where order_no = 'PO-3'", Integer.class)).isEqualTo(1);
     }
 
     private void verifyApproximately(List<Action> actions) {
