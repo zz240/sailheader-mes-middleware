@@ -14,17 +14,17 @@ import java.util.NoSuchElementException;
  * 任务业务：CRUD、启停与配置校验（名称必填、站点必填、方向必填、调度配置合法、同站点重名冲突）。
  * 调度配置为结构化友好输入，校验/编译收敛到 {@link ScheduleConfig}；保存时把系统 cron（仅 DAILY/WEEKLY）
  * 写入 {@code crontab} 列。
- * 若任务处于启用状态，保存后自动重建路由与调度（失败则自动停用），使新配置立即可生效。
+ * 若任务处于启用状态，保存后经 {@link RouteLifecycle} 自动重建路由与调度（失败则自动停用），使新配置立即可生效。
  */
 @Service
 public class JobService {
 
     private final JobMapper jobMapper;
-    private final RouteRegistry routeRegistry;
+    private final RouteLifecycle routeLifecycle;
 
-    public JobService(JobMapper jobMapper, RouteRegistry routeRegistry) {
+    public JobService(JobMapper jobMapper, RouteLifecycle routeLifecycle) {
         this.jobMapper = jobMapper;
-        this.routeRegistry = routeRegistry;
+        this.routeLifecycle = routeLifecycle;
     }
 
     public Job create(JobRequest request) {
@@ -34,7 +34,7 @@ public class JobService {
         }
         Job job = toEntity(request);
         jobMapper.insert(job);
-        rebuildRoutesIfEnabled(job);
+        routeLifecycle.rebuildIfEnabled(job.getId());
         return job;
     }
 
@@ -46,7 +46,7 @@ public class JobService {
         }
         apply(existing, request);
         jobMapper.updateById(existing);
-        rebuildRoutesIfEnabled(existing);
+        routeLifecycle.rebuildIfEnabled(existing.getId());
         return existing;
     }
 
@@ -129,20 +129,4 @@ public class JobService {
         job.setRemarks(request.remarks());
     }
 
-    /**
-     * 启用态任务保存后自动重建路由与调度；重建失败自动停用，避免"启用但无路由/调度"的悬空状态。
-     * 低于 ActionService 的既有语义（动作变更后启用态同样重建）。
-     */
-    private void rebuildRoutesIfEnabled(Job job) {
-        if (job.getStatus() == null || job.getStatus() != 1) {
-            return;
-        }
-        try {
-            routeRegistry.enable(job.getId());
-        } catch (RuntimeException e) {
-            job.setStatus(0);
-            jobMapper.updateById(job);
-            throw new IllegalArgumentException("任务已保存，但路由重建失败，任务已自动停用: " + e.getMessage(), e);
-        }
-    }
 }

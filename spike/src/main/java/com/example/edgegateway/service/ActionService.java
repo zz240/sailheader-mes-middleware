@@ -19,8 +19,8 @@ import java.util.NoSuchElementException;
 /**
  * 动作业务：绑定/更新/删除/列表，校验动作序号唯一、动作种类合法与链约束
  * （MQ_CONSUME 只能链首、最多一个 MQ_CONSUME + 一个带水位 READ_SQL），
- * 引用数据源的动作校验数据源存在；动作变更后若任务处于启用状态，
- * 自动重建该任务的 Camel 路由（否则已运行路由不感知配置变化）。
+ * 引用数据源的动作校验数据源存在；动作变更后经 {@link RouteLifecycle} 自动重建该任务的
+ * Camel 路由与调度（否则已运行路由不感知配置变化）。
  */
 @Service
 public class ActionService {
@@ -29,19 +29,19 @@ public class ActionService {
     private final JobMapper jobMapper;
     private final DataSourceMapper dataSourceMapper;
     private final MappingHistoryService mappingHistoryService;
-    private final RouteRegistry routeRegistry;
+    private final RouteLifecycle routeLifecycle;
 
     public ActionService(
             ActionMapper actionMapper,
             JobMapper jobMapper,
             DataSourceMapper dataSourceMapper,
             MappingHistoryService mappingHistoryService,
-            RouteRegistry routeRegistry) {
+            RouteLifecycle routeLifecycle) {
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.dataSourceMapper = dataSourceMapper;
         this.mappingHistoryService = mappingHistoryService;
-        this.routeRegistry = routeRegistry;
+        this.routeLifecycle = routeLifecycle;
     }
 
     public Action add(Long jobId, ActionRequest request) {
@@ -86,22 +86,9 @@ public class ActionService {
         rebuildRoutesIfEnabled(action.getJobId());
     }
 
-    /**
-     * 动作变更后自动生效：任务处于启用状态时重建其 Camel 路由。
-     * 重建失败（如新配置编译不过）会把任务自动置为停用，避免"启用但无路由"的悬空状态。
-     */
+    /** 动作变更后自动生效：交由 {@link RouteLifecycle} 按启用状态决定是否重建路由与调度。 */
     private void rebuildRoutesIfEnabled(Long jobId) {
-        Job job = jobMapper.selectById(jobId);
-        if (job == null || job.getStatus() == null || job.getStatus() != 1) {
-            return;
-        }
-        try {
-            routeRegistry.enable(jobId);
-        } catch (RuntimeException e) {
-            job.setStatus(0);
-            jobMapper.updateById(job);
-            throw new IllegalArgumentException("动作已保存，但路由重建失败，任务已自动停用: " + e.getMessage(), e);
-        }
+        routeLifecycle.rebuildIfEnabled(jobId);
     }
 
     public Action get(Long id) {

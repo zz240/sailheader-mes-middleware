@@ -25,7 +25,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doThrow;
 
 class ActionServiceTest {
 
@@ -33,7 +32,7 @@ class ActionServiceTest {
     private JobMapper jobMapper;
     private DataSourceMapper dataSourceMapper;
     private MappingHistoryService mappingHistoryService;
-    private RouteRegistry routeRegistry;
+    private RouteLifecycle routeLifecycle;
     private ActionService service;
 
     @BeforeEach
@@ -42,8 +41,8 @@ class ActionServiceTest {
         jobMapper = mock(JobMapper.class);
         dataSourceMapper = mock(DataSourceMapper.class);
         mappingHistoryService = mock(MappingHistoryService.class);
-        routeRegistry = mock(RouteRegistry.class);
-        service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService, routeRegistry);
+        routeLifecycle = mock(RouteLifecycle.class);
+        service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService, routeLifecycle);
         when(actionMapper.selectList(any())).thenReturn(List.of());
     }
 
@@ -178,7 +177,7 @@ class ActionServiceTest {
 
         service.add(1L, readRequest(1, 7L));
 
-        verify(routeRegistry).enable(1L);
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
@@ -196,7 +195,7 @@ class ActionServiceTest {
 
         service.update(5L, readRequest(1, 7L));
 
-        verify(routeRegistry).enable(1L);
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
@@ -212,11 +211,11 @@ class ActionServiceTest {
 
         service.delete(5L);
 
-        verify(routeRegistry).enable(1L);
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
-    void doesNotRebuildWhenJobDisabled() {
+    void delegatesRebuildRegardlessOfStatus() {
         Job job = new Job();
         job.setId(1L);
         job.setStatus(0);
@@ -227,24 +226,7 @@ class ActionServiceTest {
 
         service.add(1L, readRequest(1, 7L));
 
-        verify(routeRegistry, never()).enable(any());
-    }
-
-    @Test
-    void rebuildFailureDisablesJobAndThrows() {
-        Job job = new Job();
-        job.setId(1L);
-        job.setStatus(1);
-        when(jobMapper.selectById(1L)).thenReturn(job);
-        when(actionMapper.selectCount(any())).thenReturn(0L);
-        when(actionMapper.insert(any(Action.class))).thenReturn(1);
-        when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
-        doThrow(new IllegalStateException("JSONata 编译失败")).when(routeRegistry).enable(1L);
-
-        assertThatThrownBy(() -> service.add(1L, readRequest(1, 7L)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("已自动停用");
-        assertThat(job.getStatus()).isEqualTo(0);
-        verify(jobMapper).updateById(job);
+        // 是否重建由 RouteLifecycle 按启用状态判定；此处只验证委托
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 }

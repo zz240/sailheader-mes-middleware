@@ -11,10 +11,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,13 +19,13 @@ class JobServiceTest {
 
     private JobMapper mapper;
     private JobService service;
-    private RouteRegistry routeRegistry;
+    private RouteLifecycle routeLifecycle;
 
     @BeforeEach
     void setUp() {
         mapper = mock(JobMapper.class);
-        routeRegistry = mock(RouteRegistry.class);
-        service = new JobService(mapper, routeRegistry);
+        routeLifecycle = mock(RouteLifecycle.class);
+        service = new JobService(mapper, routeLifecycle);
     }
 
     private JobRequest request(String name) {
@@ -48,8 +45,8 @@ class JobServiceTest {
 
         assertThat(saved.getId()).isEqualTo(1L);
         assertThat(saved.getName()).isEqualTo("po-sync");
-        // 未启用任务保存后不重建路由
-        verify(routeRegistry, never()).enable(anyLong());
+        // 保存后交由 RouteLifecycle 按启用状态决定是否重建（此处为委托）
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
@@ -130,7 +127,7 @@ class JobServiceTest {
 
         assertThat(saved.getScheduleType()).isEqualTo(ScheduleType.DAILY);
         assertThat(saved.getCrontab()).isEqualTo("0 30 8 * * *");
-        verify(routeRegistry, never()).enable(anyLong());
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
@@ -145,7 +142,7 @@ class JobServiceTest {
 
         service.create(req);
 
-        verify(routeRegistry).enable(eq(1L));
+        verify(routeLifecycle).rebuildIfEnabled(1L);
     }
 
     @Test
