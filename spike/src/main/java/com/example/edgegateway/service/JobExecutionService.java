@@ -2,8 +2,6 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Job;
-import org.apache.camel.CamelContext;
-import org.apache.camel.ProducerTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -13,7 +11,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * 手动执行：把任务输入通过 direct 端点送入生成的路由，
+ * 手动执行：把任务输入经 {@link JobTrigger} 送入生成的路由，
  * 同步等待执行结果并把最近一次状态/时间/错误写回任务。
  */
 @Service
@@ -22,11 +20,11 @@ public class JobExecutionService {
     private static final Logger LOG = LoggerFactory.getLogger(JobExecutionService.class);
 
     private final JobMapper jobMapper;
-    private final CamelContext camelContext;
+    private final JobTrigger jobTrigger;
 
-    public JobExecutionService(JobMapper jobMapper, CamelContext camelContext) {
+    public JobExecutionService(JobMapper jobMapper, JobTrigger jobTrigger) {
         this.jobMapper = jobMapper;
-        this.camelContext = camelContext;
+        this.jobTrigger = jobTrigger;
     }
 
     public Job execute(Long jobId, Map<String, Object> input) {
@@ -37,9 +35,8 @@ public class JobExecutionService {
         if (job.getStatus() == null || job.getStatus() != 1) {
             throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法执行");
         }
-        String endpoint = "direct:job-" + jobId;
-        try (ProducerTemplate producer = camelContext.createProducerTemplate()) {
-            producer.requestBody(endpoint, input);
+        try {
+            jobTrigger.trigger(jobId, input);
             job.setLastRunStatus("SUCCESS");
             job.setLastError(null);
         } catch (Exception e) {

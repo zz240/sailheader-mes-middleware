@@ -7,7 +7,6 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleConfig;
-import org.apache.camel.CamelContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.TaskScheduler;
@@ -32,15 +31,15 @@ public class JobScheduler {
     private static final long INITIAL_DELAY_MS = 5_000L;
 
     private final TaskScheduler taskScheduler;
-    private final CamelContext camelContext;
+    private final JobTrigger jobTrigger;
     private final JobMapper jobMapper;
     private final ActionMapper actionMapper;
     private final Map<Long, ScheduledFuture<?>> futures = new ConcurrentHashMap<>();
 
-    public JobScheduler(TaskScheduler taskScheduler, CamelContext camelContext,
+    public JobScheduler(TaskScheduler taskScheduler, JobTrigger jobTrigger,
                         JobMapper jobMapper, ActionMapper actionMapper) {
         this.taskScheduler = taskScheduler;
-        this.camelContext = camelContext;
+        this.jobTrigger = jobTrigger;
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
     }
@@ -95,8 +94,8 @@ public class JobScheduler {
     }
 
     private void fire(Long jobId) {
-        try (var producer = camelContext.createProducerTemplate()) {
-            producer.sendBody("direct:job-" + jobId, null);
+        try {
+            jobTrigger.trigger(jobId, null);
         } catch (Exception e) {
             LOG.warn("任务自动调度执行失败 job={}: {}", jobId, e.getMessage());
         }

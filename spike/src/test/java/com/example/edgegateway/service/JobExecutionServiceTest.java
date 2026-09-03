@@ -2,8 +2,6 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Job;
-import org.apache.camel.CamelContext;
-import org.apache.camel.ProducerTemplate;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -11,23 +9,23 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 class JobExecutionServiceTest {
 
     private final JobMapper jobMapper = mock(JobMapper.class);
-    private final CamelContext camelContext = mock(CamelContext.class);
-    private final JobExecutionService service = new JobExecutionService(jobMapper, camelContext);
+    private final JobTrigger jobTrigger = mock(JobTrigger.class);
+    private final JobExecutionService service = new JobExecutionService(jobMapper, jobTrigger);
 
     @Test
     void executeMarksSuccess() throws Exception {
         Job job = enabledJob();
         when(jobMapper.selectById(1L)).thenReturn(job);
-        ProducerTemplate producer = mock(ProducerTemplate.class);
-        when(camelContext.createProducerTemplate()).thenReturn(producer);
+        when(jobTrigger.trigger(anyLong(), any())).thenReturn(null);
 
         Job result = service.execute(1L, Map.of("orderNo", "PO-1"));
 
@@ -39,7 +37,7 @@ class JobExecutionServiceTest {
     void executeMarksFailedOnException() throws Exception {
         Job job = enabledJob();
         when(jobMapper.selectById(1L)).thenReturn(job);
-        when(camelContext.createProducerTemplate()).thenThrow(new RuntimeException("boom"));
+        doThrow(new RuntimeException("boom")).when(jobTrigger).trigger(anyLong(), any());
 
         Job result = service.execute(1L, null);
 

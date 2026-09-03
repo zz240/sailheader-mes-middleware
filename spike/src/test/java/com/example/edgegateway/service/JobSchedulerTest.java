@@ -7,8 +7,6 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleType;
-import org.apache.camel.CamelContext;
-import org.apache.camel.ProducerTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.TaskScheduler;
@@ -32,7 +30,7 @@ class JobSchedulerTest {
     private TaskScheduler taskScheduler;
     private JobMapper jobMapper;
     private ActionMapper actionMapper;
-    private CamelContext camelContext;
+    private JobTrigger jobTrigger;
     private JobScheduler scheduler;
 
     @BeforeEach
@@ -40,14 +38,12 @@ class JobSchedulerTest {
         taskScheduler = mock(TaskScheduler.class);
         jobMapper = mock(JobMapper.class);
         actionMapper = mock(ActionMapper.class);
-        camelContext = mock(CamelContext.class);
-        when(camelContext.createProducerTemplate()).thenReturn(mock(ProducerTemplate.class));
         when(taskScheduler.scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class)))
                 .thenReturn(mock(ScheduledFuture.class));
         when(taskScheduler.schedule(any(Runnable.class), any(Trigger.class)))
                 .thenReturn(mock(ScheduledFuture.class));
         when(actionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        scheduler = new JobScheduler(taskScheduler, camelContext,
+        scheduler = new JobScheduler(taskScheduler, mock(JobTrigger.class),
                 jobMapper, actionMapper);
     }
 
