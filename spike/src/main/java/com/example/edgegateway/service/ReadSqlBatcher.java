@@ -97,7 +97,9 @@ public class ReadSqlBatcher {
 
     /** 是否还有下一批：读满一整批（含边界）就继续；否则结束（尾批/空批）。 */
     public boolean hasMore(ReadSqlConfig read, List<Map<String, Object>> rows) {
-        return !rows.isEmpty() && rows.size() >= batchSize(read);
+        // LIMIT batchSize 决定了返回行数至多 batchSize，故"读满一页"即 size == batchSize（空批 size=0 自然为 false）。
+        // 用 == 精确表达，避免"会不会超过"的歧义。
+        return rows.size() == batchSize(read);
     }
 
     /** 把持久化的 epoch 毫秒水位格式化为时间窗口下界字符串（任务时区）。 */
