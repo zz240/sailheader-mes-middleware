@@ -40,6 +40,12 @@ public record MqPublishConfig(
         if (exchange == null || exchange.isBlank()) {
             throw new IllegalArgumentException("MQ 发布动作需要 exchange（如 edge.notify，绑定到目标队列）");
         }
+        if (bodySourceStep == null) {
+            throw new IllegalArgumentException("MQ 发布动作需要 bodySourceStep（要发布哪一步的输出，如 FIELD_MAP 的序号）");
+        }
+        if (bodySourceStep <= 0) {
+            throw new IllegalArgumentException("bodySourceStep 必须大于 0（步骤序号从 1 起）");
+        }
     }
 
     @Override

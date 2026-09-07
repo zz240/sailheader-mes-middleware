@@ -309,19 +309,20 @@ public class RouteGenerator {
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
-                            // bodySourceStep 缺省取上下文中最近一次输出（同步+通知场景 = FIELD_MAP 结果）
+                            // bodySourceStep 必填（MqPublishConfig.validate）：显式声明发布哪一步的输出
                             Map<Integer, Object> context = context(ex);
                             Integer step = publish.bodySourceStep();
                             if (step == null) {
-                                step = context.keySet().stream()
-                                        .filter(k -> k > 0)
-                                        .max(Integer::compareTo)
-                                        .orElse(0);
+                                throw new IllegalStateException(
+                                        "MQ 发布动作缺少 bodySourceStep，请先补配（如 FIELD_MAP 的序号）");
                             }
                             Object source = context.get(step);
-                            if (source != null) {
-                                ex.getMessage().setBody(source);
+                            if (source == null) {
+                                // 显式失败而非静默：断点重投跳过来源步骤时绝不发旧 body
+                                throw new IllegalStateException(
+                                        "bodySourceStep=" + step + " 无输出（步骤未执行或被断点跳过），已中止发布");
                             }
+                            ex.getMessage().setBody(source);
                         })
                         .choice()
                             .when(ex -> !Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class)))

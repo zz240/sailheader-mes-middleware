@@ -13,8 +13,8 @@
 | `READ_SQL` | 从 MySQL 增量/全量读 | 链中部（北向通常首位） | 数据源 + SQL + 水位策略 + 水位列 |
 | `FIELD_MAP` | 字段映射 | 任意 | rules（sourceStep + sourcePath + target + transform） |
 | `WRITE_UPSERT` | MySQL 幂等 upsert | 任意 | 数据源 + tableName + idempotencyKey |
-| `HTTP_CALL` | 调 HTTP 接口 | 任意 | 数据源（根地址）+ path + method + 鉴权 + bodySourceStep |
-| `MQ_PUBLISH` | 发 MQ 消息 | 任意 | 数据源（broker）+ queue/exchange + routingKey + bodySourceStep |
+| `HTTP_CALL` | 调 HTTP 接口 | 任意 | 数据源（根地址）+ path + method + 鉴权 |
+| `MQ_PUBLISH` | 发 MQ 消息 | 任意 | 数据源（broker）+ queue/exchange + routingKey + bodySourceStep（必填） |
 
 设计要点：
 
@@ -29,7 +29,7 @@
 - 每个动作完成后写入 `context[actionIndex] = 输出`；
 - `READ_SQL` 的 split 后，每个子 exchange 的 `context[readIndex]` = 该行数据；
 - 字段映射规则引用改为结构化 `sourceStep + sourcePath`（不再拼接路径字符串），`sourceStep` 默认等于"前一个动作的序号"（迁移时按原链推断）；
-- `HTTP_CALL` / `MQ_PUBLISH` 的请求体来源 = `bodySourceStep`（默认上一个动作输出，即当前 body）；
+- `MQ_PUBLISH` 的请求体来源 = `bodySourceStep`（**必填**，显式指向链中存在的更早动作，校验期检查；发布时该步无输出——如被断点跳过——则执行失败，不静默发旧值）；`HTTP_CALL` 直接使用当前 body（上一步输出）；
 - 重排动作时，前端负责同步改写依赖规则的 sourceStep（或校验期报警），避免静默错位。
 
 FieldMapper 签名变化：

@@ -174,7 +174,7 @@
           <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="如 edge.notify（需绑定目标队列）" /></el-form-item>
           <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="缺省=queue" /></el-form-item>
           <el-form-item label="queue"><el-input v-model="kindForm.queue" placeholder="可选，routingKey 缺省时用" /></el-form-item>
-          <el-form-item label="body 步骤"><el-input-number v-model="kindForm.bodySourceStep" :min="0" placeholder="缺省=最近映射输出" /></el-form-item>
+          <el-form-item label="body 步骤"><el-input-number v-model="kindForm.bodySourceStep" :min="1" placeholder="必填：发布哪一步输出（通常 FIELD_MAP 序号）" /></el-form-item>
         </template>
 
         <el-form-item v-if="actionForm.type === 'FIELD_MAP'" label="映射规则">

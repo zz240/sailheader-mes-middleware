@@ -43,11 +43,12 @@ sequenceDiagram
 | 读库 | 增量读 | READ_SQL（`service/RouteGenerator.java:147` `appendChain`） | 同北向 | 行 `Map` | — |
 | 映射 | 字段映射 | FIELD_MAP | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→FAILED 消息步 |
 | HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` | `Map`→JSON→HTTP | 非 2xx→FAILED 消息步 |
-| MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` 缺省取上下文最大正数步骤；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
+| MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` **必填**（发布哪一步的输出，通常 FIELD_MAP 序号）；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
 
-`bodySourceStep` 缺省逻辑（`service/RouteGenerator.java` MQ_PUBLISH 片段）：`context.keySet().stream().filter(k>0).max()`
-（即最近一次输出，通常就是 FIELD_MAP 结果）；显式配置则取 `context[step]`。`MqPublishConfig.validate` 要求显式
-`exchange`；`routingKey` 缺省回落 `queue`。
+`bodySourceStep`（`service/RouteGenerator.java` MQ_PUBLISH 片段）显式取 `context[step]`——**不再有缺省推断**：
+`MqPublishConfig.validate` 要求必填（>0），`ActionService.validateChain` 要求指向链中**存在的、序号更早**的动作；
+片段内 `context[step]` 无输出（步骤未执行或被断点跳过）时**抛错中止**，宁可 FAILED 也不静默发布旧 body。
+`MqPublishConfig.validate` 要求显式 `exchange`；`routingKey` 缺省回落 `queue`。
 
 > 双写非原子：HTTP_CALL 与 MQ_PUBLISH 各自独立执行，**无分布式补偿/事务**（与 ADR-0003 一致）。
 > 部分成功（如 HTTP 已发、MQ 发布失败）时，按失败消息步定位并断点重投，不会自动回滚已成功的推送。
@@ -79,5 +80,5 @@ curl -X POST http://localhost:8080/api/jobs/{id}/execute -d '{}'
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | 动作重排时 `FIELD_MAP.sourceStep` / `bodySourceStep` 依赖可能静默错位 | 前端联动改写或校验期报警 | `action-chain-design` 已约定，需实现/确认 | 设计改进 | job-action-chain | 待评估 |
-| `MQ_PUBLISH` 缺 `bodySourceStep` 且上下文为空时可能发布旧 body | 校验期要求 `bodySourceStep` 指向 FIELD_MAP | 防误发 | 缺陷 | job-action-chain | 待评估 |
+| `MQ_PUBLISH` 缺 `bodySourceStep` 且上下文为空时可能发布旧 body | 已改为**显式必填**：`MqPublishConfig.validate` 要求 `bodySourceStep>0`；`ActionService.validateChain` 要求指向链中存在且序号更早的动作；RouteGenerator 片段无输出即抛错（断点跳过不再静默发旧 body） | 防误发 | 缺陷 | job-action-chain | 已闭环 |
 | 双写（HTTP+MQ）无原子性 | 已在文档注明"非事务，部分成功靠失败消息步定位重投"（本页流程详解注 + ADR-0003） | 与 ADR-0003 一致（不承诺分布式补偿） | 文档偏差 | 可靠性 | 已闭环 |

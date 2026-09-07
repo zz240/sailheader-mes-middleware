@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.MqConsumeConfig;
+import com.example.edgegateway.config.MqPublishConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
@@ -161,6 +162,73 @@ class ActionServiceTest {
         assertThatThrownBy(() -> service.add(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("链首");
+    }
+
+    // ---------- MQ_PUBLISH bodySourceStep 显式必填（防静默发错） ----------
+
+    @Test
+    void rejectsMqPublishWithoutBodySourceStep() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        ActionRequest request = new ActionRequest("publish", ActionKind.MQ_PUBLISH, 2,
+                new MqPublishConfig(3L, null, "edge.notify", "notify.q", null));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bodySourceStep");
+    }
+
+    @Test
+    void rejectsMqPublishBodySourceStepNotInChain() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        Action existing = new Action();
+        existing.setId(10L);
+        existing.setJobId(1L);
+        existing.setActionIndex(2);
+        when(actionMapper.selectList(any())).thenReturn(List.of(existing));
+        ActionRequest request = new ActionRequest("publish", ActionKind.MQ_PUBLISH, 3,
+                new MqPublishConfig(3L, null, "edge.notify", "notify.q", 1));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bodySourceStep=1");
+    }
+
+    @Test
+    void rejectsMqPublishBodySourceStepNotUpstream() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        ActionRequest request = new ActionRequest("publish", ActionKind.MQ_PUBLISH, 3,
+                new MqPublishConfig(3L, null, "edge.notify", "notify.q", 3));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("执行顺序更早");
+    }
+
+    @Test
+    void addsMqPublishWithValidBodySourceStep() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        Action existing = new Action();
+        existing.setId(10L);
+        existing.setJobId(1L);
+        existing.setActionIndex(2);
+        when(actionMapper.selectList(any())).thenReturn(List.of(existing));
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+        when(dataSourceMapper.selectById(3L)).thenReturn(new DataSource());
+
+        Action saved = service.add(1L, new ActionRequest("publish", ActionKind.MQ_PUBLISH, 3,
+                new MqPublishConfig(3L, null, "edge.notify", "notify.q", 2)));
+
+        assertThat(saved.getType()).isEqualTo(ActionKind.MQ_PUBLISH);
+        assertThat(saved.getAddition()).containsEntry("bodySourceStep", 2);
     }
 
     // ---------- 动作变更后自动重建路由 ----------

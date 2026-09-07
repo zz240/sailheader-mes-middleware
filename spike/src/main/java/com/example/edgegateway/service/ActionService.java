@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 动作业务：绑定/更新/删除/列表，校验动作序号唯一、动作种类合法与链约束
@@ -156,6 +158,29 @@ public class ActionService {
     private void validateChain(Long jobId, ActionRequest request, Long excludeId) {
         if (request.type() == ActionKind.MQ_CONSUME && request.index() != null && request.index() != 1) {
             throw new IllegalArgumentException("MQ_CONSUME 只能作为链首（序号 1）");
+        }
+        if (request.type() == ActionKind.MQ_PUBLISH) {
+            // bodySourceStep 必填且必须指向链中存在的、序号更早的动作（显式声明"发哪一步的输出"，防静默发错）
+            Map<String, Object> addition = request.addition().toMap();
+            Object rawStep = addition.get("bodySourceStep");
+            int bodyStep = rawStep == null ? 0 : Integer.parseInt(rawStep.toString());
+            if (request.index() != null && bodyStep >= request.index()) {
+                throw new IllegalArgumentException(
+                        "bodySourceStep=" + bodyStep + " 必须指向执行顺序更早的动作（当前序号 " + request.index() + "）");
+            }
+            Set<Integer> indexes = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                            .eq(Action::getJobId, jobId))
+                    .stream()
+                    .filter(a -> excludeId == null || !a.getId().equals(excludeId))
+                    .map(Action::getActionIndex)
+                    .collect(Collectors.toSet());
+            if (request.index() != null) {
+                indexes.add(request.index());
+            }
+            if (!indexes.contains(bodyStep)) {
+                throw new IllegalArgumentException(
+                        "bodySourceStep=" + bodyStep + " 在动作链中不存在，请填上游动作序号（如 FIELD_MAP）");
+            }
         }
         long mqConsume = actionMapper.selectList(new LambdaQueryWrapper<Action>()
                         .eq(Action::getJobId, jobId)
