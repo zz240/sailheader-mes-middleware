@@ -82,7 +82,7 @@ curl -X POST http://localhost:8080/api/suggestions -H "Content-Type: application
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| C6 旧 `mapping/FieldMapper.java` / `MappingRule.java` 残留 | 确认无引用后删除，并清 `RouteGenerator` 未用 import | 已被 `JsonataFieldMapper`/`mapping/TransformType` 替代 | 设计改进 | 字段映射 | 待评估 |
-| 映射历史对组规则：INDEX 子规则不入库 | 保持现状并写入文档 | T37 约定 | 文档偏差 | 字段映射 | 待评估 |
-| 深层数组任意重排仍建议走 `mode:EXPRESSION` | 文档说明"数组迭代段 + 相对路径"边界 | 层级路径支持有限 | 业务改进 | 字段映射 | 待评估 |
+| C6 旧 `mapping/FieldMapper.java` / `MappingRule.java` 残留 | 已删除两个旧类及旧测试 `FieldMapperTest`（全仓查证仅自引用 + 旧测试；行为覆盖已由 `JsonataRuleCompilerTest`（旧扁平规则一致用例）承接）；`RouteGenerator` 未用 import 已核实无残留 | 已被 `JsonataFieldMapper`/`mapping/TransformType` 替代 | 设计改进 | 字段映射 | 已闭环 |
+| 映射历史对组规则：INDEX 子规则不入库 | 保持现状，已在文档注明（`features/field-mapping` 已知限制，T37 约定） | T37 约定 | 文档偏差 | 字段映射 | 已闭环 |
+| 深层数组任意重排仍建议走 `mode:EXPRESSION` | 已在文档注明（`features/field-mapping` 已知限制："数组迭代段 + 相对路径"边界） | 层级路径支持有限 | 业务改进 | 字段映射 | 已闭环 |
 | 单值样例不推 CONSTANT（DS-10.4） | 已实现 | — | 已闭环 | 字段映射 | 采纳 |

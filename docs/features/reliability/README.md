@@ -12,7 +12,8 @@
 - **业务键**：源动作新增 `businessKey`（READ_SQL=源列；MQ_CONSUME/任务输入=JSON 路径），在**消息创建时**提取；可为空（不分组/去重）。
 - **断点续跑**：从一条 `FAILED` 消息步精确重投（用该步数据从该动作重放，不整链重跑），成功后原步状态 `REDELIVERED`。
 - **列表分页**：`GET /api/history/runs`（运行）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
-- **代码位置**：`service/MessageHistoryService.java`（核心）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`spike/db/init.sql`、`schema.sql`。
+- **交付语义（至少一次）**：水位仅整批成功才推进，失败整批重读（at-least-once）；重试退避与断点重投下 HTTP/MQ 推送**可能重复**——南向 `WRITE_UPSERT` 按幂等键去重，北向推送需 MES 按业务键去重。与 ADR-0003 一致（不承诺恰好一次/分布式补偿）。
+- **代码位置**：`service/MessageHistoryService.java`（核心）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`spike/src/main/resources/db/migration/`（表定义）、`spike/src/test/resources/schema.sql`（H2 测试库）。
 
 ## 决策时间线
 

@@ -23,5 +23,11 @@ cd spike
 
 ## 说明
 
-- 字段映射采用结构化规则（`MappingRule`），不暴露占位符字符串。
+- 字段映射采用结构化规则（`FieldMappingRule`），不暴露占位符字符串。
 - 增量为 `id` 水位，存于 `watermark` 表；南向写入按 `order_no` 幂等 upsert。
+
+## 数据库迁移（Flyway）
+
+- 建表与版本化迁移由 Flyway 负责：`src/main/resources/db/migration/V1__init_schema.sql`（建表+种子）、`V2+` 增量；应用启动时自动执行。
+- 存量库（旧 `db/init.sql` 建的、无 `flyway_schema_history`）自动 baseline 至 V1，只执行 V2 起的增量——无需手工迁移。
+- 测试库仍用 `src/test/resources/schema.sql`（H2），不走 Flyway。

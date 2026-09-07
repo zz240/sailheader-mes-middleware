@@ -109,7 +109,7 @@ sequenceDiagram
 | 重投失败（失败样例） | 依赖仍未恢复时重投 | 保持 `FAILED`，返回"重投失败：<原因>" | `GET /api/history/steps/{id}` 仍 `FAILED` |
 | 按业务键检索 | 源动作配 `businessKey`，触发含该业务键的消息 | 可按业务键过滤到该消息的全部消息步 | `GET /api/history/steps?businessKey=<键>` |
 
-常用直接 SQL（`spike/db/init.sql` 已含表定义）：
+常用直接 SQL（`db/migration/V1__init_schema.sql` 已含表定义）：
 
 ```sql
 SELECT id, run_id, message_id, step, action_name, status, business_key, error
@@ -134,4 +134,4 @@ curl -X POST http://localhost:8080/api/history/steps/{id}/redeliver
 |---|---|---|---|---|---|
 | 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 在文档/消息步说明；常见写/发动作走 body 不受影响 | 精确断点的上下文约束 | 已知限制 | 可靠性 | 本期接受 |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 观察项；若需在任务列表反映消费结果，在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |
-| 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 明确"至少一次、靠写幂等/MES 按业务键去重"，写进文档；推送链建议 SEQUENCE + 目标端幂等键 | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 待评估 |
+| 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |

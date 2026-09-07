@@ -54,6 +54,13 @@ sequenceDiagram
 `JobExecutionService.execute`：未启用抛 `JOB_NOT_ENABLED`；成功写 `SUCCESS`、失败写 `FAILED` + 最深异常信息
 （`rootMessage` 跳过 Camel 包装）。`ExternalTriggerService` 校验失败抛 `UNAUTHORIZED`。
 
+> 外部触发链首边界：外部触发复用手动执行 `direct:job-<id>` 入口（`JobTrigger`），与链首动作种类无关——
+> - **MQ_CONSUME 链首**：请求体充当一条**已解析消息**，从动作 2 开始执行（buildReplay 语义，不经过消息队列）；
+> - **READ_SQL 链首**：与手动执行一致触发一次增量读（请求体不参与）；
+> - **其他链首**（如 FIELD_MAP）：请求体作为链首输入进入动作链。
+> 先决条件：任务已启用（status=1）+ `X-API-Key` 与任务站点匹配。边界 = 外部触发只驱动"一次执行"，不改变
+> 链首的消费/读库形态。
+
 ## 测试环境
 
 - 应用后端（8080）在跑；任务已启用；站点已建且已生成 API Key；
@@ -81,5 +88,5 @@ curl -X POST http://localhost:8080/api/external/jobs/<id>/trigger -H "X-API-Key:
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | C3 `crontab` 存而未用，定时仅固定 60s | 已改为结构化调度（不自动/间隔/每天/每周），内部编译 fixedRate/cron 并结合 timezone | 由 #78 闭环 | 缺陷修复 | job-action-chain | 已闭环 |
-| 外部触发对无 MQ_CONSUME/READ_SQL 链首的任务语义不清 | 文档明确边界 | 反例场景（MQ 消费 + 北向）已支持 | 业务改进 | 触发 | 待评估 |
+| 外部触发对无 MQ_CONSUME/READ_SQL 链首的任务语义不清 | 已注明边界（本页"外部触发链首边界"：复用 `direct:job-N` 手动执行，请求体按链首形态进入） | 反例场景（MQ 消费 + 北向）已支持 | 业务改进 | 触发 | 已闭环 |
 | API Key 仅站点级，无轮换/过期 | 观察项 | 现状单站点单 Key | 业务改进 | 站点 | 待评估 |

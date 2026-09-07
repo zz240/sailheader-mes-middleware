@@ -49,6 +49,9 @@ sequenceDiagram
 （即最近一次输出，通常就是 FIELD_MAP 结果）；显式配置则取 `context[step]`。`MqPublishConfig.validate` 要求显式
 `exchange`；`routingKey` 缺省回落 `queue`。
 
+> 双写非原子：HTTP_CALL 与 MQ_PUBLISH 各自独立执行，**无分布式补偿/事务**（与 ADR-0003 一致）。
+> 部分成功（如 HTTP 已发、MQ 发布失败）时，按失败消息步定位并断点重投，不会自动回滚已成功的推送。
+
 ## 测试环境
 
 - 客户 MySQL `po_order` + MES HTTP mock（9099）＋ RabbitMQ（5672）；应用后端（8080）在跑；
@@ -77,4 +80,4 @@ curl -X POST http://localhost:8080/api/jobs/{id}/execute -d '{}'
 |---|---|---|---|---|---|
 | 动作重排时 `FIELD_MAP.sourceStep` / `bodySourceStep` 依赖可能静默错位 | 前端联动改写或校验期报警 | `action-chain-design` 已约定，需实现/确认 | 设计改进 | job-action-chain | 待评估 |
 | `MQ_PUBLISH` 缺 `bodySourceStep` 且上下文为空时可能发布旧 body | 校验期要求 `bodySourceStep` 指向 FIELD_MAP | 防误发 | 缺陷 | job-action-chain | 待评估 |
-| 双写（HTTP+MQ）无原子性 | 文档明确"非事务，部分成功靠死信定位重投" | 与 ADR-0003 一致（不承诺分布式补偿） | 文档偏差 | 可靠性 | 待评估 |
+| 双写（HTTP+MQ）无原子性 | 已在文档注明"非事务，部分成功靠失败消息步定位重投"（本页流程详解注 + ADR-0003） | 与 ADR-0003 一致（不承诺分布式补偿） | 文档偏差 | 可靠性 | 已闭环 |

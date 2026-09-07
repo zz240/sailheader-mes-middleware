@@ -28,8 +28,8 @@
 └── spike/                      # Spring Boot + Camel Spike 工程
     ├── docker-compose.yml      # MySQL + RabbitMQ + app（多阶段构建）
     ├── Dockerfile              # 多阶段构建（node 构建前端 → mvn 打包 → JRE 镜像）
-    ├── db/init.sql             # 建表与种子数据
     └── src/                    # 两条演示链路 + 字段映射 + mock MES
+        └── main/resources/db/migration/   # Flyway 版本化迁移（V1 建表+种子，V2+ 增量）
 ```
 
 ## 快速运行
