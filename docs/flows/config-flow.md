@@ -88,7 +88,7 @@ curl -X PUT http://localhost:8080/api/jobs/{id}/status -H "Content-Type: applica
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| C2 `RabbitMqDataSourceConfig` 仍强制 `queue` | 按 ADR-0007 去掉 `queue` 必填/字段（队列在动作侧配置） | 与连接级模型、`features/data-source` 页不一致；按文档建 MQ 数据源会被 400 拒绝 | 设计改进/缺陷 | 数据源 | 待评估 |
+| C2 `RabbitMqDataSourceConfig` 仍强制 `queue` | 已在 **745bb99**（数据源连接级统一）实施：数据源仅 `host/port/username/password`（默认值），`queue` 进动作（`MqConsumeConfig` 必填/`MqPublishConfig` 可选）；写入 `queue` 得 400 未知字段（`DataSourceConfigTest` 断言）；`DataSourceAdditionMigration` 清存量。本次仅修正 `model/DataSource.java` 遗留 javadoc | 与 ADR-0007 一致：数据源=连接实例，资源在动作 | 设计改进/缺陷 | 数据源 | 已闭环 |
 | C4 `job` 表残流水位列（`watermark_type`/`watermark_column`，745bb99 前的存量库） | 已引入 Flyway（`flyway-core`+`flyway-mysql`）版本化迁移：`db/migration/V2__drop_job_watermark_columns.sql` 启动时自动删列，存量库 baseline-version=1 只跑增量；代码侧（init.sql/schema.sql/Job 实体/`types.ts`/任务表单）已在 745bb99/9737fe7 清理 | 水位已迁到 READ_SQL 动作，属迁移残留；旧库无迁移机制，由 Flyway 接管 | 文档偏差 | 数据源/配置界面 | 已闭环 |
 | 文档原称"MySQL 密码经 AES 加密落库"，但代码无 AES/Cipher/MasterKey | 改为与实现一致的"明文落库" | `features/data-source` 页存在敏感字段脱敏待办，需文档与代码一致 | 文档偏差 | 数据源 | 已闭环 |
 | 数据源 addition 原为 JSON textarea | 已改为按类型特化表单（以 address 为准 + 高级 JSON 兜底） | `config-ui` 页已列入时间线 | 业务改进 | 配置界面 | 已闭环 |

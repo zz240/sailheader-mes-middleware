@@ -10,7 +10,8 @@ import java.util.Map;
 
 /**
  * 数据源：一个可配置的外部连接实例。type 决定连接器类型（HTTP/MySQL/RabbitMQ），
- * addition 保存类型相关的 JSON 配置对象（HTTP 的 method、MySQL 的 url/username/password、RabbitMQ 的 queue）。
+ * addition 保存连接级 JSON 配置对象（HTTP 的 token、MySQL 的 username/password、
+ * RabbitMQ 的 host/port/username/password；具体资源 path/method/queue/exchange/routingKey 在动作里配，ADR-0007）。
  */
 @TableName(value = "data_source", autoResultMap = true)
 public class DataSource {
