@@ -12,6 +12,11 @@ spring:
     username: gateway
     password: gateway
     driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    # 存量库（旧 db/init.sql 建的表）没有 flyway_schema_history 时自动 baseline，避免启动失败
+    baseline-on-migrate: true
+    # 存量库 schema+种子与 V1__init_schema.sql 等价，视为已达 V1；只执行 V2 起的增量迁移
+    baseline-version: 1
   rabbitmq:
     host: localhost
     port: 5672

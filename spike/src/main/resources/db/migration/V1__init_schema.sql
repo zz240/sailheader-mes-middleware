@@ -1,3 +1,8 @@
+-- V1__init_schema.sql
+-- 初始库结构：等价于原 spike/db/init.sql（建表 + demo 种子数据）。
+-- 存量库（已由旧 init.sql 建表）通过 spring.flyway.baseline-on-migrate=true + baseline-version=1
+-- 视为已达 V1，不会再重复执行本文件；新建库由本迁移创建全部表与种子。
+
 CREATE TABLE IF NOT EXISTS po_order (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_no VARCHAR(32) NOT NULL UNIQUE,
