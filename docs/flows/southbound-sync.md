@@ -28,7 +28,7 @@ sequenceDiagram
     participant DB as MySQL(po_receipt)
 
     PUB->>MQ: 发布 {"orderNo":"MO-1001",...}
-    MQ->>RG: spring-rabbitmq:<数据源名>?queues=mes.to.edge
+    MQ->>RG: spring-rabbitmq:<exchange>?exchangeType=<t>&queues=mes.to.edge
     RG->>RG: unmarshal().json() + 存 context[1]
     RG->>FM: FIELD_MAP.apply(context)
     FM-->>RG: 目标 Map
@@ -41,7 +41,7 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:100`） | `from("spring-rabbitmq:<数据源名>?queues=..&routingKey=..&autoDeclare=true")` | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
+| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:108`） | `from("spring-rabbitmq:<exchange>?exchangeType=<t>&queues=..&routingKey=<rk>&autoDeclare=true")`（缺省=数据源名/direct/queue，ADR-0010） | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
 | 保真 | 存消息体 | 入口 process（:119） | `context[1]` | 消息体 → 上下文 | — |
 | 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→FAILED 消息步 |
 | 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/FAILED 消息步 |
@@ -76,6 +76,6 @@ mysql -ugateway -pgateway edge_gateway -e "select * from po_receipt;"
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | C8（已闭环）`WRITE_UPSERT` 已按动作 `dataSourceId` 用客户库 `JdbcTemplate` 执行 | 已由 #67 实现消除（见 ADR-0008） | 不再写网关配置库；客户库 ≠ 配置库也不会写错 | 缺陷 | 数据源/南向 | 已闭环 |
-| 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 已定方向：完整绑定语义（exchange 名称/类型/binding key 归动作，缺省兼容）——规格 #80，T1-T3 #81/#82/#83（blocked 链），决策见 ADR-0010 | `features/transport` 已列为待办；事实研究 `docs/research/camel-spring-rabbitmq-declaration-facts.md` | 业务改进 | 通信模型 | 已定方向（#80-83 / ADR-0010） |
+| 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 已实现：#81（配置模型）/ #82（路由生成）/ #83（本文档闭环），exchange 名称/类型/binding key 归动作（ADR-0010），缺省兼容（数据源名 + direct + routingKey=queue），存量任务零影响 | ADR-0010 + 事实研究 `docs/research/camel-spring-rabbitmq-declaration-facts.md`；边界见 `features/transport` 已知限制 | 业务改进 | 通信模型 | 已闭环（#80-83 / ADR-0010） |
 | `MQ_PUBLISH` 要求显式 exchange（amq.default 不可靠） | 保持现状，已在文档注明（`features/transport` 已知限制，实测结论 `d7790b1`） | 实测结论 `d7790b1` | 文档偏差 | 通信模型 | 已闭环 |
 | 消费成功但 `job.lastRunStatus` 不更新 | 观察项；若需反映则在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |

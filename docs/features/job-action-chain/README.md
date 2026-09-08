@@ -10,7 +10,7 @@
 - **链约束**：MQ_CONSUME 只能链首（序号 1）；一条任务最多一个 MQ_CONSUME、最多一个带水位的 READ_SQL；动作序号唯一。
 - **路由生成（DS-8 片段组合）**：`RouteGenerator` 按动作种类生成 Camel 片段、按序号串联；三种入口：
   - `buildPollingEntry`（直连入口）：READ_SQL 链首 → 仅 `direct:job-<id>`；自动触发由 `JobScheduler` 依调度配置投递；
-  - `buildConsumerEntry`：MQ_CONSUME 链首 → `spring-rabbitmq:<数据源名>?queues=<queue>&routingKey=<queue>&autoDeclare=true` 消费；
+  - `buildConsumerEntry`：MQ_CONSUME 链首 → `spring-rabbitmq:<exchange>?exchangeType=<t>&queues=<queue>&routingKey=<rk>&autoDeclare=true` 消费（exchange 名/类型/binding key 归动作，缺省=数据源名/direct/queue，ADR-0010）；
   - `buildReplay`：`direct:job-<id>` 重放（手动执行/断点重放共用）。
 - **上下文列表**：动作输出按序号存入 exchange 属性 `edge.context`，`FIELD_MAP.sourceStep` 指向来源步骤（0=任务输入）；MQ 消费入口把消息体放 `context[1]`。
 - **生命周期**：任务启用时 `RouteRegistry` 注册路由、停用移除、启动自动重载；**动作增/改/删后自动重建路由**（6d0895a），重建失败自动停用任务。

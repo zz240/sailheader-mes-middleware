@@ -35,4 +35,4 @@
 
 - grill 决议：需求真实（自定义 exchange 会用）/ 深度 B / 动作侧 / 缺省兼容 / 2026-09-07；
 - 事实研究：`docs/research/camel-spring-rabbitmq-declaration-facts.md`；
-- 建议表来源：`docs/flows/southbound-sync.md`「消费者 exchange 未暴露」（业务改进，待评估）。
+- 建议表来源：`docs/flows/southbound-sync.md`「消费者 exchange 未暴露」（业务改进，已闭环 #80-83）。

@@ -9,7 +9,7 @@
 
 | 动作种类 | 语义 | 在路由中的位置 | 关键参数（typed addition） |
 |---|---|---|---|
-| `MQ_CONSUME` | 南向入口：从队列消费 | 只能作链首 | 数据源（broker）+ queue |
+| `MQ_CONSUME` | 南向入口：从队列消费 | 只能作链首 | 数据源（broker）+ queue + exchange/exchangeType（direct/topic/fanout/headers，缺省=数据源名 + direct，ADR-0010）+ routingKey（=binding key，topic 模式串；fanout 由 broker 忽略，可不填；缺省=queue） |
 | `READ_SQL` | 从 MySQL 增量/全量读 | 链中部（北向通常首位） | 数据源 + SQL + 水位策略 + 水位列 |
 | `FIELD_MAP` | 字段映射 | 任意 | rules（sourceStep + sourcePath + target + transform） |
 | `WRITE_UPSERT` | MySQL 幂等 upsert | 任意 | 数据源 + tableName + idempotencyKey |
@@ -54,7 +54,7 @@ for (Action a : sorted(actions)) {
 
 | 种类 | 片段 |
 |---|---|
-| `MQ_CONSUME` | `from(spring-rabbitmq:name?queues=..&routingKey=..)` → `unmarshal().json()` → 存 `context[0/序号]` |
+| `MQ_CONSUME` | `from(spring-rabbitmq:<exchange>?exchangeType=<t>&queues=..&routingKey=<rk>&autoDeclare=true)`（缺省=数据源名/direct/queue，ADR-0010）→ `unmarshal().json()` → 存 `context[0/序号]` |
 | `READ_SQL` | 读水位（配置在动作上）→ `to(sql:..)` → 算新水位 → `split(body())` → 每行存 `context[序号]` |
 | `FIELD_MAP` | processor：从 `context[sourceStep]` 取源 → 规则映射 → 存 `context[序号]` |
 | `WRITE_UPSERT` | processor：取 body → 组装 `INSERT ... ON DUPLICATE KEY UPDATE` → jdbc 执行 |
