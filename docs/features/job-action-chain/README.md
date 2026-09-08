@@ -4,7 +4,7 @@
 
 ## 当前设计（现状）
 
-- **任务模型**：`Job(id, siteId, name, status, direction, scheduleType, intervalValue, intervalUnit, scheduleTime, scheduleWeekday, timezone, retryCount, backoffMs, lastRunStatus/At/Error)`；水位已从任务移除（归 READ_SQL 动作）；`crontab` 列保留但仅承载系统生成的内部 cron（不对用户展示/编辑）。
+- **任务模型**：`Job(id, siteId, name, status, direction, scheduleType, intervalValue, intervalUnit, scheduleTime, scheduleWeekday, timezone, retryCount, backoffMs, lastRunStatus/At/Error)`；水位已从任务移除（归 READ_SQL 动作）；`crontab` 列保留但仅承载系统生成的内部 cron（不对用户展示/编辑）；`lastRunStatus/At/Error` 由链路尾部 `finishRun` 统一回写（#88，见 `service/JobLastRunWriter.java`）。
 - **方向（DS-9）**：`direction` ∈ NORTH/SOUTH，是**业务标签**；不做方向↔入口一致性校验，入口由链首动作种类决定。
 - **动作种类（六种，DS-8）**：READ_SQL / WRITE_UPSERT / HTTP_CALL / MQ_CONSUME / MQ_PUBLISH / FIELD_MAP；`addition` 按类型强类型化（`ActionConfig` sealed interface）。
 - **链约束**：MQ_CONSUME 只能链首（序号 1）；一条任务最多一个 MQ_CONSUME、最多一个带水位的 READ_SQL；动作序号唯一。

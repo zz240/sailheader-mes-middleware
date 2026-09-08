@@ -53,7 +53,7 @@ public class Job {
     /** 业务方向（DS-9）：创建任务时用户显式声明，不再从链入口推断。 */
     private SyncDirection direction;
 
-    /** 最近一次执行结果：SUCCESS / FAILED；由执行服务写入，配置接口不维护。 */
+    /** 最近一次运行结果：SUCCESS / FAILED；每次运行结束由 JobLastRunWriter 统一回写，配置接口不维护。 */
     private String lastRunStatus;
 
     private LocalDateTime lastRunAt;

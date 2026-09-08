@@ -3,14 +3,14 @@
 ## 场景说明
 
 任务如何被启动：**手动执行（界面/接口）、自动调度（不自动/间隔/每天/每周，友好配置）、外部调用（API Key 鉴权）**。
-入口 = 前端按钮 / REST / 自动调度 / `POST /api/external/jobs/{id}/trigger`；落点 = `direct:job-<id>` 路由执行并回写
-最近执行状态。
+入口 = 前端按钮 / REST / 自动调度 / `POST /api/external/jobs/{id}/trigger`；落点 = `direct:job-<id>` 路由执行，运行结果由
+链路尾部 `finishRun` 统一回写任务最近执行状态（#88，手动/外部执行方只回读）。
 
 ### 交互清单
 
 | 角色 | 动作 | 触发方式 | 期望结果 |
 |---|---|---|---|
-| 实施工程师 | 手动执行 | 任务页"执行" / `POST /api/jobs/{id}/execute` | `direct:job-N` 执行，`lastRunStatus` 回写 |
+| 实施工程师 | 手动执行 | 任务页"执行" / `POST /api/jobs/{id}/execute` | `direct:job-N` 执行，链路尾部统一回写 `lastRunStatus` |
 | 自动调度 | 周期触发 | Spring TaskScheduler 依调度配置注册 | 按配置投递 `direct:job-N`；`不自动` 则不投递 |
 | 外部系统 | 触发任务 | `POST /api/external/jobs/{id}/trigger` + `X-API-Key` | 鉴权通过则执行，否则 `UNAUTHORIZED` |
 
@@ -34,25 +34,28 @@ sequenceDiagram
     API->>EXEC: execute(id,input)
     EXEC->>DB: selectById + 校验 status=1
     EXEC->>ROUTE: producer.requestBody("direct:job-N", input)
+    ROUTE->>DB: finishRun 写 job_run + 回写 job.last_run_*
     ROUTE-->>EXEC: 成功/失败
-    EXEC->>DB: update lastRunStatus/At/Error
+    EXEC->>DB: selectById 回读（最近运行结果）
     EXEC-->>UI: 结果
     EXT->>KEY: 外部触发 trigger() → ApiKeyService.matches(siteId,key)
     KEY-->>EXT: 通过/拒绝
     EXT->>EXEC: execute(jobId,input)
-    Note over ROUTE: 自动调度同样投 direct:job-N
+    Note over ROUTE: 自动调度同样投 direct:job-N（回写路径一致）
 ```
 
 ### 逐环节代码走查
 
 | 触发方式 | 程序入口 | 关键类/方法 | 数据形态 | 鉴权 | 同步/异步 |
 |---|---|---|---|---|---|
-| 手动执行 | `POST /api/jobs/{id}/execute` | `JobExecutionService.execute`（`service/JobExecutionService.java:32`） | `Map` 入参 → `direct:job-N` | 无 | 同步等待 + 回写 `lastRunStatus/At/Error` |
+| 手动执行 | `POST /api/jobs/{id}/execute` | `JobExecutionService.execute`（`service/JobExecutionService.java:37`） | `Map` 入参 → `direct:job-N` | 无 | 同步等待 + 回读任务（回写由链路尾部 `finishRun` 统一完成） |
 | 自动调度 | `JobScheduler.reconcile`（`service/JobScheduler.java`）按调度配置注册 | `reconcile` | 无入参 | 无 | Spring TaskScheduler 投递 `direct:job-N` |
 | 外部触发 | `POST /api/external/jobs/{id}/trigger` | `ExternalTriggerService.trigger`（`service/ExternalTriggerService.java:31`）→ `ApiKeyService.matches`（`service/ApiKeyService.java:45`） | `Map` 入参体 | `X-API-Key` 与任务站点匹配 | 同步等待 |
 
-`JobExecutionService.execute`：未启用抛 `JOB_NOT_ENABLED`；成功写 `SUCCESS`、失败写 `FAILED` + 最深异常信息
-（`rootMessage` 跳过 Camel 包装）。`ExternalTriggerService` 校验失败抛 `UNAUTHORIZED`。
+`JobExecutionService.execute`：未启用抛 `JOB_NOT_ENABLED`；触发后回读任务返回（成功 `SUCCESS`、失败 `FAILED` +
+最深异常信息由 `MessageHistoryService.finishRun` 经 `JobLastRunWriter` 统一回写，`rootMessage` 跳过 Camel 包装）。
+触发层失败（如 `direct` 端点无消费者、运行尚未创建）时统一回写点不会执行，由 execute 兜底写 FAILED + 根因。
+`ExternalTriggerService` 校验失败抛 `UNAUTHORIZED`。
 
 > 外部触发链首边界：外部触发复用手动执行 `direct:job-<id>` 入口（`JobTrigger`），与链首动作种类无关——
 > - **MQ_CONSUME 链首**：请求体充当一条**已解析消息**，从动作 2 开始执行（buildReplay 语义，不经过消息队列）；
@@ -74,7 +77,7 @@ sequenceDiagram
 | 未启用（失败） | 停用后 execute | `JOB_NOT_ENABLED` | 400 |
 | 外部（成功） | `curl -X POST /api/external/jobs/1/trigger -H "X-API-Key: <key>" -d '{"字段":"值"}'` | 执行并回写 | 目标端收到 |
 | 外部（鉴权失败） | 错/缺 API Key | `UNAUTHORIZED` | 401 |
-| 自动调度 | 启用任务（配置间隔/每天/每周） | 按调度配置投递 `direct:job-N` | 日志 |
+| 自动调度 | 启用任务（配置间隔/每天/每周） | 按调度配置投递 `direct:job-N` | 日志 + 任务列表 `lastRunStatus` 更新（#88） |
 
 ## 验证操作
 

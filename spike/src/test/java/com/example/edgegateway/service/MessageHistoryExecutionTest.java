@@ -70,7 +70,8 @@ class MessageHistoryExecutionTest {
 
     private MessageHistoryService service(DefaultCamelContext context) {
         MessageHistoryService s = new MessageHistoryService(
-                jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), context);
+                jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), context,
+                new JobLastRunWriter(jobMapper));
         return s;
     }
 

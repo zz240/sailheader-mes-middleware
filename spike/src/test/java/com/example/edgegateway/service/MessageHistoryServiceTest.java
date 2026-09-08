@@ -54,7 +54,8 @@ class MessageHistoryServiceTest {
     private final ActionMapper actionMapper = mock(ActionMapper.class);
     private final CamelContext camelContext = mock(CamelContext.class);
     private final MessageHistoryService service = new MessageHistoryService(
-            jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), camelContext);
+            jobRunMapper, messageStepMapper, jobMapper, actionMapper, new ObjectMapper(), camelContext,
+            new JobLastRunWriter(jobMapper));
 
     @Test
     void startRunInsertsRunningRun() {

@@ -78,4 +78,4 @@ mysql -ugateway -pgateway edge_gateway -e "select * from po_receipt;"
 | C8（已闭环）`WRITE_UPSERT` 已按动作 `dataSourceId` 用客户库 `JdbcTemplate` 执行 | 已由 #67 实现消除（见 ADR-0008） | 不再写网关配置库；客户库 ≠ 配置库也不会写错 | 缺陷 | 数据源/南向 | 已闭环 |
 | 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 已实现：#81（配置模型）/ #82（路由生成）/ #83（本文档闭环），exchange 名称/类型/binding key 归动作（ADR-0010），缺省兼容（数据源名 + direct + routingKey=queue），存量任务零影响 | ADR-0010 + 事实研究 `docs/research/camel-spring-rabbitmq-declaration-facts.md`；边界见 `features/transport` 已知限制 | 业务改进 | 通信模型 | 已闭环（#80-83 / ADR-0010） |
 | `MQ_PUBLISH` 要求显式 exchange（amq.default 不可靠） | 保持现状，已在文档注明（`features/transport` 已知限制，实测结论 `d7790b1`） | 实测结论 `d7790b1` | 文档偏差 | 通信模型 | 已闭环 |
-| 消费成功但 `job.lastRunStatus` 不更新 | 已定方向（#88）：`finishRun` 统一回写 job（覆盖消费/调度/手动），实现另会话 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已定方向（#88） |
+| 消费成功但 `job.lastRunStatus` 不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（覆盖消费/调度/手动/重投） | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |

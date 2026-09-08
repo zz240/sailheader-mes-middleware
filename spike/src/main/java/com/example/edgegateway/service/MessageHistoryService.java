@@ -61,6 +61,7 @@ public class MessageHistoryService {
     private final ActionMapper actionMapper;
     private final ObjectMapper objectMapper;
     private final CamelContext camelContext;
+    private final JobLastRunWriter jobLastRunWriter;
 
     public MessageHistoryService(
             JobRunMapper jobRunMapper,
@@ -68,13 +69,15 @@ public class MessageHistoryService {
             JobMapper jobMapper,
             ActionMapper actionMapper,
             ObjectMapper objectMapper,
-            CamelContext camelContext) {
+            CamelContext camelContext,
+            JobLastRunWriter jobLastRunWriter) {
         this.jobRunMapper = jobRunMapper;
         this.messageStepMapper = messageStepMapper;
         this.jobMapper = jobMapper;
         this.actionMapper = actionMapper;
         this.objectMapper = objectMapper;
         this.camelContext = camelContext;
+        this.jobLastRunWriter = jobLastRunWriter;
     }
 
     // ---------- 运行（job_run） ----------
@@ -89,6 +92,11 @@ public class MessageHistoryService {
         return run;
     }
 
+    /**
+     * 结束一次运行（各链路尾部统一调用）：写 job_run，并把本次结果回写到任务
+     * {@code last_run_status/last_run_at/last_error}（#88，覆盖消费/调度/手动/重投）。
+     * 已完成（SUCCESS/FAILED）的运行不受重复 finish 影响，也不再改写任务上的最近运行结果。
+     */
     public void finishRun(Long runId, String status, String error) {
         if (runId == null) {
             return;
@@ -101,6 +109,7 @@ public class MessageHistoryService {
         run.setError(error);
         run.setFinishedAt(LocalDateTime.now());
         jobRunMapper.updateById(run);
+        jobLastRunWriter.write(run.getJobId(), run.getStatus(), run.getError(), run.getFinishedAt());
     }
 
     // ---------- 消息步（message_step） ----------

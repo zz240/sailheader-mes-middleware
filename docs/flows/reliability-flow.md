@@ -36,7 +36,8 @@ sequenceDiagram
     ROUTE->>EH: 动作抛异常 → 失败即停
     EH->>EH: maximumRedeliveries=retryCount 次退避重试
     EH->>MH: recordFailure + finishRun(FAILED)
-    MH->>DB: insert/update message_step(FAILED) + job_run(FAILED)
+    MH->>DB: insert/update message_step(FAILED) + job_run(FAILED) + job(last_run_status/at/error)
+    Note over MH,DB: 每次运行结束（成功/失败/重投）都统一回写任务最近运行结果（#88；重复 finish 幂等，不改写已完成运行）
     UI->>MH: GET /api/history/steps?status=FAILED&page&size (分页/按业务键等过滤)
     MH->>DB: selectPage(message_step)
     DB-->>UI: { total, records }
@@ -56,7 +57,8 @@ sequenceDiagram
   手动执行/重放 → `buildReplay`；断点重投 → `buildResumeRoute`（每条任务都会生成 `direct:job-<id>-resume`）；
 - 每个入口在 route 首部 `beginRun`（写 `job_run`，状态 `RUNNING`）并置 `edge.runId`；`MQ_CONSUME`/重放/断点入口
   再 `beginMessage`（生成 `messageId`、提取 `businessKey`、置 `edge.stepInput`）；
-- 手动执行走 `JobExecutionService.execute`（`direct:job-<id>` 同步等待），同步回写任务 `lastRunStatus`。
+- 手动执行走 `JobExecutionService.execute`（`direct:job-<id>` 同步等待），执行完**回读**任务返回给调用方；
+  最近运行结果不再由它自己计算，而是由链路尾部 `finishRun` 统一回写（见下）。
 
 **② 失败即停 + 重试退避**
 
@@ -70,6 +72,10 @@ sequenceDiagram
 
 - `MessageHistoryService`：`startRun`/`finishRun`（job_run）、`recordSuccess`/`recordFailure`（message_step，按
   `(run_id, message_id, step)` 幂等 upsert）、`redeliver`；`toJson` 处理 `StreamCache`/`InputStream`/`byte[]`。
+- 统一回写（#88）：`finishRun` 结束运行后经 `JobLastRunWriter` 把该次运行的 status/error/finished_at 写回任务
+  `last_run_status/last_run_at/last_error`（成功清空 `last_error`），覆盖 MQ 消费、自动调度、手动执行与断点重投；
+  手动路径只**回读**任务返回，仅当触发层失败（未创建运行、失败 exchange 上没有 `edge.runId`）才兜底写
+  FAILED + 根因。
 - 路由内：`recordSuccessStep` 在每个动作片段成功尾部调用（`input`=进入该步数据，`data`=动作后数据，
   `businessKey`=`edge.businessKey`）；`READ_SQL` 为源动作，在 `split` 内首部 `beginMessage` 生成消息（不记消息步）。
 - 数据形态：`dataSnapshot`/`inputSnapshot` 为 JSON 字符串；`status ∈ SUCCESS/FAILED/REDELIVERED`；
@@ -133,5 +139,5 @@ curl -X POST http://localhost:8080/api/history/steps/{id}/redeliver
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 在文档/消息步说明；常见写/发动作走 body 不受影响 | 精确断点的上下文约束 | 已知限制 | 可靠性 | 本期接受 |
-| 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已定方向（#88）：`finishRun` 统一回写 job（覆盖消费/调度/手动），实现另会话 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已定方向（#88） |
+| 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |
