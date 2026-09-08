@@ -33,9 +33,19 @@ public record MqConsumeConfig(
                 ConfigValues.str(map.get("businessKey")));
     }
 
-    /** 实际生效的 exchange 类型：未配置时缺省 direct（ADR-0010，存量任务零影响）。 */
+    /** 实际生效的 exchange 类型：未配置/空白时缺省 direct（ADR-0010，存量任务零影响）。 */
     public String effectiveExchangeType() {
-        return exchangeType == null ? "direct" : exchangeType;
+        return exchangeType == null || exchangeType.isBlank() ? "direct" : exchangeType;
+    }
+
+    /** 实际生效的 exchange 名：未配置/空白时回退数据源名（ADR-0010 缺省兼容）。 */
+    public String effectiveExchange(String fallback) {
+        return exchange == null || exchange.isBlank() ? fallback : exchange;
+    }
+
+    /** 实际生效的 binding key：未配置/空白时回退 queue（ADR-0010 缺省兼容）。 */
+    public String effectiveRoutingKey(String fallbackQueue) {
+        return routingKey == null || routingKey.isBlank() ? fallbackQueue : routingKey;
     }
 
     @Override

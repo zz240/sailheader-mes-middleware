@@ -31,6 +31,14 @@ class MqConsumeConfigTest {
     }
 
     @Test
+    void blankExchangeTypeStillDefaultsToDirect() {
+        MqConsumeConfig config = MqConsumeConfig.from(Map.of(
+                "dataSourceId", 1, "queue", "q", "exchangeType", " "));
+
+        assertThat(config.effectiveExchangeType()).isEqualTo("direct");
+    }
+
+    @Test
     void acceptsAllExchangeTypes() {
         for (String type : MqConsumeConfig.EXCHANGE_TYPES) {
             MqConsumeConfig config = MqConsumeConfig.from(Map.of(
@@ -62,5 +70,25 @@ class MqConsumeConfigTest {
         MqConsumeConfig config = MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q"));
 
         assertThat(config.toMap()).doesNotContainKey("exchangeType");
+    }
+
+    @Test
+    void effectiveExchangeFallsBackToDataSourceNameWhenAbsentOrBlank() {
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q"))
+                .effectiveExchange("mes.exchange")).isEqualTo("mes.exchange");
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q", "exchange", "  "))
+                .effectiveExchange("mes.exchange")).isEqualTo("mes.exchange");
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q", "exchange", "edge.x"))
+                .effectiveExchange("mes.exchange")).isEqualTo("edge.x");
+    }
+
+    @Test
+    void effectiveRoutingKeyFallsBackToQueueWhenAbsentOrBlank() {
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q"))
+                .effectiveRoutingKey("q")).isEqualTo("q");
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q", "routingKey", "  "))
+                .effectiveRoutingKey("q")).isEqualTo("q");
+        assertThat(MqConsumeConfig.from(Map.of("dataSourceId", 1, "queue", "q", "routingKey", "order.#"))
+                .effectiveRoutingKey("q")).isEqualTo("order.#");
     }
 }

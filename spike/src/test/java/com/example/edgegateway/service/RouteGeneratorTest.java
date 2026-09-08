@@ -197,7 +197,9 @@ class RouteGeneratorTest {
         assertThat(context.getRouteDefinitions()).hasSize(3);
 
         RouteDefinition route = context.getRouteDefinitions().get(0);
-        assertThat(route.getInput().getUri()).contains("spring-rabbitmq").contains("mes.to.edge");
+        // #82 兼容断言：不配 exchange/exchangeType/routingKey 时 URI 与现状一致（数据源名 + direct + routingKey=queue）
+        assertThat(route.getInput().getUri()).isEqualTo(
+                "spring-rabbitmq:mes.exchange?exchangeType=direct&queues=mes.to.edge&routingKey=mes.to.edge&autoDeclare=true");
 
         RouteDefinition replay = findRoute(context, "direct-9");
         assertThat(replay).isNotNull();
@@ -295,6 +297,25 @@ class RouteGeneratorTest {
         List<String> uris = collectUris(findRoute(context, "job-10"));
         assertThat(uris).anyMatch(u -> u.equals("http://localhost:8080/mock"));
         assertThat(uris).anyMatch(u -> u.contains("spring-rabbitmq") && u.contains("edge.notify"));
+    }
+
+    /** #82 消费入口使用动作侧 exchange 名/类型/binding key（ADR-0010）：自定义 exchange + topic 模式串原样进 URI。 */
+    @Test
+    void consumerUsesActionExchangeNameTypeAndBindingKey() throws Exception {
+        when(dataSourceMapper.selectById(1L)).thenReturn(rabbitDataSource(1L));
+
+        Job job = new Job();
+        job.setId(20L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge",
+                        "exchange", "edge.topic.x", "exchangeType", "topic", "routingKey", "order.#")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 1, "source", "orderNo", "target", "order_no")))));
+
+        DefaultCamelContext context = buildContext(job, actions);
+        RouteDefinition route = findRoute(context, "job-20");
+        assertThat(route.getInput().getUri()).isEqualTo(
+                "spring-rabbitmq:edge.topic.x?exchangeType=topic&queues=mes.to.edge&routingKey=order.#&autoDeclare=true");
     }
 
     private RouteDefinition findRoute(DefaultCamelContext context, String routeId) {

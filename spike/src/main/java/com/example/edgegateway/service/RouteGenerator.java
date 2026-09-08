@@ -101,21 +101,25 @@ public class RouteGenerator {
         };
     }
 
-    /** 消费入口：MQ 消费主路由（MQ_CONSUME 为入口）。 */
+    /**
+     * 消费入口：MQ 消费主路由（MQ_CONSUME 为入口）。exchange 名/类型/binding key 取动作侧配置（ADR-0010），
+     * 缺省回退：exchange=数据源名、exchangeType=direct、routingKey=queue（存量任务零影响）。
+     */
     private RouteBuilder buildConsumerEntry(Job job, List<Action> actions) {
         String routeId = "job-" + job.getId();
         MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
                 ActionKind.MQ_CONSUME, actions.getFirst().getAddition());
         DataSource mqDs = dataSourceMapper.selectById(consume.dataSourceId());
+        String endpoint = "spring-rabbitmq:" + consume.effectiveExchange(mqDs.getName())
+                + "?exchangeType=" + consume.effectiveExchangeType()
+                + "&queues=" + consume.queue()
+                + "&routingKey=" + consume.effectiveRoutingKey(consume.queue())
+                + "&autoDeclare=true";
         return new RouteBuilder() {
             @Override
             public void configure() {
                 configureErrorHandling(this, job, true);
-                ProcessorDefinition<?> route = from("spring-rabbitmq:" + mqDs.getName()
-                                + "?queues=" + consume.queue()
-                                + "&routingKey="
-                                + (consume.routingKey() == null ? consume.queue() : consume.routingKey())
-                                + "&autoDeclare=true")
+                ProcessorDefinition<?> route = from(endpoint)
                         .routeId(routeId)
                         .unmarshal().json()
                         .process(ex -> {
