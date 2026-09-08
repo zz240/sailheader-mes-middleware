@@ -1,15 +1,13 @@
 package com.example.edgegateway.mapper;
 
-import com.baomidou.mybatisplus.test.autoconfigure.MybatisPlusTest;
+import com.example.edgegateway.support.H2MapperTest;
 import com.example.edgegateway.model.Watermark;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.jdbc.Sql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@MybatisPlusTest
-@Sql("/schema.sql")
+@H2MapperTest
 class WatermarkMapperTest {
 
     @Autowired

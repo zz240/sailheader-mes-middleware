@@ -1,7 +1,7 @@
 package com.example.edgegateway.mapper;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.test.autoconfigure.MybatisPlusTest;
+import com.example.edgegateway.support.H2MapperTest;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
@@ -9,7 +9,6 @@ import com.example.edgegateway.model.ScheduleType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.context.jdbc.Sql;
 
 import java.util.List;
 import java.util.Map;
@@ -17,8 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@MybatisPlusTest
-@Sql("/schema.sql")
+@H2MapperTest
 class JobActionMapperTest {
 
     @Autowired

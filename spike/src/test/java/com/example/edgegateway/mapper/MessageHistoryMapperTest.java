@@ -1,18 +1,16 @@
 package com.example.edgegateway.mapper;
 
-import com.baomidou.mybatisplus.test.autoconfigure.MybatisPlusTest;
+import com.example.edgegateway.support.H2MapperTest;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.context.jdbc.Sql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@MybatisPlusTest
-@Sql("/schema.sql")
+@H2MapperTest
 class MessageHistoryMapperTest {
 
     @Autowired
