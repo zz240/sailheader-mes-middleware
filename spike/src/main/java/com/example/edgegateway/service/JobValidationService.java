@@ -3,6 +3,7 @@ package com.example.edgegateway.service;
 import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.MqConsumeConfig;
 import com.example.edgegateway.config.MysqlDataSourceConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapping.TransformType;
@@ -23,8 +24,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 任务级配置期校验：数据源连通性 + READ_SQL 静态/只读真校验 + 北向映射字段存在性（探测结果对照）。
- * errors 阻断启用，warnings 仅提示。
+ * 任务级配置期校验：数据源连通性 + READ_SQL 静态/只读真校验 + 北向映射字段存在性（探测结果对照）
+ * + MQ 消费绑定提示（fanout 配 routingKey）。errors 阻断启用，warnings 仅提示。
  */
 @Service
 public class JobValidationService {
@@ -71,6 +72,7 @@ public class JobValidationService {
             validateRemoteAction(action, errors);
         }
         checkNorthMappingFields(actions, warnings);
+        checkMqConsumeBindings(actions, warnings);
         return new ValidationResult(errors.isEmpty(), errors, warnings);
     }
 
@@ -175,6 +177,22 @@ public class JobValidationService {
 
     private String normalizePath(String path) {
         return NameNormalizer.normalize(path).compact().replace("[0]", "");
+    }
+
+    /** MQ 消费绑定提示（#81）：fanout exchange 由 broker 忽略 binding key（routingKey），配置了仅提示不阻断。 */
+    private void checkMqConsumeBindings(List<Action> actions, List<ValidationResult.Issue> warnings) {
+        for (Action action : actions) {
+            if (action.getType() != ActionKind.MQ_CONSUME) {
+                continue;
+            }
+            MqConsumeConfig consume = (MqConsumeConfig) ActionConfig.from(
+                    ActionKind.MQ_CONSUME, addition(action));
+            if ("fanout".equals(consume.effectiveExchangeType())
+                    && consume.routingKey() != null && !consume.routingKey().isBlank()) {
+                warnings.add(new ValidationResult.Issue(
+                        "action", action.getName(), "fanout exchange 忽略 routingKey（binding key），建议留空"));
+            }
+        }
     }
 
     private Map<String, Object> addition(Action action) {

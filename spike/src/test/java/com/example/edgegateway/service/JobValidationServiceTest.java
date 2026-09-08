@@ -55,6 +55,18 @@ class JobValidationServiceTest {
         return action;
     }
 
+    private Action mqConsume(Map<String, Object> addition) {
+        Action action = new Action();
+        action.setName("consume");
+        action.setType(ActionKind.MQ_CONSUME);
+        action.setActionIndex(1);
+        Map<String, Object> add = new java.util.HashMap<>(addition);
+        add.put("dataSourceId", 7L);
+        add.put("queue", "q");
+        action.setAddition(add);
+        return action;
+    }
+
     @BeforeEach
     void defaults() {
         when(jobService.get(1L)).thenReturn(new Job());
@@ -128,5 +140,29 @@ class JobValidationServiceTest {
 
         assertThat(result.valid()).isFalse();
         assertThat(result.errors()).anyMatch(e -> e.scope().equals("data-source"));
+    }
+
+    @Test
+    void warnsWhenFanoutHasRoutingKey() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                mqConsume(Map.of("exchangeType", "fanout", "routingKey", "order.#"))));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.warnings()).anyMatch(w -> w.scope().equals("action")
+                && w.field().equals("consume") && w.message().contains("fanout"));
+    }
+
+    @Test
+    void noFanoutWarningWhenRoutingKeyAbsentOrTypeNotFanout() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                mqConsume(Map.of("exchangeType", "fanout")),
+                mqConsume(Map.of("exchangeType", "direct", "routingKey", "order.#"))));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.warnings()).isEmpty();
     }
 }

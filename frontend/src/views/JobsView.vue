@@ -165,8 +165,20 @@
 
         <template v-if="actionForm.type === 'MQ_CONSUME'">
           <el-form-item label="队列"><el-input v-model="kindForm.queue" placeholder="mes.to.edge" /></el-form-item>
-          <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="可选" /></el-form-item>
-          <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="可选，缺省=队列" /></el-form-item>
+          <el-form-item label="exchange">
+            <el-input v-model="kindForm.exchange" placeholder="可选，缺省=数据源名" />
+          </el-form-item>
+          <el-form-item label="exchangeType">
+            <el-select v-model="kindForm.exchangeType" style="width: 100%">
+              <el-option label="direct（缺省，直连队列 rk）" value="direct" />
+              <el-option label="topic（routingKey 为模式串）" value="topic" />
+              <el-option label="fanout（广播，routingKey 留空）" value="fanout" />
+              <el-option label="headers" value="headers" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="routingKey">
+            <el-input v-model="kindForm.routingKey" placeholder="binding key：topic 用模式串（如 order.#），fanout 留空；缺省=队列" />
+          </el-form-item>
           <el-form-item label="业务键路径"><el-input v-model="kindForm.businessKey" placeholder="如 data.orderNo（按业务分组/检索）" /></el-form-item>
         </template>
 
@@ -381,6 +393,8 @@ async function execute(row: Job) {
 function resetKindFields() {
   Object.keys(kindForm).forEach(k => delete kindForm[k])
   kindForm.dataSourceId = filteredDataSources.value[0]?.id
+  // MQ_CONSUME exchange 类型缺省 direct（ADR-0010）；切换类型时重置回缺省
+  if (actionForm.type === 'MQ_CONSUME') kindForm.exchangeType = 'direct'
 }
 
 function openActionCreate() {

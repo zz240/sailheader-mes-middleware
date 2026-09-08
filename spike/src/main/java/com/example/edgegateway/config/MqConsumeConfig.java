@@ -3,28 +3,39 @@ package com.example.edgegateway.config;
 import com.example.edgegateway.model.ActionKind;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** MQ 消费动作（南向入口，只能作链首）：数据源（broker）+ queue/exchange/routingKey + 业务键 JSON 路径（#70）。 */
+/** MQ 消费动作（南向入口，只能作链首）：数据源（broker）+ queue/exchange/exchangeType/routingKey + 业务键 JSON 路径（#70）。 */
 public record MqConsumeConfig(
         Long dataSourceId,
         String queue,
         String exchange,
+        String exchangeType,
         String routingKey,
         String businessKey
 ) implements ActionConfig {
 
+    /** ADR-0010：exchange 类型枚举（与 Camel spring-rabbitmq exchangeType 一致，缺省 direct）。 */
+    public static final List<String> EXCHANGE_TYPES = List.of("direct", "topic", "fanout", "headers");
+
     public static MqConsumeConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
-        rejectUnknownKeys(map, Set.of("dataSourceId", "queue", "exchange", "routingKey", "businessKey"));
+        rejectUnknownKeys(map, Set.of("dataSourceId", "queue", "exchange", "exchangeType", "routingKey", "businessKey"));
         Object id = map.get("dataSourceId");
         return new MqConsumeConfig(
                 id == null ? null : Long.valueOf(id.toString()),
                 ConfigValues.str(map.get("queue")),
                 ConfigValues.str(map.get("exchange")),
+                ConfigValues.str(map.get("exchangeType")),
                 ConfigValues.str(map.get("routingKey")),
                 ConfigValues.str(map.get("businessKey")));
+    }
+
+    /** 实际生效的 exchange 类型：未配置时缺省 direct（ADR-0010，存量任务零影响）。 */
+    public String effectiveExchangeType() {
+        return exchangeType == null ? "direct" : exchangeType;
     }
 
     @Override
@@ -39,6 +50,10 @@ public record MqConsumeConfig(
         }
         if (queue == null || queue.isBlank()) {
             throw new IllegalArgumentException("MQ 消费动作需要 queue");
+        }
+        if (exchangeType != null && !EXCHANGE_TYPES.contains(exchangeType)) {
+            throw new IllegalArgumentException(
+                    "exchangeType 应为 " + String.join("/", EXCHANGE_TYPES) + ": " + exchangeType);
         }
         if (businessKey != null && !businessKey.isBlank()
                 && !businessKey.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*")) {
@@ -55,6 +70,9 @@ public record MqConsumeConfig(
         }
         if (exchange != null) {
             map.put("exchange", exchange);
+        }
+        if (exchangeType != null) {
+            map.put("exchangeType", exchangeType);
         }
         if (routingKey != null) {
             map.put("routingKey", routingKey);

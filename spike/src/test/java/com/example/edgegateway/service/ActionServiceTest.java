@@ -157,7 +157,7 @@ class ActionServiceTest {
         job.setId(1L);
         when(jobMapper.selectById(1L)).thenReturn(job);
         ActionRequest request = new ActionRequest("consume", ActionKind.MQ_CONSUME, 2,
-                new MqConsumeConfig(1L, "q", null, null, null));
+                new MqConsumeConfig(1L, "q", null, null, null, null));
 
         assertThatThrownBy(() -> service.add(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
