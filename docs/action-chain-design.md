@@ -10,7 +10,7 @@
 | 动作种类 | 语义 | 在路由中的位置 | 关键参数（typed addition） |
 |---|---|---|---|
 | `MQ_CONSUME` | 南向入口：从队列消费 | 只能作链首 | 数据源（broker）+ queue + exchange/exchangeType（direct/topic/fanout/headers，缺省=数据源名 + direct，ADR-0010）+ routingKey（=binding key，topic 模式串；fanout 由 broker 忽略，可不填；缺省=queue） |
-| `READ_SQL` | 从 MySQL 增量/全量读 | 链中部（北向通常首位） | 数据源 + SQL + 水位策略 + 水位列 |
+| `READ_SQL` | 从 MySQL 增量/刷量读（keyset 分批） | 链中部（北向通常首位） | 数据源 + SQL + 水位策略 + 水位列 + 批大小 |
 | `FIELD_MAP` | 字段映射 | 任意 | rules（sourceStep + sourcePath + target + transform） |
 | `WRITE_UPSERT` | MySQL 幂等 upsert | 任意 | 数据源 + tableName + idempotencyKey |
 | `HTTP_CALL` | 调 HTTP 接口 | 任意 | 数据源（根地址）+ path + method + 鉴权 |

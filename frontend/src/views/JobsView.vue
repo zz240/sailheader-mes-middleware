@@ -139,11 +139,12 @@
           <el-form-item label="SQL"><el-input v-model="kindForm.sql" type="textarea" :rows="3" placeholder="SELECT * FROM po_order WHERE {watermark}" /></el-form-item>
           <el-form-item label="水位策略">
             <el-select v-model="kindForm.watermarkType" style="width: 100%">
-              <el-option label="自增列" value="SEQUENCE" />
-              <el-option label="时间列" value="TIMESTAMP" />
+              <el-option label="SEQUENCE：增量（id，严格大于）" value="SEQUENCE" />
+              <el-option label="TIMESTAMP：按时间刷量（含边界，幂等）" value="TIMESTAMP" />
             </el-select>
           </el-form-item>
           <el-form-item label="水位列"><el-input v-model="kindForm.watermarkColumn" placeholder="如 id / updated_at" /></el-form-item>
+          <el-form-item label="批大小"><el-input-number v-model="kindForm.batchSize" :min="1" :max="10000" placeholder="每批读取行数（缺省 500）" /></el-form-item>
           <el-form-item label="业务键列"><el-input v-model="kindForm.businessKey" placeholder="如 order_no（按业务分组/检索）" /></el-form-item>
         </template>
 

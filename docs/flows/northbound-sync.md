@@ -47,13 +47,13 @@ sequenceDiagram
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
 | 触发 | 自动调度/手动进主路由 | `buildPollingEntry`（`service/RouteGenerator.java:84`） | `from("direct:job-N")`（自动触发由 `JobScheduler` 投递） | — | 路由级 `onException` |
-| 读水位 | 取上次位置 | `readWatermark`（:311） | `WatermarkStore.get("job:N")` → header `lastId/lastRun` | 无 | SEQUENCE/TIMESTAMP 两种占位 |
-| 增量读 | 查库 | `appendChain`（:147） | `read.sql().replace("{watermark}",...)` → `.to("sql:...?dataSource=#dataSource&outputType=SelectList")`（:162） | `List<Map>` | 只读 SQL 校验（jobId 校验期） |
-| 算新水位 | 取 max | `computeMax`（:320） | SEQUENCE 取 max(水位列)；TIMESTAMP 用当前时间 | — | — |
-| 拆分 | 每行一子交换 | `split(bodyExpression())` | Camel split | `List<Map>` → `Map` | — |
+| 读水位 | 取上次位置（进入循环前） | `prepareRead`（`service/RouteGenerator.java`） | `WatermarkStore.get("job:N")` → property `edge.readWatermark`（epoch 毫秒/自增值） | 无 | TIMESTAMP 以任务时区格式化窗口下界 |
+| 分批读 | keyset 分页逐批扫 | `appendChain`（`loopDoWhile` + `readBatch`） | `{watermark}` 谓词 + `ORDER BY col LIMIT batchSize`，经 `JdbcTemplate` 打到客户库（`#edge-ds-<id>` 池） | `List<Map>`（每批 ≤ batchSize） | 只读 SQL 校验（jobId 校验期） |
+| 算新水位 | 取批内 max | `ReadSqlBatcher.newBatchWatermark` | SEQUENCE 取 max(id)；TIMESTAMP 取 max(updated_at) 转 epoch 毫秒（**不用墙钟 now**） | 批内进度 | — |
+| 拆分 | 每行一子交换 | `split(bodyExpression())` | Camel split（循环内） | `List<Map>` → `Map` | — |
 | 映射 | 源→目标 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
 | 推送 | HTTP 出站 | HTTP_CALL（`appendFragment`） | `composeUrl`（:360）+ `marshal().json()` + `.to(url)`（:162 之后的片段） | `Map`→JSON→HTTP | 非 2xx→抛异常→重试/FAILED 消息步 |
-| 水位回写 | 成功后推进 | `updateWatermark`（:338） | `WatermarkStore.put` | — | 失败即停（成功后才更新） |
+| 水位回写 | **每批**成功后推进 | `updateWatermark`（split 结束后、循环内） | `WatermarkStore.put(批内水位)` | — | 批失败只丢该批：水位停在上一成功批，重跑补读 |
 
 > 水位首跑语义：`watermark` 表无记录时按初始值 0 处理——SEQUENCE 读 `id > 0` 即**首次全量**（不会跳过首行），
 > 成功后推进到本批 `max(id)`，之后按序前进；TIMESTAMP 同理（无记录按窗口起点）。
@@ -94,5 +94,5 @@ curl http://localhost:8080/mock/mes/received
 | C1 轮询链重投/死信入参与契约不符 | 已由 #70 断点续跑路由（`direct:job-<id>-resume` + `RESUME_FROM`）解决：不再整链重跑、不再依赖 `edge.originalInput` | ADR-0003 修正与 reliability 页承诺"按原始输入从首动作之后重跑"，轮询链实际重跑 READ_SQL | 缺陷 | 可靠性 | 已解决（#70） |
 | C3 `crontab` 存而未用，轮询硬编码 `period=60000` | 已改为结构化调度（不自动/间隔/每天/每周），内部编译 fixedRate/cron 并结合 timezone | 由 #78 闭环 | 缺陷修复 | job-action-chain | 已闭环 |
 | 水位首跑语义（SEQUENCE 初始 0）未在文档说明 | 已注明（本页"水位首跑语义"：无记录按 0 → 首跑全量，成功后按 id 前进） | 避免误以为跳过首行 | 文档偏差 | 可靠性 | 已闭环 |
-| 水位策略重构 + 分批：两种模式——增量（id，`> last` + 每批 max(id)）与刷量（按 `updated_at` 窗口 + 业务键 upsert，幂等，不用墙钟 now）；支持 `batchSize` + keyset 分页（`where {watermark} order by 列 limit n`）、**每批推进水位**，供**首次全量/大增量**；`job.timezone` 用于刷量窗口 | 已定方向：**实现于 `codex/issue-79` 分支**（2658375 起，`ReadSqlBatcher`+测试齐全；基于 236c638 分叉，未合并 master），合并归实现会话 | 务实收敛：不做侵入式强绑定；更新为主走刷量 upsert；首跑大表必须分批 | 设计改进 | 北向/可靠性 | 已定方向（codex/issue-79，未合并） |
+| 水位策略重构 + 分批：两种模式——增量（id，`> last` + 每批 max(id)）与刷量（按 `updated_at` 窗口 + 业务键 upsert，幂等，不用墙钟 now）；支持 `batchSize` + keyset 分页（`where {watermark} order by 列 limit n`）、**每批推进水位**，供**首次全量/大增量**；`job.timezone` 用于刷量窗口 | 由 #79 实现：`SEQUENCE`＝增量 `>`、`TIMESTAMP`＝按时间 `>=`（含边界）+ 批内 max、`batchSize` 分批、整批成功才推进水位；首次全量从空水位逐批扫完 | 务实收敛：不做侵入式强绑定 | 设计改进 | 北向/可靠性 | 已闭环（#79） |
 | 删除同步：拉取模型感知不到物理删除 | 逻辑删除靠刷量 upsert 覆盖；物理删除由用户按需触发任务（manual/external trigger）；自动删除检测需新动作，单列增强 | 无法自动感知删除 | 业务改进 | 北向/可靠性 | 待评估 |

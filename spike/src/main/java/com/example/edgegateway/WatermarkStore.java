@@ -19,7 +19,7 @@ public class WatermarkStore {
                 "select wm_value from watermark where job_key = ?",
                 (rs, i) -> rs.getLong("wm_value"),
                 key);
-        return values.isEmpty() ? 0L : values.get(0);
+        return values.isEmpty() ? 0L : values.getFirst();
     }
 
     public void put(String key, long value) {

@@ -16,18 +16,18 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.Job;
+import com.example.edgegateway.model.ScheduleConfig;
 import com.example.edgegateway.model.WatermarkType;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.builder.ExpressionBuilder;
+import org.apache.camel.model.LoopDefinition;
 import org.apache.camel.model.ProcessorDefinition;
 import org.apache.camel.model.RouteDefinition;
+import org.apache.camel.model.SplitDefinition;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -50,22 +50,28 @@ public class RouteGenerator {
 
     private static final String CONTEXT = "edge.context";
     private static final String SKIP_FLAG = "edge.skipFragment";
-    private static final String WATERMARK_VALUE = "watermarkValue";
+    /** 当前批次下界（epoch 毫秒 / 自增值），每批处理后更新；持久化用 {@link WatermarkStore}。 */
+    private static final String WATERMARK = "edge.readWatermark";
+    /** 是否还有下一批（keyset 分页未扫完）。 */
+    private static final String HAS_MORE = "edge.hasMoreBatches";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
     private final MessageHistoryService messageHistory;
     private final DataSourceManager dataSourceManager;
+    private final ReadSqlBatcher readSqlBatcher;
 
     public RouteGenerator(
             DataSourceMapper dataSourceMapper,
             WatermarkStore watermarkStore,
             MessageHistoryService messageHistory,
-            DataSourceManager dataSourceManager) {
+            DataSourceManager dataSourceManager,
+            ReadSqlBatcher readSqlBatcher) {
         this.dataSourceMapper = dataSourceMapper;
         this.watermarkStore = watermarkStore;
         this.messageHistory = messageHistory;
         this.dataSourceManager = dataSourceManager;
+        this.readSqlBatcher = readSqlBatcher;
     }
 
     public List<RouteBuilder> build(Job job, List<Action> actions) {
@@ -181,28 +187,38 @@ public class RouteGenerator {
     private ProcessorDefinition<?> appendChain(ProcessorDefinition<?> route, List<Action> actions, Job job) {
         ProcessorDefinition<?> current = route;
         boolean inSplit = false;
-        ReadSqlConfig watermarkRead = null;
+        boolean inBatchLoop = false;
+        ReadSqlConfig batchRead = null;
         for (Action action : actions) {
             ActionKind kind = action.getType();
             ActionConfig config = ActionConfig.from(kind, action.getAddition());
             if (kind == ActionKind.READ_SQL && !inSplit) {
                 ReadSqlConfig read = (ReadSqlConfig) config;
-                // 确保动作选定的客户库连接池已建立并绑定 edge-ds-<id> bean，路由启动才能按名解析
+                // 确保动作选定的客户库连接池已建立，路由启动才能按名解析/构造 JdbcTemplate
                 customerDataSource(read.dataSourceId());
-                String sql = read.sql().replace("{watermark}", watermarkPredicate(read));
-                current = current
-                        .process(ex -> {
-                            ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
-                            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
-                            // READ 失败（未产生任何源行）时用于落一条 FAILED 消息步的占位消息 id
-                            ex.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
-                            readWatermark(ex, job, read);
-                        })
-                        .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
-                        .process(ex -> computeMax(ex, job, read))
-                        .split(ExpressionBuilder.bodyExpression());
+                boolean hasWatermark = read.watermarkColumn() != null && !read.watermarkColumn().isBlank();
+                if (hasWatermark) {
+                    // #79 分批 + keyset 分页：读水位 → 循环（读一批 → split 行 → 整批成功才推进水位）→ 直到扫完
+                    LoopDefinition loop = current
+                            .process(ex -> prepareRead(ex, job, read, action.getActionIndex(), action.getName()))
+                            .loopDoWhile(ex -> moreBatches(ex));
+                    current = loop.process(ex -> readBatch(ex, job, read))
+                            .split(ExpressionBuilder.bodyExpression());
+                    inBatchLoop = true;
+                    batchRead = read;
+                } else {
+                    // 无水位列：全量单次读（不分批、不推进水位），保留原语义
+                    String sql = read.sql();
+                    current = current
+                            .process(ex -> {
+                                ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
+                                ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                                ex.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
+                            })
+                            .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
+                            .split(ExpressionBuilder.bodyExpression());
+                }
                 inSplit = true;
-                watermarkRead = read;
                 // 源行为"消息创建"时机：每条源行 = 一条消息，在 split 内首部创建消息标识与业务键
                 current = current.process(ex -> beginMessage(ex, read.businessKey()));
                 // 读取动作本身也作为链上一步：每条源行记一条 SUCCESS 消息步（无输入快照，data=该行）
@@ -210,10 +226,17 @@ public class RouteGenerator {
             }
             current = appendFragment(current, action, config, job);
         }
-        if (inSplit) {
-            current = ((org.apache.camel.model.SplitDefinition) current).end();
-            if (watermarkRead != null && watermarkRead.watermarkColumn() != null) {
-                ReadSqlConfig read = watermarkRead;
+        if (inBatchLoop && batchRead != null) {
+            // 先结束 split（把一批的行处理完），再提交该批水位；批失败时不会走到这一步，从而实现"批失败只丢该批"
+            ReadSqlConfig read = batchRead;
+            current = ((SplitDefinition) current).end();
+            current = current.process(ex -> updateWatermark(ex, job, read));
+            current = ((LoopDefinition) current).end();
+            inSplit = false;
+        } else if (inSplit) {
+            current = ((SplitDefinition) current).end();
+            if (batchRead != null) {
+                ReadSqlConfig read = batchRead;
                 current = current.process(ex -> updateWatermark(ex, job, read));
             }
         }
@@ -451,48 +474,42 @@ public class RouteGenerator {
         return context;
     }
 
-    private String watermarkPredicate(ReadSqlConfig read) {
-        return WatermarkType.TIMESTAMP == parseWatermark(read)
-                ? read.watermarkColumn() + " > :#lastRun"
-                : read.watermarkColumn() + " > :#lastId";
-    }
-
-    private WatermarkType parseWatermark(ReadSqlConfig read) {
-        return read.watermarkType() == null ? WatermarkType.SEQUENCE : WatermarkType.valueOf(read.watermarkType());
-    }
-
-    private void readWatermark(Exchange exchange, Job job, ReadSqlConfig read) {
+    /** 读水位（进入循环前）：从缓存库取上次位置，作为本批次的下界（epoch 毫秒 / 自增值）。 */
+    private void prepareRead(Exchange exchange, Job job, ReadSqlConfig read, int actionIndex, String actionName) {
+        exchange.setProperty(MessageHistoryService.ACTION_INDEX, actionIndex);
+        exchange.setProperty(MessageHistoryService.ACTION_NAME, actionName);
+        exchange.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
         long value = watermarkStore.get("job:" + job.getId());
-        if (parseWatermark(read) == WatermarkType.TIMESTAMP) {
-            exchange.getMessage().setHeader("lastRun", formatTime(value));
-        } else {
-            exchange.getMessage().setHeader("lastId", value);
-        }
+        exchange.setProperty(WATERMARK, value);
+        // 让首批至少执行一次（do-while 语义下无副作用；while 语义下需要先入循环）
+        exchange.setProperty(HAS_MORE, true);
     }
 
-    private void computeMax(Exchange exchange, Job job, ReadSqlConfig read) {
-        List<Map<String, Object>> rows = exchange.getMessage().getBody(List.class);
-        long value;
-        if (parseWatermark(read) == WatermarkType.SEQUENCE) {
-            long max = exchange.getMessage().getHeader("lastId", Long.class);
-            for (Map<String, Object> row : rows) {
-                Object raw = row.get(read.watermarkColumn());
-                if (raw instanceof Number number) {
-                    max = Math.max(max, number.longValue());
-                }
-            }
-            value = max;
-        } else {
-            value = System.currentTimeMillis();
-        }
-        exchange.setProperty(WATERMARK_VALUE, value);
+    /** 读一批：keyset 分页（谓词 + ORDER BY 列 + LIMIT batchSize），计算批内水位并标记是否还有下一批。 */
+    private void readBatch(Exchange exchange, Job job, ReadSqlConfig read) {
+        long current = exchange.getProperty(WATERMARK, Long.class);
+        javax.sql.DataSource ds = customerDataSource(read.dataSourceId());
+        Object bound = readSqlBatcher.parseType(read) == WatermarkType.TIMESTAMP
+                ? readSqlBatcher.formatTimeBound(current, ScheduleConfig.from(job).zone())
+                : current;
+        String sql = readSqlBatcher.batchSql(read);
+        List<Map<String, Object>> rows = new JdbcTemplate(ds).queryForList(sql, bound);
+        long newWatermark = readSqlBatcher.newBatchWatermark(read, rows, current, ScheduleConfig.from(job).zone());
+        exchange.getMessage().setBody(rows);
+        exchange.setProperty(WATERMARK, newWatermark);
+        exchange.setProperty(HAS_MORE, readSqlBatcher.hasMore(read, rows));
     }
 
+    /** 整批处理成功后才推进水位（持久化）；批失败时不执行，实现"批失败只丢该批"。 */
     private void updateWatermark(Exchange exchange, Job job, ReadSqlConfig read) {
-        Long value = exchange.getProperty(WATERMARK_VALUE, Long.class);
+        Long value = exchange.getProperty(WATERMARK, Long.class);
         if (value != null) {
             watermarkStore.put("job:" + job.getId(), value);
         }
+    }
+
+    private boolean moreBatches(Exchange exchange) {
+        return Boolean.TRUE.equals(exchange.getProperty(HAS_MORE, Boolean.class));
     }
 
     private void upsert(Exchange exchange, JdbcTemplate jdbc, String table, String idempotencyKey) {
@@ -540,9 +557,4 @@ public class RouteGenerator {
         return pool;
     }
 
-    private String formatTime(long epochMillis) {
-        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                .withZone(ZoneId.systemDefault())
-                .format(Instant.ofEpochMilli(epochMillis));
-    }
 }

@@ -11,6 +11,7 @@ import com.example.edgegateway.model.JobRun;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.LoopDefinition;
 import org.apache.camel.model.ProcessorDefinition;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.ToDefinition;
@@ -45,7 +46,7 @@ class RouteGeneratorTest {
         dataSourceManager = mock(DataSourceManager.class);
         messageHistory = mock(MessageHistoryService.class);
         generator = new RouteGenerator(
-                dataSourceMapper, mock(WatermarkStore.class), messageHistory, dataSourceManager);
+                dataSourceMapper, mock(WatermarkStore.class), messageHistory, dataSourceManager, new ReadSqlBatcher());
     }
 
     private DataSource mysqlDataSource(Long id) {
@@ -118,7 +119,7 @@ class RouteGeneratorTest {
         job.setStatus(1);
         List<Action> actions = List.of(
                 action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
-                        "sql", "select id, order_no, status from po_order where {watermark} order by id",
+                        "sql", "select id, order_no, status from po_order where {watermark}",
                         "watermarkType", "SEQUENCE", "watermarkColumn", "id")),
                 action(2, ActionKind.FIELD_MAP, Map.of("rules",
                         List.of(Map.of("sourceStep", 1, "source", "order_no", "target", "sheet_no")))),
@@ -130,7 +131,9 @@ class RouteGeneratorTest {
         RouteDefinition route = findRoute(context, "job-7");
         assertThat(route.getInput().getUri()).isEqualTo("direct:job-7");
         List<String> uris = collectUris(route);
-        assertThat(uris).anyMatch(u -> u.contains("sql:") && u.contains("id > :#lastId"));
+        // READ_SQL 带水位列 → 生成 keyset 分批循环（不再一次全量读进内存）
+        assertThat(hasLoop(route)).isTrue();
+        verify(dataSourceManager).get(1L);
         assertThat(uris).anyMatch(u -> u.equals("http://localhost:8080/mock"));
 
         // 自动触发已外置到 JobScheduler；默认（不自动）不再生成 timer 路由
@@ -154,8 +157,9 @@ class RouteGeneratorTest {
                 action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L)));
 
         DefaultCamelContext context = buildContext(job, actions);
-        List<String> uris = collectUris(findRoute(context, "job-8"));
-        assertThat(uris).anyMatch(u -> u.contains("updated_at > :#lastRun"));
+        // TIMESTAMP 同样进入分批循环；谓词语义由 ReadSqlBatcher 单测覆盖
+        assertThat(hasLoop(findRoute(context, "job-8"))).isTrue();
+        verify(dataSourceManager).get(1L);
     }
 
     @Test
@@ -173,9 +177,9 @@ class RouteGeneratorTest {
                         List.of(Map.of("sourceStep", 1, "source", "id", "target", "id")))));
 
         DefaultCamelContext context = buildContext(job, actions);
-        List<String> uris = collectUris(findRoute(context, "job-11"));
-        // 数据源引用应指向动作选定的客户库 bean，而非网关自身配置库
-        assertThat(uris).anyMatch(u -> u.contains("sql:") && u.contains("dataSource=#edge-ds-1"));
+        // 数据源引用应指向动作选定的客户库池（构造 JdbcTemplate），而非网关自身配置库
+        verify(dataSourceManager).get(1L);
+        assertThat(hasLoop(findRoute(context, "job-11"))).isTrue();
     }
 
     @Test
@@ -323,5 +327,21 @@ class RouteGeneratorTest {
                 .filter(r -> routeId.equals(r.getRouteId()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean hasLoop(RouteDefinition route) {
+        return hasLoopOutput(route.getOutputs());
+    }
+
+    private boolean hasLoopOutput(List<?> outputs) {
+        for (Object output : outputs) {
+            if (output instanceof LoopDefinition) {
+                return true;
+            }
+            if (output instanceof ProcessorDefinition<?> def && def.getOutputs() != null && hasLoopOutput(def.getOutputs())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

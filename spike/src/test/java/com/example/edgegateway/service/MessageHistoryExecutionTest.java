@@ -86,7 +86,7 @@ class MessageHistoryExecutionTest {
                         List.of(Map.of("sourceStep", 1, "source", "orderNo", "target", "order_no")))));
         stubConsumeDataSource();
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
@@ -121,7 +121,7 @@ class MessageHistoryExecutionTest {
                         List.of(Map.of("sourceStep", 1, "source", "orderNo", "target", "order_no")))));
         stubConsumeDataSource();
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
@@ -176,7 +176,7 @@ class MessageHistoryExecutionTest {
         when(broken.getConnection()).thenThrow(new SQLException("connection broken"));
         when(dataSourceManager.get(2L)).thenReturn(broken);
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
@@ -220,7 +220,7 @@ class MessageHistoryExecutionTest {
         }
         when(dataSourceManager.get(2L)).thenReturn(h2);
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
@@ -259,7 +259,7 @@ class MessageHistoryExecutionTest {
         Job job = job(15L);
         List<Action> actions = List.of(
                 action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
-                        "sql", "select id, order_no, vendor_code from po_order where {watermark} order by id",
+                        "sql", "select id, order_no, vendor_code from po_order where {watermark}",
                         "watermarkType", "SEQUENCE", "watermarkColumn", "id", "businessKey", "order_no")),
                 action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
                         Map.of("sourceStep", 1, "source", "order_no", "target", "order_no"),
@@ -278,7 +278,7 @@ class MessageHistoryExecutionTest {
         // READ 的 sql: 组件按 `#edge-ds-1` bean 解析数据源（真实应用由 DataSourceManager 注册）
         context.getRegistry().bind("edge-ds-1", h2);
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
@@ -331,7 +331,7 @@ class MessageHistoryExecutionTest {
         when(dataSourceManager.get(1L)).thenReturn(h2);
         context.getRegistry().bind("edge-ds-1", h2);
 
-        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager);
+        RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
             context.addRoutes(builder);
         }
