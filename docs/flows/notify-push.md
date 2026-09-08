@@ -79,6 +79,6 @@ curl -X POST http://localhost:8080/api/jobs/{id}/execute -d '{}'
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| 动作重排时 `FIELD_MAP.sourceStep` / `bodySourceStep` 依赖可能静默错位 | 前端联动改写或校验期报警 | `action-chain-design` 已约定，需实现/确认 | 设计改进 | job-action-chain | 待评估 |
+| 动作重排时 `FIELD_MAP.sourceStep` / `bodySourceStep` 依赖可能静默错位 | 前端联动改写或校验期报警（`bodySourceStep` 侧已闭环 ed50f35；`sourceStep` 规则侧待定） | `action-chain-design` 已约定，需实现/确认 | 设计改进 | job-action-chain | 待评估 |
 | `MQ_PUBLISH` 缺 `bodySourceStep` 且上下文为空时可能发布旧 body | 已改为**显式必填**：`MqPublishConfig.validate` 要求 `bodySourceStep>0`；`ActionService.validateChain` 要求指向链中存在且序号更早的动作；RouteGenerator 片段无输出即抛错（断点跳过不再静默发旧 body） | 防误发 | 缺陷 | job-action-chain | 已闭环 |
 | 双写（HTTP+MQ）无原子性 | 已在文档注明"非事务，部分成功靠失败消息步定位重投"（本页流程详解注 + ADR-0003） | 与 ADR-0003 一致（不承诺分布式补偿） | 文档偏差 | 可靠性 | 已闭环 |

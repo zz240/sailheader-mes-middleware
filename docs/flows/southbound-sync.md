@@ -76,6 +76,6 @@ mysql -ugateway -pgateway edge_gateway -e "select * from po_receipt;"
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | C8（已闭环）`WRITE_UPSERT` 已按动作 `dataSourceId` 用客户库 `JdbcTemplate` 执行 | 已由 #67 实现消除（见 ADR-0008） | 不再写网关配置库；客户库 ≠ 配置库也不会写错 | 缺陷 | 数据源/南向 | 已闭环 |
-| 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 如需自定义 exchange/routingKey 绑定需扩展 | `features/transport` 已列为待办 | 业务改进 | 通信模型 | 待评估 |
+| 消费者 exchange 未暴露，固定用数据源名当直连 exchange | 已定方向：完整绑定语义（exchange 名称/类型/binding key 归动作，缺省兼容）——规格 #80，T1-T3 #81/#82/#83（blocked 链），决策见 ADR-0010 | `features/transport` 已列为待办；事实研究 `docs/research/camel-spring-rabbitmq-declaration-facts.md` | 业务改进 | 通信模型 | 已定方向（#80-83 / ADR-0010） |
 | `MQ_PUBLISH` 要求显式 exchange（amq.default 不可靠） | 保持现状，已在文档注明（`features/transport` 已知限制，实测结论 `d7790b1`） | 实测结论 `d7790b1` | 文档偏差 | 通信模型 | 已闭环 |
 | 消费成功但 `job.lastRunStatus` 不更新 | 观察项；若需反映则在消费 route 尾回写 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 待评估 |
