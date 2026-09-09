@@ -92,4 +92,4 @@ curl -X POST http://localhost:8080/api/external/jobs/<id>/trigger -H "X-API-Key:
 |---|---|---|---|---|---|
 | C3 `crontab` 存而未用，定时仅固定 60s | 已改为结构化调度（不自动/间隔/每天/每周），内部编译 fixedRate/cron 并结合 timezone | 由 #78 闭环 | 缺陷修复 | job-action-chain | 已闭环 |
 | 外部触发对无 MQ_CONSUME/READ_SQL 链首的任务语义不清 | 已注明边界（本页"外部触发链首边界"：复用 `direct:job-N` 手动执行，请求体按链首形态进入） | 反例场景（MQ 消费 + 北向）已支持 | 业务改进 | 触发 | 已闭环 |
-| API Key 仅站点级，无轮换/过期 | 观察项 | 现状单站点单 Key | 业务改进 | 站点 | 待评估 |
+| API Key 仅站点级，无轮换/过期 | 保持现状（用户拍板：当前单站点单 Key 够用，不做轮换/过期） | 现状单站点单 Key | 业务改进 | 站点 | 不采纳（现状够用） |
