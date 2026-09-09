@@ -25,7 +25,8 @@ import java.util.regex.Pattern;
 
 /**
  * 任务级配置期校验：数据源连通性 + READ_SQL 静态/只读真校验 + 北向映射字段存在性（探测结果对照）
- * + MQ 消费绑定提示（fanout 配 routingKey）。errors 阻断启用，warnings 仅提示。
+ * + 动作链 sourceStep 引用一致性（FIELD_MAP）+ MQ 消费绑定提示（fanout 配 routingKey）。
+ * errors 阻断启用，warnings 仅提示。
  */
 @Service
 public class JobValidationService {
@@ -71,6 +72,7 @@ public class JobValidationService {
             }
             validateRemoteAction(action, errors);
         }
+        checkChainReferences(actions, errors);
         checkNorthMappingFields(actions, warnings);
         checkMqConsumeBindings(actions, warnings);
         return new ValidationResult(errors.isEmpty(), errors, warnings);
@@ -132,6 +134,13 @@ public class JobValidationService {
             sqlValidator.validate(ds.getAddress(), db, sql);
         } catch (Exception e) {
             errors.add(new ValidationResult.Issue("sql", action.getName(), e.getMessage()));
+        }
+    }
+
+    /** 链一致性（#89 T3a）：FIELD_MAP.sourceStep 必须指向链中存在的、序号更早的动作，悬空/错位阻断启用。 */
+    private void checkChainReferences(List<Action> actions, List<ValidationResult.Issue> errors) {
+        for (String problem : ChainConsistencyValidator.check(actions)) {
+            errors.add(new ValidationResult.Issue("mapping", "sourceStep", problem));
         }
     }
 

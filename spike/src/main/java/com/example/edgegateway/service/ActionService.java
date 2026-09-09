@@ -12,6 +12,7 @@ import com.example.edgegateway.model.Job;
 import com.example.edgegateway.web.dto.ActionRequest;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -20,7 +21,8 @@ import java.util.stream.Collectors;
 
 /**
  * 动作业务：绑定/更新/删除/列表，校验动作序号唯一、动作种类合法与链约束
- * （MQ_CONSUME 只能链首、最多一个 MQ_CONSUME + 一个带水位 READ_SQL），
+ * （MQ_CONSUME 只能链首、最多一个 MQ_CONSUME + 一个带水位 READ_SQL、sourceStep/bodySourceStep
+ * 引用必须指向链中更早的动作），
  * 引用数据源的动作校验数据源存在；动作变更后经 {@link RouteLifecycle} 自动重建该任务的
  * Camel 路由与调度（否则已运行路由不感知配置变化）。
  */
@@ -57,9 +59,7 @@ public class ActionService {
             throw new IllegalArgumentException("同任务下动作序号不能重复: " + request.index());
         }
         checkDataSourceReference(request.addition());
-        Action action = new Action();
-        action.setJobId(jobId);
-        apply(action, request);
+        Action action = toAction(jobId, request);
         actionMapper.insert(action);
         recordMappingHistory(jobId, request);
         rebuildRoutesIfEnabled(jobId);
@@ -146,6 +146,14 @@ public class ActionService {
         action.setAddition(request.addition().toMap());
     }
 
+    /** 请求 → 待落库动作（未 insert）；写时校验用它拼出"候选链"。 */
+    private Action toAction(Long jobId, ActionRequest request) {
+        Action action = new Action();
+        action.setJobId(jobId);
+        apply(action, request);
+        return action;
+    }
+
     /** 字段映射动作保存/更新后，把最终确认的映射规则沉淀进映射历史。 */
     private void recordMappingHistory(Long jobId, ActionRequest request) {
         if (request.type() == ActionKind.FIELD_MAP) {
@@ -154,49 +162,33 @@ public class ActionService {
         }
     }
 
-    /** 链约束（DS-8 MVP）：MQ_CONSUME 只能链首；最多一个 MQ_CONSUME + 一个带水位 READ_SQL。 */
+    /**
+     * 链约束（DS-8 MVP）：MQ_CONSUME 只能链首；最多一个 MQ_CONSUME + 一个带水位 READ_SQL；
+     * MQ_PUBLISH 的 bodySourceStep 与 FIELD_MAP 规则的 sourceStep 必须指向链中存在的、更早的动作（#89 T1）。
+     */
     private void validateChain(Long jobId, ActionRequest request, Long excludeId) {
+        // 本次编辑之外的现存动作；三种引用校验共用，避免重复查库
+        List<Action> existing = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                        .eq(Action::getJobId, jobId))
+                .stream()
+                .filter(a -> excludeId == null || !a.getId().equals(excludeId))
+                .toList();
         if (request.type() == ActionKind.MQ_CONSUME && request.index() != null && request.index() != 1) {
             throw new IllegalArgumentException("MQ_CONSUME 只能作为链首（序号 1）");
         }
         if (request.type() == ActionKind.MQ_PUBLISH) {
-            // bodySourceStep 必填且必须指向链中存在的、序号更早的动作（显式声明"发哪一步的输出"，防静默发错）
-            Map<String, Object> addition = request.addition().toMap();
-            Object rawStep = addition.get("bodySourceStep");
-            int bodyStep = rawStep == null ? 0 : Integer.parseInt(rawStep.toString());
-            if (request.index() != null && bodyStep >= request.index()) {
-                throw new IllegalArgumentException(
-                        "bodySourceStep=" + bodyStep + " 必须指向执行顺序更早的动作（当前序号 " + request.index() + "）");
-            }
-            Set<Integer> indexes = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                            .eq(Action::getJobId, jobId))
-                    .stream()
-                    .filter(a -> excludeId == null || !a.getId().equals(excludeId))
-                    .map(Action::getActionIndex)
-                    .collect(Collectors.toSet());
-            if (request.index() != null) {
-                indexes.add(request.index());
-            }
-            if (!indexes.contains(bodyStep)) {
-                throw new IllegalArgumentException(
-                        "bodySourceStep=" + bodyStep + " 在动作链中不存在，请填上游动作序号（如 FIELD_MAP）");
-            }
+            checkBodySourceStep(request, existing);
         }
-        long mqConsume = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                        .eq(Action::getJobId, jobId)
-                        .eq(Action::getType, ActionKind.MQ_CONSUME))
-                .stream()
-                .filter(a -> excludeId == null || !a.getId().equals(excludeId))
-                .count();
+        if (request.type() == ActionKind.FIELD_MAP) {
+            checkMappingSourceSteps(jobId, request, existing);
+        }
         // 包含当前请求：新增时 +1，更新时按自身种类替换
+        long mqConsume = existing.stream().filter(a -> a.getType() == ActionKind.MQ_CONSUME).count();
         long current = request.type() == ActionKind.MQ_CONSUME ? 1 : 0;
         if (mqConsume + current > 1) {
             throw new IllegalArgumentException("一条任务最多一个 MQ_CONSUME 动作");
         }
-        boolean hasWatermarkRead = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                        .eq(Action::getJobId, jobId))
-                .stream()
-                .filter(a -> excludeId == null || !a.getId().equals(excludeId))
+        boolean hasWatermarkRead = existing.stream()
                 .map(a -> a.getType() == ActionKind.READ_SQL
                         ? (Map<String, Object>) a.getAddition()
                         : Map.<String, Object>of())
@@ -205,6 +197,35 @@ public class ActionService {
                 && request.addition().toMap().containsKey("watermarkColumn");
         if (hasWatermarkRead && currentWatermark) {
             throw new IllegalArgumentException("一条任务最多一个带水位的 READ_SQL 动作");
+        }
+    }
+
+    /** bodySourceStep 必填且必须指向链中存在的、序号更早的动作（显式声明"发哪一步的输出"，防静默发错）。 */
+    private void checkBodySourceStep(ActionRequest request, List<Action> existing) {
+        Map<String, Object> addition = request.addition().toMap();
+        Object rawStep = addition.get("bodySourceStep");
+        int bodyStep = rawStep == null ? 0 : Integer.parseInt(rawStep.toString());
+        if (request.index() != null && bodyStep >= request.index()) {
+            throw new IllegalArgumentException(
+                    "bodySourceStep=" + bodyStep + " 必须指向执行顺序更早的动作（当前序号 " + request.index() + "）");
+        }
+        Set<Integer> indexes = existing.stream().map(Action::getActionIndex).collect(Collectors.toSet());
+        if (request.index() != null) {
+            indexes.add(request.index());
+        }
+        if (!indexes.contains(bodyStep)) {
+            throw new IllegalArgumentException(
+                    "bodySourceStep=" + bodyStep + " 在动作链中不存在，请填上游动作序号（如 FIELD_MAP）");
+        }
+    }
+
+    /** FIELD_MAP 规则的 sourceStep 必须指向链中存在的、序号更早的动作（#89 T1）。 */
+    private void checkMappingSourceSteps(Long jobId, ActionRequest request, List<Action> existing) {
+        List<Action> candidate = new ArrayList<>(existing);
+        candidate.add(toAction(jobId, request));
+        List<String> problems = ChainConsistencyValidator.check(candidate);
+        if (!problems.isEmpty()) {
+            throw new IllegalArgumentException(ChainConsistencyValidator.describeAll(problems));
         }
     }
 }

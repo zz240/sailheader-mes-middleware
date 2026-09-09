@@ -30,7 +30,7 @@
 - `READ_SQL` 的 split 后，每个子 exchange 的 `context[readIndex]` = 该行数据；
 - 字段映射规则引用改为结构化 `sourceStep + sourcePath`（不再拼接路径字符串），`sourceStep` 默认等于"前一个动作的序号"（迁移时按原链推断）；
 - `MQ_PUBLISH` 的请求体来源 = `bodySourceStep`（**必填**，显式指向链中存在的更早动作，校验期检查；发布时该步无输出——如被断点跳过——则执行失败，不静默发旧值）；`HTTP_CALL` 直接使用当前 body（上一步输出）；
-- 重排动作时，前端负责同步改写依赖规则的 sourceStep（或校验期报警），避免静默错位。
+- 重排/删除动作后，依赖规则的 `sourceStep` 由**校验期报警**兜底（#89）：写时（`ActionService` 新增/修改 FIELD_MAP → 400）、`/validate`（errors 阻断启用）、路由启用/重建/启动重载前（`RouteRegistry.enable` 闸口 → 失败经 `RouteLifecycle` 自动停用 + 摘除路由/调度 + 写 `job.lastError`）三处共用 `ChainConsistencyValidator`，要求 sourceStep 指向链中**存在且序号更早**的动作（`0` = 任务输入）；前端联动改写为可选后续（T2' 引用清单）。
 
 FieldMapper 签名变化：
 

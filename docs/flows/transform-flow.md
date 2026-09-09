@@ -45,7 +45,7 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 规则模型 | 结构化规则树（叶子 + 组节点） | `config/FieldMappingConfig.from` | `validate()` 递归校验（组内子规则禁 sourceStep、INDEX 仅组内、CONSTANT 需 constant 等） | JSON → 递归 record | 未知键/缺 target/前缀冲突→400 |
+| 规则模型 | 结构化规则树（叶子 + 组节点） | `config/FieldMappingConfig.from` | `validate()` 递归校验（组内子规则禁 sourceStep、INDEX 仅组内、CONSTANT 需 constant 等） | JSON → 递归 record | 未知键/缺 target/前缀冲突→400；sourceStep 悬空/错位→400 且 `/validate` 报错（#89 `ChainConsistencyValidator`） |
 | 编译 | 规则树 → JSONata | 路由构建期 | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`） | `List<FieldMappingRule>` → 字符串表达式 | 目标前缀/重复冲突→400 |
 | 求值 | 上下文绑定各步骤求值 | 消息到达 | `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`）；dashjoin jsonata 0.9.10，实例跨消息复用 | 上下文 `Map<Integer,Object>` → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
 | 建议器 | 结构探测 + 同名归一化 + 相似度 + 历史复用 + 转换推断 | `MappingSuggestionService.suggest`（`service/MappingSuggestionService.java:45`）→ `MappingSuggesterRouter.forSite`（`service/MappingSuggesterRouter.java:33`）→ `RuleMappingSuggester.suggest`（`mapping/suggest/RuleMappingSuggester.java:39`） | 探测字段对（`StructureProbeService.probeFromDb` :53）→ 候选 | 组建议 `MatchSource.ARRAY`；单值样例不再推 CONSTANT（DS-10.4） |
@@ -67,6 +67,7 @@ sequenceDiagram
 | 求值 | 上下文 `{1:{order_no:"PO-1"}}` | `{"sheet_no":"PO-1"}` | MES 收到/日志 |
 | 建议 | 源/目标样例 | 候选列表 | `POST /api/suggestions` 返回 `sourcePath,targetName,score,matchSource` |
 | 失败样例 | 组合路径 `a.b.c` 与 `a.b` 冲突 | 400 | `目标字段前缀冲突/重复映射` |
+| 失败样例 | `sourceStep` 指向已删除/更晚的动作 | 400 或 `/validate` errors | `动作 2（map）映射规则 sheet_no 的 sourceStep=1 在动作链中不存在` |
 | 边界 | 组内 INDEX 出现在顶层 | 400 | `INDEX 转换只能在数组组内使用` |
 
 覆盖样例：STRING / INT / DATE / ENUM / CONSTANT / CONCAT / INDEX；组节点（制品→BOM 两级）与 `$root` 跨层。

@@ -2,6 +2,8 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.JobMapper;
+import com.example.edgegateway.model.Action;
+import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Route;
@@ -10,11 +12,14 @@ import org.apache.camel.spi.RouteController;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,16 +70,30 @@ class RouteRegistryTest {
         verify(jobScheduler).reconcile(1L);
     }
 
-    @Test
-    void reloadSkipsJobThatFailsToGenerate() {
-        Job bad = new Job();
-        bad.setId(1L);
-        when(jobMapper.selectList(any())).thenReturn(List.of(bad));
-        when(actionMapper.selectList(any())).thenReturn(List.of());
-        when(routeGenerator.build(any(Job.class), anyList()))
-                .thenThrow(new IllegalArgumentException("任务没有动作，无法生成路由"));
+    // ---------- 启用前 sourceStep 引用一致性（#89 T3b） ----------
 
-        // 单个任务配置有问题不应拖垮启动
-        registry.reloadEnabledJobs();
+    private Action fieldMap(int index, int sourceStep) {
+        Action action = new Action();
+        action.setName("map");
+        action.setType(ActionKind.FIELD_MAP);
+        action.setActionIndex(index);
+        action.setAddition(Map.of("rules", List.of(Map.of(
+                "sourceStep", sourceStep, "source", "order_no", "target", "sheet_no", "transform", "STRING"))));
+        return action;
+    }
+
+    @Test
+    void enableRejectsDanglingMappingSourceStep() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        // 链上只剩这条 FIELD_MAP：sourceStep=1 指向的动作已被删除
+        when(actionMapper.selectList(any())).thenReturn(List.of(fieldMap(2, 1)));
+
+        assertThatThrownBy(() -> registry.enable(1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=1")
+                .hasMessageContaining("不存在");
+        verify(routeGenerator, never()).build(any(Job.class), anyList());
     }
 }

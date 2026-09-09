@@ -40,18 +40,21 @@ public class DataSourceService {
     private final ActionMapper actionMapper;
     private final JobMapper jobMapper;
     private final RouteRegistry routeRegistry;
+    private final RouteLifecycle routeLifecycle;
 
     public DataSourceService(
             DataSourceMapper dataSourceMapper,
             DataSourceManager dataSourceManager,
             ActionMapper actionMapper,
             JobMapper jobMapper,
-            RouteRegistry routeRegistry) {
+            RouteRegistry routeRegistry,
+            RouteLifecycle routeLifecycle) {
         this.dataSourceMapper = dataSourceMapper;
         this.dataSourceManager = dataSourceManager;
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.routeRegistry = routeRegistry;
+        this.routeLifecycle = routeLifecycle;
     }
 
     public DataSource create(DataSourceRequest request) {
@@ -170,25 +173,22 @@ public class DataSourceService {
         return jobIds;
     }
 
-    /** #68：数据源变更后，引用它的启用任务重建路由；重建失败的任务自动停用并汇总报错。 */
+    /**
+     * #68：数据源变更后，引用它的启用任务重建路由；失败经 {@link RouteLifecycle} 自动停用 +
+     * 摘除路由/调度 + 写 {@code job.lastError}，最后汇总报错。
+     */
     private void rebuildRoutesUsingDataSource(Long dataSourceId) {
         List<String> failures = new ArrayList<>();
         for (Long jobId : findJobIdsUsingDataSource(dataSourceId)) {
-            Job job = jobMapper.selectById(jobId);
-            if (job == null || job.getStatus() == null || job.getStatus() != 1) {
-                continue;
-            }
             try {
-                routeRegistry.enable(jobId);
+                routeLifecycle.rebuildIfEnabled(jobId); // 非启用任务自动跳过
             } catch (RuntimeException e) {
-                job.setStatus(0);
-                jobMapper.updateById(job);
                 LOG.warn("数据源变更导致任务路由重建失败，已自动停用 job={}: {}", jobId, e.getMessage());
                 failures.add("任务 " + jobId + "：" + e.getMessage());
             }
         }
         if (!failures.isEmpty()) {
-            throw new IllegalArgumentException("数据源已更新，但以下启用任务路由重建失败，已自动停用: "
+            throw new IllegalArgumentException("数据源已更新，以下启用任务重建失败（已自动停用）: "
                     + String.join("；", failures));
         }
     }

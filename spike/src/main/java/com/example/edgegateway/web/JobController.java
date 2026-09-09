@@ -4,6 +4,7 @@ import com.example.edgegateway.service.ActionService;
 import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
 import com.example.edgegateway.service.JobValidationService;
+import com.example.edgegateway.service.RouteLifecycle;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.ActionView;
@@ -37,15 +38,18 @@ public class JobController {
     private final JobService jobService;
     private final ActionService actionService;
     private final RouteRegistry routeRegistry;
+    private final RouteLifecycle routeLifecycle;
     private final JobExecutionService jobExecutionService;
     private final JobValidationService jobValidationService;
 
     public JobController(JobService jobService, ActionService actionService,
-                         RouteRegistry routeRegistry, JobExecutionService jobExecutionService,
+                         RouteRegistry routeRegistry, RouteLifecycle routeLifecycle,
+                         JobExecutionService jobExecutionService,
                          JobValidationService jobValidationService) {
         this.jobService = jobService;
         this.actionService = actionService;
         this.routeRegistry = routeRegistry;
+        this.routeLifecycle = routeLifecycle;
         this.jobExecutionService = jobExecutionService;
         this.jobValidationService = jobValidationService;
     }
@@ -84,7 +88,8 @@ public class JobController {
     public JobView setStatus(@PathVariable Long id, @RequestBody JobStatusRequest request) {
         Job job = jobService.setStatus(id, request.status());
         if (job.getStatus() == 1) {
-            routeRegistry.enable(id);
+            // 经 RouteLifecycle 启用：链不一致等配置问题会失败并自动停用 + 写 lastError（不留"已启用但无路由"的死任务）
+            routeLifecycle.enable(id);
         } else {
             routeRegistry.disable(id);
         }

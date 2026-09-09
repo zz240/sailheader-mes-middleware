@@ -75,7 +75,8 @@ sequenceDiagram
 - 统一回写（#88）：`finishRun` 结束运行后经 `JobLastRunWriter` 把该次运行的 status/error/finished_at 写回任务
   `last_run_status/last_run_at/last_error`（成功清空 `last_error`），覆盖 MQ 消费、自动调度、手动执行与断点重投；
   手动路径只**回读**任务返回，仅当触发层失败（未创建运行、失败 exchange 上没有 `edge.runId`）才兜底写
-  FAILED + 根因。
+  FAILED + 根因。`last_error` 是「最近一次失败原因」，启用/重建失败自动停用时也由 `RouteLifecycle` 写入
+  （#89，如 `sourceStep` 引用不一致），下一次成功运行清空。
 - 路由内：`recordSuccessStep` 在每个动作片段成功尾部调用（`input`=进入该步数据，`data`=动作后数据，
   `businessKey`=`edge.businessKey`）；`READ_SQL` 为源动作，在 `split` 内首部 `beginMessage` 生成消息（不记消息步）。
 - 数据形态：`dataSnapshot`/`inputSnapshot` 为 JSON 字符串；`status ∈ SUCCESS/FAILED/REDELIVERED`；

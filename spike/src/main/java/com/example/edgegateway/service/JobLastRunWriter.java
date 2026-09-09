@@ -10,6 +10,9 @@ import java.time.LocalDateTime;
 /**
  * 任务"最近一次运行结果"的唯一写入点（#88）：把一次运行的结果回写到
  * {@code job.last_run_status/last_run_at/last_error}，覆盖 MQ 消费、自动调度、手动执行与断点重投全部链路。
+ *
+ * <p>{@code last_error} 是"最近一次失败原因"：除运行失败外，启用/重建失败由 {@link RouteLifecycle}
+ * 自动停用时写入（#89），下一次成功运行会把它清空。</p>
  */
 @Component
 public class JobLastRunWriter {

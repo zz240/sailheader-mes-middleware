@@ -10,6 +10,7 @@ import com.example.edgegateway.service.BusinessException;
 import com.example.edgegateway.service.JobExecutionService;
 import com.example.edgegateway.service.JobService;
 import com.example.edgegateway.service.JobValidationService;
+import com.example.edgegateway.service.RouteLifecycle;
 import com.example.edgegateway.service.RouteRegistry;
 import com.example.edgegateway.web.dto.ActionRequest;
 import com.example.edgegateway.web.dto.JobRequest;
@@ -21,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -46,6 +48,9 @@ class JobControllerTest {
 
     @MockBean
     private RouteRegistry routeRegistry;
+
+    @MockBean
+    private RouteLifecycle routeLifecycle;
 
     @MockBean
     private JobExecutionService jobExecutionService;
@@ -106,6 +111,23 @@ class JobControllerTest {
                         .content("{\"status\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value(1));
+    }
+
+    @Test
+    void rejectsEnableWhenChainInconsistent() throws Exception {
+        Job job = new Job();
+        job.setId(1L);
+        job.setStatus(1);
+        when(jobService.setStatus(1L, 1)).thenReturn(job);
+        doThrow(new IllegalArgumentException("启用失败，任务已自动停用: sourceStep=5 在动作链中不存在"))
+                .when(routeLifecycle).enable(1L);
+
+        mockMvc.perform(put("/api/jobs/1/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PARAM_INVALID"))
+                .andExpect(jsonPath("$.message").value("启用失败，任务已自动停用: sourceStep=5 在动作链中不存在"));
     }
 
     @Test

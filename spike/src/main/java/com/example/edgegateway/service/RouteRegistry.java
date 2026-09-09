@@ -9,16 +9,14 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.builder.RouteBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 /**
- * 路由生命周期：启用任务时把配置编译成 Camel 路由注册，停用时停止并移除；
- * 应用启动后自动重载所有启用状态的任务。
+ * 路由生命周期：启用任务时把配置编译成 Camel 路由注册，停用时停止并移除。
+ * 启用前先做 sourceStep 引用一致性校验（{@link ChainConsistencyValidator}），不一致直接拒绝而不注册路由；
+ * 启用/重建失败后的停用、写 lastError 与启动重载由 {@link RouteLifecycle} 负责。
  */
 @Service
 public class RouteRegistry {
@@ -40,24 +38,18 @@ public class RouteRegistry {
         this.jobScheduler = jobScheduler;
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    @Order(3)
-    public void reloadEnabledJobs() {
-        for (Job job : jobMapper.selectList(new LambdaQueryWrapper<Job>().eq(Job::getStatus, 1))) {
-            try {
-                enable(job.getId());
-            } catch (RuntimeException e) {
-                // 单个任务配置有问题不应拖垮整个网关启动，记录后继续
-                LOG.warn("启动时重载任务路由失败，跳过 job={}: {}", job.getId(), e.getMessage());
-            }
-        }
-    }
-
     public void enable(Long jobId) {
         Job job = jobMapper.selectById(jobId);
         List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
                 .eq(Action::getJobId, jobId)
                 .orderByAsc(Action::getActionIndex));
+        // 配置 → 路由的唯一闸口（显式启用 / 变更后重建 / 启动重载都走这里）：
+        // sourceStep 引用不一致（悬空或错位）在此拦截，避免生成"静默映射 null"的路由
+        List<String> chainProblems = ChainConsistencyValidator.check(actions);
+        if (!chainProblems.isEmpty()) {
+            throw new IllegalArgumentException("动作链 sourceStep 引用不一致: "
+                    + ChainConsistencyValidator.describeAll(chainProblems));
+        }
         try {
             removeIfExists(routeId(jobId));
             removeIfExists(directRouteId(jobId));

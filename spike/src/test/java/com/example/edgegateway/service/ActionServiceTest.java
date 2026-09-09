@@ -231,6 +231,107 @@ class ActionServiceTest {
         assertThat(saved.getAddition()).containsEntry("bodySourceStep", 2);
     }
 
+    // ---------- FIELD_MAP sourceStep 链一致性（#89 T1 写时校验） ----------
+
+    private ActionRequest mapRequest(Integer index, Integer sourceStep) {
+        Map<String, Object> rule = new java.util.LinkedHashMap<>();
+        if (sourceStep != null) {
+            rule.put("sourceStep", sourceStep);
+        }
+        rule.put("source", "order_no");
+        rule.put("target", "sheet_no");
+        rule.put("transform", "STRING");
+        return new ActionRequest("map", ActionKind.FIELD_MAP, index,
+                FieldMappingConfig.from(Map.of("rules", List.of(rule))));
+    }
+
+    private Action existingAction(int index, ActionKind kind) {
+        Action action = new Action();
+        action.setId((long) index);
+        action.setJobId(1L);
+        action.setName(kind.name().toLowerCase());
+        action.setType(kind);
+        action.setActionIndex(index);
+        action.setAddition(Map.of());
+        return action;
+    }
+
+    private void jobExists() {
+        Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+    }
+
+    @Test
+    void rejectsFieldMapSourceStepNotInChain() {
+        jobExists();
+
+        assertThatThrownBy(() -> service.add(1L, mapRequest(2, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=1")
+                .hasMessageContaining("不存在");
+    }
+
+    @Test
+    void rejectsFieldMapSourceStepNotEarlier() {
+        jobExists();
+
+        assertThatThrownBy(() -> service.add(1L, mapRequest(2, 3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=3")
+                .hasMessageContaining("执行顺序更早");
+    }
+
+    @Test
+    void rejectsFieldMapSourceStepNotInChainOnUpdate() {
+        jobExists();
+        when(actionMapper.selectById(5L)).thenReturn(existingAction(2, ActionKind.FIELD_MAP));
+
+        assertThatThrownBy(() -> service.update(5L, mapRequest(2, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=1")
+                .hasMessageContaining("不存在");
+    }
+
+    @Test
+    void rejectsFieldMapGroupSourceStepNotInChain() {
+        jobExists();
+        Map<String, Object> group = Map.of(
+                "sourceStep", 2, "source", "items", "target", "lines", "transform", "STRING",
+                "children", List.of(Map.of("source", "code", "target", "code", "transform", "STRING")));
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 3,
+                FieldMappingConfig.from(Map.of("rules", List.of(group))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lines")
+                .hasMessageContaining("sourceStep=2");
+    }
+
+    @Test
+    void addsFieldMapWithEarlierSourceStep() {
+        jobExists();
+        when(actionMapper.selectList(any())).thenReturn(List.of(existingAction(1, ActionKind.READ_SQL)));
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+
+        Action saved = service.add(1L, mapRequest(2, 1));
+
+        assertThat(saved.getType()).isEqualTo(ActionKind.FIELD_MAP);
+    }
+
+    @Test
+    void addsFieldMapWithJobInputSourceStep() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+
+        // sourceStep=0 是任务输入，始终合法
+        Action saved = service.add(1L, mapRequest(1, 0));
+
+        assertThat(saved.getType()).isEqualTo(ActionKind.FIELD_MAP);
+    }
+
     // ---------- 动作变更后自动重建路由 ----------
 
     @Test

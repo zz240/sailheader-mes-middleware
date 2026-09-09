@@ -67,6 +67,25 @@ class JobValidationServiceTest {
         return action;
     }
 
+    private Action fieldMap(int index, int sourceStep) {
+        Action action = new Action();
+        action.setName("map");
+        action.setType(ActionKind.FIELD_MAP);
+        action.setActionIndex(index);
+        action.setAddition(Map.of("rules", List.of(Map.of(
+                "sourceStep", sourceStep, "source", "order_no", "target", "sheet_no", "transform", "STRING"))));
+        return action;
+    }
+
+    private Action writeUpsert(int index) {
+        Action action = new Action();
+        action.setName("write");
+        action.setType(ActionKind.WRITE_UPSERT);
+        action.setActionIndex(index);
+        action.setAddition(Map.of("dataSourceId", 7L, "tableName", "po_order", "idempotencyKey", "order_no"));
+        return action;
+    }
+
     @BeforeEach
     void defaults() {
         when(jobService.get(1L)).thenReturn(new Job());
@@ -164,5 +183,55 @@ class JobValidationServiceTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.warnings()).isEmpty();
+    }
+
+    // ---------- FIELD_MAP sourceStep 链一致性（#89 T3a /validate） ----------
+
+    @Test
+    void reportsDanglingMappingSourceStepAsError() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                remote("SELECT * FROM po_order", Map.of()),
+                fieldMap(2, 5)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.errors()).anyMatch(e -> e.scope().equals("mapping")
+                && e.message().contains("sourceStep=5"));
+    }
+
+    @Test
+    void reportsMappingSourceStepNotEarlierAsError() {
+        when(actionService.list(1L)).thenReturn(List.of(fieldMap(2, 2)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.errors()).anyMatch(e -> e.message().contains("执行顺序更早"));
+    }
+
+    @Test
+    void passesWhenMappingSourceStepIsEarlier() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                remote("SELECT * FROM po_order", Map.of()),
+                fieldMap(2, 1)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void passesLegalReadMapWriteChain() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                remote("SELECT * FROM po_order", Map.of()),
+                fieldMap(2, 1),
+                writeUpsert(3)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.errors()).isEmpty();
     }
 }

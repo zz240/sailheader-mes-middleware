@@ -32,6 +32,7 @@ class DataSourceServiceTest {
     private ActionMapper actionMapper;
     private JobMapper jobMapper;
     private RouteRegistry routeRegistry;
+    private RouteLifecycle routeLifecycle;
     private DataSourceService service;
 
     @BeforeEach
@@ -41,7 +42,8 @@ class DataSourceServiceTest {
         actionMapper = mock(ActionMapper.class);
         jobMapper = mock(JobMapper.class);
         routeRegistry = mock(RouteRegistry.class);
-        service = new DataSourceService(mapper, manager, actionMapper, jobMapper, routeRegistry);
+        routeLifecycle = mock(RouteLifecycle.class);
+        service = new DataSourceService(mapper, manager, actionMapper, jobMapper, routeRegistry, routeLifecycle);
     }
 
     private DataSourceRequest request(String name, DataSourceType type, DataSourceConfig addition) {
@@ -124,14 +126,13 @@ class DataSourceServiceTest {
         ds.setType(DataSourceType.MYSQL);
         when(mapper.selectById(1L)).thenReturn(ds);
         when(mapper.selectCount(any())).thenReturn(0L);
-        Job job = enabledJob(5L);
-        when(jobMapper.selectById(5L)).thenReturn(job);
         when(actionMapper.selectList(any())).thenReturn(List.of(readAction(5L, 1L)));
 
         service.update(1L, request("mysql", DataSourceType.MYSQL, new MysqlDataSourceConfig("u", "p")));
 
         verify(manager).invalidate(1L);
-        verify(routeRegistry).enable(5L);
+        // 重建 + 失败自动停用/写 lastError 归 RouteLifecycle（#89），此处只验证委托
+        verify(routeLifecycle).rebuildIfEnabled(5L);
     }
 
     @Test
