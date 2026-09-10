@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,8 @@ public class MessageHistoryService {
     public static final String ACTION_NAME = "edge.actionName";
     public static final String STEP_INPUT = "edge.stepInput";
     public static final String RESUME_FROM = "edge.resumeFromStep";
+    /** 断点续跑的上游上下文：{@code Map<Integer step, Object data>}，值取上游 SUCCESS 消息步的 data_snapshot（#90）。 */
+    public static final String RESUME_CONTEXT = "edge.resumeContext";
     /** READ_SQL 源动作在失败（未产生任何源行）时用作消息占位 id，让失败也能落一条 FAILED 消息步。 */
     public static final String BATCH_MSG_ID = "edge.batchMessageId";
 
@@ -233,10 +236,13 @@ public class MessageHistoryService {
             throw new IllegalStateException("源动作（READ_SQL/MQ_CONSUME）失败无断点数据，无法断点重投；请重新执行任务");
         }
         Object input = parseJson(step.getInputSnapshot());
+        Map<Integer, Object> resumeContext = upstreamContext(step);
         try (ProducerTemplate producer = camelContext.createProducerTemplate()) {
             producer.request("direct:job-" + job.getId() + "-resume", ex -> {
                 ex.getMessage().setBody(input);
                 ex.setProperty(RESUME_FROM, step.getStep());
+                // #90：被跳过的上游步骤输出随重投回填 context，引用上游输出的 FIELD_MAP 也能续跑（缺快照则不注入）
+                ex.setProperty(RESUME_CONTEXT, resumeContext);
                 // 断点续跑沿用原业务键，重投后的消息步仍按同一业务实体分组/检索
                 ex.setProperty(BUSINESS_KEY, step.getBusinessKey());
             });
@@ -246,6 +252,48 @@ public class MessageHistoryService {
         step.setStatus(REDELIVERED);
         messageStepMapper.updateById(step);
         return step;
+    }
+
+    /**
+     * 取该步之前（同一运行、同一消息）已 SUCCESS 的上游步骤输出，供断点续跑回填 context（#90）：
+     * 被跳过的步骤不再让下游规则静默映射出空。无快照、或快照不是 JSON 对象的步骤不注入该键，行为与现状一致。
+     */
+    private Map<Integer, Object> upstreamContext(MessageStep step) {
+        Map<Integer, Object> context = new LinkedHashMap<>();
+        if (step.getStep() == null) {
+            return context; // 无步骤序号就无从判断"更早"，不注入（行为与现状一致）
+        }
+        List<MessageStep> upstream = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
+                .eq(MessageStep::getRunId, step.getRunId())
+                .eq(MessageStep::getMessageId, step.getMessageId())
+                .lt(MessageStep::getStep, step.getStep())
+                .eq(MessageStep::getStatus, SUCCESS));
+        upstream.stream()
+                .filter(s -> s.getStep() != null)
+                .sorted(Comparator.comparing(MessageStep::getStep))
+                .forEach(s -> {
+                    Object data = parseSnapshot(s.getDataSnapshot());
+                    if (data != null) {
+                        context.put(s.getStep(), data);
+                    }
+                });
+        return context;
+    }
+
+    /**
+     * 解析上游快照：只接受 JSON 对象（FIELD_MAP 输出即对象）。源行快照、非 JSON 文本、数组一律返回 null
+     * ——该步骤不注入，绝不让一个上游步骤的异常快照阻断整次重投（与"无快照则不注入"同一条边界）。
+     */
+    private Object parseSnapshot(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) {
+            return null;
+        }
+        try {
+            Object parsed = objectMapper.readValue(snapshot, Object.class);
+            return parsed instanceof Map ? parsed : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 该消息步是否为链首源动作（READ_SQL/MQ_CONSUME）：此类失败没有可续跑的数据。 */

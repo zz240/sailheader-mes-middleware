@@ -3,6 +3,8 @@
 - 状态：已接受
 - 日期：2026-09-01
 - 实现：#70（消息历史：死信升维为运行/消息步）——已按本文落地
+- 补充：#90（断点重投回填上游步骤快照 `edge.resumeContext`）——断点续跑对引用上游输出的 FIELD_MAP 同样可用；
+  详见 `docs/flows/reliability-flow.md` ⑤ 与 `docs/features/reliability/README.md`
 
 ## 背景
 

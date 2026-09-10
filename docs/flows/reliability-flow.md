@@ -43,8 +43,9 @@ sequenceDiagram
     DB-->>UI: { total, records }
     UI->>MH: POST /api/history/steps/{id}/redeliver
     MH->>DB: selectById + 解析 inputSnapshot
-    MH->>ROUTE: 投递 direct:job-N-resume (body=该步输入, RESUME_FROM=该步序号)
-    Note over ROUTE: 从该动作按该步数据重放（跳过更早步骤）
+    MH->>DB: 查 (runId, messageId) 下 step < resumeFrom 且 SUCCESS 的消息步
+    MH->>ROUTE: 投递 direct:job-N-resume (body=该步输入, RESUME_FROM=该步序号, RESUME_CONTEXT=上游各步 data_snapshot)
+    Note over ROUTE: 先回填 context[各上游步]，再从该动作按该步数据重放（跳过更早步骤）
     ROUTE-->>MH: 成功 / 失败
     MH->>DB: 成功则原消息步 → REDELIVERED
 ```
@@ -93,9 +94,18 @@ sequenceDiagram
 **⑤ 断点重投（精确续跑）**
 
 - 入口：`HistoryController.redeliver` → `MessageHistoryService.redeliver` → 投递 `direct:job-<id>-resume`，
-  body = 该步 `inputSnapshot`、property `edge.resumeFromStep` = 该步序号；
+  body = 该步 `inputSnapshot`、property `edge.resumeFromStep` = 该步序号；同时按 `(runId, messageId)` 查
+  `step < resumeFrom` 且 `status = SUCCESS` 的消息步，把各自 `data_snapshot` 解析后放进 property
+  `edge.resumeContext`（`Map<Integer step, Object data>`，#90）；
 - 断点路由：`beginRun` + `beginMessage`（沿用 `edge.businessKey`）→ `appendChain(actions[1..])`，
-  每个片段先判 `isResumeSkipped`（序号 < resumeFromStep 则跳过），从该动作按该步数据重放；
+  入口先把 `edge.resumeContext` 回填进 `context[step]`（`context[0]` 仍是本次重投的 body，语义不变），
+  每个片段再判 `isResumeSkipped`（序号 < resumeFromStep 则跳过），从该动作按该步数据重放；
+- 为什么必须回填：被跳过步骤不写 `context[index]`，而 FIELD_MAP 的**唯一输入是整份 context**（`fieldMapper.apply(context)`）
+  ——规则 `sourceStep` 指向被跳过步骤时 `$s_N` 未定义，会**静默映射出空**（任务仍 SUCCESS）。上游步骤的输出并未丢失：
+  它就在同一 `message_id` 的上游 `message_step.data_snapshot` 里；
+- 边界：上游步骤无快照（源行、失败步、被跳步）→ 该步骤不进上下文（`edge.resumeContext` 照常投递，值为空 Map），
+  行为与现状一致（下游引用仍是空，但不造成"部分可引用"的困惑）；`edge.resumeContext` 常驻投递（不做空值短路），
+  断点路由对空 Map 是安全的无操作；
 - 错误处理：成功 → 原消息步 `status='REDELIVERED'`；失败保持 `FAILED` 并抛"重投失败：<原因>"；
   任务未启用抛 `JOB_NOT_ENABLED`。
 
@@ -113,6 +123,7 @@ sequenceDiagram
 | 重试退避 | 任务 `retryCount=2`、`backoffMs=1000` | 失败前重复投递日志 2 次（`attempt` 递增） | 观察日志 `Failed delivery ... attempt: N` / 消息步 `attempt` |
 | 历史列表分页 | 多次触发产生多条消息步 | `{total, records}` | 前端分页器 / `curl '...?page=2&size=20'` |
 | 断点重投成功 | 先修复外部依赖，再 `POST /api/history/steps/{id}/redeliver` | 新 `job_run` 为 `SUCCESS`；原消息步 `status='REDELIVERED'` | 再次查询该消息步；目标端收到数据 |
+| 映射链断点重投（#90） | 造 `READ_SQL(1) → FIELD_MAP(2, sourceStep=1) → HTTP_CALL(3)`，令 3 失败后修复依赖再重投 | 新运行 SUCCESS，**步骤 2 的 `data_snapshot` 非空且与首次执行一致**（上游步骤 1 的 `data_snapshot` 经 `edge.resumeContext` 回填） | 查新运行的 `message_step`：`select data_snapshot from message_step where run_id=<新> and step=2`；为空说明上游快照未回填 |
 | 重投失败（失败样例） | 依赖仍未恢复时重投 | 保持 `FAILED`，返回"重投失败：<原因>" | `GET /api/history/steps/{id}` 仍 `FAILED` |
 | 按业务键检索 | 源动作配 `businessKey`，触发含该业务键的消息 | 可按业务键过滤到该消息的全部消息步 | `GET /api/history/steps?businessKey=<键>` |
 
@@ -133,12 +144,14 @@ curl "http://localhost:8080/api/history/steps?status=FAILED&page=1&size=20"
 curl "http://localhost:8080/api/history/runs?jobId=7&status=SUCCESS"
 # 断点重投
 curl -X POST http://localhost:8080/api/history/steps/{id}/redeliver
+# #90 验证重投后的映射结果（非空 = 上游快照已回填 context）
+# select step, status, data_snapshot from message_step where run_id = <重投产生的新 run_id> order by step;
 ```
 
 ## 建议表
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 已定方向（#90，方案 B）：`redeliver` 把同一 `message_id` 下 `step < resumeFrom` 的成功步骤 `data_snapshot` 注入 context（经 property 传给 resume 入口），引用上游输出的 FIELD_MAP 也能续跑 | 现状：只投 `inputSnapshot` 当 body（`MessageHistoryService.java:218-249`）、被跳步骤不写 context（`RouteGenerator.java:261-263`），而 FIELD_MAP 唯一输入是整份 context（:268-269）→ 静默出空 | 设计改进 | 可靠性 | 已定方向（#90） |
+| 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 已实现（#90，方案 B）：`redeliver` 把同一 `message_id` 下 `step < resumeFrom` 的成功步骤 `data_snapshot` 注入 context（经 property `edge.resumeContext` 传给 resume 入口），引用上游输出的 FIELD_MAP 也能续跑 | 现状：只投 `inputSnapshot` 当 body、被跳步骤不写 context，而 FIELD_MAP 唯一输入是整份 context → 静默出空 | 设计改进 | 可靠性 | 已闭环（#90） |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |

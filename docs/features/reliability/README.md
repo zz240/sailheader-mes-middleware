@@ -12,6 +12,9 @@
 - **业务键**：源动作新增 `businessKey`（READ_SQL=源列；MQ_CONSUME/任务输入=JSON 路径），在**消息创建时**提取；可为空（不分组/去重）。
 - **任务最近运行结果（#88）**：每次运行结束（成功/失败/重投）由 `MessageHistoryService.finishRun` 经 `JobLastRunWriter` 统一回写 `job.last_run_status/last_run_at/last_error`（错误取 `job_run.error`；成功清空 `last_error`），覆盖 MQ 消费/自动调度/手动执行/断点重投；手动执行与外部触发只回读任务返回。
 - **断点续跑**：从一条 `FAILED` 消息步精确重投（用该步数据从该动作重放，不整链重跑），成功后原步状态 `REDELIVERED`。
+  - **上游快照回填（#90）**：重投时 `MessageHistoryService.redeliver` 按 `(runId, messageId)` 取 `step < resumeFrom` 且 `SUCCESS` 的消息步，把各自 `data_snapshot` 解析后经 property `edge.resumeContext` 随 `direct:job-<id>-resume` 投递；断点路由入口回填 `context[step]`。
+  - 于是被跳过的上游步骤仍可被下游规则引用（如 FIELD_MAP 的 `sourceStep=1`），不再因 `$s_1` 未定义而**静默映射出空**（这是以前写库/推送型链之外的主要缺口）。
+  - 边界：上游步骤无快照（源行未记 `data_snapshot`、失败步、被跳步）→ **该步骤不进上下文**（属性照常投递，值为空 `Map`），下游引用仍是空，行为与现状一致；`context[0]` 语义保持不变（= 本次重投 body，即该步 `inputSnapshot`）。
 - **列表分页**：`GET /api/history/runs`（运行）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
 - **交付语义（至少一次）**：水位仅整批成功才推进，失败整批重读（at-least-once）；重试退避与断点重投下 HTTP/MQ 推送**可能重复**——南向 `WRITE_UPSERT` 按幂等键去重，北向推送需 MES 按业务键去重。与 ADR-0003 一致（不承诺恰好一次/分布式补偿）。
 - **代码位置**：`service/MessageHistoryService.java`（核心）、`service/JobLastRunWriter.java`（任务最近运行结果回写）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`spike/src/main/resources/db/migration/`（表定义）、`spike/src/test/resources/schema.sql`（H2 测试库）。
@@ -25,19 +28,20 @@
 | 08-26 | 死信输入存真实 JSON（修复 StreamCache 存成 Java toString） | 显示与重投都依赖合法 JSON | — | 本轮 |
 | 09-01 | 死信升维为消息历史（job_run/message_step + 断点续跑 + 业务键） | 死信无时间戳/无运行归属/无消息步，无法精确断点与按业务追溯 | — | ADR-0009, #70 |
 | 09-08 | 任务最近运行结果统一回写（finishRun 一处写入） | 消费/调度链路不回写，任务列表状态与真实执行不一致 | — | #88 |
+| 09-10 | 断点重投回填上游步骤快照（`edge.resumeContext`） | 被跳步骤不写 context，而下游 FIELD_MAP 唯一输入是整份 context → 引用上游输出的映射重投后静默出空 | — | #90 |
 
 ## 当前生效
 
 - 失败即停 + 重试退避 + 消息历史（ADR-0003 / ADR-0009）
 - 历史页默认 FAILED，按运行/消息/业务键分组检索
-- 从失败消息步断点续跑（人工重投），成功后原步 `REDELIVERED`
+- 从失败消息步断点续跑（人工重投），成功后原步 `REDELIVERED`；重投回填上游步骤快照，引用上游输出的映射链同样可续跑（#90）
 - 源动作 `businessKey` 配置与消息创建时提取
 - 任务最近运行结果由 `finishRun` 统一回写（消费/调度/手动/重投），手动与外部触发只回读
 - 旧 `dead_letter` 已弃用（不迁移）；`DeadLetter*` 代码与页面、`dead_letter` 表移除
 
 ## 待办 / 已知限制
 
-- 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」的场景不保证语义（常见写/发动作走 body，不受影响）；
+- 断点续跑的 `edge.resumeContext` 快照以内存 property 传递，大 payload 会放大单次 exchange（不落盘，可接受）；仅在字段映射规则实际引用上游步骤时才有必要，按需注入可作为后续优化；
 - 存储随「消息数 × 步骤数」增长；
 - 任务行回写随运行数增长（消费型任务每条消息更新一次 `job`），高吞吐场景为已知写放大；并发运行下 `last_run_*` 取最后写入者（"最近"语义尽力而为）；
 - 自动重试（RETRYING）、抑制/去重（SUPPRESSED）仅预留状态，未实现；

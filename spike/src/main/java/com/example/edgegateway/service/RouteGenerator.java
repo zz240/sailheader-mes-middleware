@@ -164,7 +164,13 @@ public class RouteGenerator {
         };
     }
 
-    /** 断点续跑路由：direct 入口接收失败步数据，从 {@code edge.resumeFromStep} 动作起重放。 */
+    /**
+     * 断点续跑路由：direct 入口接收失败步数据，从 {@code edge.resumeFromStep} 动作起重放。
+     *
+     * <p>重投入口随 exchange 带上 {@code edge.resumeContext}（同一消息更早成功步骤的 data_snapshot，#90），
+     * 在此回填 context：被跳过的上游步骤因此仍可被下游规则引用（如 FIELD_MAP 的 {@code sourceStep}），
+     * 不再静默映射出空。{@code context[0]} 保持既有语义——本次重投的 body（该步 inputSnapshot）。</p>
+     */
     private RouteBuilder buildResumeRoute(Job job, List<Action> actions) {
         String routeId = "resume-" + job.getId();
         return new RouteBuilder() {
@@ -174,6 +180,20 @@ public class RouteGenerator {
                 RouteDefinition route = from("direct:job-" + job.getId() + "-resume")
                         .routeId(routeId)
                         .process(ex -> {
+                            // context(ex) 已把 context[0] 置为本次重投 body（= 失败步 inputSnapshot），此处只回填上游步骤
+                            Map<Integer, Object> next = context(ex);
+                            Object upstreamContext = ex.getProperty(MessageHistoryService.RESUME_CONTEXT, Object.class);
+                            if (upstreamContext instanceof Map<?, ?> upstream) {
+                                upstream.forEach((step, data) -> {
+                                    // 只回填动作序号 > 0 的步骤；0 号槽位是本次重投的输入，不覆盖
+                                    if (step instanceof Integer index && index > 0) {
+                                        next.put(index, data);
+                                    }
+                                });
+                            }
+                            ex.setProperty(CONTEXT, next);
+                            // Camel 的 split/choice 片段之间的 body 约定：链上"当前数据"就是 context[0]
+                            ex.getMessage().setBody(next.get(0));
                             beginRun(ex, job);
                             beginMessage(ex, null); // 业务键已由重投入口写入，直接沿用
                         });

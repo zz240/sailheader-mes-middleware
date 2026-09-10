@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -210,6 +211,116 @@ class MessageHistoryServiceTest {
         captor.getValue().process(ex);
         assertThat(ex.getProperty(MessageHistoryService.BUSINESS_KEY)).isEqualTo("PO-1");
         assertThat(ex.getProperty(MessageHistoryService.RESUME_FROM)).isEqualTo(4);
+    }
+
+    /**
+     * #90：断点重投把同一消息下更早的 SUCCESS 步骤输出当上下文投给 resume 入口，
+     * 被跳步骤引用的映射才能续跑。查询条件（run/message/step&lt;resumeFrom/SUCCESS）由 MyBatis-Plus 下推数据库，
+     * 这里给的是该查询的结果集：断言的是服务自身的组装语义——按序号升序、跳过无快照步骤、快照 JSON 解析成对象。
+     */
+    @Test
+    void redeliverCarriesUpstreamSuccessSnapshotsAsResumeContext() throws Exception {
+        // 查询结果（乱序）：step=6 无快照（如被跳步）→ 不注入该键
+        stubRedeliver(failedStep(7), List.of(
+                upstreamStep(3, "SUCCESS", "{\"order_no\":\"PO-1\",\"sheet_no\":\"S-1\"}"),
+                upstreamStep(6, "SUCCESS", null),
+                upstreamStep(1, "SUCCESS", "{\"order_no\":\"PO-1\",\"vendor\":\"V1\"}")));
+        ArgumentCaptor<Processor> captor = captureResumeProcessor();
+
+        service.redeliver(1L);
+
+        Exchange ex = new DefaultExchange(camelContext);
+        captor.getValue().process(ex);
+        Map<Integer, Object> expected = new LinkedHashMap<>();
+        expected.put(1, Map.of("order_no", "PO-1", "vendor", "V1"));
+        expected.put(3, Map.of("order_no", "PO-1", "sheet_no", "S-1"));
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT)).isEqualTo(expected);
+    }
+
+    /** #90 边界：上游步骤都没有快照（如被跳步/失败）时不注入任何键，行为与现状一致。 */
+    @Test
+    void redeliverCarriesNoResumeContextWhenUpstreamHasNoSnapshot() throws Exception {
+        stubRedeliver(failedStep(2), List.of(upstreamStep(1, "SUCCESS", null)));
+        ArgumentCaptor<Processor> captor = captureResumeProcessor();
+
+        service.redeliver(1L);
+
+        Exchange ex = new DefaultExchange(camelContext);
+        captor.getValue().process(ex);
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT)).isEqualTo(Map.of());
+    }
+
+    /** #90 边界：无步骤序号的消息步不查上游、不注入，且不影响重投本身。 */
+    @Test
+    void redeliverWithoutStepIndexCarriesEmptyResumeContext() throws Exception {
+        stubRedeliver(failedStep(null), List.of(upstreamStep(1, "SUCCESS", "{\"order_no\":\"PO-1\"}")));
+        ArgumentCaptor<Processor> captor = captureResumeProcessor();
+
+        service.redeliver(1L);
+
+        Exchange ex = new DefaultExchange(camelContext);
+        captor.getValue().process(ex);
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT)).isEqualTo(Map.of());
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_FROM)).isNull();
+    }
+
+    /** #90 边界：上游快照不是 JSON 对象（数组 / 非 JSON 文本）时跳过该步骤，绝不阻断整次重投。 */
+    @Test
+    void redeliverSkipsUpstreamSnapshotsThatAreNotJsonObjects() throws Exception {
+        stubRedeliver(failedStep(4), List.of(
+                upstreamStep(1, "SUCCESS", "[{\"order_no\":\"PO-1\"}]"),
+                upstreamStep(2, "SUCCESS", "plain text, not json"),
+                upstreamStep(3, "SUCCESS", "{\"order_no\":\"PO-1\"}")));
+        ArgumentCaptor<Processor> captor = captureResumeProcessor();
+
+        service.redeliver(1L);
+
+        Exchange ex = new DefaultExchange(camelContext);
+        captor.getValue().process(ex);
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT))
+                .isEqualTo(Map.of(3, Map.of("order_no", "PO-1")));
+    }
+
+    private MessageStep failedStep(Integer step) {
+        MessageStep failed = new MessageStep();
+        failed.setId(1L);
+        failed.setRunId(3L);
+        failed.setMessageId("msg-1");
+        failed.setStep(step);
+        failed.setStatus("FAILED");
+        failed.setInputSnapshot("{\"order_no\":\"PO-1\"}");
+        when(messageStepMapper.selectById(1L)).thenReturn(failed);
+        return failed;
+    }
+
+    private void stubRedeliver(MessageStep failed, List<MessageStep> upstreamQueryResult) {
+        JobRun run = new JobRun();
+        run.setId(3L);
+        run.setJobId(7L);
+        when(jobRunMapper.selectById(3L)).thenReturn(run);
+        Job job = new Job();
+        job.setId(7L);
+        job.setStatus(1);
+        when(jobMapper.selectById(7L)).thenReturn(job);
+        when(messageStepMapper.selectList(any())).thenReturn(upstreamQueryResult);
+    }
+
+    private ArgumentCaptor<Processor> captureResumeProcessor() {
+        ProducerTemplate producer = mock(ProducerTemplate.class);
+        when(camelContext.createProducerTemplate()).thenReturn(producer);
+        ArgumentCaptor<Processor> captor = ArgumentCaptor.forClass(Processor.class);
+        when(producer.request(anyString(), captor.capture())).thenReturn(null);
+        return captor;
+    }
+
+    private MessageStep upstreamStep(int step, String status, String dataSnapshot) {
+        MessageStep upstream = new MessageStep();
+        upstream.setRunId(3L);
+        upstream.setMessageId("msg-1");
+        upstream.setStep(step);
+        upstream.setStatus(status);
+        upstream.setDataSnapshot(dataSnapshot);
+        return upstream;
     }
 
     @Test
