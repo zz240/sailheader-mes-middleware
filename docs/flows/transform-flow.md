@@ -87,3 +87,7 @@ curl -X POST http://localhost:8080/api/suggestions -H "Content-Type: application
 | 映射历史对组规则：INDEX 子规则不入库 | 保持现状，已在文档注明（`features/field-mapping` 已知限制，T37 约定） | T37 约定 | 文档偏差 | 字段映射 | 已闭环 |
 | 深层数组任意重排仍建议走 `mode:EXPRESSION` | 已在文档注明（`features/field-mapping` 已知限制："数组迭代段 + 相对路径"边界） | 层级路径支持有限 | 业务改进 | 字段映射 | 已闭环 |
 | 单值样例不推 CONSTANT（DS-10.4） | 已实现 | — | 已闭环 | 字段映射 | 采纳 |
+| P7 DATE 转换对**无法解析的值静默原样透传**（`mapping/JsonataFunctions.java:53-57` 四次 parse 全失败 → `return raw`）：如 `"2026/08/14"` 会带着未格式化原值发出，任务仍 SUCCESS；pattern 非法倒是会抛（`ofPattern` 在 try 外 :35） | 已定方向（A）：保留宽容语义 + **加可见性**（解析失败记 warning/线索，便于排查） | 错误只在目标端暴露、网关侧全绿；宽容本身合理但不该无痕 | 设计改进 | 字段映射 | 已定方向（A） |
+| P8 INT 用 `$number()`（`mapping/JsonataRuleCompiler.java:139`）：非数字输入 → JSONata `undefined` → **目标字段静默缺失**（不抛错） | 待评估：加可见性（同 P7-A）或校验期/运行期显式失败 | 字段消失无告警，下游 NOT NULL 才暴露 | 设计改进 | 字段映射 | 待评估 |
+| P9 组内只能引用当前层 `$g<depth-1>` 或 `$root`（顶层根）——**中间层组的元素无法被更内层引用**（`mapping/JsonataRuleCompiler.java:169-179`） | 待评估：精确化文档边界（"深层任意重排"的确切成因）或扩展变量绑定 | 与 `features/field-mapping` 已知限制对应，但现有描述不够精确 | 文档偏差 | 字段映射 | 待评估 |
+| P6 顶层规则不写 `sourceStep` 时**缺省指向 `$s_0`**（`mapping/JsonataRuleCompiler.java:41`），而 config 校验不要求必填 → READ_SQL 链里静默映射全空（`context[0]` 是任务输入 `{}`） | 已并入 #89：链一致性校验需一并决定 0 的合法语义（严格必填 or 仅手动输入型链首放行） | 与 bodySourceStep 必填形成反差；缺省值把配置遗漏变成静默错 | 设计改进 | 字段映射 | 已定方向（#89） |
