@@ -139,6 +139,6 @@ curl -X POST http://localhost:8080/api/history/steps/{id}/redeliver
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 在文档/消息步说明；常见写/发动作走 body 不受影响 | 精确断点的上下文约束 | 已知限制 | 可靠性 | 本期接受 |
+| 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 在文档/消息步说明；常见写/发动作走 body 不受影响 | 精确断点的上下文约束 | 已知限制 | 可靠性 | 本期接受（机理：`isResumeSkipped`（`service/RouteGenerator.java:261-263`）跳过时不写 `context[index]`，而 FIELD_MAP 唯一输入是整份 context（:268-269）→ 引用被跳步骤即静默空；与 #89 同族） |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |
