@@ -32,6 +32,12 @@ public final class ChainConsistencyValidator {
     private ChainConsistencyValidator() {
     }
 
+    /**
+     * 一条 sourceStep 问题：出错的那条规则 + 说明（不含「动作 N（名字）」那截定位，定位由调用方拼）。
+     */
+    public record SourceStepProblem(FieldMappingRule rule, String message) {
+    }
+
     /** 校验整条链：每个悬空/错位的 sourceStep 返回一条定位描述（空列表 = 一致）。 */
     public static List<String> check(List<Action> actions) {
         Set<Integer> indexes = new HashSet<>();
@@ -57,18 +63,39 @@ public final class ChainConsistencyValidator {
             if (rules == null) {
                 continue;
             }
-            for (FieldMappingRule rule : rules) {
-                Integer step = rule.sourceStep();
-                if (step == null) {
-                    continue; // 未声明 = 任务输入（0），恒合法
-                }
-                if (step >= action.getActionIndex()) {
-                    problems.add(location(action, rule) + " 的 sourceStep=" + step
-                            + " 必须指向执行顺序更早的动作（当前序号 " + action.getActionIndex() + "）");
-                } else if (step != JOB_INPUT_STEP && !indexes.contains(step)) {
-                    problems.add(location(action, rule) + " 的 sourceStep=" + step
-                            + " 在动作链中不存在，请填上游动作序号");
-                }
+            Set<Integer> earlier = new HashSet<>(indexes);
+            earlier.removeIf(step -> step >= action.getActionIndex());
+            for (SourceStepProblem problem : checkRules(rules, action.getActionIndex(), earlier)) {
+                problems.add(location(action, problem.rule()) + " 的 " + problem.message());
+            }
+        }
+        return problems;
+    }
+
+    /**
+     * 一份规则表的 sourceStep 检查——链级校验（上面那个 {@link #check(List)}）与「校验配置」的草稿校验
+     * （#103）共用这一份，不各写一遍。
+     *
+     * @param actionIndex          这份规则所在动作的序号；只知道「哪些更早」而不知道自己的序号时给 null
+     * @param earlierActionIndexes 链上执行顺序**更早**的动作序号——sourceStep 只能指向这些（0 = 任务输入恒合法）
+     */
+    public static List<SourceStepProblem> checkRules(
+            List<FieldMappingRule> rules, Integer actionIndex, Set<Integer> earlierActionIndexes) {
+        if (rules == null) {
+            return List.of();
+        }
+        List<SourceStepProblem> problems = new ArrayList<>();
+        for (FieldMappingRule rule : rules) {
+            Integer step = rule.sourceStep();
+            if (step == null) {
+                continue; // 未声明 = 任务输入（0），恒合法（「漏写」这条提示由草稿校验另出，#103）
+            }
+            if (actionIndex != null && step >= actionIndex) {
+                problems.add(new SourceStepProblem(rule, "sourceStep=" + step
+                        + " 必须指向执行顺序更早的动作（当前序号 " + actionIndex + "）"));
+            } else if (step != JOB_INPUT_STEP && !earlierActionIndexes.contains(step)) {
+                problems.add(new SourceStepProblem(rule, "sourceStep=" + step
+                        + " 在动作链中不存在，请填上游动作序号"));
             }
         }
         return problems;

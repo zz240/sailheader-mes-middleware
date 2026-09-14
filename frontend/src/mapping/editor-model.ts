@@ -130,8 +130,20 @@ function elementPaths(field: TargetField, prefix = ''): string[] {
   return out
 }
 
-/** 把探测结果里的扁平路径（`items[0].qty`）折成嵌套的目标字段清单。 */
-export function targetFieldsFromPaths(paths: string[], required: Map<string, boolean> = new Map()): TargetField[] {
+/**
+ * 把探测结果里的扁平路径（`items[0].qty`）折成嵌套的目标字段清单。
+ *
+ * `required`（是否必填）与 `types`（类型）都按**探测结果里的原始路径**给（带 `[0]` 的那种），
+ * 这里折成编辑器的路径口径（`items.qty`）再去查——不折的话数组元素里的字段永远查不到，
+ * 而它们恰恰是最需要看必填和类型的那一批。
+ */
+export function targetFieldsFromPaths(
+  paths: string[],
+  required: Map<string, boolean> = new Map(),
+  types: Map<string, string> = new Map(),
+): TargetField[] {
+  const requiredByPath = foldArraySegments(required)
+  const typesByPath = foldArraySegments(types)
   const roots: TargetField[] = []
   for (const raw of paths) {
     const segments = raw.split('.')
@@ -144,7 +156,7 @@ export function targetFieldsFromPaths(paths: string[], required: Map<string, boo
       prefix = prefix ? `${prefix}.${key}` : key
       let node = level.find(n => n.path === key)
       if (!node) {
-        node = { path: key, required: required.get(prefix) ?? false }
+        node = { path: key, required: requiredByPath.get(prefix) ?? false }
         level.push(node)
       }
       if (!last) {
@@ -152,11 +164,17 @@ export function targetFieldsFromPaths(paths: string[], required: Map<string, boo
         node.element = node.element ?? []
         level = node.element
       } else {
-        node.type = node.type === 'ARRAY' ? 'ARRAY' : undefined
+        // 中间段路过它的时候已经标成数组了，那就不改回去
+        node.type = node.type === 'ARRAY' ? 'ARRAY' : typesByPath.get(prefix)
       }
     }
   }
   return roots
+}
+
+/** 把路径里的数组下标去掉（`items[0].qty` → `items.qty`），即编辑器里的目标字段路径口径。 */
+function foldArraySegments<V>(byProbePath: Map<string, V>): Map<string, V> {
+  return new Map([...byProbePath].map(([path, value]) => [path.replace(/\[\d+\]/g, ''), value]))
 }
 
 /** 行在界面上按层级铺开：数组行后面紧跟它的子行。`parent` 是数组行（取它继承的来源步骤用）。 */

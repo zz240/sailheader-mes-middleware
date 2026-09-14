@@ -20,8 +20,8 @@ import {
   restoreRowMapping, rowFromRule, ruleFromRow, type MapRow,
 } from './rows.ts'
 import {
-  appendArrayRow, appendLeafRow, configFromRows, mergeRowsWithTargets, nextEmptyRow, rowReferenceFullLabel,
-  rowReferenceLabel, rowsFromTargetFields, targetCandidatesFor, targetFieldsFromPaths,
+  appendArrayRow, appendLeafRow, configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow,
+  rowReferenceFullLabel, rowReferenceLabel, rowsFromTargetFields, targetCandidatesFor, targetFieldsFromPaths,
   type SourceField, type TargetField,
 } from './editor-model.ts'
 import {
@@ -34,8 +34,12 @@ import {
 } from './transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
-  visibleRows, type PickableItem,
+  visibleRows, ancestorRowIds, type PickableItem,
 } from './source-picker.ts'
+import {
+  draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
+  type DraftValidation,
+} from './draft.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
 declare const process: { exitCode?: number }
@@ -252,6 +256,18 @@ const folded = targetFieldsFromPaths(
 eq('扁平路径折成两个顶层字段加一个数组字段', folded.map(f => f.path), ['bomNo', 'productCode', 'items'])
 eq('数组元素字段去重并落在 element 里', folded[2].element?.map(e => e.path), ['materialCode', 'qty'])
 eq('必填口径按请求里的清单来', [folded[0].required, folded[2].required], [true, false])
+
+// 目标字段清单：探测给什么就带什么。类型与必填都按探测路径（带 `[0]`）给，
+// 折进编辑器路径口径之后数组元素里的字段才查得到——不然它们永远既没类型也不算必填。
+const typedTargets = targetFieldsFromPaths(
+  ['order_no', 'qty', 'items[0].materialCode', 'items[0].qty'],
+  new Map([['order_no', true], ['items[0].qty', true]]),
+  new Map([['order_no', 'VARCHAR'], ['items[0].qty', 'INT']]))
+eq('目标清单带着探测到的类型（数组元素里的也带）',
+  [typedTargets[0].type, typedTargets[2].type, typedTargets[2].element?.[1].type],
+  ['VARCHAR', 'ARRAY', 'INT'])
+eq('数组元素里的字段也查得到必填（探测路径带 [0]，编辑器里不带）',
+  typedTargets[2].element?.map(e => e.required), [false, true])
 
 // 已存配置与目标清单对齐：清单里的行沿用已配的行（参数不丢），清单外的行留着
 const savedGroup = rowFromRule({
@@ -796,6 +812,93 @@ eq('不是数组行就没有「+ 行号」可加',
 indexChild.target = 'lineNo'
 eq('行号子行填上目标字段就能存（source 固定 $index、startAt 写出来）',
   ruleOf(indexChild, true), { source: '$index', target: 'lineNo', transform: 'INDEX', startAt: 1 })
+
+// ---------------------------------------------------------------- 校验配置（#103）
+
+// 发出去的是「按现在这样保存会写进 rules 的那份规则」——前端不自己判对错，只是把草稿交出去。
+const DRAFT_CONFIGURED = leaf('bomNo', 'bom.bomNo', 'STRING')
+const DRAFT_BLANK = createRow(1, '', 'bom.remark', 'STRING')
+const draftBody = draftRequest({
+  rows: [DRAFT_CONFIGURED, DRAFT_BLANK],
+  targets: TARGETS,
+  sourceFields: [UNIT_FIELD],
+  earlierActionIndexes: [1],
+  defaultSourceStep: 1,
+  actionIndex: 2,
+})
+eq('草稿就是「保存会写进去的那份规则」（没配好的行不进草稿）',
+  draftBody.draft.rules.map((r: Record<string, any>) => r.target), ['bom.bomNo'])
+eq('草稿里的顶层规则显式带着 sourceStep',
+  draftBody.draft.rules.map((r: Record<string, any>) => r.sourceStep), [1])
+eq('请求带上链上更早的动作序号（sourceStep 只能指向这些）', draftBody.earlierActionIndexes, [1])
+eq('请求带上默认来源与这个动作自己的序号',
+  [draftBody.defaultSourceStep, draftBody.actionIndex], [1, 2])
+eq('请求带上目标清单与来源样例（基于样例的那几条检查要用）',
+  [draftBody.targets.length, draftBody.sourceFields.length], [TARGETS.length, 1])
+
+// 后端给的问题 → 界面上哪一行：靠「目标字段 + 它所属的数组行」，两者都一样才是同一行。
+const MATERIAL_CHILD = createRow(null, '', 'materialCode', 'STRING')
+const MATERIAL_TOP = leaf('materialCode', 'materialCode', 'STRING')
+const ISSUE_ARRAY = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+ISSUE_ARRAY.children = [createRow(null, '', 'lineNo', 'STRING'), MATERIAL_CHILD]
+const ISSUE_ROWS: MapRow[] = [leaf('bomNo', 'bom.bomNo', 'STRING'), MATERIAL_TOP, ISSUE_ARRAY]
+
+const DRAFT_RESULT: DraftValidation = {
+  valid: false,
+  errors: [
+    { target: null, parent: null, message: '字段映射动作需要至少有一条规则' },
+    { target: 'materialCode', parent: null, message: '映射规则缺少来源字段 source' },
+    { target: 'materialCode', parent: 'bom.bomLines', message: '枚举转换需要 enumMap' },
+  ],
+  warnings: [{ target: 'lineNo', parent: 'bom.bomLines', message: '来源字段不在样例里' }],
+  compiled: { jsonata: null, rulesJson: '{}' },
+}
+
+const located = locateIssues(flattenRows(ISSUE_ROWS), DRAFT_RESULT)
+eq('错误在前、警告在后', located.map(i => i.severity), ['error', 'error', 'error', 'warning'])
+eq('定位不到行的问题照样列出来（整份草稿级别）', located[0].rowId, null)
+// 「整份草稿」级别的问题（target/parent 都是 null）不能被扣到一行**还没填目标字段**的空行上
+eq('空行不会当上整份草稿级别问题的落点',
+  locateIssues(flattenRows([createRow(1, '', '', 'STRING')]), DRAFT_RESULT)[0].rowId, null)
+eq('同名的目标字段按「所属数组行」分开：顶层那一行',
+  located[1].rowId, MATERIAL_TOP.id)
+eq('同名的目标字段按「所属数组行」分开：数组元素内的那一行',
+  located[2].rowId, MATERIAL_CHILD.id)
+eq('数组子行的问题也定位得到', located[3].rowId, ISSUE_ARRAY.children[0].id)
+
+const byRow = issuesByRow(located)
+eq('配好的行是「没问题」', rowIssueState(byRow.get(ISSUE_ROWS[0].id)), 'ok')
+eq('有错的行是「有错」', rowIssueState(byRow.get(MATERIAL_TOP.id)), 'error')
+eq('有警告的行是「有警告」', rowIssueState(byRow.get(ISSUE_ARRAY.children[0].id)), 'warning')
+eq('数组行自己没有问题时是「没问题」（它不替子行背）', rowIssueState(byRow.get(ISSUE_ARRAY.id)), 'ok')
+eq('一行上的多条问题都留着', byRow.get(MATERIAL_CHILD.id)?.length, 1)
+
+// 保存被拦下时跳到哪一行：第一条**定位得到**的错误（定位不到的那条跳不过去，跳过它接着找）
+eq('跳到第一条错误所在的行', firstErrorRowId(located), MATERIAL_TOP.id)
+eq('一条都定位不到时没有可跳的行',
+  firstErrorRowId(locateIssues(flattenRows(ISSUE_ROWS), {
+    ...DRAFT_RESULT, errors: [{ target: '不存在', parent: null, message: 'x' }], warnings: [],
+  })), null)
+
+// 用户加了一行重复的目标字段：后端报的是「后出现的那一条规则」，界面也得挂在后加的那一行上
+const dupFirst = leaf('order_no', 'order_no', 'STRING')
+const dupSecond = leaf('status', 'order_no', 'STRING')
+const dupLocated = locateIssues(flattenRows([dupFirst, dupSecond]), {
+  ...DRAFT_RESULT,
+  errors: [{ target: 'order_no', parent: null, message: '目标字段重复映射: order_no' }],
+  warnings: [],
+})
+eq('重复目标的错误挂在后加的那一行上（编译器也是在后一条上报的）', dupLocated[0].rowId, dupSecond.id)
+
+// 问题列表里那一列「这条问题在哪」的说法
+eq('顶层规则的问题就说目标字段', issueLocation({ target: 'bom.bomNo', parent: null, message: 'x' }), 'bom.bomNo')
+eq('数组子行的问题带上它所属的数组行',
+  issueLocation({ target: 'materialCode', parent: 'bom.bomLines', message: 'x' }), 'bom.bomLines · materialCode')
+eq('定位不到行的说法', issueLocation({ target: null, parent: null, message: 'x' }), '整份配置')
+
+// 跳到收起的数组子行：得先把它上面的数组行展开，否则那一行根本铺不出来
+eq('一行的祖先数组行', ancestorRowIds(ISSUE_ROWS, MATERIAL_CHILD.id), [ISSUE_ARRAY.id])
+eq('顶层行没有祖先', ancestorRowIds(ISSUE_ROWS, MATERIAL_TOP.id), [])
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

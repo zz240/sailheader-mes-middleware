@@ -48,6 +48,9 @@
           </el-tooltip>
 
           <el-button size="small" @click="close">取消</el-button>
+          <el-tooltip content="把这份草稿交给后端判一遍：有没有错、错在哪一行，顺带看编译产物" placement="bottom">
+            <el-button size="small" :loading="validating" @click="validateConfig()">校验配置</el-button>
+          </el-tooltip>
           <el-button size="small" type="primary" :loading="saving" @click="save">保存</el-button>
         </div>
       </header>
@@ -104,6 +107,31 @@
             </el-tooltip>
             <el-button size="small" text @click="toggleAllArrays">{{ allCollapsed ? '展开全部数组' : '收起全部数组' }}</el-button>
             <el-button size="small" text type="primary" @click="reloadTargets">重新探测目标字段</el-button>
+          </div>
+
+          <!-- 校验结果（#103）：点「校验配置」才有；每条问题点一下就跳到对应的行 -->
+          <div v-if="validation" class="wb-issues">
+            <div class="wb-issues-head">
+              <span class="wb-panel-title">校验结果</span>
+              <span class="wb-issue-summary" :class="{ bad: validation.errors.length > 0 }">{{ issueSummary }}</span>
+              <span class="wb-spacer" />
+              <span class="wb-issues-note">改完再点一次「校验配置」</span>
+            </div>
+            <div v-if="!locatedIssues.length" class="wb-issues-ok">没有发现问题。</div>
+            <div v-else class="wb-issue-list">
+              <button
+                v-for="(issue, i) in locatedIssues"
+                :key="i"
+                class="wb-issue"
+                :class="issue.severity"
+                :title="issue.rowId == null ? '这条问题定位不到某一行' : '点一下跳到这一行'"
+                @click="jumpToRowId(issue.rowId)"
+              >
+                <span class="wb-issue-tag">{{ issue.severity === 'error' ? '错误' : '警告' }}</span>
+                <span class="wb-issue-where">{{ issueLocation(issue) }}</span>
+                <span class="wb-issue-message">{{ issue.message }}</span>
+              </button>
+            </div>
           </div>
 
           <div v-if="!rows.length" class="wb-empty">
@@ -247,6 +275,14 @@
                       <el-button size="small" text type="primary" @click.stop="addIndexChild(entry.row)">+ 行号</el-button>
                     </el-tooltip>
                   </template>
+
+                  <!-- 这一行有没有问题：#103 的三种状态都由后端返回的问题算出来，前端不自己判对错 -->
+                  <div v-if="validation" class="wb-col-issues" :title="issueText(entry.row.id)">
+                    <span class="wb-state" :class="rowStateOf(entry.row.id)">{{ stateLabel(entry.row.id) }}</span>
+                    <span v-if="firstMessageOf(entry.row.id)" class="wb-issue-inline">
+                      {{ firstMessageOf(entry.row.id) }}
+                    </span>
+                  </div>
 
                   <!-- 行操作：清除这一行的取值方式（清除后能撤销，见右边的「撤销」） -->
                   <span class="wb-col-actions" @click="stop">
@@ -405,6 +441,18 @@
           </div>
         </section>
       </div>
+
+      <!-- 底部编译产物（#103）：两个标签页，JSONata 与规则 JSON -->
+      <div v-if="validation" class="wb-foot">
+        <el-tabs v-model="artifactTab" class="wb-artifacts">
+          <el-tab-pane label="JSONata" name="jsonata">
+            <pre class="wb-artifact">{{ validation.compiled.jsonata || '这份草稿还没编译出表达式——先把错误改掉' }}</pre>
+          </el-tab-pane>
+          <el-tab-pane label="规则 JSON" name="rules">
+            <pre class="wb-artifact">{{ validation.compiled.rulesJson || '（没有内容）' }}</pre>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </div>
   </el-drawer>
 </template>
@@ -429,9 +477,13 @@ import {
   transformLabelOf, transformName, transformOptions, DATE_PRESETS, type EnumPair, type TransformOption,
 } from '../mapping/transforms.ts'
 import {
-  appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
-  visibleRows, ELEMENT_GROUP_TITLE, type PickableItem,
+  appendChildRow, appendIndexChildRow, ancestorRowIds, emptyPickResult, fillRowFromPick, sourcePickerFor,
+  toggledRowIds, visibleRows, ELEMENT_GROUP_TITLE, type PickableItem,
 } from '../mapping/source-picker.ts'
+import {
+  draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
+  type DraftValidation,
+} from '../mapping/draft.ts'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
 const TRANSFORM_HINTS: Record<string, string> = {
@@ -468,7 +520,13 @@ const emit = defineEmits<{ (e: 'saved', config: Record<string, any>): void; (e: 
 const visible = ref(true)
 const loading = ref(false)
 const saving = ref(false)
+const validating = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
+
+/** 上一次「校验配置」的结果（后端给的）；没点过就是 null，界面上什么都不显示。 */
+const validation = ref<DraftValidation | null>(null)
+/** 底部编译产物那两个标签页。 */
+const artifactTab = ref('jsonata')
 
 /** 这个动作原来是手写 JSONata（mode=EXPRESSION）：这一轮看不了它，保存会替换掉。 */
 const expressionMode = computed(() => props.config?.mode === 'EXPRESSION')
@@ -742,7 +800,7 @@ async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[
       body: JSON.stringify({ table: target.tableName, refresh: true }),
     })
     targetSourceKey.value = structure.sourceKey
-    return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure))
+    return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure), typesOf(structure))
   } catch (e) {
     // 探测失败（连不上库 / 表名不合法）不阻塞编辑器，退化成手写目标字段。
     ElMessage.warning(`目标结构没探测出来：${(e as ApiError).message}`)
@@ -755,6 +813,15 @@ function requiredOf(structure: SourceStructure): Map<string, boolean> {
   const required = new Map<string, boolean>()
   for (const f of structure.fields ?? []) required.set(f.name, f.nullable === false)
   return required
+}
+
+/** 类型口径：探测给什么带什么（清单上要显示它，下一张票的类型检查也要用它）。 */
+function typesOf(structure: SourceStructure): Map<string, string> {
+  const types = new Map<string, string>()
+  for (const f of structure.fields ?? []) {
+    if (f.type) types.set(f.name, f.type)
+  }
+  return types
 }
 
 async function reloadTargets() {
@@ -803,6 +870,96 @@ function select(row: MapRow) {
  */
 function stop(e: Event) {
   e.stopPropagation()
+}
+
+// ---------------------------------------------------------------- 校验配置（#103）
+
+/**
+ * 点「校验配置」：把草稿交给后端那个只读接口判。
+ *
+ * 判断对错全在那边，这里一条校验规则都没有——发出去的是「按现在这样保存会写出去的那份规则」，
+ * 收回来的是问题列表和编译产物，前端只负责把每条问题挂到对应的那一行上（`draft.ts`）。
+ * 返回 null 表示这次没跑起来（网络或服务端错误），调用方据此决定要不要继续。
+ */
+async function validateConfig(): Promise<DraftValidation | null> {
+  validating.value = true
+  try {
+    const result = await api<DraftValidation>('/field-mapping-editor/validate', {
+      method: 'POST',
+      body: JSON.stringify(draftRequest({
+        rows: rows.value,
+        targets: targets.value,
+        sourceFields: sourceFields.value,
+        earlierActionIndexes: earlierActionIndexes.value,
+        defaultSourceStep: defaultStep.value,
+        actionIndex: props.actionIndex ?? null,
+      })),
+    })
+    validation.value = result
+    return result
+  } catch (e) {
+    ElMessage.error(`校验没跑起来：${(e as ApiError).message}`)
+    return null
+  } finally {
+    validating.value = false
+  }
+}
+
+/** 链上执行顺序更早的动作序号（顶部那个下拉去掉「任务输入」）：sourceStep 只能指向这些。 */
+const earlierActionIndexes = computed(() =>
+  stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
+
+/** 后端返回的问题 → 界面上的问题列表（每条带上它落在哪一行）。 */
+const locatedIssues = computed(() => (validation.value
+  ? locateIssues(flattenRows(rows.value), validation.value)
+  : []))
+
+/** 每一行的问题（键是行 id）：行右侧那三种状态用它算。 */
+const rowIssues = computed(() => issuesByRow(locatedIssues.value))
+
+const issueSummary = computed(() => {
+  const result = validation.value
+  if (!result) return ''
+  if (!result.errors.length && !result.warnings.length) return '没有发现问题'
+  return `${result.errors.length} 个错误 · ${result.warnings.length} 个警告`
+})
+
+/** 「有错 / 有警告 / 没问题」——#103 要求界面上分得开这三种。 */
+const STATE_LABELS: Record<'error' | 'warning' | 'ok', string> = {
+  error: '有错',
+  warning: '有警告',
+  ok: '没问题',
+}
+
+function rowStateOf(rowId: number): 'error' | 'warning' | 'ok' {
+  return rowIssueState(rowIssues.value.get(rowId))
+}
+
+function stateLabel(rowId: number): string {
+  return STATE_LABELS[rowStateOf(rowId)]
+}
+
+/** 这一行第一条问题的原文（行里显示一条，剩下的挂在悬停提示上）。 */
+function firstMessageOf(rowId: number): string {
+  return rowIssues.value.get(rowId)?.[0]?.message ?? ''
+}
+
+function issueText(rowId: number): string {
+  return (rowIssues.value.get(rowId) ?? []).map(issue => issue.message).join('\n')
+}
+
+/** 跳到某一行：先把上面收起的数组行展开（收着的子行根本没铺出来），再选中它、滚到看得见。 */
+function jumpToRowId(rowId: number | null) {
+  if (rowId == null) return
+  const ancestors = ancestorRowIds(rows.value, rowId)
+  if (ancestors.length) {
+    collapsedIds.value = new Set([...collapsedIds.value].filter(id => !ancestors.includes(id)))
+  }
+  closePanel()
+  selectedId.value = rowId
+  nextTick(() => {
+    document.querySelector<HTMLElement>(`[data-row-id="${rowId}"]`)?.scrollIntoView({ block: 'center' })
+  })
 }
 
 // ---------------------------------------------------------------- 就地参数编辑（#100）
@@ -1140,16 +1297,26 @@ async function save() {
       : '还没有任何目标字段——改一个写目标动作，或者先点「重新探测目标字段」，也可以直接手输目标字段路径')
     return
   }
-  if (untouchedCount.value) {
-    const ok = await ElMessageBox.confirm(
-      `还有 ${untouchedCount.value} 行没配好（没选来源 / 常量没填值 / 枚举表空 / 拼接没片段）。这些行不会被保存。`,
-      '有没配好的行',
-      { type: 'warning', confirmButtonText: '只保存配好的', cancelButtonText: '回去补' },
-    ).then(() => true).catch(() => false)
-    if (!ok) return
-  }
   saving.value = true
   try {
+    // 校验排在「还有几行没配好」前面：有错的时候保存整份都进不去，先把这个说清楚
+    //（那份确认框问的是「要不要少存几行」，问早了会把真正的拦下原因压到后面）。
+    // 保存前一定校验一次：这份草稿后端收不收，只有后端说了算（前端不复制任何一条校验规则）。
+    // 没跑起来（网络/服务端错误）时不拦——真正的兜底还是保存时那个 400。
+    const result = await validateConfig()
+    if (result?.errors.length) {
+      jumpToRowId(firstErrorRowId(locatedIssues.value))
+      ElMessage.error(`还有 ${result.errors.length} 个错误，先改掉再保存`)
+      return
+    }
+    if (untouchedCount.value) {
+      const ok = await ElMessageBox.confirm(
+        `还有 ${untouchedCount.value} 行没配好（没选来源 / 常量没填值 / 枚举表空 / 拼接没片段）。这些行不会被保存。`,
+        '有没配好的行',
+        { type: 'warning', confirmButtonText: '只保存配好的', cancelButtonText: '回去补' },
+      ).then(() => true).catch(() => false)
+      if (!ok) return
+    }
     emit('saved', getConfig())
     visible.value = false
   } finally {
@@ -1255,6 +1422,44 @@ load()
 .wb-paren { font-size: 12px; color: #6b7280; }
 .wb-start-at { width: 96px; }
 
+/* 校验结果与行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分 */
+.wb-issues { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #fafafa; }
+.wb-issues-head { display: flex; align-items: center; gap: 10px; }
+.wb-issue-summary { font-size: 12px; color: #6b7280; }
+.wb-issue-summary.bad { color: #b91c1c; font-weight: 600; }
+.wb-issues-note { font-size: 11px; color: #9ca3af; }
+.wb-issues-ok { font-size: 12px; color: #15803d; padding: 4px 0; }
+.wb-issue-list { max-height: 132px; overflow: auto; margin-top: 4px; }
+.wb-issue {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  font: inherit; font-size: 12px; background: none; border: 0; border-radius: 4px;
+  padding: 3px 4px; cursor: pointer;
+}
+.wb-issue:hover { background: #f3f4f6; }
+.wb-issue-tag { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 4px; border: 1px solid; }
+.wb-issue.error .wb-issue-tag { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+.wb-issue.warning .wb-issue-tag { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+.wb-issue-where { flex-shrink: 0; font-family: Consolas, monospace; color: #374151; }
+.wb-issue-message { color: #6b7280; }
+.wb-col-issues { display: flex; align-items: center; gap: 6px; max-width: 280px; flex-shrink: 0; }
+.wb-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 5px; border: 1px solid #e5e7eb; color: #9ca3af; }
+.wb-state.error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+.wb-state.warning { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+.wb-state.ok { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
+.wb-issue-inline {
+  font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 底部编译产物：两个标签页（JSONata / 规则 JSON） */
+.wb-foot { border-top: 1px solid #e5e7eb; padding: 0 16px; background: #fff; }
+.wb-artifacts :deep(.el-tabs__header) { margin-bottom: 4px; }
+.wb-artifact {
+  margin: 0 0 8px; max-height: 150px; overflow: auto;
+  font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;
+  background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px;
+  white-space: pre; color: #111827;
+}
+
 /* 就地参数面板：占这一行下面的一行 */
 .wb-panel {
   margin: 2px 0 8px 8px; padding: 8px 10px;
@@ -1287,6 +1492,7 @@ load()
 @media (max-width: 900px) {
   .wb-source { width: 200px; }
   .wb-col-target { width: 180px; }
+  .wb-col-issues { max-width: 180px; }
   .wb-chip { max-width: 200px; }
 }
 </style>

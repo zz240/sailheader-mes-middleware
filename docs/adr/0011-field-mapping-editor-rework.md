@@ -96,13 +96,18 @@
 - 决定清单（A–I）与两条用户修正：`.scratch/wayfinder/editor-decisions.md`
 - 规格：#98；实现票：#99（骨架）… #107（删旧编辑器）
 - 前端检查：`frontend/src/mapping/checks.ts`（行与规则互转往返、`sourceStep` 显式、人话标签对照、
-  七种转换的参数、数组映射的三种来源写法与制品 → BOM 的规则形状、手工新增行与目标字段补全、清除与撤销）
+  七种转换的参数、数组映射的三种来源写法与制品 → BOM 的规则形状、手工新增行与目标字段补全、清除与撤销、
+  校验请求与「问题落到哪一行」）
 - 后端契约测试：`JsonataRuleCompilerTest`（编辑器存出来的那份规则 JSON → 校验 → 编译产物 → 执行结果；
-  数组行 `$map` 加外层 `[ ]`、单元素数组仍是数组）
+  数组行 `$map` 加外层 `[ ]`、单元素数组仍是数组）、`MappingDraftValidationServiceTest`（草稿校验的
+  fixture：结构有错的草稿按行报出来、合法草稿没有问题、漏写 `sourceStep` 是提示、编译产物文本）、
+  `FieldMappingEditorControllerTest`（`POST /api/field-mapping-editor/validate` 的字段名与信封形状）
 - 真机验收脚本：`.scratch/t3-run.cjs`（MQ 制品 → 映射 → HTTP，核对目标系统收到的每一行）、
   `.scratch/t3-ui.cjs`（真浏览器里配数组映射 → 保存 → 用存下来的规则跑穿真链路）、
   `.scratch/t4-ui.cjs`（真浏览器里从清单里选目标字段、手工加行/手输目标字段、清除与撤销 →
-  保存 → 用存下来的全手工规则跑穿真链路）
-- 代码：`frontend/src/mapping/`（rows / editor-model / labels / source-picker）、
+  保存 → 用存下来的全手工规则跑穿真链路）、`.scratch/t5-ui.cjs`（真浏览器里点「校验配置」→
+  重复目标字段那一行报「有错」、问题列表点一下跳过去、保存被拦下；全过程不保存）
+- 代码：`frontend/src/mapping/`（rows / editor-model / labels / source-picker / draft）、
   `frontend/src/components/FieldMappingWorkbench.vue`、
-  `spike/src/main/java/com/example/edgegateway/service/FieldMappingEditorService.java`
+  `spike/src/main/java/com/example/edgegateway/service/FieldMappingEditorService.java`、
+  `spike/src/main/java/com/example/edgegateway/service/MappingDraftValidationService.java`（草稿校验，只读）

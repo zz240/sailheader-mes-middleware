@@ -34,11 +34,11 @@ public final class JsonataRuleCompiler {
     /** 编译规则列表为 JSONata 表达式（顶层是目标对象构造器）。 */
     public static String compile(List<FieldMappingRule> rules) {
         if (rules == null || rules.isEmpty()) {
-            throw new IllegalArgumentException("字段映射动作需要至少一条映射规则");
+            throw new CompileException(null, null, "字段映射动作需要至少一条映射规则");
         }
         TargetNode root = new TargetNode();
         for (FieldMappingRule rule : rules) {
-            insert(root, rule, rule.sourceStep() != null ? rule.sourceStep() : 0, 0);
+            insert(root, rule, rule.sourceStep() != null ? rule.sourceStep() : 0, 0, null);
         }
         StringBuilder sb = new StringBuilder("{\n");
         renderChildren(root, sb);
@@ -46,38 +46,71 @@ public final class JsonataRuleCompiler {
         return sb.toString();
     }
 
+    /**
+     * 编译期发现的规则树问题：目标路径不合法 / 前缀冲突 / 重复映射 / 拼接没片段。
+     *
+     * <p>带上出错的那条规则的目标字段和它所属组节点的目标字段——「校验配置」那个只读接口（#103）
+     * 据此把问题定位到界面上的一行（数组子行的目标写的是相对路径，光有它认不出是哪一行）。
+     * 仍然是 {@link IllegalArgumentException}，原来的调用方（路由构建、旧测试）不受影响。</p>
+     */
+    public static final class CompileException extends IllegalArgumentException {
+
+        private final String target;
+        private final String parent;
+
+        CompileException(String target, String parent, String message) {
+            super(message);
+            this.target = target;
+            this.parent = parent;
+        }
+
+        /** 出错那条规则的目标字段；定位不到某一条规则（整份规则表级别）时为 null。 */
+        public String target() {
+            return target;
+        }
+
+        /** 出错那条规则所属组节点的目标字段；顶层规则为 null。 */
+        public String parent() {
+            return parent;
+        }
+    }
+
     // ---------- 目标树构建 ----------
 
-    /** 把一条规则按其 target 点号路径插入目标树；组节点用 children 递归继续。 */
-    private static void insert(TargetNode parent, FieldMappingRule rule, int step, int depth) {
+    /**
+     * 把一条规则按其 target 点号路径插入目标树；组节点用 children 递归继续。
+     *
+     * @param parentTarget 这一条所属组节点的目标字段（顶层为 null），只用来报错时定位
+     */
+    private static void insert(TargetNode parent, FieldMappingRule rule, int step, int depth, String parentTarget) {
         String[] segments = rule.target().split("\\.");
         if (segments.length == 0 || segments[0].isBlank()) {
-            throw new IllegalArgumentException("目标字段路径不合法: " + rule.target());
+            throw new CompileException(rule.target(), parentTarget, "目标字段路径不合法: " + rule.target());
         }
         TargetNode node = parent;
         for (int i = 0; i < segments.length; i++) {
             String seg = segments[i];
             if (seg.isBlank()) {
-                throw new IllegalArgumentException("目标字段路径不合法: " + rule.target());
+                throw new CompileException(rule.target(), parentTarget, "目标字段路径不合法: " + rule.target());
             }
             TargetNode next = node.children.get(seg);
             if (i < segments.length - 1 && next != null && next.leaf != null && !next.leaf.group) {
                 // 中间节点已有非组叶子：如先映射 "a.b" 再映射 "a.b.c"，c 会被静默丢弃
-                throw new IllegalArgumentException("目标字段前缀冲突: " + rule.target());
+                throw new CompileException(rule.target(), parentTarget, "目标字段前缀冲突: " + rule.target());
             }
             node = next != null ? next : node.children.computeIfAbsent(seg, k -> new TargetNode());
         }
         boolean group = rule.children() != null && !rule.children().isEmpty();
         if (node.leaf != null) {
-            throw new IllegalArgumentException("目标字段重复映射: " + rule.target());
+            throw new CompileException(rule.target(), parentTarget, "目标字段重复映射: " + rule.target());
         }
         if (!node.children.isEmpty() && !group) {
-            throw new IllegalArgumentException("目标字段前缀冲突: " + rule.target());
+            throw new CompileException(rule.target(), parentTarget, "目标字段前缀冲突: " + rule.target());
         }
         node.leaf = new Leaf(rule, step, depth, group);
         if (group) {
             for (FieldMappingRule child : rule.children()) {
-                insert(node, child, step, depth + 1);
+                insert(node, child, step, depth + 1, rule.target());
             }
         }
     }
@@ -156,7 +189,7 @@ public final class JsonataRuleCompiler {
             }
         }
         if (parts.isEmpty()) {
-            throw new IllegalArgumentException("CONCAT 转换需要 parts 片段: " + rule.target());
+            throw new CompileException(rule.target(), null, "CONCAT 转换需要 parts 片段: " + rule.target());
         }
         return String.join(" & ", parts);
     }

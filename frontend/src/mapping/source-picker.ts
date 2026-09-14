@@ -293,6 +293,28 @@ export function visibleRows(rows: MapRow[], collapsed: Iterable<number>): Return
   return out
 }
 
+/**
+ * 某一行的祖先数组行 id（从近到远）。
+ *
+ * 「跳到某一行」（#103 的问题列表点一下）要用它：收起的数组行下面的子行根本没铺出来，
+ * 不先把上面那几行展开，跳过去也看不见。
+ */
+export function ancestorRowIds(rows: MapRow[], rowId: number): number[] {
+  const found: number[] = []
+  const walk = (list: MapRow[], trail: number[]): boolean => {
+    for (const row of list) {
+      if (row.id === rowId) {
+        found.push(...trail)
+        return true
+      }
+      if (row.children.length && walk(row.children, [row.id, ...trail])) return true
+    }
+    return false
+  }
+  walk(rows, [])
+  return found
+}
+
 /** 往数组行下面加一个子行：子行的目标字段写相对路径，所以从空开始。 */
 export function appendChildRow(row: MapRow): MapRow {
   if (row.iterate !== 'FOR_EACH') return row

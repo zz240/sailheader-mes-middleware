@@ -48,82 +48,118 @@ public record FieldMappingConfig(
         return ActionKind.FIELD_MAP;
     }
 
-    @Override
-    public void validate() {
-        if ("EXPRESSION".equals(mode)) {
-            if (expression == null || expression.isBlank()) {
-                throw new IllegalArgumentException("mode=EXPRESSION 需要 expression 表达式");
-            }
-            return; // 手写表达式模式不校验规则树
-        }
-        if (expression != null) {
-            throw new IllegalArgumentException("只有 mode=EXPRESSION 才允许 expression");
-        }
-        if (rules == null || rules.isEmpty()) {
-            throw new IllegalArgumentException("字段映射动作需要至少一条映射规则");
-        }
-        validateRule(rules, null, 0);
+    /**
+     * 一条结构问题：出错的那条规则（{@code target} 定位，{@code parent} 是它所属数组行的目标字段）+ 说明。
+     *
+     * <p>{@code target} 和 {@code parent} 都可能为空——整份配置级别的问题（没有规则、模式配错）定位不到某一行。</p>
+     */
+    public record RuleProblem(String target, String parent, String message) {
     }
 
-    /** 递归校验规则树：0 = 顶层，depth 为嵌套组层级（INDEX 只在组内合法）。 */
-    private void validateRule(List<FieldMappingRule> list, Integer inheritedStep, int depth) {
+    @Override
+    public void validate() {
+        List<RuleProblem> problems = problems();
+        if (!problems.isEmpty()) {
+            throw new IllegalArgumentException(problems.get(0).message());
+        }
+    }
+
+    /**
+     * 结构校验的**全部**问题（按规则树顺序，一条规则可以有多条）。
+     *
+     * <p>{@link #validate()} 抛的就是这里的头一条；「校验配置」那个只读接口（#103）要一次把问题都列出来，
+     * 所以两边共用这一份实现，不各写一遍。</p>
+     */
+    public List<RuleProblem> problems() {
+        List<RuleProblem> problems = new ArrayList<>();
+        if ("EXPRESSION".equals(mode)) {
+            if (expression == null || expression.isBlank()) {
+                problems.add(new RuleProblem(null, null, "mode=EXPRESSION 需要 expression 表达式"));
+            }
+            return problems; // 手写表达式模式不校验规则树
+        }
+        if (expression != null) {
+            problems.add(new RuleProblem(null, null, "只有 mode=EXPRESSION 才允许 expression"));
+        }
+        if (rules == null || rules.isEmpty()) {
+            problems.add(new RuleProblem(null, null, "字段映射动作需要至少一条映射规则"));
+            return problems;
+        }
+        collectProblems(rules, 0, null, problems);
+        return problems;
+    }
+
+    /**
+     * 递归收集规则树的问题。
+     *
+     * @param depth        嵌套组层级（INDEX 只在组内合法，0 = 顶层）
+     * @param parentTarget 这一层规则所属组节点的目标字段（顶层为 null）
+     */
+    private void collectProblems(List<FieldMappingRule> list, int depth, String parentTarget,
+                                 List<RuleProblem> problems) {
         for (FieldMappingRule rule : list) {
             if (rule.target() == null || rule.target().isBlank()) {
-                throw new IllegalArgumentException("映射规则缺少目标字段 target");
+                problems.add(new RuleProblem(rule.target(), parentTarget, "映射规则缺少目标字段 target"));
+                continue;
             }
             boolean group = rule.children() != null && !rule.children().isEmpty();
             if (group) {
                 if (rule.iterate() != null && !"FOR_EACH".equals(rule.iterate())) {
-                    throw new IllegalArgumentException("组节点 iterate 仅支持 FOR_EACH: " + rule.target());
+                    problems.add(problem(rule, parentTarget, "组节点 iterate 仅支持 FOR_EACH: " + rule.target()));
                 }
                 if (rule.source() == null || rule.source().isBlank()) {
-                    throw new IllegalArgumentException("组节点缺少来源数组 source: " + rule.target());
+                    problems.add(problem(rule, parentTarget, "组节点缺少来源数组 source: " + rule.target()));
                 }
-                Integer step = rule.sourceStep() != null ? rule.sourceStep() : inheritedStep;
                 for (FieldMappingRule child : rule.children()) {
                     if (child.sourceStep() != null) {
-                        throw new IllegalArgumentException("组内子规则不允许再选 sourceStep（继承组节点）: "
-                                + rule.target() + " -> " + child.target());
+                        problems.add(new RuleProblem(child.target(), rule.target(),
+                                "组内子规则不允许再选 sourceStep（继承组节点）: "
+                                        + rule.target() + " -> " + child.target()));
                     }
                 }
-                validateRule(rule.children(), step, depth + 1);
+                collectProblems(rule.children(), depth + 1, rule.target(), problems);
                 continue;
             }
             if (rule.transform() == TransformType.INDEX) {
                 if (depth == 0) {
-                    throw new IllegalArgumentException("INDEX 转换只能在数组组内使用: " + rule.target());
-                }
-                if (!"$index".equals(rule.source())) {
-                    throw new IllegalArgumentException("INDEX 转换的 source 必须为 $index: " + rule.target());
+                    problems.add(problem(rule, parentTarget, "INDEX 转换只能在数组组内使用: " + rule.target()));
+                } else if (!"$index".equals(rule.source())) {
+                    problems.add(problem(rule, parentTarget, "INDEX 转换的 source 必须为 $index: " + rule.target()));
                 }
                 continue;
             }
             if (rule.transform() == TransformType.CONCAT) {
                 if (rule.parts() == null || rule.parts().isEmpty()) {
-                    throw new IllegalArgumentException("CONCAT 转换需要 parts 片段: " + rule.target());
-                }
-                for (Object part : rule.parts()) {
-                    if (!(part instanceof String s) && !(part instanceof Map<?, ?> m)) {
-                        throw new IllegalArgumentException("CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: " + rule.target());
-                    }
-                    if (part instanceof Map<?, ?> m && (m.get("path") == null || m.get("path").toString().isBlank())) {
-                        throw new IllegalArgumentException("CONCAT 路径片段缺少 path: " + rule.target());
+                    problems.add(problem(rule, parentTarget, "CONCAT 转换需要 parts 片段: " + rule.target()));
+                } else {
+                    for (Object part : rule.parts()) {
+                        if (!(part instanceof String) && !(part instanceof Map<?, ?>)) {
+                            problems.add(problem(rule, parentTarget,
+                                    "CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: " + rule.target()));
+                        } else if (part instanceof Map<?, ?> m
+                                && (m.get("path") == null || m.get("path").toString().isBlank())) {
+                            problems.add(problem(rule, parentTarget, "CONCAT 路径片段缺少 path: " + rule.target()));
+                        }
                     }
                 }
                 continue;
             }
             if (rule.transform() == TransformType.CONSTANT
                     && (rule.constant() == null || rule.constant().isBlank())) {
-                throw new IllegalArgumentException("常量转换需要 constant");
+                problems.add(problem(rule, parentTarget, "常量转换需要 constant"));
             }
             if (rule.transform() == TransformType.ENUM && rule.enumMap().isEmpty()) {
-                throw new IllegalArgumentException("枚举转换需要 enumMap");
+                problems.add(problem(rule, parentTarget, "枚举转换需要 enumMap"));
             }
             if (rule.transform() != TransformType.CONSTANT
                     && (rule.source() == null || rule.source().isBlank())) {
-                throw new IllegalArgumentException("映射规则缺少来源字段 source");
+                problems.add(problem(rule, parentTarget, "映射规则缺少来源字段 source"));
             }
         }
+    }
+
+    private RuleProblem problem(FieldMappingRule rule, String parentTarget, String message) {
+        return new RuleProblem(rule.target(), parentTarget, message);
     }
 
     @Override
