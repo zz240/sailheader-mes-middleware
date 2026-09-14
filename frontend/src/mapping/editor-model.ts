@@ -5,7 +5,7 @@
  * 行与规则的互转仍然走 `rows.ts` 那一层，这里不重写它。
  */
 import { createGroupRow, createRow, rowFromRule, type MapRow } from './rows.ts'
-import { fieldReferenceFullLabel, fieldReferenceLabel, INDEX_SOURCE, ROOT_PREFIX } from './labels.ts'
+import { fieldReferenceFullLabel, fieldReferenceLabel, INDEX_SOURCE } from './labels.ts'
 
 /** 目标字段清单里的一个字段；`element` 是数组元素里的字段（相对路径）。 */
 export interface TargetField {
@@ -98,18 +98,35 @@ export function targetFieldsFromPaths(paths: string[], required: Map<string, boo
   return roots
 }
 
-/** 已配置的行的集合：目标字段路径 → 这条路径上有没有行、填没填来源。 */
-function rowIndex(rows: MapRow[]): Map<string, MapRow> {
-  const index = new Map<string, MapRow>()
-  const walk = (list: MapRow[], prefix: string) => {
+/** 行在界面上按层级铺开：数组行后面紧跟它的子行。`parent` 是数组行（取它继承的来源步骤用）。 */
+export interface FlatRow {
+  row: MapRow
+  depth: number
+  parent: MapRow | null
+}
+
+/** 把行树摊平成列表（编辑器所有遍历都走这里）。 */
+export function flattenRows(rows: MapRow[]): FlatRow[] {
+  const out: FlatRow[] = []
+  const walk = (list: MapRow[], depth: number, parent: MapRow | null) => {
     for (const row of list) {
-      const path = prefix ? `${prefix}.${row.target.trim()}` : row.target.trim()
-      if (row.target.trim()) index.set(path, row)
-      if (row.children.length) walk(row.children, path)
+      out.push({ row, depth, parent })
+      if (row.children.length) walk(row.children, depth + 1, row)
     }
   }
-  walk(rows, '')
-  return index
+  walk(rows, 0, null)
+  return out
+}
+
+/** 已配置的行的集合：目标字段路径 → 这条路径上有没有行、填没填来源。 */
+function rowIndex(rows: MapRow[]): Map<string, MapRow> {
+  return new Map(flattenRows(rows).filter(e => e.row.target.trim()).map(e => [pathOf(e), e.row]))
+}
+
+/** 一行在目标字段清单里的路径（子行要带上数组行的前缀）。 */
+function pathOf(entry: FlatRow): string {
+  const target = entry.row.target.trim()
+  return entry.parent ? `${entry.parent.target.trim()}.${target}` : target
 }
 
 /**
@@ -136,13 +153,11 @@ export function progressOf(rows: MapRow[], targets: TargetField[]): RequiredProg
   }
   walk(targets, '', false)
 
-  const requiredTop = counters.top
-  const requiredArray = counters.array
   return {
-    configured: requiredTop.configured + requiredArray.configured,
-    total: requiredTop.total + requiredArray.total,
-    top: requiredTop,
-    array: requiredArray,
+    configured: counters.top.configured + counters.array.configured,
+    total: counters.top.total + counters.array.total,
+    top: counters.top,
+    array: counters.array,
     optional: counters.optional,
   }
 }
@@ -153,33 +168,38 @@ export function rowHasValue(row: MapRow): boolean {
   return row.source.trim() !== ''
 }
 
-/** 这一行有没有被配置过（用于「只看未配置」这类过滤，以及判断空行）。 */
-export function rowConfigured(row: MapRow): boolean {
-  if (!row.target.trim()) return false
-  return rowHasValue(row) || row.iterate === 'FOR_EACH'
-}
-
 export interface PickResult {
   /** 填了哪一行；没填返回 null。 */
   row: MapRow | null
   /** 为什么没填。 */
-  reason?: 'no-target' | 'not-array' | 'array-expects-array'
+  reason?: 'no-target' | 'not-array' | 'array-expects-array' | 'child-wants-relative'
 }
 
 /**
  * 把一份来源字段填进当前行（#99 验收：点来源列表里的字段就填进当前行）。
  *
- * - 当前行是数组映射行时，只接受来源数组（路径带 `[0]`）；
- * - 当前行是普通行时，不接受来源数组。
+ * 这里挡的不是「对不对」，而是**形状接不上**：数组映射行与数组元素子行放的来源字段
+ * 在规则里根本不是同一种东西（一个是数组路径，一个是相对路径），点错了写进去就是一份
+ * 自相矛盾的规则。真正的合法性判断（枚举表、片段、必填、类型）仍然只在后端那个只读接口里，
+ * 前端没有复制任何一条校验规则（#98 D1/D4）。
  */
-export function fillRowFromSource(row: MapRow | null, field: SourceField, step: number | null): PickResult {
+export function fillRowFromSource(
+  row: MapRow | null,
+  field: SourceField,
+  step: number | null,
+  inArray = false,
+): PickResult {
   if (!row) return { row: null, reason: 'no-target' }
   const isArray = isArrayPath(field.name)
   if (row.iterate === 'FOR_EACH' && !isArray) return { row: null, reason: 'array-expects-array' }
   if (row.iterate !== 'FOR_EACH' && isArray) return { row: null, reason: 'not-array' }
+  if (inArray && row.iterate !== 'FOR_EACH' && !isArray) return { row: null, reason: 'child-wants-relative' }
   row.source = field.name
   row.sourceStep = step
-  if (row.iterate !== 'FOR_EACH') row.transform = transformForType(field.type)
+  // 只在行还没被加工过时按来源类型猜转换；用户挑过的转换（非直接映射）不动它。
+  if (row.iterate !== 'FOR_EACH' && (row.transform === 'STRING' || row.transform === '')) {
+    row.transform = transformForType(field.type)
+  }
   return { row }
 }
 
@@ -194,10 +214,7 @@ export function isArrayPath(path: string): boolean {
  * 数组映射行不参与——它要的是来源数组，得自己选中（#99 只做骨架，数组在下一张票里配）。
  */
 export function nextEmptyRow(rows: MapRow[], from: MapRow | null): MapRow | null {
-  const flat: MapRow[] = []
-  const walk = (list: MapRow[]) => list.forEach(r => { flat.push(r); if (r.children.length) walk(r.children) })
-  walk(rows)
-  if (!flat.length) return null
+  const flat = flattenRows(rows).map(e => e.row)
   const blank = flat.filter(r => r.target.trim() && r.iterate !== 'FOR_EACH' && !r.source.trim())
   if (!blank.length) return from
   const start = from ? flat.indexOf(from) + 1 : 0
@@ -214,11 +231,6 @@ export function referenceOf(row: MapRow): { step: number | null; path: string; r
     return { step: row.sourceStep, path: source.slice('$root.'.length), root: true, startAt: null }
   }
   return { step: row.sourceStep, path: source, root: false, startAt: null }
-}
-
-/** 界面选中的来源字段 → 行里存的来源路径（外层引用加 `$root.` 前缀）。 */
-export function sourceValueFor(field: SourceField, outer: boolean): string {
-  return outer ? `${ROOT_PREFIX}${field.name}` : field.name
 }
 
 /** 一行当前来源在界面上显示成什么（子行按相对路径显示）。 */

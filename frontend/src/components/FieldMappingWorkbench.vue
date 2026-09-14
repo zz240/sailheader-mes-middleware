@@ -6,7 +6,6 @@
     :with-header="false"
     :close-on-click-modal="false"
     class="mapping-workbench-drawer"
-    @keydown="onKeydown"
   >
     <div class="wb" tabindex="-1" ref="rootEl">
       <!-- 顶部：标题 + 默认来源 + 进度 -->
@@ -75,12 +74,14 @@
                 v-for="field in group.fields"
                 :key="field.name"
                 class="wb-source-item"
-                :class="{ used: group.used.has(field.name), 'array-field': isArray(field) }"
+                :class="{ used: group.used.has(field.name), 'array-field': isArrayPath(field.name) }"
+                tabindex="0"
                 @click="pick(field, group)"
+                @keydown.enter.prevent="pick(field, group)"
               >
                 <div class="wb-source-item-main">
                   <span class="wb-source-name">{{ field.name }}</span>
-                  <span v-if="isArray(field)" class="wb-chip">数组</span>
+                  <span v-if="isArrayPath(field.name)" class="wb-chip">数组</span>
                   <span v-if="group.used.has(field.name)" class="wb-chip used">已用 {{ group.used.get(field.name) }}</span>
                 </div>
                 <div class="wb-source-meta">{{ field.type }}<template v-if="sampleOf(field)"> · 样例 {{ sampleOf(field) }}</template></div>
@@ -101,7 +102,7 @@
           </div>
 
           <div v-else class="wb-row-list">
-            <template v-for="entry in flatRows" :key="entry.row.id">
+            <template v-for="entry in displayRows" :key="entry.row.id">
               <div
                 class="wb-row"
                 :class="{ selected: entry.row.id === selectedId, child: entry.depth > 0 }"
@@ -112,10 +113,10 @@
                   <el-input
                     v-model="entry.row.target"
                     size="small"
-                    :readonly="!entry.manual"
+                    placeholder="目标字段路径（可手输）"
                     @focus="select(entry.row)"
                   >
-                    <template v-if="entry.manual" #append>
+                    <template v-if="!entry.fromTargets" #append>
                       <span class="wb-chip">手写</span>
                     </template>
                   </el-input>
@@ -135,7 +136,7 @@
                     <div class="wb-child-hint">下面 {{ entry.row.children.length }} 个子字段在数组元素内取值</div>
                   </template>
                   <div v-else class="wb-source-value" :title="rowFullLabel(entry)">
-                    {{ entry.row.source ? rowLabel(entry, entry.depth > 0) : emptyLabel() }}
+                    {{ entry.row.source ? rowLabel(entry, entry.depth > 0) : emptyRowLabel() }}
                   </div>
                 </div>
               </div>
@@ -152,16 +153,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
-import type { FieldMappingEditorContext, SourceStructure } from '../types'
+import type { EditorSourceSample, FieldMappingEditorContext, SourceStructure } from '../types'
 import {
-  fillRowFromSource, mergeRowsWithTargets, nextEmptyRow, progressOf, rowReferenceFullLabel, rowReferenceLabel,
-  rowsFromConfig, rowsFromTargetFields, targetFieldsFromPaths, type SourceField, type TargetField,
+  fillRowFromSource, flattenRows, isArrayPath, mergeRowsWithTargets, nextEmptyRow, progressOf,
+  rowReferenceFullLabel, rowReferenceLabel, rowsFromConfig, rowsFromTargetFields, targetFieldsFromPaths,
+  type FlatRow, type SourceField, type TargetField,
 } from '../mapping/editor-model.ts'
 import { ruleFromRow, type MapRow } from '../mapping/rows.ts'
-import { emptyRowLabel, stepLabel, transformLabel } from '../mapping/labels.ts'
+import { emptyRowLabel, stepLabel, transformLabel, TRANSFORM_KINDS } from '../mapping/labels.ts'
 
 const props = defineProps<{
   jobId: number
@@ -191,8 +193,7 @@ const targetSourceKey = ref<string>('')
 const selectedId = ref<number | null>(null)
 const defaultStep = ref<number>(0)
 
-const transforms = ['STRING', 'INT', 'DATE', 'ENUM', 'CONSTANT', 'CONCAT', 'INDEX']
-const transformOptions = computed(() => transforms.map(t => ({ value: t, label: transformLabel(t) })))
+const transformOptions = computed(() => TRANSFORM_KINDS.map(t => ({ value: t, label: transformLabel(t) })))
 
 const actionNames = computed<Record<number, string>>(() => {
   const map: Record<number, string> = {}
@@ -244,19 +245,26 @@ const sourceGroups = computed(() => {
 const progress = computed(() => progressOf(rows.value, targets.value))
 const progressPercent = computed(() => (progress.value.total ? Math.round(progress.value.configured / progress.value.total * 100) : 0))
 
-interface FlatRow { row: MapRow; depth: number; parent: MapRow | null; manual: boolean }
+interface DisplayRow extends FlatRow {
+  /** 这一行的目标字段来自目标清单（而不是手输的）。 */
+  fromTargets: boolean
+}
 
 /** 行在界面上按层级铺开：数组行后面紧跟它的子行。 */
-const flatRows = computed<FlatRow[]>(() => {
-  const out: FlatRow[] = []
-  const walk = (list: MapRow[], depth: number, parent: MapRow | null) => {
-    for (const row of list) {
-      out.push({ row, depth, parent, manual: row.origin === 'manual' })
-      if (row.children.length) walk(row.children, depth + 1, row)
+const displayRows = computed<DisplayRow[]>(() =>
+  flattenRows(rows.value).map(entry => ({ ...entry, fromTargets: targetPaths.value.has(entry.row.target.trim()) })))
+
+/** 目标清单里的字段路径（含数组内的相对路径），用来标出哪些行是清单给的。 */
+const targetPaths = computed(() => {
+  const paths = new Set<string>()
+  const walk = (list: TargetField[]) => {
+    for (const field of list) {
+      paths.add(field.path)
+      if (field.element?.length) walk(field.element)
     }
   }
-  walk(rows.value, 0, null)
-  return out
+  walk(targets.value)
+  return paths
 })
 
 async function load() {
@@ -267,7 +275,7 @@ async function load() {
     else if (props.actionIndex != null) query.set('actionIndex', String(props.actionIndex))
     const ctx = await api<FieldMappingEditorContext>(`/jobs/${props.jobId}/field-mapping-editor?${query.toString()}`)
     context.value = ctx
-    defaultStep.value = ctx.source?.step ?? 0
+    defaultStep.value = ctx.source?.step ?? previousActionIndex(ctx)
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
     rows.value = saved.length ? mergeRowsWithTargets(saved, targets.value, defaultStep.value) : rowsFromTargetFields(targets.value, defaultStep.value)
@@ -281,23 +289,35 @@ async function load() {
   rootEl.value?.focus()
 }
 
-/** 目标字段清单：优先连库探测写目标那张表；探测不到就退回样例字段接口。 */
+/** 默认来源步骤：链上更早的那个动作；没有更早的动作就是任务输入（0）。 */
+function previousActionIndex(ctx: FieldMappingEditorContext): number {
+  const earlier = (ctx.actions ?? [])
+    .map(a => a.index)
+    .filter((i): i is number => i != null)
+    .filter(i => props.actionIndex == null || i < props.actionIndex)
+  return earlier.length ? Math.max(...earlier) : 0
+}
+
+/** 目标字段清单：连库探测写目标那张表；探不出来就空着，编辑器退化成手写目标字段。 */
 async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[]> {
   const target = ctx.writeTarget
-  if (target?.actionId) {
-    try {
-      const structure = await api<SourceStructure>(`/actions/${target.actionId}/probe-target`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      targetSourceKey.value = structure.sourceKey
-      return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure))
-    } catch {
-      // 探测失败（没配表名 / 连不上库）不阻塞编辑器，退化成手写目标字段。
-      targetSourceKey.value = ''
-    }
+  if (!target?.actionId) {
+    targetSourceKey.value = ''
+    return []
   }
-  return []
+  try {
+    const structure = await api<SourceStructure>(`/actions/${target.actionId}/probe-target`, {
+      method: 'POST',
+      body: JSON.stringify({ table: target.tableName ?? undefined }),
+    })
+    targetSourceKey.value = structure.sourceKey
+    return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure))
+  } catch (e) {
+    // 探测失败（写动作没配表名 / 连不上库）不阻塞编辑器，退化成手写目标字段。
+    targetSourceKey.value = ''
+    ElMessage.warning(`目标结构没探测出来：${(e as ApiError).message}`)
+    return []
+  }
 }
 
 /** 必填口径：库里 NOT NULL 的列当成必填。 */
@@ -322,21 +342,13 @@ async function reloadTargets() {
 
 function usedCounts(step: number | null): Map<string, number> {
   const counts = new Map<string, number>()
-  const walk = (list: MapRow[]) => {
-    for (const row of list) {
-      if (row.sourceStep === step && row.source.trim() && row.transform !== 'INDEX') {
-        const key = row.source.trim()
-        counts.set(key, (counts.get(key) ?? 0) + 1)
-      }
-      if (row.children.length) walk(row.children)
+  for (const { row } of flattenRows(rows.value)) {
+    if (row.sourceStep === step && row.source.trim() && row.transform !== 'INDEX') {
+      const key = row.source.trim()
+      counts.set(key, (counts.get(key) ?? 0) + 1)
     }
   }
-  walk(rows.value)
   return counts
-}
-
-function isArray(field: SourceField) {
-  return field.name.includes('[0]')
 }
 
 function sampleOf(field: SourceField): string {
@@ -346,17 +358,13 @@ function sampleOf(field: SourceField): string {
   return text.length > 18 ? `${text.slice(0, 18)}…` : text
 }
 
-function rowLabel(entry: FlatRow, isChild: boolean) {
+function rowLabel(entry: DisplayRow, isChild: boolean) {
   return rowReferenceLabel(entry.row, actionNames.value, isChild)
 }
 
-function rowFullLabel(entry: FlatRow) {
+function rowFullLabel(entry: DisplayRow) {
   const inherited = entry.parent?.sourceStep ?? null
   return rowReferenceFullLabel(entry.row, actionNames.value, inherited)
-}
-
-function emptyLabel() {
-  return emptyRowLabel()
 }
 
 function select(row: MapRow) {
@@ -364,19 +372,20 @@ function select(row: MapRow) {
 }
 
 function selectFirst() {
-  const first = flatRows.value.find(e => e.row.target.trim())
+  const first = displayRows.value.find(e => e.row.target.trim())
   selectedId.value = first?.row.id ?? null
 }
 
 /** 点来源字段：填进当前行，然后自动走到下一个空行。 */
 function pick(field: SourceField, group: { step: number | null }) {
-  const current = flatRows.value.find(e => e.row.id === selectedId.value)?.row
-    ?? flatRows.value.find(e => !e.row.source.trim())?.row
+  const entry = displayRows.value.find(e => e.row.id === selectedId.value)
+    ?? displayRows.value.find(e => !e.row.source.trim() && e.row.iterate !== 'FOR_EACH')
     ?? null
-  const result = fillRowFromSource(current, field, group.step)
+  const result = fillRowFromSource(entry?.row ?? null, field, group.step, (entry?.depth ?? 0) > 0)
   if (!result.row) {
     if (result.reason === 'array-expects-array') ElMessage.warning('这一行是数组映射，来源要选一个数组（左边带「数组」标记的字段）')
     else if (result.reason === 'not-array') ElMessage.warning('这是一个数组，要填进数组映射行')
+    else if (result.reason === 'child-wants-relative') ElMessage.warning('数组子行的来源写的是相对路径——用下面这个数组元素内的字段')
     else ElMessage.warning('先选一行要填的目标字段')
     return
   }
@@ -385,23 +394,37 @@ function pick(field: SourceField, group: { step: number | null }) {
   if (next && next.id !== result.row.id) selectedId.value = next.id
 }
 
-function onDefaultStepChange(step: number) {
+/** 切默认来源：空行跟着换步骤，左边字段清单也要换成那个动作的清单。 */
+async function onDefaultStepChange(step: number) {
   defaultStep.value = step
   // 还没选来源的行跟着默认来源走（已配的行不动）。
   const walk = (list: MapRow[]) => {
     for (const row of list) {
-      if (!row.source.trim() && row.iterate !== 'FOR_EACH') row.sourceStep = step
-      if (row.iterate === 'FOR_EACH' && !row.source.trim()) row.sourceStep = step
+      if (!row.source.trim()) row.sourceStep = step
       if (row.children.length) walk(row.children)
     }
   }
   walk(rows.value)
+  await loadSourceFields(step)
 }
 
-/** 上下键在行之间移动（#99 验收）。 */
+/** 重新取某个动作的字段清单（换默认来源时必须换，否则会把 A 的字段配到 B 的步骤上）。 */
+async function loadSourceFields(step: number) {
+  loading.value = true
+  try {
+    const sample = await api<EditorSourceSample>(`/jobs/${props.jobId}/field-mapping-editor/source-fields?step=${step}`)
+    if (context.value) context.value = { ...context.value, source: sample }
+  } catch (e) {
+    ElMessage.error((e as ApiError).message)
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 上下键在行之间移动（#99 验收）。挂窗口监听：焦点可能停在行里的任意输入框上。 */
 function onKeydown(e: KeyboardEvent) {
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-  const list = flatRows.value.filter(entry => entry.row.target.trim())
+  if (!visible.value || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+  const list = displayRows.value.filter(entry => entry.row.target.trim())
   if (!list.length) return
   const current = list.findIndex(entry => entry.row.id === selectedId.value)
   const nextIndex = e.key === 'ArrowDown'
@@ -413,6 +436,9 @@ function onKeydown(e: KeyboardEvent) {
     document.querySelector(`[data-row-id="${selectedId.value}"]`)?.scrollIntoView({ block: 'nearest' })
   })
 }
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 /** 配置 → 规则（编辑器保存时用；一行就是一条规则）。 */
 function getConfig(): Record<string, any> {

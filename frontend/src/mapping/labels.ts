@@ -62,23 +62,23 @@ export function emptyRowLabel(): string {
   return '还没选来源'
 }
 
-/** 转换类型的人话标签（参数另有一列显示）。 */
-export function transformLabel(transform: string): string {
-  const table: Record<string, string> = {
-    STRING: '直接映射',
-    INT: '数字转换',
-    DATE: '日期格式化',
-    ENUM: '枚举映射',
-    CONSTANT: '常量',
-    CONCAT: '拼接',
-    INDEX: '行号',
-  }
-  return table[transform] ?? transform
+/** 后端已有的 7 种转换类型（`TransformType.java`）；行上存的就是这些值。 */
+export const TRANSFORM_KINDS = ['STRING', 'INT', 'DATE', 'ENUM', 'CONSTANT', 'CONCAT', 'INDEX'] as const
+export type TransformKind = (typeof TRANSFORM_KINDS)[number]
+
+const TRANSFORM_LABELS: Record<TransformKind, string> = {
+  STRING: '直接映射',
+  INT: '数字转换',
+  DATE: '日期格式化',
+  ENUM: '枚举映射',
+  CONSTANT: '常量',
+  CONCAT: '拼接',
+  INDEX: '行号',
 }
 
-/** 数组映射那一行的分组标题。 */
-export function arrayGroupLabel(): string {
-  return '数组元素内'
+/** 转换类型的人话标签（参数另有一列显示）。认不出来的值原样显示，不假装认识。 */
+export function transformLabel(transform: string): string {
+  return TRANSFORM_LABELS[transform as TransformKind] ?? transform
 }
 
 /** 用来判断一条规则来源是不是行号（内部符号只在这里出现）。 */

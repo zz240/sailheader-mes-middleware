@@ -9,12 +9,14 @@
  *   2. 每条顶层规则显式写了 `sourceStep`（后端查不出这个错，只能前端保住）；
  *   3. 人话标签符合对照表（界面上不出现 `$`）。
  */
-import { rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
+import { createGroupRow, createRow, rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
 import {
-  mergeRowsWithTargets, rowReferenceFullLabel, rowReferenceLabel, rowsFromTargetFields,
+  fillRowFromSource, mergeRowsWithTargets, rowReferenceFullLabel, rowReferenceLabel, rowsFromTargetFields,
   targetFieldsFromPaths, type TargetField,
 } from './editor-model.ts'
-import { fieldReferenceLabel, fieldReferenceFullLabel, stepLabel, emptyRowLabel } from './labels.ts'
+import {
+  fieldReferenceLabel, fieldReferenceFullLabel, stepLabel, emptyRowLabel, transformLabel, TRANSFORM_KINDS,
+} from './labels.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
 declare const process: { exitCode?: number }
@@ -144,6 +146,10 @@ eq('步骤标题', stepLabel(0, '读订单'), '任务输入')
 eq('步骤标题-其他动作', stepLabel(1, '读订单'), '动作 1 · 读订单')
 eq('空行提示', emptyRowLabel(), '还没选来源')
 
+// 七种转换各自都有人话标签（对照表覆盖齐全，加一种这里就会红）
+eq('七种转换的标签', TRANSFORM_KINDS.map(transformLabel),
+  ['直接映射', '数字转换', '日期格式化', '枚举映射', '常量', '拼接', '行号'])
+
 function assertNoDollar(text: string) {
   ok(`界面文案不出现 $：${text}`, !text.includes('$'), text)
 }
@@ -197,6 +203,30 @@ eq('已存子行沿用、顺序跟目标清单走、清单里多出来的补在�
 eq('已存子行的参数保留（ENUM 表没丢）', merged[3].children[2].transform, 'ENUM')
 eq('已存子行的参数真的还在', merged[3].children[2].enumMap, { PCS: '件' })
 eq('清单里没配过的行仍是空行', merged[1].source, '')
+
+// ---------------------------------------------------------------- 点来源字段填行
+
+const leafRow = createRow(1, '', 'bom.bomNo', 'STRING')
+const arrayRow = createGroupRow(1, '', 'bom.bomLines')
+const childRow = createRow(null, '', 'lineNo', 'STRING')
+const arrayField = { name: 'items[0].materialCode', type: 'STRING' }
+const plainField = { name: 'bomNo', type: 'STRING' }
+
+eq('普通行接受普通字段', fillRowFromSource(leafRow, plainField, 1).row?.source, 'bomNo')
+eq('普通行不接受数组字段', fillRowFromSource(leafRow, arrayField, 1).reason, 'not-array')
+eq('数组行只接受数组', fillRowFromSource(arrayRow, plainField, 1).reason, 'array-expects-array')
+eq('数组行接受数组字段', fillRowFromSource(arrayRow, arrayField, 1).row?.source, 'items[0].materialCode')
+eq('数组子行的来源必须是数组元素内的字段', fillRowFromSource(childRow, plainField, 1, true).reason, 'child-wants-relative')
+eq('子行填相对路径时不自己存 sourceStep（继承组节点）', childRow.sourceStep, null)
+eq('没有选中行时给提示', fillRowFromSource(null, plainField, 1).reason, 'no-target')
+
+// 选来源时按字段类型猜转换：没动过的行才猜，用户挑过的转换不能被冲掉
+const intRow = createRow(1, '', 'qty', 'STRING')
+eq('空行按来源类型猜数字转换', fillRowFromSource(intRow, { name: 'order_no', type: 'INT' }, 1).row?.transform, 'INT')
+const dateRow = createRow(1, '', 'createdDate', 'DATE')
+eq('已经挑了转换的行不被改回默认', fillRowFromSource(dateRow, { name: 'order_no', type: 'STRING' }, 1).row?.transform, 'DATE')
+const enumRow = createRow(1, '', 'status', 'ENUM')
+eq('用户挑的枚举映射也保住', fillRowFromSource(enumRow, { name: 'order_no', type: 'INT' }, 1).row?.transform, 'ENUM')
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

@@ -4,9 +4,6 @@ export interface ConcatPart {
   value: string
 }
 
-/** 行的来源：manual = 手工新增，未标记 = 由目标清单或已存配置生成。 */
-export type RowOrigin = '' | 'manual' | 'auto'
-
 export interface MapRow {
   id: number
   sourceStep: number | null
@@ -19,7 +16,6 @@ export interface MapRow {
   parts: ConcatPart[]
   iterate: string | null
   children: MapRow[]
-  origin: RowOrigin
 }
 
 let uid = 1000
@@ -48,7 +44,6 @@ export function createRow(
     parts: [],
     iterate: null,
     children: [],
-    origin: '',
   }
 }
 
@@ -83,7 +78,6 @@ export function rowFromRule(rule: Record<string, any>): MapRow {
         : { type: 'path' as const, value: String(p.path ?? '') }) : [],
     iterate: rule.iterate ?? (children.length ? 'FOR_EACH' : null),
     children,
-    origin: '',
   }
 }
 

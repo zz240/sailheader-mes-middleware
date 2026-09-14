@@ -32,8 +32,6 @@ import java.util.NoSuchElementException;
 @Service
 public class FieldMappingEditorService {
 
-    private static final String SUCCESS = "SUCCESS";
-
     private final ActionMapper actionMapper;
     private final JobRunMapper jobRunMapper;
     private final MessageStepMapper messageStepMapper;
@@ -61,10 +59,7 @@ public class FieldMappingEditorService {
      * 新建动作时给它准备占用的序号。
      */
     public FieldMappingEditorView context(Long jobId, Long actionId, Integer actionIndex) {
-        List<Action> chain = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                .eq(Action::getJobId, jobId)
-                .orderByAsc(Action::getActionIndex)
-                .orderByAsc(Action::getId));
+        List<Action> chain = chainOf(jobId);
         if (chain.isEmpty()) {
             throw new NoSuchElementException("任务下还没有动作: " + jobId);
         }
@@ -76,7 +71,8 @@ public class FieldMappingEditorService {
                         writeAction.getId(),
                         writeAction.getActionIndex(),
                         writeAction.getName(),
-                        dataSourceIdOf(writeAction)),
+                        dataSourceIdOf(writeAction),
+                        tableNameOf(writeAction)),
                 sourceOf(chain, jobId, actionId, index).sample(),
                 labels(chain));
     }
@@ -96,13 +92,18 @@ public class FieldMappingEditorService {
 
     /** 单独取一个来源步骤的字段清单（编辑器顶部切换默认来源时用）。 */
     public FieldMappingEditorView.SourceSample sourceFields(Long jobId, Integer step) {
-        List<Action> chain = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                .eq(Action::getJobId, jobId)
-                .orderByAsc(Action::getActionIndex));
-        return latestOutput(chain, jobId, step).sample();
+        return latestOutput(chainOf(jobId), jobId, step).sample();
     }
 
     // ---------- 内部 ----------
+
+    /** 任务的动作链，按执行顺序（同序号按 id，保证顺序稳定）。 */
+    private List<Action> chainOf(Long jobId) {
+        return actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                .eq(Action::getJobId, jobId)
+                .orderByAsc(Action::getActionIndex)
+                .orderByAsc(Action::getId));
+    }
 
     private Integer resolveIndex(List<Action> chain, Long actionId, Integer actionIndex) {
         if (actionId != null) {
@@ -133,6 +134,12 @@ public class FieldMappingEditorService {
         return value == null ? null : Long.valueOf(value.toString());
     }
 
+    /** 写目标表名：编辑器拿它去探测目标结构（探测请求里可以覆盖）。 */
+    private String tableNameOf(Action action) {
+        Object value = action.getAddition() == null ? null : action.getAddition().get("tableName");
+        return value == null ? null : value.toString();
+    }
+
     /** 来源 = 链上更早那个动作最近一次成功运行的输出快照。 */
     private SourceOutput sourceOf(List<Action> chain, Long jobId, Long actionId, Integer index) {
         Action previous = chain.stream()
@@ -146,8 +153,7 @@ public class FieldMappingEditorService {
         return latestOutput(chain, jobId, previous.getActionIndex());
     }
 
-    private record SourceOutput(Integer step, String stepName, String sourceKey,
-                                List<FieldMappingEditorView.Field> fields) {
+    private record SourceOutput(Integer step, String stepName, String sourceKey, List<SourceField> fields) {
         FieldMappingEditorView.SourceSample sample() {
             return step == null ? null
                     : new FieldMappingEditorView.SourceSample(step, stepName, sourceKey, fields);
@@ -169,12 +175,7 @@ public class FieldMappingEditorService {
             return new SourceOutput(step, actionName, null, List.of());
         }
         SourceStructure structure = probeService.probeSample(snapshot);
-        List<FieldMappingEditorView.Field> fields = new ArrayList<>();
-        for (SourceField field : structure.fields()) {
-            fields.add(new FieldMappingEditorView.Field(
-                    field.name(), field.type(), field.nullable(), field.samples()));
-        }
-        return new SourceOutput(step, actionName, structure.key(), fields);
+        return new SourceOutput(step, actionName, structure.key(), structure.fields());
     }
 
     private Object latestSnapshot(Long jobId, Integer step) {
@@ -190,7 +191,7 @@ public class FieldMappingEditorService {
         List<MessageStep> steps = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
                 .in(MessageStep::getRunId, runIds)
                 .eq(MessageStep::getStep, step)
-                .eq(MessageStep::getStatus, SUCCESS)
+                .eq(MessageStep::getStatus, MessageHistoryService.SUCCESS)
                 .orderByDesc(MessageStep::getId)
                 .last("LIMIT 1"));
         if (steps.isEmpty()) {

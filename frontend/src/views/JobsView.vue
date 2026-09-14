@@ -289,15 +289,17 @@ function openMappingWorkbench(row: Action) {
   workbenchOpen.value = true
 }
 
+/** 动作的通用字段（PUT /actions/{id} 的 body 形状，与 saveAction 共用）。 */
+function actionBody(action: { name: string; type: string; index: number }, addition: Record<string, any>) {
+  return { name: action.name, type: action.type, index: action.index, addition }
+}
+
 /** 新版编辑器点保存：写回这个动作的 addition（格式与旧编辑器完全一致）。 */
 async function onWorkbenchSaved(config: Record<string, any>) {
   const row = workbenchAction.value
   if (!row) return
   try {
-    await api(`/actions/${row.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ name: row.name, type: row.type, index: row.index, addition: config }),
-    })
+    await api(`/actions/${row.id}`, { method: 'PUT', body: JSON.stringify(actionBody(row, config)) })
     workbenchOpen.value = false
     ElMessage.success('字段映射已保存')
     await loadActions()
@@ -489,10 +491,7 @@ async function saveAction() {
     ElMessage.error((e as Error).message)
     return
   }
-  const body = {
-    name: actionForm.name, type: actionForm.type, index: actionForm.index,
-    addition,
-  }
+  const body = actionBody({ name: actionForm.name, type: actionForm.type, index: actionForm.index }, addition)
   try {
     if (editingAction.value) await api(`/actions/${editingAction.value.id}`, { method: 'PUT', body: JSON.stringify(body) })
     else await api(`/jobs/${selectedJob.value.id}/actions`, { method: 'POST', body: JSON.stringify(body) })

@@ -1,7 +1,8 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.mapper.ActionMapper;
+import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobRunMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
 import com.example.edgegateway.model.Action;
@@ -49,7 +50,7 @@ class FieldMappingEditorServiceTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final StructureProbeService probeService =
-            new StructureProbeService(actionMapper, mock(com.example.edgegateway.mapper.DataSourceMapper.class));
+            new StructureProbeService(actionMapper, mock(DataSourceMapper.class));
 
     private final FieldMappingEditorService service = new FieldMappingEditorService(
             actionMapper, jobRunMapper, messageStepMapper, probeService, dataSourceService, objectMapper);
@@ -80,10 +81,11 @@ class FieldMappingEditorServiceTest {
         assertThat(view.writeTarget()).isNotNull();
         assertThat(view.writeTarget().actionId()).isEqualTo(13L);
         assertThat(view.writeTarget().dataSourceId()).isEqualTo(9L);
+        assertThat(view.writeTarget().tableName()).isEqualTo("po_order");
         assertThat(view.source()).isNotNull();
         assertThat(view.source().step()).isEqualTo(1);
         assertThat(view.source().stepName()).isEqualTo("读订单");
-        assertThat(view.source().fields()).extracting(FieldMappingEditorView.Field::name)
+        assertThat(view.source().fields()).extracting(SourceField::name)
                 .containsExactly("order_no", "data.items[0].qty");
         assertThat(view.source().fields()).anyMatch(f -> f.name().equals("data.items[0].qty") && f.samples().contains(3));
         assertThat(view.actions()).extracting(FieldMappingEditorView.ActionLabel::name)
@@ -168,10 +170,30 @@ class FieldMappingEditorServiceTest {
         return step;
     }
 
-    /** 目标探测走真结构探测服务（贴样例 / 连库），这里只验证数据源是从写动作上取的。 */
+    /** 编辑器顶部切默认来源时单独取某一个步骤的字段清单。 */
     @Test
-    void targetProbeShapeMatchesProbeContract() {
-        SourceStructure structure = probeService.probeSample(Map.of("order_no", "PO-1"));
-        assertThat(structure.key()).isEqualTo("sample");
+    void sourceFieldsOfAStepReturnsThatStepsFields() {
+        Action read = action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7));
+        Action map = action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of());
+        when(actionMapper.selectList(any())).thenReturn(List.of(read, map));
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run(100L)));
+        when(messageStepMapper.selectList(any())).thenReturn(List.of(step("SUCCESS", "{\"order_no\":\"PO-1\"}")));
+
+        FieldMappingEditorView.SourceSample sample = service.sourceFields(1L, 1);
+
+        assertThat(sample.step()).isEqualTo(1);
+        assertThat(sample.stepName()).isEqualTo("读订单");
+        assertThat(sample.fields()).extracting(SourceField::name).containsExactly("order_no");
+    }
+
+    @Test
+    void sourceFieldsIsNullWithoutHistory() {
+        when(actionMapper.selectList(any())).thenReturn(List.of());
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+
+        FieldMappingEditorView.SourceSample sample = service.sourceFields(1L, 1);
+
+        assertThat(sample.step()).isEqualTo(1);
+        assertThat(sample.fields()).isEmpty();
     }
 }

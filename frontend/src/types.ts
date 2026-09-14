@@ -133,6 +133,7 @@ export interface EditorWriteTarget {
   actionIndex: number | null
   actionName: string | null
   dataSourceId: number | null
+  tableName: string | null
 }
 
 export interface EditorSourceSample {

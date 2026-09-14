@@ -1,5 +1,7 @@
 package com.example.edgegateway.web.dto;
 
+import com.example.edgegateway.mapping.suggest.SourceField;
+
 import java.util.List;
 
 /**
@@ -17,15 +19,13 @@ public record FieldMappingEditorView(
         /** 动作序号 → 动作名，界面上把 `$s_N` 显示成「动作 N · 名称」用。 */
         List<ActionLabel> actions) {
 
-    /** 写目标：目标结构从这个数据源的表探测出来。 */
-    public record WriteTarget(Long actionId, Integer actionIndex, String actionName, Long dataSourceId) {
+    /** 写目标：目标结构从这个数据源的表探测出来（tableName 直接透传给探测接口）。 */
+    public record WriteTarget(Long actionId, Integer actionIndex, String actionName,
+                              Long dataSourceId, String tableName) {
     }
 
-    /** 来源样例：探测出的字段清单（路径 + 类型 + 样例值）。 */
-    public record SourceSample(Integer step, String stepName, String sourceKey, List<Field> fields) {
-    }
-
-    public record Field(String name, String type, boolean nullable, List<Object> samples) {
+    /** 来源样例：探测出的字段清单，字段形状沿用结构探测契约（SourceField）。 */
+    public record SourceSample(Integer step, String stepName, String sourceKey, List<SourceField> fields) {
     }
 
     public record ActionLabel(Integer index, String name, String type) {
