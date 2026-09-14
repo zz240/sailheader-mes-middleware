@@ -4,7 +4,7 @@
  * 只做纯逻辑，不碰 DOM 也不发请求，所以可以用 `node --experimental-strip-types` 直接检查。
  * 行与规则的互转仍然走 `rows.ts` 那一层，这里不重写它。
  */
-import { createGroupRow, createRow, rowFromRule, type MapRow } from './rows.ts'
+import { createGroupRow, createRow, isRowConfigured, rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
 import { fieldReferenceFullLabel, fieldReferenceLabel, INDEX_SOURCE } from './labels.ts'
 
 /** 目标字段清单里的一个字段；`element` 是数组元素里的字段（相对路径）。 */
@@ -283,4 +283,19 @@ function mergeChildren(saved: MapRow[], derived: MapRow[]): MapRow[] {
 export function rowsFromConfig(config: Record<string, any> | null | undefined): MapRow[] {
   const rules = Array.isArray(config?.rules) ? config!.rules : []
   return rules.map((rule: Record<string, any>) => rowFromRule(rule))
+}
+
+/**
+ * 行 → 配置（编辑器保存时用）：一行一条规则，**没配好的行不进规则**。
+ *
+ * 这条不变量必须由前端保住：没选来源的空行写成规则，后端会用「映射规则缺少来源字段 source」
+ * 把整份配置拒掉——用户明明只配了两行，却连保存都存不下去（真机实测踩到过）。
+ * 空行留在编辑器里继续填，只是先不参与保存。
+ */
+export function configFromRows(rows: MapRow[]): { rules: Record<string, any>[] } {
+  const rules = rows
+    .filter(isRowConfigured)
+    .map((row, i) => ruleFromRow(row, i))
+    .filter((rule): rule is Record<string, any> => rule !== null)
+  return { rules }
 }
