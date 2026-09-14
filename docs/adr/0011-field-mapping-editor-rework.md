@@ -79,6 +79,19 @@
     形状给：普通行给标量字段、数组行给数组字段、子行给数组元素内的相对路径），也能直接手输一个
     清单里没有的路径（行上标「手写」）。每一行能**清除**——清的是这一行「值怎么取」，目标字段与
     数组行的子行都留着——清除后行里给出「撤销」，把那一份配回来（撤销状态只活在编辑器里，不进规则）。
+13. **手写 JSONata 的入口回到编辑器里**（#106）。第 4/9 条把界面上的 `$` 收干净、把深层重排推给
+    `mode:EXPRESSION`，那这个入口就必须**可达**：顶部一个不显眼的文字按钮「高级：手写 JSONata」，
+    切过去就是写一整段表达式（保存写 `{mode: 'EXPRESSION', expression, rules: []}`，一个字都不改格式）。
+    界面上说清两件事：**这条路跳过规则树校验**（后端的 `problems()` 在 EXPRESSION 下只看表达式非空），
+    以及切回逐行配置时**规则树会替换掉这份表达式**。打开一个 `mode=EXPRESSION` 的动作直接进手写这一边
+    并把表达式回填（#99 那版只给一条「这一轮看不了它」的警告，等于把配好的表达式藏起来）。
+    **第 4 条的例外只有一处**：手写这一页的说明里会原样写出变量名（`$s_N`、`$dateFormat`）——那一段
+    本来就是要写的 JSONata，变量名跟着写才有效；逐行配置那一侧的对照表不变（那边仍然一个 `$` 都没有）。
+14. **键盘与窄屏在这一轮补上**（#106）：`↑↓` 走行、`/` 换转换、回车选来源、退格 / 删除清除当前行、
+    `Esc` 收起面板 / 退出选来源（**不再用它关抽屉**——误按一下连同没保存的草稿一起关掉代价太大）。
+    键位到动作的映射收在 `frontend/src/mapping/keyboard.ts` 一个纯函数里，组件只把它落到界面上。
+    窄屏分两档退化：≤1024px 来源清单铺到行列表上面，≤820px 每一行竖起来（目标字段 → 映射 → 问题 →
+    行操作），不是把内容挤成一团。
 
 ## 结果
 
@@ -97,7 +110,7 @@
 - 规格：#98；实现票：#99（骨架）… #107（删旧编辑器）
 - 前端检查：`frontend/src/mapping/checks.ts`（行与规则互转往返、`sourceStep` 显式、人话标签对照、
   七种转换的参数、数组映射的三种来源写法与制品 → BOM 的规则形状、手工新增行与目标字段补全、清除与撤销、
-  校验请求与「问题落到哪一行」）
+  校验请求与「问题落到哪一行」、手写 JSONata 那条路存出去的形状与两句界面话、键盘的键位 → 意图）
 - 后端契约测试：`JsonataRuleCompilerTest`（编辑器存出来的那份规则 JSON → 校验 → 编译产物 → 执行结果；
   数组行 `$map` 加外层 `[ ]`、单元素数组仍是数组）、`MappingDraftValidationServiceTest`（草稿校验的
   fixture：结构有错的草稿按行报出来、合法草稿没有问题、漏写 `sourceStep` 是提示、编译产物文本）、
@@ -106,8 +119,10 @@
   `.scratch/t3-ui.cjs`（真浏览器里配数组映射 → 保存 → 用存下来的规则跑穿真链路）、
   `.scratch/t4-ui.cjs`（真浏览器里从清单里选目标字段、手工加行/手输目标字段、清除与撤销 →
   保存 → 用存下来的全手工规则跑穿真链路）、`.scratch/t5-ui.cjs`（真浏览器里点「校验配置」→
-  重复目标字段那一行报「有错」、问题列表点一下跳过去、保存被拦下；全过程不保存）
-- 代码：`frontend/src/mapping/`（rows / editor-model / labels / source-picker / draft）、
+  重复目标字段那一行报「有错」、问题列表点一下跳过去、保存被拦下；全过程不保存）、
+  `.scratch/t8-ui.cjs`（八个宽度上量窄屏、键盘配一行、手写 JSONata 切过去 → 存下 → 重开回填 →
+  切回逐行 → 再存一次，跑完把原配置放回去）
+- 代码：`frontend/src/mapping/`（rows / editor-model / labels / source-picker / draft / expression / keyboard）、
   `frontend/src/components/FieldMappingWorkbench.vue`、
   `spike/src/main/java/com/example/edgegateway/service/FieldMappingEditorService.java`、
   `spike/src/main/java/com/example/edgegateway/service/MappingDraftValidationService.java`（草稿校验，只读）

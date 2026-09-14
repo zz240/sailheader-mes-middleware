@@ -44,7 +44,13 @@
   - **路径口径**：样例给的是探测路径（`items[0].materialCode`），草稿里的数组子行写相对路径（`materialCode`），目标清单给的是编辑器路径（数组元素不带下标）。比对前两边折成同一种形状（去掉 `[0]`）；嵌套数组的前缀沿路累积（`items` → `items.parts` → `items.parts.code`）；组节点填的来源数组（`items`）**只在样例里有以它开头的元素字段**时才算存在——结构探测不会单独给出 `items` 这一条。
   - **只判来源步骤跟这份样例一样的规则**：请求里只带一份样例（左边清单是哪一步的探测结果就带哪一份，报在 `sourceFieldsStep` 里）。跨步骤引用、以及顶部默认来源一换之后留在原步骤的那些行，字段根本不在这一份清单里——拿它去判会整片误报「来源字段不在样例里」，而那是错误级、直接拦住保存。`sourceFieldsStep` 没给（步骤不明）时这一条整个不判。
   - 界面这边**一条规则都没加**：新问题与 #103 那几条走同一条定位通路（`frontend/src/mapping/draft.ts` 按「目标字段 + 所属数组行」摆到行上），所以行右侧状态、问题列表、点一下跳行、保存前拦下都自动覆盖（`frontend/src/mapping/checks.ts` 第 8 组锁住这条路）。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行）。
+- **窄屏、键盘、手写 JSONata 入口（T8 / #106）**：
+  - **窄屏**：两档退化——窗口 ≤1024px 时左边来源清单从并排改成铺在行列表上面（限高、自己滚）；≤820px 时每一行竖起来，**目标字段 → 映射 → 问题 → 行操作**从上到下依次排（窄之前是并排：目标字段 280px + 映射 + 问题 + 行操作）。行头与顶部动作条都改成换行而不是把内容挤掉。真机在 1440 / 1280 / 1100 / 1024 / 900 / 820 / 700 / 560 八个宽度上量过：页面没有横向溢出、行里四块互不重叠、窄的时候依次竖排、宽的时候并排（`.scratch/t8-ui.cjs`）。
+  - **键盘**：`↑↓` 走行（焦点在**目标字段**那个单行输入框里、补全下拉没开着时也能走——加完行光标就在那儿）；`/` 换转换（面板里 `↑↓` 走选项、回车用这一项，跳过置灰的那一项）；`回车` 选来源（进「走清单」这一段：`↑↓` 在左边清单里走、回车填进当前行、Esc 退出）；`退格 / 删除` 清除当前行（和行里的「清除」同一件事，清完照样能「撤销」）；`Esc` 收起参数面板 / 退出「选来源」这一段。焦点在输入框、文本域里时**一个键都不抢**（手写表达式那一段尤其如此）——唯一的例外就是上面那个目标字段输入框，而且**只在补全下拉没铺着的时候**：下拉开着时 `↑↓` 与回车都归它（选补全项）。所以「加行 → 打字 → 回车」这条路上：清单里选得中的（有候选）回车＝用那一项，手输一个清单里没有的路径时下拉没有候选、自己就收了，回车就是「选来源」。`Esc` 不再关闭抽屉——免得误按一下连同没保存的草稿一起关掉（关编辑器用「取消」）。键位与「按一下做什么」在 `frontend/src/mapping/keyboard.ts`（`keyIntent`），组件只负责把它落到界面上；键盘监听走**捕获阶段**，因为「这个输入框里算不算在输入」要看按下那一刻的下拉状态（冒泡阶段再问，el-autocomplete 已经把下拉收掉了——同一次回车会既选中补全项又开「选来源」）。
+  - **补全的筛法**：真在这一行里打字时按打进去的词筛；只是聚焦（没打字）时把清单整个给出来（#102 的坑：聚焦时 el-autocomplete 拿这一行现有的值当查询词，照它筛就只剩它自己）。
+  - **手写 JSONata 入口**：顶部一个不显眼的文字按钮「高级：手写 JSONata」。切过去就是写**一整段表达式**（与后端 `mode=EXPRESSION` 一致：保存写 `{mode: 'EXPRESSION', expression, rules: []}`），那一边没有默认来源下拉、也没有必填进度——判断只看这段表达式能不能跑，**跳过规则树校验**（这句话写在切过去的确认框里，也常驻在那一页上）。**这一页是界面上唯一会出现 `$` 的地方**（`$s_N` / `$dateFormat` 这些变量名跟着写才有效，ADR-0011 第 13 条记了这条例外）；逐行配置那一侧照旧一个 `$` 都没有。切回逐行配置时会说清「保存时规则树会替换掉这份表达式」，切回后行列表上还有一条常驻提示。**打开一个 `mode=EXPRESSION` 的动作直接进手写这一边并把表达式回填**（以前只给一条「这一轮看不了它」的警告，等于把配好的表达式藏起来）。两侧读写的是同一份数据格式，所以随时能来回切。手写这一边的校验结果按错误 / 警告列在表达式下面（没有「哪一行」可言）。
+  - **两条口径**：①「写没写表达式」「这一行填了目标字段没有」都是编辑器里的本地事实，对错仍然只在后端那个只读接口里判（#98 D4）；②校验草稿就是**保存会写出去的那一份**——手写这一边发 `{mode: 'EXPRESSION', expression, rules: []}`，后端按 `mode` 分岔（`MappingDraftValidationService.isRules`）。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
 
 ## 决策时间线
 
@@ -63,6 +69,7 @@
 | 09-14 | 手工新增行 + 清除/撤销 | 目标字段清单不全（HTTP/MQ 做目标时探不出结构）时，参照原件那种「行全部由清单生成」的编辑器配不完 | — | #102 / editor-model.ts、rows.ts |
 | 09-14 | 「校验配置」：草稿校验收进后端一个只读接口 | 前端不复制任何一条校验规则；错要能定位到行、保存前拦得住 | — | #103 / ADR-0011 / MappingDraftValidationService |
 | 09-14 | 补上依赖目标清单与来源样例的六条检查 | 后端本来有四种情况不报错但结果不对（来源路径不存在、拼接有空片段、日期解析失败、枚举查不到键），这六条正是这次改版要照亮的东西 | — | #104 / MappingSampleChecks |
+| 09-14 | 窄屏依次排列、键盘补齐（`/` 换转换、回车选来源、退格清行）、手写 JSONata 入口回到编辑器里 | 深层数组的任意重排只能走手写表达式（#98 F1）：界面不给入口等于悄悄砍掉一条已经承诺的出路；键盘与窄屏是 G 里留给原型的最后一档 | — | #106 / keyboard.ts、expression.ts |
 
 ## 待办 / 已知限制
 
@@ -73,9 +80,11 @@
 - 源里数组必须是**真数组**：直接读 MySQL 的 JSON 列拿到的是字符串（JDBC 行为），`$map` 会把整串当一个元素——那是源那边的形状问题，不是字段映射的问题。
 - **校验不是实时的**（#98 决定）：点「校验配置」才跑一次，改完行要再点一次；界面上给出的行状态是那一次的结果，不随编辑自动失效。
 - 校验只做结构判断与**样例值的比对**，**不做值的试算**（#98：需要在受控边界里真的执行表达式，是另一件事）。
+- **`Esc` 不关编辑器**（#106 起）：它归「收起参数面板 / 退出选来源」这一段；关编辑器用「取消」。原因是 `Esc` 一下就把没保存的草稿一起关掉太容易误触。
+- **切回逐行配置之后**：手写那一边没有规则树可回填，所以界面上是打开编辑器时那份逐行配置——原配置本来就是手写表达式时，那一份是按目标字段清单生成的行（都还没配来源）。界面在切回的确认框与行列表上各说了一次。
 
 ## 当前生效
 
 - 执行引擎：JSONata（dashjoin），规则→表达式编译器（T36）
 - 规则模型：递归 children + mode:EXPRESSION（T37）
-- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物）；旧三栏编辑器在 #107 里删
+- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、以及顶部那个「高级：手写 JSONata」入口）；旧三栏编辑器在 #107 里删

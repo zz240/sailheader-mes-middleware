@@ -5,6 +5,7 @@
     size="100%"
     :with-header="false"
     :close-on-click-modal="false"
+    :close-on-press-escape="false"
     class="mapping-workbench-drawer"
   >
     <div class="wb" tabindex="-1" ref="rootEl">
@@ -16,55 +17,68 @@
         </div>
 
         <div class="wb-head-actions">
-          <span class="wb-label">默认来源</span>
-          <el-select
-            :model-value="defaultStep"
-            size="small"
-            class="wb-step-select"
-            @update:model-value="onDefaultStepChange"
-          >
-            <el-option
-              v-for="s in stepOptions"
-              :key="String(s.step)"
-              :value="s.step ?? 0"
-              :label="s.label"
-            />
-          </el-select>
-
-          <el-tooltip placement="bottom" effect="light">
-            <template #content>
-              <div>必填：顶层 {{ progress.top.configured }}/{{ progress.top.total }}</div>
-              <div>必填：数组内 {{ progress.array.configured }}/{{ progress.array.total }}</div>
-              <div>可选：{{ progress.optional.configured }}/{{ progress.optional.total }}</div>
-            </template>
-            <div class="wb-progress">
-              <el-progress
-                :percentage="progressPercent"
-                :stroke-width="14"
-                :status="progress.total > 0 && progress.configured >= progress.total ? 'success' : undefined"
+          <!-- 手写表达式这一边没有「默认来源」也没有必填进度：那边只有一段表达式 -->
+          <template v-if="rowsMode">
+            <span class="wb-label">默认来源</span>
+            <el-select
+              :model-value="defaultStep"
+              size="small"
+              class="wb-step-select"
+              @update:model-value="onDefaultStepChange"
+            >
+              <el-option
+                v-for="s in stepOptions"
+                :key="String(s.step)"
+                :value="s.step ?? 0"
+                :label="s.label"
               />
-              <span class="wb-progress-text">必填 {{ progress.configured }}/{{ progress.total }}</span>
-            </div>
-          </el-tooltip>
+            </el-select>
+
+            <el-tooltip placement="bottom" effect="light">
+              <template #content>
+                <div>必填：顶层 {{ progress.top.configured }}/{{ progress.top.total }}</div>
+                <div>必填：数组内 {{ progress.array.configured }}/{{ progress.array.total }}</div>
+                <div>可选：{{ progress.optional.configured }}/{{ progress.optional.total }}</div>
+              </template>
+              <div class="wb-progress">
+                <el-progress
+                  :percentage="progressPercent"
+                  :stroke-width="14"
+                  :status="progress.total > 0 && progress.configured >= progress.total ? 'success' : undefined"
+                />
+                <span class="wb-progress-text">必填 {{ progress.configured }}/{{ progress.total }}</span>
+              </div>
+            </el-tooltip>
+          </template>
+          <span v-else class="wb-chip chip-mode" title="这个动作保存的是一段手写 JSONata 表达式">手写 JSONata</span>
 
           <el-button size="small" @click="close">取消</el-button>
           <el-tooltip content="把这份草稿交给后端判一遍：有没有错、错在哪一行，顺带看编译产物" placement="bottom">
             <el-button size="small" :loading="validating" @click="validateConfig()">校验配置</el-button>
           </el-tooltip>
           <el-button size="small" type="primary" :loading="saving" @click="save">保存</el-button>
+          <!-- 「高级：手写 JSONata」（#106）：不显眼但可达。深层数组的任意重排只能走它，
+               所以它一直在（票里那句话）。 -->
+          <el-button
+            v-if="rowsMode"
+            size="small"
+            text
+            class="wb-advanced"
+            @click="openExpression()"
+          >高级：手写 JSONata</el-button>
         </div>
       </header>
 
-      <!-- 主体：左来源清单 + 右逐行配置 -->
+      <!-- 逐行配置这一边：左来源清单 + 右逐行配置 -->
       <el-alert
-        v-if="expressionMode"
+        v-if="rowsMode && storedExpression"
         class="wb-alert"
         type="warning"
         :closable="false"
-        title="这个动作现在用的是手写 JSONata 表达式"
-        description="新版逐行编辑器这一轮还看不了它。保存会用逐行规则替换掉这份表达式；只想改表达式请先用旧编辑器。"
+        title="这个动作原来配的是手写 JSONata 表达式"
+        :description="expressionReplaced()"
       />
-      <div class="wb-body">
+      <div v-if="rowsMode" class="wb-body">
         <aside class="wb-source">
           <div class="wb-panel-title">来源字段</div>
           <div class="wb-panel-tip">{{ sourceTip }}</div>
@@ -88,27 +102,38 @@
           <div v-if="loading" class="wb-empty">加载中…</div>
           <div v-else-if="!sourceFields.length" class="wb-empty">这一来源还没有字段清单</div>
           <div v-else-if="!pickerGroups.length" class="wb-empty">{{ emptyPickerText }}</div>
-          <div v-else class="wb-source-list">
-            <div v-for="(group, gi) in pickerGroups" :key="gi" class="wb-source-group">
+          <div
+            v-else
+            ref="sourceListEl"
+            class="wb-source-list"
+            :class="{ picking: pickingSource }"
+            tabindex="-1"
+          >
+            <div v-for="(group, gi) in pickerViews" :key="gi" class="wb-source-group">
               <div class="wb-source-group-title">{{ group.title }}</div>
               <div v-if="group.tip" class="wb-source-group-tip">{{ group.tip }}</div>
               <div
-                v-for="item in group.items"
-                :key="item.label"
+                v-for="view in group.items"
+                :key="view.item.label"
                 class="wb-source-item"
-                :class="{ 'array-field': item.kind === 'array', used: isUsed(item) }"
+                :class="{
+                  'array-field': view.item.kind === 'array',
+                  used: isUsed(view.item),
+                  'kb-current': pickingSource && view.index === pickIndex,
+                }"
+                :data-pick-index="view.index"
                 tabindex="0"
-                :title="usedHint(item)"
-                @click="pick(item)"
-                @keydown.enter.prevent="pick(item)"
+                :title="usedHint(view.item)"
+                @click="pick(view.item)"
+                @keydown.enter.prevent="pick(view.item)"
               >
                 <div class="wb-source-item-main">
-                  <span class="wb-source-name">{{ item.label }}</span>
-                  <span v-if="item.kind === 'array'" class="wb-chip">数组</span>
+                  <span class="wb-source-name">{{ view.item.label }}</span>
+                  <span v-if="view.item.kind === 'array'" class="wb-chip">数组</span>
                   <!-- 已经被用过的来源字段高亮，并写明被引用了几处（#105） -->
-                  <span v-if="isUsed(item)" class="wb-chip used-badge">{{ usedCount(item) }} 处</span>
+                  <span v-if="isUsed(view.item)" class="wb-chip used-badge">{{ usedCount(view.item) }} 处</span>
                 </div>
-                <div class="wb-source-meta">{{ item.type }}<template v-if="sampleOf(item)"> · 样例 {{ sampleOf(item) }}</template></div>
+                <div class="wb-source-meta">{{ view.item.type }}<template v-if="sampleOf(view.item)"> · 样例 {{ sampleOf(view.item) }}</template></div>
               </div>
             </div>
           </div>
@@ -207,8 +232,9 @@
                   <!-- 目标字段：清单里选一个，或者直接手输一个清单里没有的路径（#102）。
                        清单按这一行的形状给：普通行给标量字段、数组行给数组字段、子行给元素内的相对路径。
                        `@keydown.escape.stop`：补全下拉关着时按 Esc 只该什么都不做——不拦的话它会冒到
-                       抽屉上，把整个编辑器连同没保存的草稿一起关掉（真机实测踩到过；下拉开着时
-                       el-autocomplete 自己就把 Esc 收下了，这里拦不到它）。 -->
+                       抽屉上（下拉开着时 el-autocomplete 自己就把 Esc 收下了，这里拦不到它）。
+                       抽屉从 #106 起不再用 Esc 关闭：Esc 归「收起参数面板 / 退出选来源」，免得误按
+                       一下就连同没保存的草稿一起关掉。 -->
                   <el-autocomplete
                     v-model="entry.row.target"
                     size="small"
@@ -217,6 +243,7 @@
                     :fetch-suggestions="suggestFor(entry)"
                     :placeholder="entry.depth > 0 ? '相对路径，例如 materialCode' : '目标字段路径（选一个或手输）'"
                     @focus="select(entry.row)"
+                    @input="onTargetInput(entry)"
                     @click="stop"
                     @keydown.escape.stop
                   >
@@ -322,30 +349,31 @@
                       <el-button size="small" text type="primary" @click.stop="addIndexChild(entry.row)">+ 行号</el-button>
                     </el-tooltip>
                   </template>
+                </div>
 
-                  <!-- 这一行有没有问题：#103 的三种状态都由后端返回的问题算出来，前端不自己判对错 -->
-                  <div v-if="validation" class="wb-col-issues" :title="issueText(entry.row.id)">
-                    <span class="wb-state" :class="rowStateOf(entry.row.id)">{{ stateLabel(entry.row.id) }}</span>
-                    <span v-if="firstMessageOf(entry.row.id)" class="wb-issue-inline">
-                      {{ firstMessageOf(entry.row.id) }}
-                    </span>
-                  </div>
-
-                  <!-- 行操作：清除这一行的取值方式（清除后能撤销，见右边的「撤销」） -->
-                  <span class="wb-col-actions" @click="stop">
-                    <el-tooltip placement="top">
-                      <template #content>{{ clearHint(entry) }}</template>
-                      <button
-                        class="wb-chip chip-clear"
-                        :disabled="!hasMapping(entry.row)"
-                        @click.stop="clearRow(entry)"
-                      >清除</button>
-                    </el-tooltip>
-                    <el-tooltip v-if="canUndo(entry.row)" content="撤销刚才那次清除，把这一行配回来" placement="top">
-                      <button class="wb-chip chip-undo" @click.stop="undoClear(entry.row)">撤销</button>
-                    </el-tooltip>
+                <!-- 这一行有没有问题（#103）：自己的那一列，窄屏时排在「映射」下面（#106：依次排列）。
+                     三种状态都由后端返回的问题算出来，前端不自己判对错。 -->
+                <div v-if="validation" class="wb-col-issues" :title="issueText(entry.row.id)">
+                  <span class="wb-state" :class="rowStateOf(entry.row.id)">{{ stateLabel(entry.row.id) }}</span>
+                  <span v-if="firstMessageOf(entry.row.id)" class="wb-issue-inline">
+                    {{ firstMessageOf(entry.row.id) }}
                   </span>
                 </div>
+
+                <!-- 行操作：清除这一行的取值方式（清除后能撤销，见右边的「撤销」） -->
+                <span class="wb-col-actions" @click="stop">
+                  <el-tooltip placement="top">
+                    <template #content>{{ clearHint(entry) }}</template>
+                    <button
+                      class="wb-chip chip-clear"
+                      :disabled="!hasMapping(entry.row)"
+                      @click.stop="clearRow(entry)"
+                    >清除</button>
+                  </el-tooltip>
+                  <el-tooltip v-if="canUndo(entry.row)" content="撤销刚才那次清除，把这一行配回来" placement="top">
+                    <button class="wb-chip chip-undo" @click.stop="undoClear(entry.row)">撤销</button>
+                  </el-tooltip>
+                </span>
               </div>
 
               <!-- 就地参数编辑：就占这一行的下面一行，不开弹窗 -->
@@ -357,14 +385,14 @@
                   <el-button size="small" text @click="closePanel">关闭</el-button>
                 </div>
 
-                <!-- 换转换：七种全在，不能用的置灰并说明原因 -->
+                <!-- 换转换：七种全在，不能用的置灰并说明原因。键盘：↑↓ 走，回车用这一个（#106） -->
                 <template v-if="panel === 'op'">
                   <div class="wb-ops">
                     <button
-                      v-for="o in transformOptions(entry.row, entry.depth)"
+                      v-for="(o, i) in transformOptions(entry.row, entry.depth)"
                       :key="o.value"
                       class="wb-opbtn"
-                      :class="{ current: o.value === entry.row.transform, disabled: o.disabled }"
+                      :class="{ current: o.value === entry.row.transform, disabled: o.disabled, 'kb-current': i === optionIndex }"
                       :disabled="o.disabled"
                       @click="chooseTransform(entry, o)"
                     >
@@ -374,14 +402,14 @@
                   </div>
                 </template>
 
-                <!-- 日期格式化：从预设里选 -->
+                <!-- 日期格式化：从预设里选（键盘同样是 ↑↓ 走、回车用这一个） -->
                 <template v-else-if="panel === 'date'">
                   <div class="wb-ops">
                     <button
-                      v-for="p in DATE_PRESETS"
+                      v-for="(p, i) in DATE_PRESETS"
                       :key="p"
                       class="wb-opbtn"
-                      :class="{ current: p === datePatternFor(entry.row) }"
+                      :class="{ current: p === datePatternFor(entry.row), 'kb-current': i === optionIndex }"
                       @click="chooseDatePattern(entry.row, p)"
                     >
                       <span>{{ p }}</span>
@@ -489,6 +517,52 @@
         </section>
       </div>
 
+      <!-- 手写 JSONata 这一边（#106）：整段表达式就是这次映射要执行的东西（与后端 mode=EXPRESSION 一致） -->
+      <section v-else class="wb-expression">
+        <el-alert
+          class="wb-alert"
+          type="warning"
+          :closable="false"
+          title="手写 JSONata：这条路跳过规则树校验"
+          :description="expressionSkip()"
+        />
+        <div class="wb-expression-head">
+          <span class="wb-panel-title">表达式</span>
+          <!-- 这是界面上唯一会出现 `$` 的地方（#106 的决定，记在 ADR-0011 第 13 条）：
+               这一段本来就是要写的 JSONata，变量名跟着写才有效，所以原样给出来。 -->
+          <span class="wb-panel-tip">
+            变量：<code>$s_&lt;动作序号&gt;</code> 是链上那个动作的输出（<code>$s_0</code> 是任务输入），
+            <code>$dateFormat(值, "yyyy-MM-dd")</code> 格式化日期。
+          </span>
+          <span class="wb-spacer" />
+          <el-button size="small" @click="switchBackToRows()">切回逐行配置</el-button>
+        </div>
+        <el-input
+          v-model="expressionText"
+          type="textarea"
+          class="wb-expression-input"
+          :rows="18"
+          resize="vertical"
+          spellcheck="false"
+          placeholder='例如 { "sheet_no": $s_1.bomNo }'
+        />
+        <div class="wb-expression-note">
+          保存写出去的就是这一整段（`mode: EXPRESSION`）：判断只看它跑不跑得起来。
+        </div>
+
+        <!-- 校验结果（#103）：手写这一边没有「哪一行」可言，所以只按错误 / 警告列原文 -->
+        <div v-if="mergedValidation" class="wb-expression-issues">
+          <span class="wb-panel-title">校验结果</span>
+          <span class="wb-issue-summary" :class="{ bad: mergedValidation.errors.length > 0 }">{{ issueSummary }}</span>
+          <div v-if="expressionIssues.length" class="wb-issue-list">
+            <div v-for="(issue, i) in expressionIssues" :key="i" class="wb-issue" :class="issue.severity">
+              <span class="wb-issue-tag">{{ issue.severity === 'error' ? '错误' : '警告' }}</span>
+              <span class="wb-issue-message">{{ issue.message }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 底部编译产物（#103）：两个标签页，JSONata 与规则 JSON -->
       <div v-if="validation" class="wb-foot">
         <el-tabs v-model="artifactTab" class="wb-artifacts">
@@ -536,6 +610,11 @@ import {
   draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
   type DraftValidation,
 } from '../mapping/draft.ts'
+import {
+  editorModeOf, expressionConfig, expressionOf, expressionReplacedNotice, expressionSkipNotice,
+  hasExpression, type EditorMode,
+} from '../mapping/expression.ts'
+import { keyIntent, rowStepIndex, stepIndex, type PanelKey } from '../mapping/keyboard.ts'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
 const TRANSFORM_HINTS: Record<string, string> = {
@@ -549,7 +628,7 @@ const TRANSFORM_HINTS: Record<string, string> = {
 }
 
 /** 有参数要填的转换 → 它的面板；没有的（直接映射、数字转换、行号）不在这里。 */
-const PANEL_KEYS: Partial<Record<string, PanelKind>> = {
+const PANEL_KEYS: Partial<Record<string, PanelKey>> = {
   DATE: 'date',
   CONSTANT: 'const',
   ENUM: 'enum',
@@ -580,8 +659,21 @@ const validation = ref<DraftValidation | null>(null)
 /** 底部编译产物那两个标签页。 */
 const artifactTab = ref('jsonata')
 
-/** 这个动作原来是手写 JSONata（mode=EXPRESSION）：这一轮看不了它，保存会替换掉。 */
-const expressionMode = computed(() => props.config?.mode === 'EXPRESSION')
+/**
+ * 这个编辑器现在在哪一边（#106）：逐行配置，还是手写 JSONata。
+ *
+ * 打开时按已存配置定（`mode=EXPRESSION` 就直接进手写这一边）——以前是给一条「这一轮看不了它」的
+ * 警告，那等于把已经配好的表达式藏起来，只有删掉重配一条路。两边读写的是同一份数据格式（#98 C1），
+ * 所以随时能来回切。
+ */
+const editorMode = ref<EditorMode>(editorModeOf(props.config))
+const expressionText = ref(expressionOf(props.config))
+/** 现在在逐行配置这一边（手写那一边没有「行」这套东西，跟行有关的判断都看它）。 */
+const rowsMode = computed(() => editorMode.value === 'rows')
+/** 已存配置里本来就有一段手写表达式（切回逐行后要说清它会被替换）。 */
+const storedExpression = computed(() => hasExpression(expressionOf(props.config)))
+const expressionSkip = () => expressionSkipNotice()
+const expressionReplaced = () => expressionReplacedNotice()
 
 const context = ref<FieldMappingEditorContext | null>(null)
 const rows = ref<MapRow[]>([])
@@ -591,6 +683,15 @@ const selectedId = ref<number | null>(null)
 const defaultStep = ref<number>(0)
 /** 收起子行的数组行（默认全部展开）。 */
 const collapsedIds = ref<Set<number>>(new Set())
+
+/** 左边来源清单的容器：键盘选来源时把焦点放进来，让上下键不再落在某个输入框里（#106）。 */
+const sourceListEl = ref<HTMLElement | null>(null)
+/** 「选来源」这一段开着（回车进来的）：↑↓ 在清单里走，回车填进这一行，Esc 退出。 */
+const pickingSource = ref(false)
+/** 键盘走到清单上的第几项（跨分组连着数，与 `pickerViews` 的编号一致）。 */
+const pickIndex = ref(0)
+/** 面板里键盘走到第几个选项（换转换、日期预设）。 */
+const optionIndex = ref(0)
 
 const actionNames = computed<Record<number, string>>(() => {
   const map: Record<number, string> = {}
@@ -657,6 +758,21 @@ const pickerGroups = computed(() => filterSourceGroups(
   pickerGroupsAll.value, sourceQuery.value, sourceFilter.value, sourceUsage.value, requiredSources.value,
   pickerStep.value, pickerInArray.value))
 
+/**
+ * 清单铺出来时带上「第几项」（键盘走清单用的编号，#106）。
+ *
+ * 键盘走的顺序就是眼睛看到的顺序（分组一段接一段），所以编号要跨分组连着数——分组各数各的，
+ * 上下键走到分组边界就会跳回去。
+ */
+const pickerViews = computed(() => {
+  let index = 0
+  return pickerGroups.value.map(group => ({
+    title: group.title,
+    tip: group.tip,
+    items: group.items.map(item => ({ item, index: index++ })),
+  }))
+})
+
 /** 每一档下能显示几项（按钮上的数字）；空档也要看得见，所以按整份清单算，不按已经筛过的那份。 */
 const sourceFilterCounts = computed<Record<SourceFilter, number>>(() => {
   const groups = pickerGroupsAll.value
@@ -684,14 +800,15 @@ function isUsed(item: PickableItem): boolean {
 }
 
 function usedCount(item: PickableItem): number {
-  return usedCountOf(sourceUsage.value, item, pickerStep.value, sourceFields.value)
+  // 参数顺序是（来源清单，这一步）：相对路径要靠清单认出「属于哪个数组」，再按步骤分开算（#105）
+  return usedCountOf(sourceUsage.value, item, sourceFields.value, pickerStep.value)
 }
 
 /** 已用那一项的悬停提示：被几处引用、第一处在哪个目标字段上。 */
 function usedHint(item: PickableItem): string {
   const count = usedCount(item)
   if (!count) return ''
-  const ids = usedRowIdsOf(sourceUsage.value, item, pickerStep.value, sourceFields.value)
+  const ids = usedRowIdsOf(sourceUsage.value, item, sourceFields.value, pickerStep.value)
   const first = flattenRows(rows.value).find(e => e.row.id === ids[0])
   const where = first ? `：${first.parent ? `${first.parent.target.trim()} · ` : ''}${first.row.target.trim()}` : ''
   return `这个来源已经被引用了 ${count} 处${where}`
@@ -733,9 +850,13 @@ function jumpToNextMatch() {
   jumpToRowId(rowId)
 }
 
-/** 还没选行时先说清怎么开始。 */
-const pickerTip = computed(() =>
-  selectedEntry.value ? '点一下字段就填进选中的那一行' : '先点一行目标字段，再从这里选来源')
+/**
+ * 还没选行时先说清怎么开始；「选来源」这一段开着时（回车进来的）说清键盘怎么走（#106）。
+ */
+const pickerTip = computed(() => {
+  if (pickingSource.value) return '选来源：↑↓ 走，回车填进这一行，Esc 退出'
+  return selectedEntry.value ? '点一下字段就填进选中的那一行（也可以按回车用键盘选）' : '先点一行目标字段，再从这里选来源'
+})
 
 const progress = computed(() => progressOf(rows.value, targets.value))
 const progressPercent = computed(() => (progress.value.total ? Math.round(progress.value.configured / progress.value.total * 100) : 0))
@@ -810,13 +931,24 @@ function isCollapsed(row: MapRow): boolean {
 /** 目标字段的补全候选：清单里跟这一行形状对得上的字段（手输的路径不走这份清单）。 */
 function targetSuggestions(entry: DisplayRow, query: string): Record<string, any>[] {
   const typed = query.trim()
-  // 聚焦时 el-autocomplete 拿这一行现有的值当查询词（`handleFocus` 里就是那么写的）。
-  // 照它过滤的话，点一个已经填好的目标字段只会看到它自己——想从清单里换一个反而换不了
-  // （真机实测踩到过）。所以查询词恰好等于这一行现在的目标字段时不筛，把清单整个给出来。
-  const q = typed && typed !== entry.row.target.trim() ? typed.toLowerCase() : ''
+  // 正在这一行里打字 → 按打进去的词筛；只是聚焦（没打字）→ 把清单整个给出来。
+  //
+  // 后半条是 #102 留下的：聚焦时 el-autocomplete 拿这一行现有的值当查询词（`handleFocus` 里就是那么写的），
+  // 照它筛的话，点一个已经填好的目标字段只会看到它自己——想从清单里换一个反而换不了（真机实测踩到过）。
+  // 前半条是 #106 补的：手输一个清单里没有的路径时要真筛，筛完没有候选，下拉自己就收了；
+  // 不筛的话那份下拉会一直铺着一整列不相干的字段，键盘接着「选来源」这一步就走不下去
+  // （回车那时被当成「下拉开着」而让给补全，真机实测踩到过）。
+  const q = typingTargetRowId.value === entry.row.id && typed ? typed.toLowerCase() : ''
   return targetCandidatesFor(targets.value, entry)
     .filter(path => !q || path.toLowerCase().includes(q))
     .map(path => ({ value: path }))
+}
+
+/** 这一行的目标字段输入框里，用户是不是正在打字（决定补全要不要按查询词筛）。 */
+const typingTargetRowId = ref<number | null>(null)
+
+function onTargetInput(entry: DisplayRow) {
+  typingTargetRowId.value = entry.row.id
 }
 
 /** 补全要的是「给一个查询词、回一份候选」的函数，而清单按行给，所以每行现取一份。 */
@@ -1066,8 +1198,10 @@ function stop(e: Event) {
 /**
  * 点「校验配置」：把草稿交给后端那个只读接口判。
  *
- * 判断对错全在那边，这里一条校验规则都没有——发出去的是「按现在这样保存会写出去的那份规则」，
+ * 判断对错全在那边，这里一条校验规则都没有——发出去的是「按现在这样保存会写出去的那一份」，
  * 收回来的是问题列表和编译产物，前端只负责把每条问题挂到对应的那一行上（`draft.ts`）。
+ * 手写表达式那一边（#106）发的是 `{mode: 'EXPRESSION', expression, rules: []}`：后端按 `mode`
+ * 分岔，EXPRESSION 下不校验规则树——这正是界面上写着的那句「这条路跳过规则树校验」。
  * 返回 null 表示这次没跑起来（网络或服务端错误），调用方据此决定要不要继续。
  */
 async function validateConfig(): Promise<DraftValidation | null> {
@@ -1084,6 +1218,7 @@ async function validateConfig(): Promise<DraftValidation | null> {
         earlierActionIndexes: earlierActionIndexes.value,
         defaultSourceStep: defaultStep.value,
         actionIndex: props.actionIndex ?? null,
+        draft: editorMode.value === 'expression' ? expressionConfig(expressionText.value) : undefined,
       })),
     })
     validation.value = result
@@ -1112,10 +1247,22 @@ const autoNotices = computed(() => autoSourceNotices(rows.value))
 const mergedValidation = computed<DraftValidation | null>(() => {
   const result = validation.value
   if (!result) return null
+  // 手写表达式那一边没有行，「自动匹配填上的行」那条提醒也不该跟过去
+  if (editorMode.value === 'expression') return result
   return {
     ...result,
     warnings: [...result.warnings, ...autoNotices.value],
   }
+})
+
+/** 手写这一边的问题列表：没有「哪一行」可言，只按错误在前列原文。 */
+const expressionIssues = computed(() => {
+  const result = mergedValidation.value
+  if (!result) return []
+  return [
+    ...result.errors.map(issue => ({ severity: 'error' as const, message: issue.message })),
+    ...result.warnings.map(issue => ({ severity: 'warning' as const, message: issue.message })),
+  ]
 })
 
 /** 后端返回的问题 + 前端提醒 → 界面上的问题列表（每条带上它落在哪一行）。 */
@@ -1173,12 +1320,11 @@ function jumpToRowId(rowId: number | null) {
 
 // ---------------------------------------------------------------- 就地参数编辑（#100）
 
-type PanelKind = 'op' | 'date' | 'const' | 'enum' | 'concat'
-
-const panel = ref<PanelKind | null>(null)
+// 面板的种类只有一处定义（`keyboard.ts` 的 `PanelKey`）：键盘要按它决定「这个面板能不能用上下键选」
+const panel = ref<PanelKey | null>(null)
 const panelRowId = ref<number | null>(null)
 
-const PANEL_TITLES: Record<PanelKind, string> = {
+const PANEL_TITLES: Record<PanelKey, string> = {
   op: '这一行的值怎么取',
   date: '日期格式化',
   const: '常量',
@@ -1195,10 +1341,20 @@ const panelEntry = computed<DisplayRow | null>(() =>
 /** 当前打开面板的行。 */
 const panelRow = computed<MapRow | null>(() => panelEntry.value?.row ?? null)
 
-function openPanel(entry: DisplayRow, kind: PanelKind) {
+/**
+ * 打开某一行的参数面板。
+ *
+ * 顺手把键盘停在第几个选项上（#106）：`/` 进来时停在它现在用的那一种上，接着按 ↑↓ 就是换。
+ */
+function openPanel(entry: DisplayRow, kind: PanelKey) {
   select(entry.row)
   panel.value = kind
   panelRowId.value = entry.row.id
+  const presets: readonly string[] = DATE_PRESETS
+  const start = kind === 'date'
+    ? presets.indexOf(datePatternFor(entry.row))
+    : transformOptions(entry.row, entry.depth).findIndex(o => o.value === entry.row.transform)
+  optionIndex.value = Math.max(start, 0)
 }
 
 function closePanel() {
@@ -1407,6 +1563,8 @@ function selectFirst() {
  * 对不对仍然由后端那个只读接口判（#98 D1/D4）。
  */
 function pick(item: PickableItem) {
+  // 鼠标点进来的也算把「选来源」这一段走完了：键盘那一段的状态不留到下一次
+  leavePicking()
   const entry = selectedEntry.value
   const result = fillRowFromPick(entry?.row ?? null, item, entry != null && entry.depth > 0)
   if (!result.row || !entry) {
@@ -1461,22 +1619,172 @@ async function loadSourceFields(step: number) {
   }
 }
 
-/** 上下键在行之间移动（#99 验收）。挂窗口监听：焦点可能停在行里的任意输入框上。 */
+// ---------------------------------------------------------------- 键盘（#99 上下走行 / #106 补齐其余）
+
+/**
+ * 键盘上的每一个键要做什么，全在 `keyboard.ts` 里定（那是一份能用 node 直接跑的检查）；
+ * 这里只把意图落到界面上：选中哪一行、焦点给谁、开哪个面板。
+ *
+ * 挂窗口监听、走**捕获阶段**（`{ capture: true }`）：焦点可能停在抽屉里的任意地方，而键盘操作
+ * 不该受它影响；更要紧的是「目标字段那个输入框里到底算不算在输入里」要看**按下那一刻**的下拉状态
+ * ——el-autocomplete 自己也在 input 上处理这些键，冒泡阶段再问就晚了（它按完回车已经把下拉收了，
+ * 我们这边就会当成「下拉关着」，于是同一次回车既选中了补全项、又开了「选来源」；真机实测踩到过）。
+ */
 function onKeydown(e: KeyboardEvent) {
-  if (!visible.value || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
-  // 焦点在输入框里时不接管方向键：目标字段的补全下拉要用上下键选，输入框里的光标也要能左右走。
-  if (isTextEntry(e.target)) return
+  if (!visible.value) return
+  // 手写表达式那一边没有行、没有来源清单：那边只有一段文本，键盘全归输入框
+  if (editorMode.value === 'expression') return
+  // 确认框开着时不接管：那一刻键盘归那个框（Enter 是「确定」，退格不该去清某一行）
+  if (document.querySelector('.el-message-box')) return
+  const intent = keyIntent(e.key, {
+    inTextEntry: inTextEntryFor(e.key, e.target),
+    hasSelection: selectedId.value != null,
+    pickingSource: pickingSource.value,
+    panel: panel.value,
+  })
+  if (!intent) return
+  e.preventDefault()
+  switch (intent.kind) {
+    case 'move':
+      moveSelection(intent.delta)
+      return
+    case 'transform':
+      openTransformPanel()
+      return
+    case 'pick-source':
+      startPickingSource()
+      return
+    case 'clear':
+      clearSelectedRow()
+      return
+    case 'leave':
+      leavePicking()
+      return
+    case 'close-panel':
+      closePanel()
+      return
+    case 'walk-item':
+      walkPick(intent.delta)
+      return
+    case 'confirm-pick':
+      confirmPick()
+      return
+    case 'walk-option':
+      walkPanelOption(intent.delta)
+      return
+    case 'confirm-option':
+      confirmPanelOption()
+      return
+  }
+}
+
+/** 上下走行：只在铺出来的、有目标字段的行之间走（从哪头进由 `rowStepIndex` 定）。 */
+function moveSelection(delta: -1 | 1) {
   const list = displayRows.value.filter(entry => entry.row.target.trim())
   if (!list.length) return
   const current = list.findIndex(entry => entry.row.id === selectedId.value)
-  const nextIndex = e.key === 'ArrowDown'
-    ? Math.min(current + 1, list.length - 1)
-    : Math.max(current - 1, 0)
-  selectedId.value = list[nextIndex].row.id
-  e.preventDefault()
+  selectedId.value = list[rowStepIndex(current, delta, list.length)].row.id
   nextTick(() => {
     document.querySelector(`[data-row-id="${selectedId.value}"]`)?.scrollIntoView({ block: 'nearest' })
   })
+}
+
+/** `/` 换转换：打开选中这一行的转换面板（键盘停在它现在用的那一种上，由 `openPanel` 摆好）。 */
+function openTransformPanel() {
+  const entry = selectedEntry.value
+  if (!entry) return
+  openPanel(entry, 'op')
+}
+
+/** 回车选来源：进「走清单」这一段，把焦点从输入框里挪开，停在第一项上。 */
+function startPickingSource() {
+  const entry = selectedEntry.value
+  if (!entry) return
+  if (entry.row.iterate !== 'FOR_EACH' && (entry.row.transform === 'CONSTANT' || entry.row.transform === 'INDEX')) {
+    ElMessage.warning(entry.row.transform === 'CONSTANT'
+      ? '这一行是常量：不取来源，填的是那个写死的值'
+      : '这一行是行号：来源就是行号本身，不用选来源字段')
+    return
+  }
+  if (!flatPickItems.value.length) {
+    ElMessage.warning(emptyPickerText.value)
+    return
+  }
+  pickingSource.value = true
+  pickIndex.value = 0
+  closePanel()
+  nextTick(() => {
+    sourceListEl.value?.focus()
+    scrollPickItemIntoView()
+  })
+}
+
+/** 走清单：跳过没有的项，走到头就停在原地（`stepIndex` 的口径与面板那边一样）。 */
+function walkPick(delta: -1 | 1) {
+  pickIndex.value = stepIndex(pickIndex.value, delta, flatPickItems.value.length)
+  nextTick(scrollPickItemIntoView)
+}
+
+/** 键盘走到的那一项要看得见：清单可能是滚动的（长清单 + 过滤之后）。 */
+function scrollPickItemIntoView() {
+  document.querySelector<HTMLElement>(`[data-pick-index="${pickIndex.value}"]`)?.scrollIntoView({ block: 'nearest' })
+}
+
+/** 回车：把清单里停着的那一项填进这一行，然后退出这一段（选中的行会自己往下走一行）。 */
+function confirmPick() {
+  const item = flatPickItems.value[pickIndex.value]
+  leavePicking()
+  if (item) pick(item)
+}
+
+/** 退出「选来源」这一段（Esc，或者已经填进去了）。 */
+function leavePicking() {
+  pickingSource.value = false
+  pickIndex.value = 0
+}
+
+/** 退格 / 删除：清除选中这一行的取值方式（和行里的「清除」是同一件事，清除后照样能撤销）。 */
+function clearSelectedRow() {
+  const entry = selectedEntry.value
+  if (!entry || !hasMapping(entry.row)) return
+  clearRow(entry)
+}
+
+/** 面板里走选项（换转换、日期预设）：跳过置灰的那一项。 */
+function walkPanelOption(delta: -1 | 1) {
+  const count = panelOptionCount()
+  optionIndex.value = stepIndex(optionIndex.value, delta, count, index => panelOptionDisabled(index))
+}
+
+/** 面板里回车：用键盘停着的那一个选项。 */
+function confirmPanelOption() {
+  const entry = panelEntry.value
+  if (!entry) return
+  if (panel.value === 'op') {
+    const option = transformOptions(entry.row, entry.depth)[optionIndex.value]
+    if (option) chooseTransform(entry, option)
+    return
+  }
+  if (panel.value === 'date') {
+    const pattern = DATE_PRESETS[optionIndex.value]
+    if (pattern) chooseDatePattern(entry.row, pattern)
+  }
+}
+
+/** 当前面板里有几个选项（只有「一排选项」的两个面板有得走）。 */
+function panelOptionCount(): number {
+  if (panel.value === 'op') {
+    const entry = panelEntry.value
+    return entry ? transformOptions(entry.row, entry.depth).length : 0
+  }
+  if (panel.value === 'date') return DATE_PRESETS.length
+  return 0
+}
+
+function panelOptionDisabled(index: number): boolean {
+  const entry = panelEntry.value
+  if (!entry || panel.value !== 'op') return false
+  return transformOptions(entry.row, entry.depth)[index]?.disabled === true
 }
 
 /** 这个事件发生在某个输入框 / 下拉框里吗。 */
@@ -1486,12 +1794,53 @@ function isTextEntry(target: EventTarget | null): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || el?.isContentEditable === true
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+/**
+ * 这个键在这个焦点位置上算不算「在输入里」（算了就一个键都不抢）。
+ *
+ * 一处例外（#106 收掉 #102 留下的那条）：**目标字段**那个单行输入框里，补全下拉没开着时
+ * `↑↓` 与回车照样归界面——`↑↓` 走行、回车进「选来源」这一段。理由：加完一行光标就落在这个输入框里，
+ * 而「走行 / 选来源」正是键盘配一张清单的两步；这两个键在一个单行输入框里本来也没有别的用处
+ * （下拉开着时归 el-autocomplete 换高亮 / 选中，所以那时让开）。
+ *
+ * 别的输入框一律不抢：搜索框的回车有它自己的活（跳行 / 补全），行号、常量、拼接片段里
+ * `↑↓` 与回车都是输入的一部分，文本域（含手写表达式那一整段）更是一个键都不能动。
+ */
+function inTextEntryFor(key: string, target: EventTarget | null): boolean {
+  if (!isTextEntry(target)) return false
+  if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Enter') return true
+  const el = target as HTMLElement
+  if (el.tagName?.toLowerCase() !== 'input' || !el.closest('.wb-col-target')) return true
+  return hasOpenAutocomplete()
+}
 
-/** 配置 → 规则（编辑器保存时用；一行就是一条规则，只管配好的行）。 */
+/**
+ * 目标字段的补全下拉开着吗（开着时这些键归它）。
+ *
+ * 两个坑：① 补全是 teleport 到 body 的，每个输入框一个 popper，**只看 `querySelector` 拿到的第一个
+ * 会认到别行那个关着的**——要看「有没有任何一个正铺着」；② 没有候选时 element-plus 自己就把
+ * `visible` 关掉（`suggestionVisible = 候选数 > 0 && activated`），所以「铺着」就等于「有候选」。
+ */
+function hasOpenAutocomplete(): boolean {
+  return [...document.querySelectorAll<HTMLElement>('.el-autocomplete-suggestion')]
+    .some(el => el.offsetParent !== null)
+}
+
+/** 清单一整份摊平（键盘走清单的顺序就是它）。 */
+const flatPickItems = computed(() => pickerGroups.value.flatMap(group => group.items))
+
+onMounted(() => window.addEventListener('keydown', onKeydown, { capture: true }))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, { capture: true }))
+
+/**
+ * 配置 → 保存会写出去的那一份（编辑器保存时用）。
+ *
+ * 逐行这一边：一行一条规则，只管配好的行。手写那一边：整段表达式就是这份配置
+ * （与后端 `mode=EXPRESSION` 的约定一致，规则树不参与）。
+ */
 function getConfig(): Record<string, any> {
-  return configFromRows(rows.value)
+  return editorMode.value === 'expression'
+    ? expressionConfig(expressionText.value)
+    : configFromRows(rows.value)
 }
 
 /** 配好的行数：没配好的行留在编辑器里继续填，但不进规则（进了后端会整份拒掉）。 */
@@ -1504,11 +1853,44 @@ const untouchedCount = computed(() =>
 /** 「自动匹配同名」填上、还没被人碰过的行数（保存前要人确认一遍）。 */
 const autoFilledCount = computed(() => flattenRows(rows.value).filter(e => e.row.auto).length)
 
+/** 切到手写 JSONata（#106）：先说清这条路跳过规则树校验、逐行的规则树会被整段替换。 */
+async function openExpression() {
+  const ok = await ElMessageBox.confirm(
+    `${expressionReplaced()}\n\n${expressionSkipNotice()}`,
+    '高级：手写 JSONata',
+    { type: 'warning', confirmButtonText: '切到手写表达式', cancelButtonText: '取消' },
+  ).then(() => true).catch(() => false)
+  if (!ok) return
+  editorMode.value = 'expression'
+  // 上一次校验是逐行那边跑的：换了一边就不该再显示它的行状态与问题
+  validation.value = null
+  closePanel()
+  leavePicking()
+}
+
+/** 切回逐行配置（#106）：说清保存时规则树会替换掉这份手写表达式。 */
+async function switchBackToRows() {
+  const ok = await ElMessageBox.confirm(
+    expressionReplacedNotice(),
+    '切回逐行配置',
+    { type: 'warning', confirmButtonText: '切回去', cancelButtonText: '取消' },
+  ).then(() => true).catch(() => false)
+  if (!ok) return
+  editorMode.value = 'rows'
+  validation.value = null
+}
+
 async function save() {
-  if (expressionMode.value) {
+  // 手写这一边：先把「写了没有」说清楚（编辑器里的本地事实），对错仍然交给后端那个只读接口判
+  if (editorMode.value === 'expression' && !hasExpression(expressionText.value)) {
+    ElMessage.warning('还没有写表达式——这一整段就是这次映射要执行的东西')
+    return
+  }
+  // 从手写切回逐行之后再保存：那一刻说过一次「规则树会替换掉表达式」，这里再确认一次（保存是最后一道）
+  if (rowsMode.value && storedExpression.value) {
     try {
       await ElMessageBox.confirm(
-        '这个动作现在用的是手写 JSONata 表达式。新版逐行编辑器还看不了它，保存会用逐行规则替换掉它。',
+        `${expressionReplaced()}`,
         '会替换手写表达式',
         { type: 'warning', confirmButtonText: '替换并保存', cancelButtonText: '取消' },
       )
@@ -1516,7 +1898,7 @@ async function save() {
       return
     }
   }
-  if (!configuredCount.value) {
+  if (rowsMode.value && !configuredCount.value) {
     ElMessage.warning(rows.value.some(r => r.target.trim())
       ? '还没有配好的字段映射——每个目标字段至少要选一个来源，常量要填一个值，枚举表要有一条，拼接要有片段'
       : '还没有任何目标字段——改一个写目标动作，或者先点「重新探测目标字段」，也可以直接手输目标字段路径')
@@ -1534,7 +1916,8 @@ async function save() {
       ElMessage.error(`还有 ${result.errors.length} 个错误，先改掉再保存`)
       return
     }
-    if (untouchedCount.value) {
+    // 手写这一边没有「哪几行没配好」这回事：那些确认框只在逐行配置那边问
+    if (rowsMode.value && untouchedCount.value) {
       const ok = await ElMessageBox.confirm(
         `还有 ${untouchedCount.value} 行没配好（没选来源 / 常量没填值 / 枚举表空 / 拼接没片段）。这些行不会被保存。`,
         '有没配好的行',
@@ -1544,7 +1927,7 @@ async function save() {
     }
     // 「自动匹配同名」填上的行：保存前要人认一遍（票里：提醒确认后才算人工结果）。
     // 确认过就照常保存——只是提醒，不是拦截（#98 D5：问题只提示，不阻止保存）。
-    if (autoFilledCount.value) {
+    if (rowsMode.value && autoFilledCount.value) {
       const ok = await ElMessageBox.confirm(
         `有 ${autoFilledCount.value} 行的来源是「自动匹配同名」填上的，不是你手点的。`
         + '确认这些字段对得上再保存。',
@@ -1591,13 +1974,17 @@ load()
 }
 .wb-panel-title { font-size: 13px; font-weight: 600; color: #111827; }
 .wb-panel-tip { font-size: 11px; color: #9ca3af; margin: 2px 0 8px; }
-.wb-source-list { overflow: auto; flex: 1; }
+.wb-source-list { overflow: auto; flex: 1; outline: none; }
 .wb-source-group + .wb-source-group { margin-top: 10px; }
 .wb-source-group-title { font-size: 12px; color: #374151; font-weight: 600; margin-bottom: 4px; }
 .wb-source-group-tip { font-size: 11px; color: #b45309; margin-bottom: 4px; }
 .wb-source-item { padding: 5px 6px; border-radius: 4px; cursor: pointer; }
 .wb-source-item:hover { background: #f3f4f6; }
 .wb-source-item.array-field .wb-source-name { color: #7c3aed; }
+/* 键盘走到的那一项（#106）：与鼠标悬停同一个落点，用边框区分是键盘在走 */
+.wb-source-list.picking .wb-source-item.kb-current {
+  background: #ecf5ff; outline: 2px solid #409eff; outline-offset: -2px;
+}
 /* 已经被用过的来源字段：整项高亮，右侧写清被引用了几处（#105） */
 .wb-source-item.used { background: #f0f9ff; }
 .wb-source-item.used:hover { background: #e0f2fe; }
@@ -1629,7 +2016,8 @@ load()
 .wb-chip.chip-auto { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 
 .wb-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px 16px; min-height: 0; }
-.wb-rows-head { display: flex; align-items: center; gap: 10px; }
+/* 行头在窄屏上换行，而不是把搜索框和按钮挤成一团（#106） */
+.wb-rows-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wb-rows-head .wb-panel-tip { margin: 0; }
 .wb-row-list { overflow: auto; flex: 1; margin-top: 6px; }
 .wb-row {
@@ -1743,18 +2131,69 @@ load()
 .wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
 .wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
 .wb-opbtn.disabled small { color: #b45309; }
+/* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
+.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
 .wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
 .wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
 .wb-enum td { padding: 2px 4px; }
 .wb-enum-arrow { color: #9ca3af; font-size: 12px; }
 .wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
 
-@media (max-width: 900px) {
-  .wb-source { width: 200px; }
-  .wb-col-target { width: 180px; }
-  .wb-col-issues { max-width: 180px; }
-  .wb-chip { max-width: 200px; }
-  /* 窄屏上搜索框跟着缩：这一条只是别把行头挤爆，每行读得通是 T8（#106）那张票的事 */
-  .wb-target-search { width: 140px; }
+/* 手写 JSONata 这一边（#106）：一段表达式占满中间，说明都摆在明面上 */
+.wb-expression { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 16px; }
+.wb-expression .wb-alert { margin: 0 0 8px; }
+.wb-expression-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wb-expression-head .wb-panel-tip { margin: 0; }
+.wb-expression-input { flex: 1; min-height: 260px; margin-top: 6px; }
+.wb-expression-input :deep(textarea) {
+  height: 100%; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
+}
+.wb-expression-note { font-size: 11px; color: #b45309; margin-top: 6px; }
+.wb-expression-issues { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wb-expression-issues .wb-issue { width: auto; cursor: default; }
+/* 头部那个「手写 JSONata」的当前模式标，与「高级」入口的样式（不显眼，但一直都在） */
+.wb-chip.chip-mode { color: #3730a3; border-color: #c7d2fe; background: #eef2ff; cursor: default; }
+.wb-advanced { color: #9ca3af; }
+
+/* 窄屏（#106）：每一行「目标字段 → 映射 → 问题」依次排列，读得通、不重叠。
+   两档：先把左边来源清单挪到上面（中等宽度），再把每一行的三列竖起来（更窄）。 */
+@media (max-width: 1100px) {
+  .wb-head { gap: 10px; }
+  .wb-head-actions { flex-wrap: wrap; row-gap: 6px; }
+  .wb-progress { width: 160px; }
+  .wb-step-select { width: 160px; }
+  .wb-target-search { width: 160px; }
+}
+
+@media (max-width: 1024px) {
+  /* 来源清单铺在上面：宽度不够时它和行列表并排，两边都读不成 */
+  .wb-body { flex-direction: column; }
+  .wb-source {
+    width: auto; max-height: 220px; border-right: 0;
+    border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+  }
+  .wb-source-list { flex: none; max-height: 140px; }
+}
+
+@media (max-width: 820px) {
+  /* 一行竖起来：目标字段 / 映射 / 问题 / 行操作从上到下依次排，谁也不挤谁 */
+  .wb-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .wb-col-target { width: auto; }
+  .wb-col-value { flex: none; }
+  .wb-col-issues { max-width: none; }
+  .wb-col-actions { margin-left: 0; justify-content: flex-end; }
+  .wb-chip { max-width: 100%; }
+  .wb-row.child { margin-left: 12px; }
+  .wb-panel { margin-left: 0; }
+  .wb-opbtn { min-width: 120px; flex: 1; }
+  .wb-expression-input :deep(textarea) { height: auto; }
+}
+
+@media (max-width: 640px) {
+  .wb-rows, .wb-source, .wb-expression { padding: 8px; }
+  .wb-head { padding: 8px; }
+  .wb-progress { width: 120px; }
+  .wb-step-select, .wb-target-search { width: 100%; }
+  .wb-grow, .wb-part-kind { min-width: 0; width: 100%; }
 }
 </style>

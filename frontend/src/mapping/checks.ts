@@ -49,6 +49,10 @@ import {
   draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
   type DraftValidation,
 } from './draft.ts'
+import {
+  editorModeOf, expressionConfig, expressionOf, expressionReplacedNotice, expressionSkipNotice, hasExpression,
+} from './expression.ts'
+import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
 declare const process: { exitCode?: number }
@@ -837,9 +841,9 @@ const draftBody = draftRequest({
   actionIndex: 2,
 })
 eq('草稿就是「保存会写进去的那份规则」（没配好的行不进草稿）',
-  draftBody.draft.rules.map((r: Record<string, any>) => r.target), ['bom.bomNo'])
+  (draftBody.draft.rules ?? []).map((r: Record<string, any>) => r.target), ['bom.bomNo'])
 eq('草稿里的顶层规则显式带着 sourceStep',
-  draftBody.draft.rules.map((r: Record<string, any>) => r.sourceStep), [1])
+  (draftBody.draft.rules ?? []).map((r: Record<string, any>) => r.sourceStep), [1])
 eq('请求带上链上更早的动作序号（sourceStep 只能指向这些）', draftBody.earlierActionIndexes, [1])
 eq('请求带上默认来源与这个动作自己的序号',
   [draftBody.defaultSourceStep, draftBody.actionIndex], [1, 2])
@@ -1336,6 +1340,122 @@ eq('换过转换之后「自动」标记掉了', autoTransformed.auto, false)
 // 也不该把 node 的东西拉进来）：真正的证据在真机那一趟——`.scratch/t7-ui.cjs` 全程盯着后端请求
 // 日志，两次「自动匹配同名」都是 0 个请求。这里要保的是「这条通路是纯逻辑」：它只依赖
 // `source-picker` 那几个纯函数，没有任何一处 import 过 api 客户端。
+
+// ---------------------------------------------------------------- 手写 JSONata 入口（#106）
+
+// 打开一个动作时进哪一种模式，看的是已存配置里的 mode（与后端 FieldMappingConfig 一个口径：
+// 「不是 EXPRESSION 就当 RULES」，文档里那个 STRUCTURED 是旧说法）。
+eq('已存配置是手写表达式时，编辑器直接进手写这一边',
+  editorModeOf({ mode: 'EXPRESSION', expression: '$s_1.bomNo' }), 'expression')
+eq('普通规则配置进逐行配置那一边', editorModeOf({ rules: [] }), 'rows')
+eq('没有配置（新建动作）也进逐行配置', editorModeOf(null), 'rows')
+eq('mode=EXPRESSION 但表达式空着时也进手写这一边（那是要人去补的）',
+  editorModeOf({ mode: 'EXPRESSION', expression: '' }), 'expression')
+eq('回填表达式文本', expressionOf({ mode: 'EXPRESSION', expression: '$s_1.bomNo' }), '$s_1.bomNo')
+eq('没有表达式时回填空串', expressionOf({ rules: [] }), '')
+
+// 保存/送校验的那份配置：与后端 mode=EXPRESSION 的约定一致（FieldMappingConfig.problems：
+// EXPRESSION 必须给非空 expression，且此时不校验规则树）。草稿就是保存会写出去的那一份（#103）。
+eq('手写表达式保存成后端认的那份配置',
+  expressionConfig('$s_1.bomNo'), { mode: 'EXPRESSION', expression: '$s_1.bomNo', rules: [] })
+eq('保存的这份里没有规则树（路由构建时不会拿 rules 去编译）',
+  Object.keys(expressionConfig('x')).sort(), ['expression', 'mode', 'rules'])
+eq('表达式按用户写的原样保存，不去动它的空白', expressionConfig('  $s_1.a  ').expression, '  $s_1.a  ')
+ok('写没写表达式是编辑器里的本地事实（空的不算写了）', !hasExpression('   \n ') && hasExpression('$s_1.a'))
+
+// 两条必须说清的界面话：一条说这条路跳过规则树校验，一条说切回去会被规则树替换掉（票里两条验收）
+ok('说明了这条路跳过规则树校验', expressionSkipNotice().includes('跳过规则树校验'))
+ok('切回逐行配置时说清了规则树会替换掉手写表达式',
+  expressionReplacedNotice().includes('规则树') && expressionReplacedNotice().includes('替换'))
+// 切回去看到的是**编辑器里现在这些行**（同一趟会话里没动过它们），不是「按目标字段清单重新生成」
+// ——只在「原配置是手写表达式」那一趟里才是按清单生成的（走查时被指出文案与行为不符）
+ok('切回的那句话说的是「现在这些行」，没有谎称按清单重新生成',
+  expressionReplacedNotice().includes('现在这些行'))
+
+// ---------------------------------------------------------------- 键盘（#106）
+
+// 票里那三个动作都要能不用鼠标完成（换转换 `/`、选来源回车、清除当前行退格），
+// 上下走行沿用 #99 的（`ArrowDown` / `ArrowUp`）。这里断言的是「按一下键 = 界面要做的那一件事」。
+const KEY_BASE: KeyContext = { inTextEntry: false, hasSelection: true, pickingSource: false, panel: null }
+const intent = (key: string, patch: Partial<KeyContext> = {}) => keyIntent(key, { ...KEY_BASE, ...patch })
+
+eq('下键走下一行', intent('ArrowDown'), { kind: 'move', delta: 1 })
+eq('上键走上一行', intent('ArrowUp'), { kind: 'move', delta: -1 })
+eq('斜杠换转换', intent('/'), { kind: 'transform' })
+eq('回车选来源', intent('Enter'), { kind: 'pick-source' })
+eq('退格清除当前行', intent('Backspace'), { kind: 'clear' })
+eq('删除键也清除当前行', intent('Delete'), { kind: 'clear' })
+
+// 焦点在输入框 / 文本域里时界面不抢键盘：那时 `/` 就是要打一个斜杠（表达式编辑器里更是如此）
+eq('在输入框里按斜杠不换转换', intent('/', { inTextEntry: true }), null)
+eq('在文本域里按回车不选来源', intent('Enter', { inTextEntry: true }), null)
+eq('在输入框里按退格不清行', intent('Backspace', { inTextEntry: true }), null)
+eq('没选中行时换转换什么都不做', intent('/', { hasSelection: false }), null)
+eq('没选中行时选来源什么都不做', intent('Enter', { hasSelection: false }), null)
+eq('没选中行时清除什么都不做', intent('Backspace', { hasSelection: false }), null)
+eq('没选中行时上下键照样能走（走到第一行）', intent('ArrowDown', { hasSelection: false }), { kind: 'move', delta: 1 })
+eq('没被用到的键什么都不做', intent('a'), null)
+
+// 「选来源」是回车之后的一小段模式：上下在清单里走、回车填进那一行、Esc 退出
+const PICKING: Partial<KeyContext> = { pickingSource: true }
+eq('选来源时下键在清单里往下走', intent('ArrowDown', PICKING), { kind: 'walk-item', delta: 1 })
+eq('选来源时上键在清单里往上走', intent('ArrowUp', PICKING), { kind: 'walk-item', delta: -1 })
+eq('选来源时回车把这一项填进那一行', intent('Enter', PICKING), { kind: 'confirm-pick' })
+eq('选来源时按 Esc 退出这一段', intent('Escape', PICKING), { kind: 'leave' })
+eq('选来源时按 `/` 不开转换面板（那会打断这一段）', intent('/', PICKING), null)
+
+// 换转换的面板开着时，上下键在选项之间走、回车用这一项、Esc 收起（不用 Tab 去够按钮）
+const OP_PANEL: Partial<KeyContext> = { panel: 'op' }
+eq('换转换面板里下键走下一个选项', intent('ArrowDown', OP_PANEL), { kind: 'walk-option', delta: 1 })
+eq('换转换面板里回车用这一个选项', intent('Enter', OP_PANEL), { kind: 'confirm-option' })
+eq('换转换面板里 Esc 收起面板', intent('Escape', OP_PANEL), { kind: 'close-panel' })
+const DATE_PANEL: Partial<KeyContext> = { panel: 'date' }
+eq('日期预设面板也能用键盘选', intent('ArrowDown', DATE_PANEL), { kind: 'walk-option', delta: 1 })
+eq('日期预设面板里回车用这一个预设', intent('Enter', DATE_PANEL), { kind: 'confirm-option' })
+// 常量 / 枚举 / 拼接那三个面板里是输入框和表格，没有「一排选项」可走：只有 Esc 收起
+const CONST_PANEL: Partial<KeyContext> = { panel: 'const' }
+eq('常量面板里上下键仍然走行（那里没有选项可走）', intent('ArrowDown', CONST_PANEL), { kind: 'move', delta: 1 })
+eq('常量面板里 Esc 收起来', intent('Escape', CONST_PANEL), { kind: 'close-panel' })
+ok('只有「一排选项」的两个面板能用键盘选', isPanelChoice('op') && isPanelChoice('date') && !isPanelChoice('enum'))
+
+// 走选项 / 走清单：跳过不能用的那一项，走到头就停在原地（不绕回开头）
+const CHOICES = ['STRING', 'INT', 'DATE', 'ENUM']
+eq('往下走一格', stepIndex(0, 1, CHOICES.length), 1)
+eq('往上走一格', stepIndex(2, -1, CHOICES.length), 1)
+eq('走到最后一格就停在原地', stepIndex(3, 1, CHOICES.length), 3)
+eq('走到第一格就停在原地', stepIndex(0, -1, CHOICES.length), 0)
+eq('跳过不能用的那一项（顶层行上的「行号」）', stepIndex(0, 1, CHOICES.length, i => i === 1), 2)
+eq('不能用的连着几项都跳过', stepIndex(0, 1, CHOICES.length, i => i === 1 || i === 2), 3)
+eq('后面全是不能用的就停在原地', stepIndex(0, 1, CHOICES.length, i => i > 0), 0)
+eq('清单一项都没有时走不动', stepIndex(0, 1, 0), 0)
+
+// 上下走行共用同一套走法，只多一条「还没选中任何一行时从两头进」（第一次按上下键的期待）
+eq('走行：往下走一格', rowStepIndex(1, 1, 5), 2)
+eq('走行：往上走一格', rowStepIndex(3, -1, 5), 2)
+eq('走行：走到最后一行就停在原地', rowStepIndex(4, 1, 5), 4)
+eq('走行：走到第一行就停在原地', rowStepIndex(0, -1, 5), 0)
+eq('走行：还没选中时往下走是第一行', rowStepIndex(-1, 1, 5), 0)
+eq('走行：还没选中时往上走是最后一行', rowStepIndex(-1, -1, 5), 4)
+eq('走行：选中的行已经被过滤掉了也当没选中', rowStepIndex(9, 1, 5), 0)
+eq('走行：一行都没有时走不动', rowStepIndex(-1, 1, 0), 0)
+
+// 手写表达式这一边送给只读接口的草稿，就是保存会写出去的那一份（#103 定下的口径不变：
+// 草稿 = 保存会写出去的配置，前端不另造一份）
+const expressionDraft = draftRequest({
+  rows: [DRAFT_CONFIGURED, DRAFT_BLANK],
+  targets: TARGETS,
+  sourceFields: [UNIT_FIELD],
+  sourceFieldsStep: 1,
+  earlierActionIndexes: [1],
+  defaultSourceStep: 1,
+  actionIndex: 2,
+  draft: expressionConfig('$s_1.bomNo'),
+})
+eq('手写表达式时草稿换成表达式那一份（没有规则树）',
+  expressionDraft.draft, { mode: 'EXPRESSION', expression: '$s_1.bomNo', rules: [] })
+eq('其余那些外部事实照旧带上（手写这条路后端也看得见目标清单与样例）',
+  [expressionDraft.targets.length, expressionDraft.sourceFieldsStep, expressionDraft.actionIndex],
+  [TARGETS.length, 1, 2])
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

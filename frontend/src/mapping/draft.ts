@@ -35,9 +35,22 @@ export interface DraftValidation {
   compiled: DraftCompiled
 }
 
+/**
+ * 草稿本体的形状（与后端 `FieldMappingConfig` 一一对应，格式一个字都不改）。
+ *
+ * 两种：逐行那一边 `{rules}`；手写那一边 `{mode: 'EXPRESSION', expression, rules: []}`
+ * （规则树不参与，后端在 EXPRESSION 下也不校验它）。写成两种键都可选的一个类型，
+ * 是为了**不把结构信息丢进注释里**——发出去的就是这两份之一。
+ */
+export interface DraftConfig {
+  mode?: string
+  expression?: string
+  rules?: Record<string, any>[]
+}
+
 /** 发出去的请求体（与后端 `MappingDraftRequest` 一一对应）。 */
 export interface DraftRequestBody {
-  draft: { rules: Record<string, any>[] }
+  draft: DraftConfig
   targets: TargetField[]
   sourceFields: SourceField[]
   sourceFieldsStep: number | null
@@ -64,12 +77,19 @@ export interface DraftRequestOptions {
   defaultSourceStep: number | null
   /** 这个动作的序号（新建动作时是准备占用的那个）。 */
   actionIndex: number | null
+  /**
+   * 草稿本体。不给就是「按现在这样保存会写出去的规则」（`configFromRows`）。
+   *
+   * 手写表达式那一边（#106）直接给 `expressionConfig(...)` 那份——还是同一条口径：
+   * 草稿就是保存会写出去的那一份，前端不另造一份。后端按 `mode` 分岔：EXPRESSION 不校验规则树。
+   */
+  draft?: DraftConfig
 }
 
 /** 编辑器状态 → 校验请求。草稿就是保存会写出去的那一份，不另造一份。 */
 export function draftRequest(options: DraftRequestOptions): DraftRequestBody {
   return {
-    draft: configFromRows(options.rows),
+    draft: options.draft ?? configFromRows(options.rows),
     targets: options.targets,
     sourceFields: options.sourceFields,
     sourceFieldsStep: options.sourceFieldsStep,
