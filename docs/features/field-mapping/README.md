@@ -20,7 +20,8 @@
   | 数组行选「数组」分组里的字段 | 数组路径（`items`） | `$map($s_1.items, ...)`，外层套 `[ ]` |
   | 子行选「数组元素内」的字段 | 相对路径（`materialCode`） | `$g0.materialCode` |
   | 子行选「外层 · 」的字段 | `$root.<路径>` | `$s_1.<路径>` |
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`source-picker.ts` = 来源清单与「点一下填行」）。
+- **手工新增行（T4 / #102）**：目标字段清单不全（HTTP / MQ 做目标时探不出结构，见 #98 H3）时也能把配置配完：「+ 字段映射」加一行空的字段映射、「+ 数组映射」加一行空的数组映射、「+ 行号」/「+ 子字段」在数组行下面加子行。目标字段**可以从清单里选，也可以直接手输一个清单里没有的路径**（补全清单按这一行的形状给：普通行给标量字段、数组行给数组字段、子行给数组元素内的相对路径；清单之外的路径标「手写」）。每一行能**清除**（清的是这一行「值怎么取」，目标字段与数组行的子行都留着），清除后行里出现「撤销」，把那一份配回来。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」））。
 
 ## 决策时间线
 
@@ -36,6 +37,7 @@
 | 08-24 | 单值样例不再推荐 CONSTANT | 样例单值≠常量，语义错误 | — | DS-10.4 / 587172a |
 | 09-14 | 新版编辑器：每个目标字段一行 + 校验交后端只读接口 | 来源只能手打、配错要等跑起来才知道、层级看不出来 | — | ADR-0011 / #99 |
 | 09-14 | 数组映射在三处来源写法上分开：数组 / 相对路径 / 外层引用 | 三种东西填串了就是自相矛盾的规则，后端不报错 | — | #101 / source-picker.ts |
+| 09-14 | 手工新增行 + 清除/撤销 | 目标字段清单不全（HTTP/MQ 做目标时探不出结构）时，参照原件那种「行全部由清单生成」的编辑器配不完 | — | #102 / editor-model.ts、rows.ts |
 
 ## 待办 / 已知限制
 
@@ -49,4 +51,4 @@
 
 - 执行引擎：JSONata（dashjoin），规则→表达式编译器（T36）
 - 规则模型：递归 children + mode:EXPRESSION（T37）
-- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用）；旧三栏编辑器在 #107 里删
+- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销）；旧三栏编辑器在 #107 里删

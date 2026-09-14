@@ -1,5 +1,5 @@
 /**
- * 新版映射编辑器的前端检查（#99 / #100 / #101 验收项）：不测组件，只测纯逻辑的外部行为。
+ * 新版映射编辑器的前端检查（#99 / #100 / #101 / #102 验收项）：不测组件，只测纯逻辑的外部行为。
  *
  * 跑法（零新依赖）：
  *   node --experimental-strip-types frontend/src/mapping/checks.ts
@@ -11,12 +11,18 @@
  *   4. 目标清单 → 行（含数组行与子行）；
  *   5. 七种转换的参数与人话；
  *   6. 数组映射（#101）：数组行选来源数组、子行按相对路径、子行引用外层表头、展开收起、加子行，
- *      以及跑通制品 → BOM 的规则形状。
+ *      以及跑通制品 → BOM 的规则形状；
+ *   7. 手工新增行（#102）：加空行、目标字段的补全清单按行给、手输路径照样进规则、加子字段与行号，
+ *      以及清除一行与撤销这次清除。
  */
-import { createGroupRow, createRow, ENUM_PLACEHOLDER, isRowConfigured, rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
 import {
-  configFromRows, mergeRowsWithTargets, nextEmptyRow, rowReferenceFullLabel, rowReferenceLabel,
-  rowsFromTargetFields, targetFieldsFromPaths, type SourceField, type TargetField,
+  clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
+  restoreRowMapping, rowFromRule, ruleFromRow, type MapRow,
+} from './rows.ts'
+import {
+  appendArrayRow, appendLeafRow, configFromRows, mergeRowsWithTargets, nextEmptyRow, rowReferenceFullLabel,
+  rowReferenceLabel, rowsFromTargetFields, targetCandidatesFor, targetFieldsFromPaths,
+  type SourceField, type TargetField,
 } from './editor-model.ts'
 import {
   fieldReferenceLabel, fieldReferenceFullLabel, stepLabel, emptyRowLabel, transformLabel, TRANSFORM_KINDS,
@@ -27,8 +33,8 @@ import {
   missingEnumKeys, setEnumKey, transformDisabledReason, transformLabelOf, transformName, transformOptions,
 } from './transforms.ts'
 import {
-  appendChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds, visibleRows,
-  type PickableItem,
+  appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
+  visibleRows, type PickableItem,
 } from './source-picker.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -688,6 +694,108 @@ ok('子行目标字段里没有数组下标（相对路径就是字段名）',
   bomRules[0].children.every((c: Record<string, any>) => !c.target.includes('[0]')))
 // 编译产物里数组用 $map 生成、外层的 [ ] 由 JsonataRuleCompiler 加——那一条在
 // JsonataRuleCompilerTest 里断言（前端不复制编译器，也不复制编译产物 #98 D1）
+
+// ---------------------------------------------------------------- 手工新增行（#102）
+
+// 清除一行：清的是这一行「值怎么取」，目标字段留着（它是这一行的身份），撤销能原样拿回来。
+const clearDateRow = leaf('createdAt', 'bom.createdDate', 'DATE', { datePattern: 'yyyyMMdd' })
+eq('配过的行有东西可清除', hasMapping(clearDateRow), true)
+const clearDateSnapshot = clearRowMapping(clearDateRow)
+eq('清除后目标字段留着（清除的是取值方式，不是这一行）', clearDateRow.target, 'bom.createdDate')
+eq('清除后来源、转换、参数都没了',
+  pick(clearDateRow, 'enumMap', 'parts', 'source', 'startAt', 'transform'),
+  [null, [], '', null, 'STRING'])
+eq('清除后这一行不再算配好（也就不会写成规则）', isRowConfigured(clearDateRow), false)
+ok('清除时拿到撤销用的快照', clearDateSnapshot !== null)
+restoreRowMapping(clearDateRow, clearDateSnapshot!)
+eq('撤销后规则原样回来', ruleOf(clearDateRow),
+  { sourceStep: 1, source: 'createdAt', target: 'bom.createdDate', transform: 'DATE', datePattern: 'yyyyMMdd' })
+
+const enumToClear = leaf('unit', 'unit', 'ENUM', { enumMap: { PCS: '件' } })
+clearRowMapping(enumToClear)
+eq('清除也把枚举表清掉（否则下一行的枚举表是上一行留下的）', enumToClear.enumMap, null)
+const indexToClear = childOf('$index', 'INDEX', { startAt: 10 })
+clearRowMapping(indexToClear)
+eq('清除行号行：转换回默认，起始值与 $index 一起清掉',
+  pick(indexToClear, 'source', 'startAt', 'transform'), ['', null, 'STRING'])
+
+eq('没配过的行没什么可清除（界面上也就不会给一个空的撤销）',
+  clearRowMapping(createRow(1, '', 'x', 'STRING')), null)
+eq('只是没选来源的空行也没什么可清除（它本来就没有映射）',
+  hasMapping(createRow(1, '', 'x', 'STRING')), false)
+
+// 数组行：清除的是「来源数组」，子行留着（子行是这一行的内容，不是它的取值方式）
+const arrayToClear = rowFromRule(TOP_RULES[2])
+const arraySnapshot = clearRowMapping(arrayToClear)
+eq('数组行清除后子行一条不少', arrayToClear.children.length, 5)
+eq('数组行清除后不再算配好（来源数组没了，子行配好也不算）', isRowConfigured(arrayToClear), false)
+restoreRowMapping(arrayToClear, arraySnapshot!)
+eq('撤销后数组行的来源数组回来', ruleOf(arrayToClear).source, 'items')
+eq('撤销后子行也还在', [arrayToClear.iterate, arrayToClear.children.length], ['FOR_EACH', 5])
+eq('撤销之后整条规则与原来一模一样', ruleOf(arrayToClear), TOP_RULES[2])
+
+// 手工新增行：目标字段清单不全的时候也要能把配置配完（#102）
+/** 目标清单里那个数组字段对应的行（`rowsFromTargetFields` 铺出来的那一行）。 */
+const TARGET_ARRAY = targetRows[3]
+const manualRows: MapRow[] = []
+const manualLeaf = appendLeafRow(manualRows, 1)
+eq('「+ 字段映射」把空行加在列表最后', manualRows.map(r => r.id), [manualLeaf.id])
+eq('新加的是普通行（不是数组映射）', [manualLeaf.iterate, manualLeaf.target, manualLeaf.source], [null, '', ''])
+eq('新行的默认来源步骤跟着编辑器顶部那个下拉', manualLeaf.sourceStep, 1)
+eq('行上带上了它的补全清单（普通行给清单里的标量字段）',
+  targetCandidatesFor(TARGETS, { row: manualLeaf, depth: 0, parent: null }),
+  ['bom.bomNo', 'bom.productCode', 'bom.remark'])
+
+const manualArray = appendArrayRow(manualRows, 1)
+eq('「+ 数组映射」加的是数组行（目标写数组路径，来源要选一个数组）',
+  [manualArray.iterate, manualArray.target, manualArray.source], ['FOR_EACH', '', ''])
+eq('数组行的补全清单只给清单里的数组字段',
+  targetCandidatesFor(TARGETS, { row: manualArray, depth: 0, parent: null }), ['bom.bomLines'])
+eq('数组元素子行的补全清单是这个数组元素里的相对路径',
+  targetCandidatesFor(TARGETS, { row: createRow(null, '', '', 'STRING'), depth: 1, parent: TARGET_ARRAY }),
+  ['lineNo', 'materialCode'])
+eq('手工加的数组行不在清单里时，子行没有可补全的（目标只能手输）',
+  targetCandidatesFor(TARGETS, { row: createRow(null, '', '', 'STRING'), depth: 1, parent: manualArray }), [])
+
+// 手输的路径（清单里没有的）照样写进规则——清单不全时这就是唯一的出路，也是后端校验要看的草稿
+const typedRow = appendLeafRow([], 1)
+typedRow.target = 'custom.deep.path'
+typedRow.source = 'order_no'
+eq('手输的目标字段路径照样进规则',
+  configFromRows([typedRow]).rules.map(r => r.target), ['custom.deep.path'])
+eq('手输路径的行在清单之外，界面上标成「手写」',
+  targetCandidatesFor(TARGETS, { row: typedRow, depth: 0, parent: null }).includes('custom.deep.path'), false)
+
+// 清单是编辑器真拿得到的那两种形状（结构探测给的是扁平路径），所以补全也要按真链路走一遍：
+// 探测路径 → 折成目标清单 → 铺成行 → 这一行能补全出什么。
+const probeFlat = targetFieldsFromPaths(['order_no', 'qty', 'unit'])
+const flatRows = rowsFromTargetFields(probeFlat, 1)
+eq('探测出来的扁平列名都当标量字段（普通行的补全就是它们）',
+  targetCandidatesFor(probeFlat, { row: flatRows[0], depth: 0, parent: null }), ['order_no', 'qty', 'unit'])
+
+const probeArray = targetFieldsFromPaths(['items[0].itemCode', 'items[0].qty', 'sku'])
+const probedRows = rowsFromTargetFields(probeArray, 1)
+eq('探测出来的数组字段折成一行数组映射', [probedRows[0].target, probedRows[0].iterate], ['items', 'FOR_EACH'])
+eq('数组行能从清单里选到它自己',
+  targetCandidatesFor(probeArray, { row: probedRows[0], depth: 0, parent: null }), ['items'])
+eq('数组元素子行的补全是这个数组元素里的相对路径',
+  targetCandidatesFor(probeArray, { row: probedRows[0].children[0], depth: 1, parent: probedRows[0] }),
+  ['itemCode', 'qty'])
+
+// 数组行下面的两个入口：+ 子字段（相对路径）与 + 行号（#102）
+const childActions = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+const indexChild = appendIndexChildRow(childActions).children[0]
+eq('「+ 行号」加的是行号子行（来源 $index、从 1 起、目标从空开始）',
+  [indexChild.target, indexChild.transform, indexChild.source, indexChild.startAt],
+  ['', 'INDEX', '$index', 1])
+eq('行号子行不存 sourceStep（子规则带上后端会拒）', indexChild.sourceStep, null)
+eq('「+ 子字段」加的仍是普通子行（来源写相对路径）',
+  appendChildRow(childActions).children.map(c => c.transform), ['INDEX', 'STRING'])
+eq('不是数组行就没有「+ 行号」可加',
+  appendIndexChildRow(createRow(1, 'a', 'b', 'STRING')).children.length, 0)
+indexChild.target = 'lineNo'
+eq('行号子行填上目标字段就能存（source 固定 $index、startAt 写出来）',
+  ruleOf(indexChild, true), { source: '$index', target: 'lineNo', transform: 'INDEX', startAt: 1 })
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

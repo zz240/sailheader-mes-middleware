@@ -182,3 +182,51 @@ export function isRowConfigured(row: MapRow): boolean {
       return row.source.trim() !== ''
   }
 }
+
+/** 一行上「值怎么取」的那一份（#102）：来源 + 转换 + 它的参数。目标字段与子行不属于它。 */
+export type RowMapping = Pick<MapRow, 'source' | 'transform' | 'extra' | 'startAt' | 'enumMap' | 'parts'>
+
+/** 这一行配过「值怎么取」没有——没配过就不该给「清除」入口（清完也没有东西可以撤销）。 */
+export function hasMapping(row: MapRow): boolean {
+  if (row.source.trim() !== '') return true
+  if (row.transform !== 'STRING') return true
+  if (row.extra.trim() !== '') return true
+  if (Object.keys(row.enumMap ?? {}).length) return true
+  return row.parts.some(part => part.value.trim() !== '')
+}
+
+/**
+ * 清除这一行的映射（#102 票里的「每一行能清除」），返回撤销用的快照；本来就没配过时返回 `null`。
+ *
+ * 清的是**取值方式**，不是这一行本身：目标字段留着（它是这一行的身份，来自目标清单或手输的路径），
+ * 数组行的子行也留着（子行是这一行的内容）。所以数组行清除后剩下「一行没有来源数组的数组映射」，
+ * 而不是把整棵子树删掉——删行是另一件事。
+ */
+export function clearRowMapping(row: MapRow): RowMapping | null {
+  if (!hasMapping(row)) return null
+  const snapshot = mappingOf(row)
+  row.source = ''
+  row.transform = 'STRING'
+  row.extra = ''
+  row.startAt = null
+  row.enumMap = null
+  row.parts = []
+  return snapshot
+}
+
+/** 撤销一次清除：把快照放回去（目标字段与子行本来就没动过，所以只还这一份）。 */
+export function restoreRowMapping(row: MapRow, snapshot: RowMapping): void {
+  Object.assign(row, snapshot)
+}
+
+/** 把一行上「值怎么取」的那几个字段取出来（快照与清除共用同一份清单，两边不会走散）。 */
+function mappingOf(row: MapRow): RowMapping {
+  return {
+    source: row.source,
+    transform: row.transform,
+    extra: row.extra,
+    startAt: row.startAt,
+    enumMap: row.enumMap,
+    parts: row.parts,
+  }
+}

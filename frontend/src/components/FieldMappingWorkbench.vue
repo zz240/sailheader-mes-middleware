@@ -96,12 +96,19 @@
             <div class="wb-panel-title">目标字段</div>
             <div class="wb-panel-tip">{{ targetTip }}</div>
             <span class="wb-spacer" />
+            <el-tooltip content="加一行字段映射：目标字段从清单里选一个，或者直接手输一个路径" placement="top">
+              <el-button size="small" type="primary" plain @click="addLeafRow">+ 字段映射</el-button>
+            </el-tooltip>
+            <el-tooltip content="加一行数组映射：目标写数组路径，来源在左边清单里选一个数组" placement="top">
+              <el-button size="small" @click="addArrayRow">+ 数组映射</el-button>
+            </el-tooltip>
             <el-button size="small" text @click="toggleAllArrays">{{ allCollapsed ? '展开全部数组' : '收起全部数组' }}</el-button>
             <el-button size="small" text type="primary" @click="reloadTargets">重新探测目标字段</el-button>
           </div>
 
           <div v-if="!rows.length" class="wb-empty">
-            还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。
+            还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。清单不全也没关系：
+            用「+ 字段映射」「+ 数组映射」自己加行，目标字段直接手输。
           </div>
 
           <div v-else class="wb-row-list">
@@ -130,17 +137,26 @@
                 @click="select(entry.row)"
               >
                 <div class="wb-col-target">
-                  <el-input
+                  <!-- 目标字段：清单里选一个，或者直接手输一个清单里没有的路径（#102）。
+                       清单按这一行的形状给：普通行给标量字段、数组行给数组字段、子行给元素内的相对路径。
+                       `@keydown.escape.stop`：补全下拉关着时按 Esc 只该什么都不做——不拦的话它会冒到
+                       抽屉上，把整个编辑器连同没保存的草稿一起关掉（真机实测踩到过；下拉开着时
+                       el-autocomplete 自己就把 Esc 收下了，这里拦不到它）。 -->
+                  <el-autocomplete
                     v-model="entry.row.target"
                     size="small"
-                    :placeholder="entry.depth > 0 ? '相对路径，例如 materialCode' : '目标字段路径（可手输）'"
+                    class="wb-target-input"
+                    :debounce="0"
+                    :fetch-suggestions="suggestFor(entry)"
+                    :placeholder="entry.depth > 0 ? '相对路径，例如 materialCode' : '目标字段路径（选一个或手输）'"
                     @focus="select(entry.row)"
                     @click="stop"
+                    @keydown.escape.stop
                   >
-                    <template v-if="!entry.fromTargets" #append>
-                      <span class="wb-chip">手写</span>
+                    <template v-if="!entry.fromTargets && entry.row.target.trim()" #append>
+                      <span class="wb-chip" title="这个目标字段不在目标清单里，是手输的">手写</span>
                     </template>
-                  </el-input>
+                  </el-autocomplete>
                 </div>
 
                 <!-- 这一行的值怎么取：一句中文，点一下就地改，不开弹窗 -->
@@ -227,7 +243,25 @@
                   <template v-if="entry.row.iterate === 'FOR_EACH'">
                     <span class="wb-paren">·</span>
                     <el-button size="small" text type="primary" @click.stop="addChild(entry.row)">+ 子字段</el-button>
+                    <el-tooltip content="加一个行号子行：来源就是行号，起始值在行里改" placement="top">
+                      <el-button size="small" text type="primary" @click.stop="addIndexChild(entry.row)">+ 行号</el-button>
+                    </el-tooltip>
                   </template>
+
+                  <!-- 行操作：清除这一行的取值方式（清除后能撤销，见右边的「撤销」） -->
+                  <span class="wb-col-actions" @click="stop">
+                    <el-tooltip placement="top">
+                      <template #content>{{ clearHint(entry) }}</template>
+                      <button
+                        class="wb-chip chip-clear"
+                        :disabled="!hasMapping(entry.row)"
+                        @click.stop="clearRow(entry)"
+                      >清除</button>
+                    </el-tooltip>
+                    <el-tooltip v-if="canUndo(entry.row)" content="撤销刚才那次清除，把这一行配回来" placement="top">
+                      <button class="wb-chip chip-undo" @click.stop="undoClear(entry.row)">撤销</button>
+                    </el-tooltip>
+                  </span>
                 </div>
               </div>
 
@@ -381,18 +415,21 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { EditorSourceSample, FieldMappingEditorContext, SourceStructure } from '../types'
 import {
-  configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow, progressOf,
-  rowReferenceFullLabel, rowReferenceLabel, rowsFromConfig, rowsFromTargetFields, targetFieldsFromPaths,
-  type FlatRow, type SourceField, type TargetField,
+  appendArrayRow, appendLeafRow, configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow, progressOf,
+  rowReferenceFullLabel, rowReferenceLabel, rowsFromConfig, rowsFromTargetFields, targetCandidatesFor,
+  targetFieldsFromPaths, type FlatRow, type SourceField, type TargetField,
 } from '../mapping/editor-model.ts'
-import { ENUM_PLACEHOLDER, isRowConfigured, realEnumMap, ruleFromRow, type ConcatPart, type MapRow } from '../mapping/rows.ts'
+import {
+  clearRowMapping, hasMapping, isRowConfigured, realEnumMap, restoreRowMapping, ruleFromRow,
+  ENUM_PLACEHOLDER, type ConcatPart, type MapRow, type RowMapping,
+} from '../mapping/rows.ts'
 import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
 import {
   applyTransform, appendEnumSamples, datePatternFor, missingEnumKeys, setEnumKey,
   transformLabelOf, transformName, transformOptions, DATE_PRESETS, type EnumPair, type TransformOption,
 } from '../mapping/transforms.ts'
 import {
-  appendChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
+  appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
   visibleRows, ELEMENT_GROUP_TITLE, type PickableItem,
 } from '../mapping/source-picker.ts'
 
@@ -492,7 +529,7 @@ const progressPercent = computed(() => (progress.value.total ? Math.round(progre
 interface DisplayRow extends FlatRow {
   /** 铺出来的每一项的唯一键：分组标题与它上面那一行共用同一个 MapRow，键不能重。 */
   key: string
-  /** 这一行的目标字段来自目标清单（而不是手输的）。 */
+  /** 这一行的目标字段是清单给的那一个（而不是手输的）。 */
   fromTargets: boolean
   /** 数组行的「数组元素内」分组标题（铺在数组行与它的子行之间）。 */
   arrayHeader: boolean
@@ -505,7 +542,9 @@ const displayRows = computed<DisplayRow[]>(() => {
     out.push({
       ...entry,
       key: `r${entry.row.id}`,
-      fromTargets: targetPaths.value.has(entry.row.target.trim()),
+      // 「手写」是拿这一行的补全清单比出来的，不是拿整份目标字段比：数组元素里的相对路径
+      // （`lineNo` 这种）也在清单里，顶层行手输一个同名的路径不该因此摘掉「手写」标记。
+      fromTargets: isFromTargets(entry),
       arrayHeader: false,
     })
     // 有子行就补一条分组标题（#101：子行的来源默认按相对路径解析，标题上写明「数组元素内」）。
@@ -518,6 +557,12 @@ const displayRows = computed<DisplayRow[]>(() => {
   }
   return out
 })
+
+/** 这一行的目标字段是不是清单给的（空行既不是清单给的、也不算手输，所以不标）。 */
+function isFromTargets(entry: FlatRow): boolean {
+  const target = entry.row.target.trim()
+  return target !== '' && targetCandidatesFor(targets.value, entry).includes(target)
+}
 
 /** 收起 / 展开一个数组行；「展开全部 / 收起全部」一次处理所有数组行。 */
 function toggleCollapse(row: MapRow) {
@@ -538,18 +583,111 @@ function isCollapsed(row: MapRow): boolean {
   return collapsedIds.value.has(row.id)
 }
 
-/** 目标清单里的字段路径（含数组内的相对路径），用来标出哪些行是清单给的。 */
-const targetPaths = computed(() => {
-  const paths = new Set<string>()
-  const walk = (list: TargetField[]) => {
-    for (const field of list) {
-      paths.add(field.path)
-      if (field.element?.length) walk(field.element)
-    }
+// ---------------------------------------------------------------- 手工新增行（#102）
+
+/** 目标字段的补全候选：清单里跟这一行形状对得上的字段（手输的路径不走这份清单）。 */
+function targetSuggestions(entry: DisplayRow, query: string): Record<string, any>[] {
+  const typed = query.trim()
+  // 聚焦时 el-autocomplete 拿这一行现有的值当查询词（`handleFocus` 里就是那么写的）。
+  // 照它过滤的话，点一个已经填好的目标字段只会看到它自己——想从清单里换一个反而换不了
+  // （真机实测踩到过）。所以查询词恰好等于这一行现在的目标字段时不筛，把清单整个给出来。
+  const q = typed && typed !== entry.row.target.trim() ? typed.toLowerCase() : ''
+  return targetCandidatesFor(targets.value, entry)
+    .filter(path => !q || path.toLowerCase().includes(q))
+    .map(path => ({ value: path }))
+}
+
+/** 补全要的是「给一个查询词、回一份候选」的函数，而清单按行给，所以每行现取一份。 */
+function suggestFor(entry: DisplayRow) {
+  return (query: string, cb: (items: Record<string, any>[]) => void) => cb(targetSuggestions(entry, query))
+}
+
+/** 「+ 字段映射」：加一行空的字段映射，加完就选中它并把光标放进目标字段（清单里选一个，或者手输）。 */
+function addLeafRow() {
+  focusRow(appendLeafRow(rows.value, defaultStep.value))
+}
+
+/** 「+ 数组映射」：加一行空的数组映射（目标写数组路径，来源在左边清单里选一个数组）。 */
+function addArrayRow() {
+  focusRow(appendArrayRow(rows.value, defaultStep.value))
+}
+
+/** 「+ 子字段」：往数组行下面加一个子行（目标字段写相对路径）。 */
+function addChild(row: MapRow) {
+  appendChildRow(row)
+  focusNewChild(row)
+}
+
+/** 「+ 行号」：往数组行下面加一个行号子行（来源就是行号，起始值在行里改）。 */
+function addIndexChild(row: MapRow) {
+  appendIndexChildRow(row)
+  focusNewChild(row)
+}
+
+/** 新加的子行：数组行先展开（否则新行根本不铺出来），再选中它。 */
+function focusNewChild(arrayRow: MapRow) {
+  collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== arrayRow.id))
+  const added = arrayRow.children[arrayRow.children.length - 1]
+  if (added) focusRow(added)
+}
+
+/** 新加的行：选中它、滚到看得见、把光标放进目标字段里（补全清单跟着出来）。 */
+function focusRow(row: MapRow) {
+  closePanel()
+  selectedId.value = row.id
+  nextTick(() => {
+    const el = document.querySelector<HTMLElement>(`[data-row-id="${row.id}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+    el?.querySelector('input')?.focus()
+  })
+}
+
+// ---- 清除 / 撤销（#102）：清除的是这一行「值怎么取」，目标字段与子行都留着
+
+/**
+ * 清掉的行 → 撤销用的快照。放在组件里而不是行上：行模型是「存进规则的那份数据」，
+ * 撤销只是编辑器里的一次回头路，不该跟着行跑进规则里（`ruleFromRow` 只认它自己那些字段）。
+ */
+const clearedRows = ref<Map<number, RowMapping>>(new Map())
+
+/** 这一行现在能撤销吗：刚清除过、并且还没重新配（重新配了就不该再退回清除前那一份）。 */
+function canUndo(row: MapRow): boolean {
+  return clearedRows.value.has(row.id) && !hasMapping(row)
+}
+
+/**
+ * 「清除」按钮上的说法。
+ *
+ * 数组行要说清后果：清除之后这一行没有来源数组，而**数组行没有来源数组就整行不发**
+ * （`isRowConfigured`／`configFromRows`），子行的映射会跟着一起不进保存——界面上子行还在，
+ * 所以这句话得先讲明白（保存时还会再确认一次「只保存配好的」）。
+ */
+function clearHint(entry: FlatRow): string {
+  if (!hasMapping(entry.row)) return '这一行还没配，没什么可清除的'
+  if (entry.row.iterate === 'FOR_EACH') {
+    return '清除这一行的来源数组（子行留着；没有来源数组这一行就不发出去，子行的映射也跟着不保存）'
   }
-  walk(targets.value)
-  return paths
-})
+  return '清除这一行的取值方式（目标字段留着，清除后能撤销）'
+}
+
+function clearRow(entry: DisplayRow) {
+  const snapshot = clearRowMapping(entry.row)
+  if (!snapshot) return
+  clearedRows.value = new Map(clearedRows.value).set(entry.row.id, snapshot)
+  // 参数面板开在这一行上时收起来：转换已经回到默认，面板里显示的是上一份参数。
+  if (panelRowId.value === entry.row.id) closePanel()
+  ElMessage.success(`已清除「${entry.row.target.trim() || '这一行'}」的映射——行里的「撤销」能还原`)
+}
+
+function undoClear(row: MapRow) {
+  const snapshot = clearedRows.value.get(row.id)
+  if (!snapshot) return
+  restoreRowMapping(row, snapshot)
+  const next = new Map(clearedRows.value)
+  next.delete(row.id)
+  clearedRows.value = next
+  select(row)
+}
 
 /** 选中的那一行（清单与参数面板都看它）。 */
 const selectedEntry = computed<DisplayRow | null>(() =>
@@ -567,6 +705,8 @@ async function load() {
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
     rows.value = saved.length ? mergeRowsWithTargets(saved, targets.value, defaultStep.value) : rowsFromTargetFields(targets.value, defaultStep.value)
+    // 行是重铺出来的（id 全换了），上一次打开留下的撤销快照跟着作废。
+    clearedRows.value = new Map()
     selectFirst()
   } catch (e) {
     ElMessage.error((e as ApiError).message)
@@ -624,6 +764,8 @@ async function reloadTargets() {
   try {
     targets.value = await loadTargets(ctx)
     rows.value = mergeRowsWithTargets(rows.value, targets.value, defaultStep.value)
+    // 已配的行按目标字段沿用同一个行对象（含 id），所以撤销快照能留就留着；重铺掉的那些行
+    // 换了 id，快照按 id 找不到就自然不显示，不用特意清。
     ElMessage.success(targets.value.length ? '目标字段已更新' : '没探测到目标字段')
   } finally {
     loading.value = false
@@ -724,15 +866,6 @@ function onStartAtChange(row: MapRow, value: number | undefined) {
 /** 点来源格子：这一行就是"要填哪一行"，用户在左边清单点一个字段即可。 */
 function pickSourceFor(entry: FlatRow) {
   select(entry.row)
-}
-
-/** 往数组行下面加一个子行（子行的目标字段写相对路径），加完就选中它。 */
-function addChild(row: MapRow) {
-  appendChildRow(row)
-  // 新加的子行在最后：把它铺出来才能接着填目标字段。
-  collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== row.id))
-  const added = row.children[row.children.length - 1]
-  if (added) selectedId.value = added.id
 }
 
 /** 操作符那一栏的悬停提示：一句话说清这一行在做什么。 */
@@ -952,6 +1085,8 @@ async function loadSourceFields(step: number) {
 /** 上下键在行之间移动（#99 验收）。挂窗口监听：焦点可能停在行里的任意输入框上。 */
 function onKeydown(e: KeyboardEvent) {
   if (!visible.value || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+  // 焦点在输入框里时不接管方向键：目标字段的补全下拉要用上下键选，输入框里的光标也要能左右走。
+  if (isTextEntry(e.target)) return
   const list = displayRows.value.filter(entry => entry.row.target.trim())
   if (!list.length) return
   const current = list.findIndex(entry => entry.row.id === selectedId.value)
@@ -963,6 +1098,13 @@ function onKeydown(e: KeyboardEvent) {
   nextTick(() => {
     document.querySelector(`[data-row-id="${selectedId.value}"]`)?.scrollIntoView({ block: 'nearest' })
   })
+}
+
+/** 这个事件发生在某个输入框 / 下拉框里吗。 */
+function isTextEntry(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  const tag = el?.tagName?.toLowerCase() ?? ''
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || el?.isContentEditable === true
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -1072,6 +1214,7 @@ load()
 .wb-row.child { margin-left: 24px; background: #fcfcfd; }
 .wb-row.child.selected { background: #ecf5ff; }
 .wb-col-target { width: 280px; flex-shrink: 0; }
+.wb-target-input { width: 100%; }
 .wb-col-value { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .wb-source-value { font-size: 13px; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-child-hint { font-size: 11px; color: #9ca3af; }
@@ -1102,6 +1245,13 @@ load()
 .wb-chip.chip-op-empty:hover { color: #409eff; border-color: #409eff; }
 .wb-chip.chip-const { border-color: #fde68a; background: #fffbeb; color: #92400e; font-family: Consolas, monospace; }
 .wb-chip.chip-toggle { font-size: 11px; padding: 0 5px; color: #4b5563; }
+/* 行操作：清除 / 撤销（#102）。行里往后排，所以给它一个固定的位置 */
+.wb-col-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.wb-chip.chip-clear { color: #b91c1c; border-color: #fecaca; background: #fff; }
+.wb-chip.chip-clear:hover:not(:disabled) { border-color: #ef4444; color: #b91c1c; }
+.wb-chip.chip-clear:disabled { color: #d1d5db; border-color: #e5e7eb; cursor: not-allowed; }
+.wb-chip.chip-undo { color: #b45309; border-color: #fde68a; background: #fffbeb; font-weight: 600; }
+.wb-chip.chip-undo:hover { border-color: #d97706; color: #92400e; }
 .wb-paren { font-size: 12px; color: #6b7280; }
 .wb-start-at { width: 96px; }
 

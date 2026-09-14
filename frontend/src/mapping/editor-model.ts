@@ -69,6 +69,67 @@ export function transformForType(type?: string): string {
   return 'STRING'
 }
 
+// ---------------------------------------------------------------- 手工新增行（#102）
+
+/**
+ * 「+ 字段映射」：手工加一行空的字段映射（#102）。目标字段从空开始——从补全清单里选一个，
+ * 或者直接手输一个清单里没有的路径；目标字段清单不全时，这就是唯一的出路（#98 H3）。
+ */
+export function appendLeafRow(rows: MapRow[], sourceStep: number | null): MapRow {
+  const row = createRow(sourceStep, '', '', 'STRING')
+  rows.push(row)
+  return row
+}
+
+/** 「+ 数组映射」：手工加一行空的数组映射（#102）。目标写数组路径，来源要选一个数组。 */
+export function appendArrayRow(rows: MapRow[], sourceStep: number | null): MapRow {
+  const row = createGroupRow(sourceStep, '', '')
+  rows.push(row)
+  return row
+}
+
+/**
+ * 这一行的目标字段可以填哪些（#102：「可以从清单里选，也可以直接手输」里的那份清单）。
+ *
+ * 给的和这一行的形状对得上（与 `sourcePickerFor` 同一个口径）：
+ * - 数组映射行 → 清单里的数组字段；
+ * - 数组元素子行 → 这个数组元素里的相对路径；
+ * - 其余行 → 清单里的标量字段。
+ *
+ * 手工加的行（清单里没有它那个数组）拿不到补全，那正是「手输一个路径」那条路；
+ * 手输的路径也不进这份清单——它是用户写下的，不是清单给的。
+ */
+export function targetCandidatesFor(targets: TargetField[], entry: FlatRow): string[] {
+  if (entry.depth > 0 && entry.parent) return elementPathsOf(targets, entry.parent.target.trim())
+  const arrays = targets.filter(isArrayField).map(f => f.path)
+  if (entry.row.iterate === 'FOR_EACH') return arrays
+  const arraySet = new Set(arrays)
+  return targets.filter(f => !arraySet.has(f.path)).map(f => f.path)
+}
+
+/** 目标清单里的数组字段：探测出来的数组（`element` 非空）或类型写着 ARRAY 的。 */
+function isArrayField(field: TargetField): boolean {
+  return !!field.element?.length || (field.type ?? '').toUpperCase() === 'ARRAY'
+}
+
+/** 目标清单里某个数组元素内的字段路径（相对路径；子行的目标字段就是这么写的）。 */
+function elementPathsOf(targets: TargetField[], arrayPath: string): string[] {
+  if (!arrayPath) return []
+  const field = targets.find(f => f.path === arrayPath)
+  return field ? elementPaths(field) : []
+}
+
+/** 元素字段的相对路径；元素里再套数组时往下展开（深层数组只用来看清单，重排仍走手写 JSONata）。 */
+function elementPaths(field: TargetField, prefix = ''): string[] {
+  const out: string[] = []
+  for (const child of field.element ?? []) {
+    const path = prefix ? `${prefix}.${child.path}` : child.path
+    if (child.element?.length) out.push(...elementPaths(child, path))
+    else out.push(path)
+  }
+  return out
+}
+
 /** 把探测结果里的扁平路径（`items[0].qty`）折成嵌套的目标字段清单。 */
 export function targetFieldsFromPaths(paths: string[], required: Map<string, boolean> = new Map()): TargetField[] {
   const roots: TargetField[] = []

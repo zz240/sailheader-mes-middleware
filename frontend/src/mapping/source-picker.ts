@@ -14,7 +14,7 @@
  * 纯逻辑，不碰 DOM 也不发请求，所以可以用 `node --experimental-strip-types` 直接检查（见 `checks.ts`）。
  */
 import { flattenRows, transformForType, type SourceField } from './editor-model.ts'
-import { ROOT_PREFIX } from './labels.ts'
+import { INDEX_SOURCE, ROOT_PREFIX } from './labels.ts'
 import { createRow, type MapRow } from './rows.ts'
 
 /** 左边清单上的一项（`label` 就是它显示成的那行字）。 */
@@ -298,5 +298,18 @@ export function appendChildRow(row: MapRow): MapRow {
   if (row.iterate !== 'FOR_EACH') return row
   // 子行不存 sourceStep：组内子规则带上它后端会拒（继承组节点）。
   row.children = [...row.children, createRow(null, '', '', 'STRING')]
+  return row
+}
+
+/**
+ * 往数组行下面加一个「行号」子行（#102）：来源固定 `$index`、起始值从 1 起，目标字段从空开始。
+ *
+ * 行号只在数组元素子行里合法（顶层用会被 `FieldMappingConfig.validate` 拒），所以这个入口只长在数组行上。
+ * 起始值就在行里改（#100），不用再选一次转换。
+ */
+export function appendIndexChildRow(row: MapRow): MapRow {
+  if (row.iterate !== 'FOR_EACH') return row
+  // 同 `appendChildRow`：子行不存 sourceStep。
+  row.children = [...row.children, createRow(null, INDEX_SOURCE, '', 'INDEX', '', 1)]
   return row
 }
