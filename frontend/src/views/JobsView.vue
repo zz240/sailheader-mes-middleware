@@ -104,9 +104,16 @@
         <el-table-column label="业务键" min-width="110">
           <template #default="{ row }">{{ row.addition?.businessKey ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <el-button size="small" @click="openActionEdit(row)">编辑</el-button>
+            <el-button
+              v-if="row.type === 'FIELD_MAP'"
+              size="small"
+              type="primary"
+              plain
+              @click="openMappingWorkbench(row)"
+            >编辑映射（新版）</el-button>
             <el-button size="small" type="danger" @click="removeAction(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -218,6 +225,20 @@
       <el-table-column type="index" width="60" />
       <el-table-column label="内容"><template #default="{ row }">{{ JSON.stringify(row) }}</template></el-table-column>
     </el-table>
+
+    <!-- 新版字段映射编辑器（#99）：临时入口，旧编辑器保留，第 9 张票里删掉旧入口 -->
+    <FieldMappingWorkbench
+      v-if="workbenchOpen && selectedJob && workbenchAction"
+      :key="`wb-${workbenchAction.id}`"
+      :job-id="selectedJob.id"
+      :job-name="selectedJob.name"
+      :action-id="workbenchAction.id"
+      :action-index="workbenchAction.index"
+      :action-name="workbenchAction.name"
+      :config="workbenchConfig"
+      @saved="onWorkbenchSaved"
+      @closed="workbenchOpen = false"
+    />
   </el-card>
 </template>
 
@@ -227,6 +248,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import MappingEditor from '../components/MappingEditor.vue'
+import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
 const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP']
 
@@ -255,6 +277,34 @@ const mappingEditorRef = ref<InstanceType<typeof MappingEditor> | null>(null)
 
 const validateVisible = ref(false)
 const validation = ref<ValidationResult | null>(null)
+
+/** 新版字段映射编辑器（#99）的入口状态。 */
+const workbenchOpen = ref(false)
+const workbenchAction = ref<Action | null>(null)
+const workbenchConfig = ref<Record<string, any> | null>(null)
+
+function openMappingWorkbench(row: Action) {
+  workbenchAction.value = row
+  workbenchConfig.value = (row.addition ?? {}) as Record<string, any>
+  workbenchOpen.value = true
+}
+
+/** 新版编辑器点保存：写回这个动作的 addition（格式与旧编辑器完全一致）。 */
+async function onWorkbenchSaved(config: Record<string, any>) {
+  const row = workbenchAction.value
+  if (!row) return
+  try {
+    await api(`/actions/${row.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: row.name, type: row.type, index: row.index, addition: config }),
+    })
+    workbenchOpen.value = false
+    ElMessage.success('字段映射已保存')
+    await loadActions()
+  } catch (e) {
+    ElMessage.error((e as ApiError).message)
+  }
+}
 
 const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
 /** 字段映射编辑区较大，弹窗加宽；其余动作保持常规宽度。 */

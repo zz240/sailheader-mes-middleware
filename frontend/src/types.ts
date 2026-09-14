@@ -120,3 +120,36 @@ export interface ValidationResult {
   errors: ValidationIssue[]
   warnings: ValidationIssue[]
 }
+
+/** 新版字段映射编辑器（#99）打开时的上下文。 */
+export interface EditorActionLabel {
+  index: number | null
+  name: string | null
+  type: string | null
+}
+
+export interface EditorWriteTarget {
+  actionId: number | null
+  actionIndex: number | null
+  actionName: string | null
+  dataSourceId: number | null
+}
+
+export interface EditorSourceSample {
+  step: number | null
+  stepName: string | null
+  sourceKey: string | null
+  fields: ProbeField[]
+}
+
+export interface FieldMappingEditorContext {
+  jobId: number
+  writeTarget: EditorWriteTarget | null
+  source: EditorSourceSample | null
+  actions: EditorActionLabel[]
+}
+
+export interface SourceStructure {
+  sourceKey: string
+  fields: ProbeField[]
+}

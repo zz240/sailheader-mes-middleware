@@ -1,0 +1,33 @@
+package com.example.edgegateway.web.dto;
+
+import java.util.List;
+
+/**
+ * 字段映射编辑器（新版）打开时需要的上下文（#99）：
+ * 目标字段清单从哪里探测、来源字段清单长什么样、每个动作叫什么名字。
+ *
+ * <p>目标清单与来源样例都只在编辑器打开时存在，不落库（#98 C2）。</p>
+ */
+public record FieldMappingEditorView(
+        Long jobId,
+        /** 解析出的写目标（默认取本动作之后最近的 WRITE_UPSERT）；没有则为 null。 */
+        WriteTarget writeTarget,
+        /** 来源：链上更早的那个动作最近一次成功运行的输出。没有历史时为 null。 */
+        SourceSample source,
+        /** 动作序号 → 动作名，界面上把 `$s_N` 显示成「动作 N · 名称」用。 */
+        List<ActionLabel> actions) {
+
+    /** 写目标：目标结构从这个数据源的表探测出来。 */
+    public record WriteTarget(Long actionId, Integer actionIndex, String actionName, Long dataSourceId) {
+    }
+
+    /** 来源样例：探测出的字段清单（路径 + 类型 + 样例值）。 */
+    public record SourceSample(Integer step, String stepName, String sourceKey, List<Field> fields) {
+    }
+
+    public record Field(String name, String type, boolean nullable, List<Object> samples) {
+    }
+
+    public record ActionLabel(Integer index, String name, String type) {
+    }
+}

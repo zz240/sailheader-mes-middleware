@@ -8,9 +8,11 @@
 - **转换类型**：STRING / INT / DATE（`dateFormat` 自定义函数）/ ENUM（`$lookup`）/ CONSTANT / INDEX / CONCAT（`&` 拼接）。
 - **执行引擎（T36）**：`JsonataRuleCompiler` 在路由构建时把 rules 编译为 JSONata 表达式；`JsonataFieldMapper`（dashjoin jsonata 0.9.10）跨消息复用求值；上下文各步骤绑定 `$s_<step>` 变量，根对象为上下文 Map；READ_SQL 行的 JDBC 类型先经 `JsonataInputs.normalize` 转 JSON 安全值。
 - **模式**：`mode: STRUCTURED`（默认，rules）+ `mode: EXPRESSION`（手写 JSONata，逃生通道，保存期校验）。
+  注：代码里实际是「不是 EXPRESSION 就当 RULES」（`FieldMappingConfig`），文档口径以代码为准。
 - **建议器（ADR-0005 / T39）**：`MappingSuggester` 接口，默认规则实现（结构探测、同名归一化、相似度、历史复用、转换推断），站点级可覆盖为 LLM（Ollama，配置 `edge.mapping.suggester=llm`）；数组路径（`items[0].x`）生成**组建议**（MatchSource.ARRAY）；单值样例不再推荐 CONSTANT（DS-10.4）。
-- **编辑器（T38/T39）**：三栏（左来源树 / 中映射表 / 右目标树）+ 数组组行展开子表 + ENUM/CONCAT 弹窗 + 建议面板（表格/分页/已采用标记）；保存/回填递归 rules，旧扁平配置兼容。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`frontend/src/components/MappingEditor.vue`。
+- **编辑器（T38/T39，旧）**：三栏（左来源树 / 中映射表 / 右目标树）+ 数组组行展开子表 + ENUM/CONCAT 弹窗 + 建议面板（表格/分页/已采用标记）；保存/回填递归 rules，旧扁平配置兼容。
+- **编辑器（新版，ADR-0011 / #99 起）**：全屏抽屉，**每个目标字段一行**、一行一个转换；左边常驻来源字段清单（按默认来源步骤列出字段、类型、样例值），点一下填进当前行；界面上不出现 `$` 符号。顶部默认来源下拉，进度条只统计必填字段。动作表上临时并存「编辑映射（新版）」入口，旧编辑器在 #107 里删。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`。
 
 ## 决策时间线
 
