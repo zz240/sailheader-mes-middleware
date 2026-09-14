@@ -301,20 +301,22 @@ function previousActionIndex(ctx: FieldMappingEditorContext): number {
 /** 目标字段清单：连库探测写目标那张表；探不出来就空着，编辑器退化成手写目标字段。 */
 async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[]> {
   const target = ctx.writeTarget
-  if (!target?.actionId) {
-    targetSourceKey.value = ''
+  targetSourceKey.value = ''
+  if (!target?.actionId) return []
+  if (!target.tableName) {
+    // 没配表名就直接说清楚：探测接口自己不知道要探哪张表（#98 H3：HTTP/MQ 做目标时没结构可探）。
+    ElMessage.warning(`写目标动作「${target.actionName ?? `动作 ${target.actionIndex}`}」没有配表名，目标字段要自己填`)
     return []
   }
   try {
     const structure = await api<SourceStructure>(`/actions/${target.actionId}/probe-target`, {
       method: 'POST',
-      body: JSON.stringify({ table: target.tableName ?? undefined }),
+      body: JSON.stringify({ table: target.tableName, refresh: true }),
     })
     targetSourceKey.value = structure.sourceKey
     return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure))
   } catch (e) {
-    // 探测失败（写动作没配表名 / 连不上库）不阻塞编辑器，退化成手写目标字段。
-    targetSourceKey.value = ''
+    // 探测失败（连不上库 / 表名不合法）不阻塞编辑器，退化成手写目标字段。
     ElMessage.warning(`目标结构没探测出来：${(e as ApiError).message}`)
     return []
   }

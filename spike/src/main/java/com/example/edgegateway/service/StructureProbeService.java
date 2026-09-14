@@ -13,6 +13,7 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
@@ -41,13 +43,27 @@ public class StructureProbeService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
     private static final Pattern SAFE_TABLE = Pattern.compile("[A-Za-z0-9_]+");
 
-    private final Map<Long, CacheEntry> cache = new ConcurrentHashMap<>();
+    private final Map<CacheKey, CacheEntry> cache = new ConcurrentHashMap<>();
     private final ActionMapper actionMapper;
     private final DataSourceMapper dataSourceMapper;
+    /** 真正连库那一步；单测里换成假的，好观察缓存行为（连了几次库）。 */
+    private final BiFunction<DataSource, String, SourceStructure> dbProbe;
 
+    /** 连库那一步用真的；这是 Spring 用的那个构造器（多一个构造器时要指给它）。 */
+    @Autowired
     public StructureProbeService(ActionMapper actionMapper, DataSourceMapper dataSourceMapper) {
+        this(actionMapper, dataSourceMapper, null);
+    }
+
+    /**
+     * @param dbProbe 连库探测的实现；传 null 用真的（{@link #probeDb}）。
+     *                有这个口子是为了让缓存行为可测——缓存错不错，只有「连了几次库」能说明。
+     */
+    StructureProbeService(ActionMapper actionMapper, DataSourceMapper dataSourceMapper,
+                          BiFunction<DataSource, String, SourceStructure> dbProbe) {
         this.actionMapper = actionMapper;
         this.dataSourceMapper = dataSourceMapper;
+        this.dbProbe = dbProbe == null ? this::probeDb : dbProbe;
     }
 
     public SourceStructure probeFromDb(DataSource dataSource, String table, boolean refresh) {
@@ -57,13 +73,14 @@ public class StructureProbeService {
         if (table == null || !SAFE_TABLE.matcher(table).matches()) {
             throw new IllegalArgumentException("表名不合法，仅允许字母/数字/下划线: " + table);
         }
-        Long id = dataSource.getId();
-        CacheEntry entry = refresh ? null : cache.get(id);
+        // 缓存键必须带表名：一个数据源上可以有很多张表，只按数据源缓存会把上一次那张表的字段返回给这一次。
+        CacheKey key = new CacheKey(dataSource.getId(), table);
+        CacheEntry entry = refresh ? null : cache.get(key);
         if (entry != null && entry.expiresAt().isAfter(Instant.now())) {
             return entry.structure();
         }
-        SourceStructure structure = probeDb(dataSource, table);
-        cache.put(id, new CacheEntry(structure, Instant.now().plus(CACHE_TTL)));
+        SourceStructure structure = dbProbe.apply(dataSource, table);
+        cache.put(key, new CacheEntry(structure, Instant.now().plus(CACHE_TTL)));
         return structure;
     }
 
@@ -155,5 +172,9 @@ public class StructureProbeService {
     }
 
     private record CacheEntry(SourceStructure structure, Instant expiresAt) {
+    }
+
+    /** 探测结果的作用域：一个数据源上的一张表。 */
+    private record CacheKey(Long dataSourceId, String table) {
     }
 }
