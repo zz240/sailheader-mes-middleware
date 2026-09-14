@@ -69,8 +69,25 @@
           <div class="wb-panel-title">来源字段</div>
           <div class="wb-panel-tip">{{ sourceTip }}</div>
           <div class="wb-panel-tip">{{ pickerTip }}</div>
+          <el-input
+            v-model="sourceQuery"
+            size="small"
+            clearable
+            class="wb-source-search"
+            placeholder="搜路径或样例值，例如 qty / PCS"
+          />
+          <div class="wb-source-filters">
+            <button
+              v-for="f in SOURCE_FILTERS"
+              :key="f"
+              class="wb-filterbtn"
+              :class="{ current: sourceFilter === f }"
+              @click="sourceFilter = f"
+            >{{ SOURCE_FILTER_LABELS[f] }} <small>{{ sourceFilterCounts[f] }}</small></button>
+          </div>
           <div v-if="loading" class="wb-empty">加载中…</div>
-          <div v-else-if="!pickerGroups.length" class="wb-empty">这一来源还没有字段清单</div>
+          <div v-else-if="!sourceFields.length" class="wb-empty">这一来源还没有字段清单</div>
+          <div v-else-if="!pickerGroups.length" class="wb-empty">{{ emptyPickerText }}</div>
           <div v-else class="wb-source-list">
             <div v-for="(group, gi) in pickerGroups" :key="gi" class="wb-source-group">
               <div class="wb-source-group-title">{{ group.title }}</div>
@@ -79,14 +96,17 @@
                 v-for="item in group.items"
                 :key="item.label"
                 class="wb-source-item"
-                :class="{ 'array-field': item.kind === 'array' }"
+                :class="{ 'array-field': item.kind === 'array', used: isUsed(item) }"
                 tabindex="0"
+                :title="usedHint(item)"
                 @click="pick(item)"
                 @keydown.enter.prevent="pick(item)"
               >
                 <div class="wb-source-item-main">
                   <span class="wb-source-name">{{ item.label }}</span>
                   <span v-if="item.kind === 'array'" class="wb-chip">数组</span>
+                  <!-- 已经被用过的来源字段高亮，并写明被引用了几处（#105） -->
+                  <span v-if="isUsed(item)" class="wb-chip used-badge">{{ usedCount(item) }} 处</span>
                 </div>
                 <div class="wb-source-meta">{{ item.type }}<template v-if="sampleOf(item)"> · 样例 {{ sampleOf(item) }}</template></div>
               </div>
@@ -99,11 +119,28 @@
             <div class="wb-panel-title">目标字段</div>
             <div class="wb-panel-tip">{{ targetTip }}</div>
             <span class="wb-spacer" />
+            <!-- 按目标字段搜索并跳到那一行（#105）：回车在命中的行之间走一圈 -->
+            <el-input
+              v-model="targetQuery"
+              size="small"
+              clearable
+              class="wb-target-search"
+              placeholder="搜目标字段，回车跳过去"
+              @keydown.enter.prevent="jumpToNextMatch"
+            />
+            <span v-if="targetQuery.trim()" class="wb-match-note">{{ matchNote }}</span>
             <el-tooltip content="加一行字段映射：目标字段从清单里选一个，或者直接手输一个路径" placement="top">
               <el-button size="small" type="primary" plain @click="addLeafRow">+ 字段映射</el-button>
             </el-tooltip>
             <el-tooltip content="加一行数组映射：目标写数组路径，来源在左边清单里选一个数组" placement="top">
               <el-button size="small" @click="addArrayRow">+ 数组映射</el-button>
+            </el-tooltip>
+            <el-tooltip placement="top">
+              <template #content>
+                按同名字段把空白的行填上（只在浏览器里比对，不发请求）。已经配好的行不动，数组映射行也留给
+                你自己选来源数组。填上的行会标成「自动」，校验时会提醒你确认一遍。
+              </template>
+              <el-button size="small" @click="autoMatch">自动匹配同名</el-button>
             </el-tooltip>
             <el-button size="small" text @click="toggleAllArrays">{{ allCollapsed ? '展开全部数组' : '收起全部数组' }}</el-button>
             <el-button size="small" text type="primary" @click="reloadTargets">重新探测目标字段</el-button>
@@ -138,6 +175,8 @@
             还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。清单不全也没关系：
             用「+ 字段映射」「+ 数组映射」自己加行，目标字段直接手输。
           </div>
+
+          <div v-else-if="!displayRows.length" class="wb-empty">{{ emptyRowsText }}</div>
 
           <div v-else class="wb-row-list">
             <!-- 每一项只有在「数组行的分组标题」与「普通行」之间二选一。
@@ -196,6 +235,14 @@
                     <span class="wb-child-hint">{{ entry.row.children.length }} 个子字段在数组元素内取值</span>
                   </template>
                   <template v-else>
+                    <!-- 这一行的来源是「自动匹配同名」填上的（#105）：标出来，校验时还会提醒确认 -->
+                    <el-tooltip v-if="entry.row.auto" placement="top">
+                      <template #content>
+                        这一行的来源是「自动匹配同名」填上的，不是你手点的。校验时会提醒你确认一遍；
+                        手点一次来源、换个来源步骤或者清一次行，这个标记就没了。
+                      </template>
+                      <span class="wb-chip chip-auto">自动</span>
+                    </el-tooltip>
                     <button
                       v-if="entry.row.transform !== 'INDEX' && entry.row.transform !== 'CONCAT' && entry.row.transform !== 'CONSTANT'"
                       class="wb-chip chip-src"
@@ -468,7 +515,12 @@ import {
   targetFieldsFromPaths, type FlatRow, type SourceField, type TargetField,
 } from '../mapping/editor-model.ts'
 import {
-  clearRowMapping, hasMapping, isRowConfigured, realEnumMap, restoreRowMapping, ruleFromRow,
+  autoMatchSameName, autoSourceNotices, filterSourceGroups, nextMatchRowId, requiredSourceKeys,
+  sourceUsageOf, SOURCE_FILTER_LABELS, SOURCE_FILTERS, targetRowsView,
+  usedCountOf, usedRowIdsOf, type SourceFilter,
+} from '../mapping/fast-config.ts'
+import {
+  clearRowMapping, hasMapping, isRowConfigured, markHumanEdited, realEnumMap, restoreRowMapping, ruleFromRow,
   ENUM_PLACEHOLDER, type ConcatPart, type MapRow, type RowMapping,
 } from '../mapping/rows.ts'
 import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
@@ -574,8 +626,112 @@ const targetTip = computed(() => {
 })
 
 /** 左边清单给什么字段，取决于**当前选中的这一行**（#101：数组行只给数组、子行给相对路径与外层）。 */
-const pickerGroups = computed(() =>
+const pickerGroupsAll = computed(() =>
   sourcePickerFor(selectedEntry.value?.row ?? null, sourceFields.value, selectedEntry.value?.parent ?? null, defaultStep.value))
+
+/** 来源清单的搜索词与过滤档（#105）：搜路径、搜样例值；按「全部 / 只看未配置 / 只看必填」筛。 */
+const sourceQuery = ref('')
+const sourceFilter = ref<SourceFilter>('all')
+
+/** 行里每个来源字段被引用了几处、被哪几行引用（高亮与计数用它）。 */
+const sourceUsage = computed(() => sourceUsageOf(rows.value))
+
+/** 「只看必填」要用的那份清单：还没配好、且目标字段标了 required 的那些。 */
+const requiredSources = computed(() =>
+  requiredSourceKeys(rows.value, targets.value, defaultStep.value, sourceFields.value))
+
+/**
+ * 左边清单实际铺出来的那些项（搜索 + 过滤之后）。
+ *
+ * 「只看必填」比的是「这一项会被填到哪一步、哪一层」：子行里数组元素字段存的是相对路径，
+ * 它取哪份来源数据由组节点决定（`sourcePickerFor` 把那一组给出来，就说明组节点就是这一步的）。
+ */
+const pickerStep = computed(() => selectedEntry.value?.parent
+  ? selectedEntry.value.parent.sourceStep ?? defaultStep.value
+  : defaultStep.value)
+
+/** 当前清单给的是不是数组元素子行那一组（必填那一档要按层分开看）。 */
+const pickerInArray = computed(() => selectedEntry.value?.parent != null)
+
+const pickerGroups = computed(() => filterSourceGroups(
+  pickerGroupsAll.value, sourceQuery.value, sourceFilter.value, sourceUsage.value, requiredSources.value,
+  pickerStep.value, pickerInArray.value))
+
+/** 每一档下能显示几项（按钮上的数字）；空档也要看得见，所以按整份清单算，不按已经筛过的那份。 */
+const sourceFilterCounts = computed<Record<SourceFilter, number>>(() => {
+  const groups = pickerGroupsAll.value
+  const count = (filter: SourceFilter) => filterSourceGroups(
+    groups, sourceQuery.value, filter, sourceUsage.value, requiredSources.value,
+    pickerStep.value, pickerInArray.value)
+    .reduce((sum, group) => sum + group.items.length, 0)
+  return { all: count('all'), unconfigured: count('unconfigured'), required: count('required') }
+})
+
+/** 筛完一项都不剩时说清是搜索词的问题还是这一档本来就没有。 */
+const emptyPickerText = computed(() => {
+  if (sourceQuery.value.trim()) return `没有路径或样例值里有「${sourceQuery.value.trim()}」的字段`
+  const texts: Record<SourceFilter, string> = {
+    all: '这一来源还没有字段清单',
+    unconfigured: '这一来源的字段都已经被用过了',
+    required: '必填的目标字段都配好了',
+  }
+  return texts[sourceFilter.value]
+})
+
+/** 这一项被用过（清单上高亮 + 显示几处）。 */
+function isUsed(item: PickableItem): boolean {
+  return usedCount(item) > 0
+}
+
+function usedCount(item: PickableItem): number {
+  return usedCountOf(sourceUsage.value, item, pickerStep.value, sourceFields.value)
+}
+
+/** 已用那一项的悬停提示：被几处引用、第一处在哪个目标字段上。 */
+function usedHint(item: PickableItem): string {
+  const count = usedCount(item)
+  if (!count) return ''
+  const ids = usedRowIdsOf(sourceUsage.value, item, pickerStep.value, sourceFields.value)
+  const first = flattenRows(rows.value).find(e => e.row.id === ids[0])
+  const where = first ? `：${first.parent ? `${first.parent.target.trim()} · ` : ''}${first.row.target.trim()}` : ''
+  return `这个来源已经被引用了 ${count} 处${where}`
+}
+
+/**
+ * 目标字段的搜索词（#105）：回车跳到命中的那一行。
+ *
+ * 这里**只有搜索、没有过滤档**：票里那三档（全部 / 只看未配置 / 只看必填）说的是左边那份来源字段
+ * 列表（与开工前确认的口径一致）。右边再加一排同名按钮，两处的「必填」却不是一回事
+ * （来源那份是「还没配好的必填字段要用的来源」，行列表这份只能是「清单里标了 required 的行」），
+ * 摆在一起只会让人以为它们是一回事。
+ */
+const targetQuery = ref('')
+
+/** 搜索之后行列表该铺出哪些行（含收起的子行——搜索要能搜到它们）。 */
+const rowView = computed(() => targetRowsView(flattenRows(rows.value), targetQuery.value, 'all', targets.value))
+
+/** 搜索框右边那句：命中几行（含数组内几行）。 */
+const matchNote = computed(() => {
+  const view = rowView.value
+  if (!targetQuery.value.trim() || !view.count) return ''
+  return `${view.count} 行命中${view.inArrayCount ? `（含数组内 ${view.inArrayCount} 行）` : ''}`
+})
+
+/** 行列表一项都不剩时说清为什么。 */
+const emptyRowsText = computed(() => (targetQuery.value.trim()
+  ? `没有目标字段跟「${targetQuery.value.trim()}」对得上`
+  : '还没有任何目标字段'))
+
+/** 搜索框回车：跳到下一个命中的行（一路回车就是在命中项之间走一圈）。 */
+function jumpToNextMatch() {
+  const view = rowView.value
+  const rowId = nextMatchRowId(view, selectedId.value)
+  if (rowId == null) {
+    ElMessage.warning(targetQuery.value.trim() ? '没有目标字段跟这个词对得上' : '先输一个要搜的目标字段')
+    return
+  }
+  jumpToRowId(rowId)
+}
 
 /** 还没选行时先说清怎么开始。 */
 const pickerTip = computed(() =>
@@ -595,8 +751,14 @@ interface DisplayRow extends FlatRow {
 
 /** 行在界面上按层级铺开：数组行后面紧跟「数组元素内」标题与它的子行（收起时只剩数组行）。 */
 const displayRows = computed<DisplayRow[]>(() => {
+  // 行过滤与搜索（#105）只决定「铺不铺这一行」，行的树形结构照旧：留在列表里的子行前面，
+  // 它所属的数组行那把「数组元素内」标题也留着（标题跟着子行走，不单独过滤）。
+  const view = rowView.value
+  const visible = visibleRows(rows.value, collapsedIds.value)
+  const kept = new Set(view.rowIds)
   const out: DisplayRow[] = []
-  for (const entry of visibleRows(rows.value, collapsedIds.value)) {
+  for (const entry of visible) {
+    if (!kept.has(entry.row.id)) continue
     out.push({
       ...entry,
       key: `r${entry.row.id}`,
@@ -606,7 +768,9 @@ const displayRows = computed<DisplayRow[]>(() => {
       arrayHeader: false,
     })
     // 有子行就补一条分组标题（#101：子行的来源默认按相对路径解析，标题上写明「数组元素内」）。
-    if (entry.row.children.length) {
+    // 子行被过滤掉时标题不铺：一条「0 个子字段」的标题只会让人以为行丢了。
+    const children = entry.row.children.filter(child => kept.has(child.id))
+    if (children.length) {
       out.push({
         row: entry.row, depth: entry.depth, parent: entry.parent,
         key: `h${entry.row.id}`, fromTargets: false, arrayHeader: true,
@@ -668,6 +832,31 @@ function addLeafRow() {
 /** 「+ 数组映射」：加一行空的数组映射（目标写数组路径，来源在左边清单里选一个数组）。 */
 function addArrayRow() {
   focusRow(appendArrayRow(rows.value, defaultStep.value))
+}
+
+// ---------------------------------------------------------------- 自动匹配同名（#105）
+
+/**
+ * 一键「自动匹配同名」：把空白的行按同名字段填上。
+ *
+ * 整件事在 `fast-config.ts` 里做完（纯逻辑，**一个请求都不发**，票里那条验收就是这么保住的）：
+ * 只填空行、不覆盖已经配好的行。这里只负责把结果画出来并标上「自动」——从这一刻起，
+ * 校验时会给这些行一条提醒确认的提示（`autoNotices`）。
+ */
+function autoMatch() {
+  const result = autoMatchSameName(rows.value, sourceFields.value, defaultStep.value)
+  if (!result.rowIds.length) {
+    ElMessage.warning(sourceFields.value.length
+      ? '没有空白的行能按同名对上——已经配好的行不动，数组映射行也要你自己选来源数组'
+      : '左边还没有来源字段清单，先在上面选一个默认来源')
+    return
+  }
+  // 标上「自动」：这一行的来源不是手点的，校验时要提醒确认（用户一碰这一行标记就掉）。
+  const filled = new Set(result.rowIds)
+  for (const entry of flattenRows(rows.value)) {
+    if (filled.has(entry.row.id)) entry.row.auto = true
+  }
+  ElMessage.success(`已按同名填上 ${result.rowIds.length} 行（只补空行，来源在界面上标成了「自动」）`)
 }
 
 /** 「+ 子字段」：往数组行下面加一个子行（目标字段写相对路径）。 */
@@ -911,16 +1100,34 @@ async function validateConfig(): Promise<DraftValidation | null> {
 const earlierActionIndexes = computed(() =>
   stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
 
-/** 后端返回的问题 → 界面上的问题列表（每条带上它落在哪一行）。 */
-const locatedIssues = computed(() => (validation.value
-  ? locateIssues(flattenRows(rows.value), validation.value)
+/**
+ * 「自动匹配同名」填上的那些行，校验时要给的那条提示（#105）。
+ *
+ * 由前端自己出：后端那份草稿里没有「这一行是自动填的」这个信息，也不该有——自动与否是编辑器里的
+ * 本地事实。所以这些提示挂进同一个问题列表，但**不改后端返回的内容**（`validation` 还是原来那份）。
+ */
+const autoNotices = computed(() => autoSourceNotices(rows.value))
+
+/** 后端的问题 + 前端那几条提醒：界面上一视同仁地列出来、按同一套口径定位到行。 */
+const mergedValidation = computed<DraftValidation | null>(() => {
+  const result = validation.value
+  if (!result) return null
+  return {
+    ...result,
+    warnings: [...result.warnings, ...autoNotices.value],
+  }
+})
+
+/** 后端返回的问题 + 前端提醒 → 界面上的问题列表（每条带上它落在哪一行）。 */
+const locatedIssues = computed(() => (mergedValidation.value
+  ? locateIssues(flattenRows(rows.value), mergedValidation.value)
   : []))
 
 /** 每一行的问题（键是行 id）：行右侧那三种状态用它算。 */
 const rowIssues = computed(() => issuesByRow(locatedIssues.value))
 
 const issueSummary = computed(() => {
-  const result = validation.value
+  const result = mergedValidation.value
   if (!result) return ''
   if (!result.errors.length && !result.warnings.length) return '没有发现问题'
   return `${result.errors.length} 个错误 · ${result.warnings.length} 个警告`
@@ -1020,6 +1227,7 @@ function chooseDatePattern(row: MapRow, pattern: string) {
 
 function onStartAtChange(row: MapRow, value: number | undefined) {
   row.startAt = value == null ? 1 : Number(value)
+  markHumanEdited(row)
 }
 
 /** 点来源格子：这一行就是"要填哪一行"，用户在左边清单点一个字段即可。 */
@@ -1063,10 +1271,12 @@ function isChild(entry: FlatRow): boolean {
 
 function addPart(row: MapRow, inArray: boolean) {
   row.parts = [...row.parts, { type: inArray ? 'path' : 'const', value: '' } as ConcatPart]
+  markHumanEdited(row)
 }
 
 function removePart(row: MapRow, index: number) {
   row.parts = row.parts.filter((_, i) => i !== index)
+  markHumanEdited(row)
 }
 
 // ---- 枚举映射表：表格里改的每一格立刻写回行上的 enumMap（行是唯一副本，不另存一份编辑状态）
@@ -1092,6 +1302,7 @@ function setEnumPair(index: number, patch: Partial<Pick<EnumPair, 'key' | 'value
   // 改键撞上已有的键时按「后改的赢」合并（setEnumKey 负责把被撞掉的那行去掉）。
   const pairs = patch.key === undefined ? base : setEnumKey(base, index, patch.key)
   row.enumMap = enumMapOf(pairs)
+  markHumanEdited(row)
 }
 
 function enumMapOf(pairs: EnumPair[]): Record<string, any> {
@@ -1108,12 +1319,14 @@ function addEnumRow() {
   const row = panelRow.value
   if (!row) return
   row.enumMap = enumMapOf([...enumPairList.value, { id: enumPairList.value.length, key: '', value: '' }])
+  markHumanEdited(row)
 }
 
 function removeEnumRow(index: number) {
   const row = panelRow.value
   if (!row) return
   row.enumMap = enumMapOf(enumPairList.value.filter((_, i) => i !== index))
+  markHumanEdited(row)
 }
 
 /** 这一行来源字段的样例值（枚举表「按样例补全」用；子行用相对路径，取元素里的那个字段）。 */
@@ -1142,6 +1355,7 @@ function fillEnumFromSamples() {
   const row = panelRow.value
   if (!row) return
   row.enumMap = appendEnumSamples(realEnumMap(row.enumMap), missingEnumKeysOf.value)
+  markHumanEdited(row)
 }
 
 /** 候选来源字段：数组子行用相对路径，其余用请到的清单。 */
@@ -1200,6 +1414,8 @@ function pick(item: PickableItem) {
     return
   }
   const picked = result.row
+  // 手点了一次来源：这一行不再是「自动匹配填上的那一行」（#105 那条提醒只对没碰过的行有用）。
+  markHumanEdited(picked)
   selectedId.value = picked.id
   // 数组行选完来源数组后，接着去填这个数组里的子字段（第一个空子行）。
   if (picked.iterate === 'FOR_EACH') {
@@ -1220,7 +1436,11 @@ async function onDefaultStepChange(step: number) {
   // 还没选来源的行跟着默认来源走（已配的行不动）。
   const walk = (list: MapRow[]) => {
     for (const row of list) {
-      if (!row.source.trim()) row.sourceStep = step
+      if (!row.source.trim()) {
+        row.sourceStep = step
+        // 人主动换了来源步骤：这一行不再算「自动填上的那一行」（#105）。
+        markHumanEdited(row)
+      }
       if (row.children.length) walk(row.children)
     }
   }
@@ -1281,6 +1501,9 @@ const configuredCount = computed(() => rows.value.filter(isRowConfigured).length
 const untouchedCount = computed(() =>
   rows.value.filter(row => row.target.trim() !== '' && !isRowConfigured(row)).length)
 
+/** 「自动匹配同名」填上、还没被人碰过的行数（保存前要人确认一遍）。 */
+const autoFilledCount = computed(() => flattenRows(rows.value).filter(e => e.row.auto).length)
+
 async function save() {
   if (expressionMode.value) {
     try {
@@ -1316,6 +1539,17 @@ async function save() {
         `还有 ${untouchedCount.value} 行没配好（没选来源 / 常量没填值 / 枚举表空 / 拼接没片段）。这些行不会被保存。`,
         '有没配好的行',
         { type: 'warning', confirmButtonText: '只保存配好的', cancelButtonText: '回去补' },
+      ).then(() => true).catch(() => false)
+      if (!ok) return
+    }
+    // 「自动匹配同名」填上的行：保存前要人认一遍（票里：提醒确认后才算人工结果）。
+    // 确认过就照常保存——只是提醒，不是拦截（#98 D5：问题只提示，不阻止保存）。
+    if (autoFilledCount.value) {
+      const ok = await ElMessageBox.confirm(
+        `有 ${autoFilledCount.value} 行的来源是「自动匹配同名」填上的，不是你手点的。`
+        + '确认这些字段对得上再保存。',
+        '自动填上的行还没确认',
+        { type: 'warning', confirmButtonText: '确认过了，保存', cancelButtonText: '回去看看' },
       ).then(() => true).catch(() => false)
       if (!ok) return
     }
@@ -1364,11 +1598,35 @@ load()
 .wb-source-item { padding: 5px 6px; border-radius: 4px; cursor: pointer; }
 .wb-source-item:hover { background: #f3f4f6; }
 .wb-source-item.array-field .wb-source-name { color: #7c3aed; }
+/* 已经被用过的来源字段：整项高亮，右侧写清被引用了几处（#105） */
+.wb-source-item.used { background: #f0f9ff; }
+.wb-source-item.used:hover { background: #e0f2fe; }
+.wb-source-item.used .wb-source-name { color: #0369a1; }
 .wb-source-item-main { display: flex; align-items: center; gap: 6px; }
 .wb-source-name { font-family: Consolas, monospace; font-size: 12px; }
 .wb-source-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 .wb-chip { font-size: 10px; color: #6b7280; border: 1px solid #d1d5db; border-radius: 3px; padding: 0 4px; }
 .wb-chip.used { color: #0369a1; border-color: #bae6fd; }
+.wb-chip.used-badge { color: #0369a1; border-color: #bae6fd; background: #e0f2fe; }
+
+/* 来源清单的搜索与三档过滤（#105） */
+.wb-source-search { margin-bottom: 6px; }
+.wb-source-filters { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.wb-filterbtn {
+  font: inherit; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: pointer;
+  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #374151;
+}
+.wb-filterbtn:hover { border-color: #409eff; color: #409eff; }
+.wb-filterbtn.current { border-color: #409eff; background: #ecf5ff; color: #1d4ed8; }
+.wb-filterbtn small { color: #9ca3af; }
+.wb-filterbtn.current small { color: #1d4ed8; }
+
+/* 目标字段的搜索与三档过滤（#105） */
+.wb-target-search { width: 200px; flex-shrink: 0; }
+.wb-match-note { font-size: 11px; color: #6b7280; white-space: nowrap; }
+.wb-row-filters { display: flex; gap: 4px; flex-shrink: 0; }
+/* 行上那个「自动」标（#105）：来源是自动匹配同名填上的 */
+.wb-chip.chip-auto { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 
 .wb-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px 16px; min-height: 0; }
 .wb-rows-head { display: flex; align-items: center; gap: 10px; }
@@ -1496,5 +1754,7 @@ load()
   .wb-col-target { width: 180px; }
   .wb-col-issues { max-width: 180px; }
   .wb-chip { max-width: 200px; }
+  /* 窄屏上搜索框跟着缩：这一条只是别把行头挤爆，每行读得通是 T8（#106）那张票的事 */
+  .wb-target-search { width: 140px; }
 }
 </style>

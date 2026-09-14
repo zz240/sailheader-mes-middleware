@@ -32,6 +32,14 @@ export interface MapRow {
   parts: ConcatPart[]
   iterate: string | null
   children: MapRow[]
+  /**
+   * 这一行的来源是「自动匹配同名」填上的（#105）。
+   *
+   * **只活在编辑器里**：`ruleFromRow` 不认识它，所以它一个字都进不了规则——它是编辑器里的本地事实
+   * （后端那份草稿里没有「自动与否」，也不该有）。用户手点一次来源、换一次来源步骤、或者清一次行，
+   * 这个标记就掉了：从那一刻起这一行是人工结果。
+   */
+  auto?: boolean
 }
 
 let uid = 1000
@@ -186,6 +194,17 @@ export function isRowConfigured(row: MapRow): boolean {
 /** 一行上「值怎么取」的那一份（#102）：来源 + 转换 + 它的参数。目标字段与子行不属于它。 */
 export type RowMapping = Pick<MapRow, 'source' | 'transform' | 'extra' | 'startAt' | 'enumMap' | 'parts'>
 
+/**
+ * 人工动过这一行的取值方式了 → 摘掉「自动」标记（#105）。
+ *
+ * 自动匹配填上的那一行在有人碰过之后就不该再自称自动：票里那张提示是为了让人**确认**，
+ * 而人已经动过手了，确认就已经发生了。清完的来源、换过的转换、清过的行都算。
+ */
+export function markHumanEdited(row: MapRow): MapRow {
+  row.auto = false
+  return row
+}
+
 /** 这一行配过「值怎么取」没有——没配过就不该给「清除」入口（清完也没有东西可以撤销）。 */
 export function hasMapping(row: MapRow): boolean {
   if (row.source.trim() !== '') return true
@@ -211,6 +230,8 @@ export function clearRowMapping(row: MapRow): RowMapping | null {
   row.startAt = null
   row.enumMap = null
   row.parts = []
+  // 清过之后这一行是空的，「自动」也跟着走：它已经不是「自动匹配填上的那一行」了（#105）。
+  row.auto = false
   return snapshot
 }
 

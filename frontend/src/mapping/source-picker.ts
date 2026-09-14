@@ -30,6 +30,13 @@ export interface PickableItem {
   path: string
   /** 取这份来源数据的顶层对象（外层引用）。 */
   root: boolean
+  /**
+   * 数组元素内的字段属于哪个来源数组（相对路径的语境）。
+   *
+   * 相对路径离开数组行就读不出来（`qty` 是哪个数组的 `qty`？），所以这一项要跟着走：界面用它把
+   * 「数组元素内」这一组挂回数组行、把这一组里的相对路径换成探测给的完整路径（#105 的搜索与计数）。
+   */
+  group?: string
   label: string
   type?: string
   samples?: any[]
@@ -135,6 +142,10 @@ function childRowGroups(group: MapRow, fields: SourceField[], step: number | nul
 /**
  * 数组元素内的字段：按相对路径给。
  *
+ * 相对路径存的就是字段名本身（`materialCode`，相对于当前元素）。清单上这一组不是任何一份
+ * 「真清单」——它必须结合组节点的来源数组才读得出来，所以每一项都带上 `group`（它属于哪个数组），
+ * 界面靠它把「搜 `bomItems` 能搜到这一组」与「这一组对应数组行的哪一项」接起来。
+ *
  * 不传步骤：相对路径继承组节点的来源步骤，子规则自带上 `sourceStep` 后端会拒（#101 验收）。
  */
 function elementItems(fields: SourceField[], array: string): PickableItem[] {
@@ -143,15 +154,19 @@ function elementItems(fields: SourceField[], array: string): PickableItem[] {
   return fields
     .filter(field => field.name.startsWith(prefix))
     .filter(field => isTopLevelElementField(field.name))
-    .map(field => ({
-      kind: 'element' as const,
-      step: null,
-      path: relativePathOf(field.name, array),
-      root: false,
-      label: relativePathOf(field.name, array),
-      type: field.type,
-      samples: field.samples,
-    }))
+    .map(field => {
+      const relative = relativePathOf(field.name, array)
+      return {
+        kind: 'element' as const,
+        step: null,
+        path: relative,
+        root: false,
+        group: array,
+        label: relative,
+        type: field.type,
+        samples: field.samples,
+      }
+    })
 }
 
 /**
@@ -196,12 +211,18 @@ function arrayItems(fields: SourceField[], step: number | null): PickableItem[] 
   return out
 }
 
-/** 普通字段：点它就是「这个动作 · 这个路径」。元素字段（`items[0].x`）单独标一种形状。 */
+/**
+ * 普通字段：点它就是「这个动作 · 这个路径」。
+ *
+ * 数组元素字段（`items[0].x`）**也列在这里**：它的相对路径写法归数组元素子行，但这一份常驻清单
+ * 要能搜到它——按样例值找字段的人（「这个 `MAT-718H` 是哪个字段」）不该因为它只在子行里可填就搜不到
+ * （#105 的验收就是「按路径和样例值搜索」）。点进顶层行时 `fillRowFromPick` 会挡下并说明原因，
+ * 所以列出来不等于配得进去。
+ */
 function plainFieldItems(fields: SourceField[], step: number | null): PickableItem[] {
   return fields.map(field => {
     const element = isElementPath(field.name)
     return {
-      // 元素字段在这里只是「列出来」：它的相对路径写法归数组元素子行，顶层行点了会被挡下。
       kind: element ? ('element' as const) : ('field' as const),
       step,
       path: field.name,

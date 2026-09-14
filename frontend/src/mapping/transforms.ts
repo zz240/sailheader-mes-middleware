@@ -9,7 +9,7 @@
  * 「对不对」仍然只在后端那个只读接口里判断，这里只管「参数编辑得对不对路」（#98 D1/D4）。
  */
 import { INDEX_SOURCE, TRANSFORM_KINDS, transformLabel, type TransformKind } from './labels.ts'
-import { realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
+import { markHumanEdited, realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
 import type { SourceField } from './editor-model.ts'
 
 /** 日期格式化的预设（#100：从几个预设里选，不用记格式串）。 */
@@ -120,6 +120,8 @@ export function applyTransform(row: MapRow, kind: string, params: TransformParam
   const keptExtra = row.extra
   row.transform = kind
   row.startAt = null
+  // 用户挑过转换了：这一行不再是「自动匹配填上的那一行」（#105 的提示只提醒没碰过的那种）。
+  markHumanEdited(row)
 
   switch (kind) {
     case 'DATE':

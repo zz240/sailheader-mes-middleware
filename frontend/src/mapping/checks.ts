@@ -1,5 +1,5 @@
 /**
- * 新版映射编辑器的前端检查（#99 / #100 / #101 / #102 验收项）：不测组件，只测纯逻辑的外部行为。
+ * 新版映射编辑器的前端检查（#99 / #100 / #101 / #102 / #105 验收项）：不测组件，只测纯逻辑的外部行为。
  *
  * 跑法（零新依赖）：
  *   node --experimental-strip-types frontend/src/mapping/checks.ts
@@ -15,17 +15,24 @@
  *   7. 手工新增行（#102）：加空行、目标字段的补全清单按行给、手输路径照样进规则、加子字段与行号，
  *      以及清除一行与撤销这次清除；
  *   8. 依赖样例与目标清单的问题（#104）：后端新报的那几条（必填没配来源 / 来源不在样例里 / 枚举没覆盖
- *      样例值 / 文本写进数字字段 / 拼接有空片段）同样落在正确的行右侧、进得了问题列表、跳得过去。
+ *      样例值 / 文本写进数字字段 / 拼接有空片段）同样落在正确的行右侧、进得了问题列表、跳得过去；
+ *   9. 配得快一点（#105）：来源清单按路径与样例值搜、「已用」的计数与高亮、三档过滤（全部 / 只看未配置 /
+ *      只看必填）、目标字段搜索并跳行、以及「自动匹配同名」只填空行不覆盖、且这条通路上没有网络调用。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
-  restoreRowMapping, rowFromRule, ruleFromRow, type MapRow,
+  markHumanEdited, restoreRowMapping, rowFromRule, ruleFromRow, type MapRow,
 } from './rows.ts'
 import {
   appendArrayRow, appendLeafRow, configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow,
   rowReferenceFullLabel, rowReferenceLabel, rowsFromTargetFields, targetCandidatesFor, targetFieldsFromPaths,
   type SourceField, type TargetField,
 } from './editor-model.ts'
+import {
+  autoMatchSameName, autoSourceNotices, filterSourceGroups, nameSegment, nextMatchRowId,
+  requiredSourceKey, requiredSourceKeys, sourceItemMatches, sourceRefKeyId, sourceUsageOf, targetRowsView,
+  usedCountOf, usedRowIdsOf,
+} from './fast-config.ts'
 import {
   fieldReferenceLabel, fieldReferenceFullLabel, stepLabel, emptyRowLabel, transformLabel, TRANSFORM_KINDS,
   type TransformKind,
@@ -961,6 +968,374 @@ eq('数组元素里的必填没配：说法带上数组行',
 
 // 界面文案里不出现 $：这几条新问题的原文都是后端给的整句中文
 SAMPLE_ISSUES.errors.concat(SAMPLE_ISSUES.warnings).forEach(issue => assertNoDollar(issue.message))
+
+// ---------------------------------------------------------------- 配得快一点（#105）
+
+// 搜索：路径与样例值都搜（票里那两条）。数组元素字段连它所属的数组路径一起比——
+// 探到的路径是 `product.bomItems[0].qty`，用户想搜的往往是 `bomItems` 那个名字。
+const SEARCH_FIELDS: SourceField[] = [
+  { name: 'product.productCode', type: 'STRING', samples: ['DBG-9001'] },
+  { name: 'status', type: 'STRING', samples: ['ACTIVE', 'INACTIVE'] },
+  { name: 'neverUsed', type: 'STRING' },
+  { name: 'product.bomItems[0].materialCode', type: 'STRING', samples: ['MAT-718H'] },
+  { name: 'product.bomItems[0].qty', type: 'NUMBER', samples: [24] },
+]
+const searchItems = sourcePickerFor(null, SEARCH_FIELDS, null, 1).flatMap(g => g.items)
+const fieldItem = (path: string) => searchItems.find(i => i.path === path)!
+const childSearchItems = sourcePickerFor(bomChildRow, SEARCH_FIELDS, bomArrayRow, 1).flatMap(g => g.items)
+/** 数组元素子行清单上的一项（存的是相对路径，所以要连组一起看）。 */
+const childSearchItem = (path: string) => childSearchItems.find(i => i.path === path)!
+
+// 数组元素字段也列在常驻清单里：按样例值找字段的人（「这个 MAT-718H 是哪个字段」）不该因为它
+// 只能在子行里填就搜不到。列出来 ≠ 填得进去，点进顶层行照样会被 `fillRowFromPick` 挡下。
+eq('常驻清单里顶层字段与数组元素字段都在',
+  searchItems.map(i => [i.kind, i.path]),
+  [
+    ['field', 'product.productCode'], ['field', 'status'], ['field', 'neverUsed'],
+    ['element', 'product.bomItems[0].materialCode'], ['element', 'product.bomItems[0].qty'],
+  ])
+ok('按路径搜得到', sourceItemMatches(fieldItem('product.productCode'), 'productCode'))
+ok('路径的中间一段也搜得到', sourceItemMatches(fieldItem('product.productCode'), 'product'))
+ok('按样例值搜得到（字符串）', sourceItemMatches(fieldItem('status'), 'acti'))
+ok('按样例值搜得到（数字样例）', sourceItemMatches(childSearchItem('qty'), '24'))
+ok('按样例值搜得到数组元素里的字段（常驻清单上那一项也搜得到）',
+  sourceItemMatches(fieldItem('product.bomItems[0].materialCode'), 'MAT-718H'))
+ok('样例值搜不到别的字段', !sourceItemMatches(fieldItem('status'), '24'))
+ok('数组元素字段按它所属的数组路径也搜得到',
+  sourceItemMatches(childSearchItem('qty'), 'bomItems'))
+ok('常驻清单上那一项也按数组路径搜得到',
+  sourceItemMatches(fieldItem('product.bomItems[0].materialCode'), 'bomItems'))
+ok('搜一个没有的名字就没命中', !sourceItemMatches(fieldItem('status'), '不存在的字段'))
+eq('空查询词等于不筛', sourceItemMatches(fieldItem('status'), '   '), true)
+
+const searchGroups = sourcePickerFor(null, SEARCH_FIELDS, null, 1)
+const childSearchGroups = sourcePickerFor(bomChildRow, SEARCH_FIELDS, bomArrayRow, 1)
+eq('按路径搜，清单里只剩命中的',
+  filterSourceGroups(childSearchGroups, 'materialCode', 'all', new Map(), new Map())
+    .flatMap(g => g.items).map(i => i.path),
+  ['materialCode'])
+eq('按样例值搜，命中的是那个字段',
+  filterSourceGroups(searchGroups, 'INACTIVE', 'all', new Map(), new Map())
+    .flatMap(g => g.items).map(i => i.path),
+  ['status'])
+eq('一条都没命中时分组也不留（界面据此说「没搜到」）',
+  filterSourceGroups(searchGroups, 'nothing', 'all', new Map(), new Map()).length, 0)
+
+// 已用高亮与次数：键是**存进行里的那个形状**，不是清单上显示的那个
+const usageRows: MapRow[] = [
+  leaf('status', 'order_status', 'STRING'),
+  leaf('status', 'line_status', 'STRING'),
+  leaf('product.productCode', 'sku', 'STRING'),
+]
+const usage = sourceUsageOf(usageRows)
+eq('一个来源被两处引用就是 2', usedCountOf(usage, fieldItem('status')), 2)
+eq('引用它的那两行都记着（点一下能跳过去）',
+  usedRowIdsOf(usage, fieldItem('status')), [usageRows[0].id, usageRows[1].id])
+eq('没被用过的来源是 0', usedCountOf(usage, fieldItem('neverUsed')), 0)
+eq('别的步骤的同一个字段名不算它被用了', usedCountOf(usage, item('status', { step: 2 })), 0)
+eq('这一步引用了几个就是几个', usedCountOf(usage, fieldItem('status')), 2)
+// 相对路径与外层引用不存步骤（子规则带上后端会拒），所以计数也按「不存步骤」那个键算
+const outerUsed = sourceUsageOf([{ ...leaf('', 'x', 'STRING'), source: '$root.product.productName', sourceStep: 1 }])
+// 外层引用取的是组节点那个动作的顶层对象，所以计数也要带上「是哪一步的清单」。
+eq('外层引用按它存进去的样子计数',
+  usedCountOf(outerUsed, item('product.productName', { kind: 'outer', root: true, step: 1 }), [], 1), 1)
+eq('别的动作下的同一句外层引用不算在它头上',
+  usedCountOf(outerUsed, item('product.productName', { kind: 'outer', root: true, step: 2 }), [], 2), 0)
+const arrayUsageRows = [rowFromRule({
+  sourceStep: 1, source: 'product.bomItems', target: 'bom.bomLines', transform: 'STRING',
+  iterate: 'FOR_EACH', children: [{ source: 'materialCode', target: 'materialCode', transform: 'STRING' }],
+})]
+const arrayUsage = sourceUsageOf(arrayUsageRows)
+eq('数组行那一行自己算「来源数组」被用了一处',
+  arrayUsage.get(sourceRefKeyId({ step: 1, path: 'product.bomItems' }))?.count, 1)
+eq('清单上那个数组项也认得出自己被用了（高亮的依据）',
+  usedCountOf(arrayUsage, itemsOf(bomArrayForFlow).find(i => i.kind === 'array')!), 1)
+eq('行号行不算任何来源字段被用过',
+  sourceUsageOf([childOf('$index', 'INDEX')]).size, 0)
+eq('没选来源的行不算', sourceUsageOf([createRow(1, '', 'x', 'STRING')]).size, 0)
+
+// 子行的相对路径：键里带上「这一步 + 这一组」——同一句 `qty` 在别的动作下、别的数组里都不是
+// 同一个字段。两条都带上，顶层的多行也各算各的。
+const childUsageRows = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+childUsageRows.children = [createRow(null, 'materialCode', 'materialCode', 'STRING')]
+const childUsage = sourceUsageOf([childUsageRows])
+eq('子行的相对路径也算「这个来源被用了一处」',
+  usedCountOf(childUsage, childElement('materialCode'), BOM_SOURCE, 1), 1)
+eq('子行记在它自己那一行上，不是数组行',
+  usedRowIdsOf(childUsage, childElement('materialCode'), BOM_SOURCE, 1),
+  [childUsageRows.children[0].id])
+const otherActionUsage = sourceUsageOf([{
+  ...createGroupRow(2, 'product.bomItems', 'bom.bomLines'),
+  children: [createRow(null, 'materialCode', 'materialCode', 'STRING')],
+}])
+eq('别的动作下的同一句相对路径不算在它头上',
+  usedCountOf(otherActionUsage, childElement('materialCode'), BOM_SOURCE, 1), 0)
+eq('那一步的这一句才算（组节点是动作 2 的那一份）',
+  usedCountOf(otherActionUsage, childElement('materialCode'), BOM_SOURCE, 2), 1)
+// 老配置里顶层规则可能没写 `sourceStep`（后端当「任务输入」），它的 `materialCode` 是**另一个**字段，
+// 不能跟数组元素里的相对路径合成一处——不然那句「被引用了 2 处」是错的。
+const legacyTopUsage = sourceUsageOf([createRow(null, 'materialCode', 'order_no', 'STRING')])
+eq('没写来源步骤的顶层同名字段不算在子行那一句头上',
+  usedCountOf(legacyTopUsage, childElement('materialCode'), BOM_SOURCE, null), 0)
+
+/** 数组元素子行清单上的一项（`sourcePickerFor` 实际给的那种）。 */
+function childElement(name: string): PickableItem {
+  return sourcePickerFor(bomChildRow, BOM_SOURCE, bomArrayRow, 1)
+    .flatMap(g => g.items).find(i => i.path === name)!
+}
+
+eq('「全部」一档什么都不筛',
+  filterSourceGroups(searchGroups, '', 'all', usage, new Map()).flatMap(g => g.items).length,
+  searchGroups.flatMap(g => g.items).length)
+eq('「只看未配置」把用过的摘掉（顶层清单里只剩没被用过的）',
+  filterSourceGroups(searchGroups, '', 'unconfigured', usage, new Map())
+    .flatMap(g => g.items).filter(i => i.kind === 'field').map(i => i.path),
+  ['neverUsed'])
+eq('「只看未配置」在一条都没用过时等于全部',
+  filterSourceGroups(searchGroups, '', 'unconfigured', new Map(), new Map())
+    .flatMap(g => g.items).length,
+  searchGroups.flatMap(g => g.items).length)
+
+// 「只看必填」= 还没配好、且目标清单里标了 required 的那些目标字段要用的来源（与进度条同一个口径）。
+// 数组目标字段自己也是必填的（「制品 → BOM」里 items 就是必填），它配好之前也在这份清单里。
+const REQUIRED_TARGETS: TargetField[] = [
+  { path: 'sku', type: 'VARCHAR', required: true },
+  { path: 'remark', type: 'VARCHAR', required: false },
+  {
+    path: 'items', type: 'ARRAY', required: true, element: [
+      { path: 'itemCode', type: 'VARCHAR', required: true },
+      { path: 'note', type: 'VARCHAR', required: false },
+    ],
+  },
+]
+const requiredShape = requiredSourceKeys(rowsFromTargetFields(REQUIRED_TARGETS, 1), REQUIRED_TARGETS, 1)
+// 顶层字段与数组字段都要写进行里（那时默认来源是 1），元素字段的相对路径跟着数组行那个步骤。
+// 键里带一位「哪一层」：顶层的 `qty` 与数组元素里的 `qty` 不是一回事。
+eq('还没配好的必填字段都在（顶层那一步）',
+  [...(requiredShape.get(1) ?? [])].sort(),
+  [requiredSourceKey('itemCode', true), requiredSourceKey('items', false),
+    requiredSourceKey('sku', false)].sort())
+eq('数组元素里的必填字段跟着数组行那个步骤（数组行还没选来源数组时跟默认来源走）',
+  [...requiredSourceKeys(rowsFromTargetFields(REQUIRED_TARGETS, 2), REQUIRED_TARGETS, 2).get(2) ?? []].sort(),
+  [requiredSourceKey('itemCode', true), requiredSourceKey('items', false),
+    requiredSourceKey('sku', false)].sort())
+const halfFilled = rowsFromTargetFields(REQUIRED_TARGETS, 1)
+halfFilled[0].source = 'product.productCode'
+eq('配好的必填字段不再算「还差」',
+  [...(requiredSourceKeys(halfFilled, REQUIRED_TARGETS, 1).get(1) ?? [])].sort(),
+  [requiredSourceKey('itemCode', true), requiredSourceKey('items', false)].sort())
+// 数组行选了来源数组之后，元素字段跟着组节点那个动作（这里组节点是 2，所以整份都在 2 那一档）
+const arraySourced = rowsFromTargetFields(REQUIRED_TARGETS, 1)
+arraySourced[2].sourceStep = 2
+eq('数组行选了别的动作的来源数组时，元素字段跟着组节点那一步',
+  [...requiredSourceKeys(arraySourced, REQUIRED_TARGETS, 1).get(2) ?? []],
+  [requiredSourceKey('itemCode', true)])
+const childFilled = rowsFromTargetFields(REQUIRED_TARGETS, 1)
+childFilled[2].children[0].source = 'itemCode'
+eq('数组元素里配好的那一条也不算了',
+  [...(requiredSourceKeys(childFilled, REQUIRED_TARGETS, 1).get(1) ?? [])].sort(),
+  [requiredSourceKey('items', false), requiredSourceKey('sku', false)].sort())
+
+// 「只看必填」要能真的筛出东西：那一档给的是**目标字段的名字**，来源与它同名时才显示得出来
+// （这正是「同名」的口径——自动匹配也是按同名的）。所以必填目标 `productCode` 对上来源
+// `product.productCode`，数组元素里的 `materialCode` / `qty` 对上同名的来源字段。
+const NEEDS_ITEMS: TargetField[] = [
+  { path: 'productCode', required: true },
+  { path: 'status', required: false },
+  {
+    path: 'bomItems', type: 'ARRAY', required: true, element: [
+      { path: 'materialCode', required: true },
+      { path: 'qty', required: true },
+    ],
+  },
+]
+const needsShape = requiredSourceKeys(rowsFromTargetFields(NEEDS_ITEMS, 1), NEEDS_ITEMS, 1)
+eq('「只看必填」按来源步骤分开看（顶层那一步）',
+  filterSourceGroups(searchGroups, '', 'required', new Map(), needsShape, 1, false)
+    .flatMap(g => g.items).map(i => i.path),
+  ['product.productCode'])
+eq('「只看必填」在数组子行里按组节点的步骤给（相对路径那一批）',
+  filterSourceGroups(sourcePickerFor(bomChildRow, BOM_SOURCE, bomArrayRow, 1), '', 'required',
+    new Map(), needsShape, 1, true)
+    .flatMap(g => g.items).map(i => i.path),
+  ['materialCode', 'qty'])
+eq('可选字段不进「只看必填」那一档',
+  needsShape.get(1)?.has(requiredSourceKey('status', false)), false)
+
+// 目标字段搜索：搜的是完整路径，数组元素子行带上它所属的数组行（两句 qty 才分得开）
+const searchTargetRows: MapRow[] = [
+  leaf('a', 'bom.bomNo', 'STRING'),
+  createRow(1, '', 'bom.remark', 'STRING'),
+  createGroupRow(1, '', 'bom.bomLines'),
+]
+// 数组行也还没选来源数组（没配好）。子行一个取清单里必填的 `lineNo`（还没配）、
+// 一个取清单里的 `materialCode`（配好了）——「只看必填」与「只看未配置」的差别就落在这两行上。
+searchTargetRows[2].children = [
+  createRow(null, '', 'lineNo', 'STRING'),
+  createRow(null, 'x', 'materialCode', 'STRING'),
+]
+const searchEntries = flattenRows(searchTargetRows)
+const allView = targetRowsView(searchEntries, '', 'all', TARGETS)
+eq('没搜索词时这一档显示全部有目标字段的行', allView.count, 5)
+eq('第一行（配好的那个）也在列表里', allView.rowIds.includes(searchTargetRows[0].id), true)
+eq('搜顶层字段',
+  targetRowsView(searchEntries, 'bom.remark', 'all', TARGETS).rowIds, [searchTargetRows[1].id])
+eq('数组元素子行按「所属数组行 + 相对路径」搜得到',
+  targetRowsView(searchEntries, 'bomLines.lineNo', 'all', TARGETS).rowIds, [searchTargetRows[2].children[0].id])
+eq('只写相对路径也搜得到（子行自己的目标字段）',
+  targetRowsView(searchEntries, 'materialCode', 'all', TARGETS).rowIds, [searchTargetRows[2].children[1].id])
+// 搜索按完整路径匹配：数组那一行与它的子行都算命中，别的顶层字段不算
+eq('搜数组那一行连它的子行一起命中',
+  targetRowsView(searchEntries, 'bomLines', 'all', TARGETS).count, 3)
+eq('搜索也说得出命中的行里有几行在数组内',
+  targetRowsView(searchEntries, 'bomLines', 'all', TARGETS).inArrayCount, 2)
+eq('搜不到时说清是 0', targetRowsView(searchEntries, '不存在', 'all', TARGETS).matched, false)
+// 「只看未配置」= 没选来源的行（只填了目标字段但没来源的也算没配）
+eq('「只看未配置」只留没配好的行',
+  targetRowsView(searchEntries, '', 'unconfigured', TARGETS).rowIds,
+  [searchTargetRows[1].id, searchTargetRows[2].id, searchTargetRows[2].children[0].id])
+// 「只看必填」认的是**清单里标了 required 的路径**（子行要带上所属数组行才是清单里的路径）：
+// 顶层必填的 `bom.bomNo`、数组行自己、以及数组元素里必填的两行都留着；可选的 `bom.remark` 不留。
+// 「必填」说的是清单让不让空着，不是说这一行配没配好——配好了也照样看得见。
+eq('「只看必填」只留清单里标了 required 的行',
+  targetRowsView(searchEntries, '', 'required', TARGETS).rowIds,
+  [searchTargetRows[0].id, searchTargetRows[2].id,
+    searchTargetRows[2].children[0].id, searchTargetRows[2].children[1].id])
+eq('过滤之后再搜（两个条件一起用）',
+  targetRowsView(searchEntries, 'bom.bomNo', 'required', TARGETS).count, 1)
+// 回车跳行：一路回车在命中项之间走一圈
+const loopView = targetRowsView(searchEntries, 'o', 'all', TARGETS)
+eq('回车跳到第一个命中', nextMatchRowId(loopView, null), loopView.rowIds[0])
+eq('再回车跳到下一个命中', nextMatchRowId(loopView, loopView.rowIds[0]), loopView.rowIds[1])
+eq('走到最后一个再回车就转回第一个',
+  nextMatchRowId(loopView, loopView.rowIds[loopView.rowIds.length - 1]), loopView.rowIds[0])
+eq('没命中时没有可跳的行', nextMatchRowId(targetRowsView(searchEntries, 'zzz', 'all', TARGETS), null), null)
+
+// 刚加进来的空行（还没填目标字段）必须永远铺得出来：搜索与过滤都是围着「目标字段」转的，
+// 把它们一起筛掉，用户点完「+ 字段映射」就什么都看不见了——那一行明明是加进去了
+//（真机实测踩到过：行加进去了，列表里就是不出现）。
+const blankRow = appendLeafRow(searchTargetRows, 1)
+const withBlank = flattenRows(searchTargetRows)
+eq('空行在「全部」里铺得出来',
+  targetRowsView(withBlank, '', 'all', TARGETS).rowIds.includes(blankRow.id), true)
+eq('空行在「只看未配置」里也铺得出来（它还没配，当然要看）',
+  targetRowsView(withBlank, '', 'unconfigured', TARGETS).rowIds.includes(blankRow.id), true)
+eq('空行在「只看必填」里也铺得出来（它可能正要填一个必填字段）',
+  targetRowsView(withBlank, '', 'required', TARGETS).rowIds.includes(blankRow.id), true)
+eq('搜索时也不把空行筛掉（不然搜一次就找不到刚加的那一行了）',
+  targetRowsView(withBlank, 'materialCode', 'all', TARGETS).rowIds.includes(blankRow.id), true)
+eq('空行不算「命中」（搜索框旁边那个数字说的是搜到几行有目标字段的行）',
+  targetRowsView(withBlank, 'materialCode', 'all', TARGETS).count, 1)
+eq('行数统计里也不含空行', targetRowsView(withBlank, '', 'all', TARGETS).total, 5)
+
+// 自动匹配同名：只填空行、不覆盖已经配好的行，整条通路都在浏览器里（这一段一个请求都不发）
+// 同名按**最后一段**比：目标 `bomLines.qty` 对来源 `product.bomItems[0].qty`。数组也一样——
+// 数组映射行的来源数组要名字对得上（`items` 对 `items`），对不上就留给用户自己选。
+const AUTO_FIELDS: SourceField[] = [
+  { name: 'productCode', type: 'STRING' },
+  { name: 'product.items[0].materialCode', type: 'STRING' },
+  { name: 'product.items[0].qty', type: 'NUMBER' },
+  { name: 'neverUsed', type: 'STRING' },
+]
+const autoRows: MapRow[] = [
+  createRow(1, '', 'productCode', 'STRING'),
+  createRow(1, 'productCode', 'alreadyDone', 'STRING'),
+  createRow(1, '', 'nothingMatches', 'STRING'),
+  createGroupRow(1, '', 'items'),
+]
+autoRows[3].children = [createRow(null, '', 'materialCode', 'STRING'), createRow(null, '$index', 'lineNo', 'INDEX')]
+const autoResult = autoMatchSameName(autoRows, AUTO_FIELDS, 1)
+eq('自动匹配填上了空白的两行（顶层一个 + 数组元素里一个）', autoResult.rowIds,
+  [autoRows[0].id, autoRows[3].children[0].id])
+eq('填上的来源就是同名的那个', autoRows[0].source, 'productCode')
+eq('数组元素里的字段按相对路径填', autoRows[3].children[0].source, 'materialCode')
+eq('填上的行带上了这一批字段的来源步骤', autoRows[0].sourceStep, 1)
+eq('来源是数字类型时转换跟着猜（与手点一个来源同一个口径）',
+  autoRows[3].children[0].transform, 'STRING')
+eq('已经配好的行一个字都不动',
+  [autoRows[1].source, autoRows[1].transform], ['productCode', 'STRING'])
+eq('没有同名字段的行还是空着', autoRows[2].source, '')
+eq('同名的数组不算数（数组行留给用户自己选来源数组）', autoRows[3].source, '')
+eq('行号行不需要来源，也不会被填', autoRows[3].children[1].source, '$index')
+ok('自动匹配不往草稿里塞任何东西（填出来的还是那几行的规则）',
+  configFromRows(autoRows).rules.map(r => r.target).includes('alreadyDone'))
+
+// 第二次点「自动匹配同名」不该再改什么：空行已经填过了，剩下的都是对不上的
+eq('再点一次没有新的行可填', autoMatchSameName(autoRows, AUTO_FIELDS, 1).rowIds, [])
+
+// 不覆盖已经配好的行：手工填过枚举表的行也算配好（拿一个来源盖上去等于冲掉人工结果）
+const handMadeEnum = rowFromRule({ sourceStep: 1, source: '', target: 'status', transform: 'ENUM', enumMap: { A: 'x' } })
+eq('手工配过枚举表的行不算空白行', autoMatchSameName([handMadeEnum], [{ name: 'status', type: 'STRING' }], 1).rowIds, [])
+eq('常量行本来就不取来源，自动匹配不碰它',
+  autoMatchSameName([leaf('', 'kind', 'CONSTANT', { constant: '固定值' })], AUTO_FIELDS, 1).rowIds, [])
+eq('没有目标字段的空行不参与', autoMatchSameName([createRow(1, '', '', 'STRING')], AUTO_FIELDS, 1).rowIds, [])
+
+// 拼接行：「来源」是它的片段——空片段按同名补上（顶层行拼元素字段仍然只取第一个元素，不给）
+const autoConcat = rowFromRule({
+  sourceStep: 1, source: '', target: 'productCode', transform: 'CONCAT',
+  parts: ['BOM-', { path: '' }],
+})
+eq('拼接行的空片段按同名补', autoMatchSameName([autoConcat], AUTO_FIELDS, 1).rowIds, [autoConcat.id])
+eq('补上的是那个同名片段', autoConcat.parts, [{ type: 'const', value: 'BOM-' }, { type: 'path', value: 'productCode' }])
+eq('已经填了的常量片段不动', autoConcat.parts[0], { type: 'const', value: 'BOM-' })
+const childConcat = rowFromRule({ source: '', target: 'materialCode', transform: 'CONCAT', parts: [{ path: '' }] })
+const childConcatArray = createGroupRow(1, '', 'items')
+childConcatArray.children = [childConcat]
+eq('数组元素子行里的拼接片段按相对路径补（组行还没选来源数组也认同名数组）',
+  autoMatchSameName([childConcatArray], AUTO_FIELDS, 1).rowIds, [childConcat.id])
+eq('补上的是相对路径', childConcat.parts, [{ type: 'path', value: 'materialCode' }])
+const noNameConcat = rowFromRule({ sourceStep: 1, source: '', target: 'whatever', transform: 'CONCAT', parts: [{ path: '' }] })
+eq('对不上名字的拼接片段不填', autoMatchSameName([noNameConcat], AUTO_FIELDS, 1).rowIds, [])
+
+// 自动匹配只认同名：大小写不敏感、按最后一段比（`bomLines.qty` 对 `items[0].qty`）
+eq('同名按最后一段比（大小写不敏感）', nameSegment('bom.bomLines.QTY'), 'qty')
+// 顶层行拿不到数组元素里的字段（手工点也点不到它），所以对不上就是对不上——不猜
+const caseRow = createRow(1, '', 'bom.MaterialCode', 'STRING')
+eq('顶层行对不上数组元素里的同名字段（只给完整路径同名的）',
+  autoMatchSameName([caseRow], AUTO_FIELDS, 1).rowIds, [])
+const caseChild = createRow(null, '', 'MaterialCode', 'STRING')
+const caseArray = createGroupRow(1, '', 'items')
+caseArray.children = [caseChild]
+eq('数组元素子行里大小写不敏感地对上相对路径（数组行还没选来源数组也认，按默认来源里同名的那个数组）',
+  autoMatchSameName([caseArray], AUTO_FIELDS, 1).rowIds, [caseChild.id])
+eq('填上的是相对路径，不是探测给的完整路径', caseChild.source, 'materialCode')
+
+// 填上的行标成「自动」；校验时给一条提醒确认的提示（票里最后一条）
+autoRows[0].auto = true
+const autoNotices = autoSourceNotices(autoRows)
+eq('自动填上的行给一条提示', autoNotices.length, 1)
+eq('提示挂在哪一行（与后端问题同一套定位口径）',
+  [autoNotices[0].target, autoNotices[0].parent], ['productCode', null])
+ok('提示里说清了「确认之后才算人工结果」', autoNotices[0].message.includes('确认'))
+const autoChild = createGroupRow(1, 'items', 'bomLines')
+autoChild.children = [createRow(null, 'materialCode', 'materialCode', 'STRING')]
+autoChild.children[0].auto = true
+eq('数组元素里的提示带上它所属的数组行（界面据此定位到行）',
+  autoSourceNotices([autoChild]).map(n => [n.parent, n.target]), [['bomLines', 'materialCode']])
+eq('没标「自动」的行没有提示', autoSourceNotices(autoRows).length, 1)
+
+// 「自动」是编辑器里的本地事实：一个字都不进规则（后端那份草稿里也没有这个字段）
+autoRows[0].auto = true
+eq('「自动」不进规则',
+  Object.keys(ruleOf(autoRows[0])).includes('auto'), false)
+// 人碰过这一行（手点来源 / 换转换 / 清除）之后就不该再自称自动
+const humanTouched = createRow(1, '', 'productCode', 'STRING')
+humanTouched.auto = true
+markHumanEdited(humanTouched)
+eq('人工动过之后「自动」标记掉了', humanTouched.auto, false)
+const autoCleared = createRow(1, 'productCode', 'productCode', 'STRING')
+autoCleared.auto = true
+clearRowMapping(autoCleared)
+eq('清除一行之后「自动」标记也掉了', autoCleared.auto, false)
+const autoTransformed = createRow(1, 'productCode', 'productCode', 'STRING')
+autoTransformed.auto = true
+applyTransform(autoTransformed, 'INT')
+eq('换过转换之后「自动」标记掉了', autoTransformed.auto, false)
+
+// 票里那条「自动匹配不发起任何网络请求」在这份检查里**不靠读源码断言**（那不是外部行为，
+// 也不该把 node 的东西拉进来）：真正的证据在真机那一趟——`.scratch/t7-ui.cjs` 全程盯着后端请求
+// 日志，两次「自动匹配同名」都是 0 个请求。这里要保的是「这条通路是纯逻辑」：它只依赖
+// `source-picker` 那几个纯函数，没有任何一处 import 过 api 客户端。
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {
