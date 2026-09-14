@@ -40,6 +40,7 @@ export interface DraftRequestBody {
   draft: { rules: Record<string, any>[] }
   targets: TargetField[]
   sourceFields: SourceField[]
+  sourceFieldsStep: number | null
   earlierActionIndexes: number[]
   defaultSourceStep: number | null
   actionIndex: number | null
@@ -50,6 +51,13 @@ export interface DraftRequestOptions {
   rows: MapRow[]
   targets: TargetField[]
   sourceFields: SourceField[]
+  /**
+   * `sourceFields` 是哪个动作的探测结果。
+   *
+   * 后端只拿得到这一份样例，所以它只能判来源步骤跟这份一样的规则：别的步骤的字段不在这份清单里，
+   * 拿它去判会把配好的行报成「来源字段不在样例里」（顶部一换默认来源，已配的行留在原步骤，就会整片误报）。
+   */
+  sourceFieldsStep: number | null
   /** 链上执行顺序更早的动作序号（`sourceStep` 只能指向这些）。 */
   earlierActionIndexes: number[]
   /** 编辑器顶部那个「默认来源」。 */
@@ -64,6 +72,7 @@ export function draftRequest(options: DraftRequestOptions): DraftRequestBody {
     draft: configFromRows(options.rows),
     targets: options.targets,
     sourceFields: options.sourceFields,
+    sourceFieldsStep: options.sourceFieldsStep,
     earlierActionIndexes: options.earlierActionIndexes,
     defaultSourceStep: options.defaultSourceStep,
     actionIndex: options.actionIndex,

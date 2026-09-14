@@ -184,8 +184,13 @@ public final class JsonataRuleCompiler {
         for (Object part : rule.parts()) {
             if (part instanceof String s) {
                 parts.add(jsonString(s));
-            } else if (part instanceof Map<?, ?> m) {
+            } else if (part instanceof Map<?, ?> m && m.get("path") != null) {
                 parts.add(sourceExpr(m.get("path").toString(), step, depth));
+            } else {
+                // 认不出的片段（不是字符串、不是 {"path": ...}、或路径整个没写）：报清楚，别在下面
+                // m.get("path").toString() 上抛 NPE——「校验配置」那条链路要靠这条异常变成一条问题
+                throw new CompileException(rule.target(), null,
+                        "CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: " + rule.target());
             }
         }
         if (parts.isEmpty()) {

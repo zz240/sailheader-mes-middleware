@@ -14,6 +14,9 @@ import java.util.Map;
  * @param draft                草稿本体，形状与动作 addition 里的字段映射配置一致（{@code {mode? / expression? / rules[]}}）
  * @param targets              目标字段清单（结构探测得到的那一份；探不出来时是编辑器里手写的那些）
  * @param sourceFields         来源样例（结构探测给的字段清单：路径 / 类型 / 样本值）
+ * @param sourceFieldsStep     {@code sourceFields} 是**哪一个动作**的探测结果；只带一份样例，所以只能判
+ *                             来源步骤跟它一样的规则（跨步骤引用的字段不在这一份清单里，拿它去判必然误报）。
+ *                             传 null 表示这份样例的步骤不明——那时「来源字段在不在样例里」这一条不判。
  * @param earlierActionIndexes 链上执行顺序更早的动作序号——顶层规则的 {@code sourceStep} 只能指向这些
  * @param defaultSourceStep    编辑器顶部那个「默认来源」的步骤（显示「没写 sourceStep 意味着什么」时要用）
  * @param actionIndex          草稿所在动作的序号（新建动作时给它准备占用的那个）；用来认「sourceStep 指到了自己或更晚」
@@ -22,6 +25,7 @@ public record MappingDraftRequest(
         Map<String, Object> draft,
         List<TargetFieldSpec> targets,
         List<SourceField> sourceFields,
+        Integer sourceFieldsStep,
         List<Integer> earlierActionIndexes,
         Integer defaultSourceStep,
         Integer actionIndex) {
@@ -29,8 +33,8 @@ public record MappingDraftRequest(
     /**
      * 目标字段清单里的一个字段。
      *
-     * <p>{@code element} 是数组元素的字段（子行的目标写的就是相对路径）。这一份清单本轮只有形状上的用处，
-     * 基于它的样例检查（必填有没有配、类型配没配上）在下一张票里（#104）。</p>
+     * <p>{@code element} 是数组元素的字段（子行的目标写的就是相对路径）。清单用于两条检查（#104）：
+     * 必填字段配没配来源、目标列类型是不是数字（来源字段是文本时要提醒套一层数字转换）。</p>
      */
     public record TargetFieldSpec(String path, String type, Boolean required, List<TargetFieldSpec> element) {
     }

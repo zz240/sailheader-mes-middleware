@@ -21,14 +21,30 @@
   | 子行选「数组元素内」的字段 | 相对路径（`materialCode`） | `$g0.materialCode` |
   | 子行选「外层 · 」的字段 | `$root.<路径>` | `$s_1.<路径>` |
 - **手工新增行（T4 / #102）**：目标字段清单不全（HTTP / MQ 做目标时探不出结构，见 #98 H3）时也能把配置配完：「+ 字段映射」加一行空的字段映射、「+ 数组映射」加一行空的数组映射、「+ 行号」/「+ 子字段」在数组行下面加子行。目标字段**可以从清单里选，也可以直接手输一个清单里没有的路径**（补全清单按这一行的形状给：普通行给标量字段、数组行给数组字段、子行给数组元素内的相对路径；清单之外的路径标「手写」）。每一行能**清除**（清的是这一行「值怎么取」，目标字段与数组行的子行都留着），清除后行里出现「撤销」，把那一份配回来。
-- **校验配置（T5 / #103）**：编辑器顶部一个「校验配置」按钮，把草稿 POST 给后端只读接口 `POST /api/field-mapping-editor/validate`。请求带：草稿（`{mode? / expression? / rules[]}`，就是保存会写出去的那份）、目标字段清单、来源样例、链上更早的动作序号、默认来源步骤、草稿所在动作的序号；响应带 `errors[]` / `warnings[]` / 编译产物文本（`compiled.jsonata` 与 `compiled.rulesJson`）。**它不写数据库，也不改 `FieldMappingRule` 的格式。**
+- **校验配置（T5 / #103）**：编辑器顶部一个「校验配置」按钮，把草稿 POST 给后端只读接口 `POST /api/field-mapping-editor/validate`。请求带：草稿（`{mode? / expression? / rules[]}`，就是保存会写出去的那份）、目标字段清单、来源样例、**这份样例是哪个动作的探测结果**（`sourceFieldsStep`，见下）、链上更早的动作序号、默认来源步骤、草稿所在动作的序号；响应带 `errors[]` / `warnings[]` / 编译产物文本（`compiled.jsonata` 与 `compiled.rulesJson`）。**它不写数据库，也不改 `FieldMappingRule` 的格式。**
   - **判断对错全在这个接口里，前端一条校验规则都不复制**（#98 D1）：前端只装请求（草稿 = `configFromRows`，没配好的行本来就不进规则）和把回来的问题按「目标字段 + 它所属的数组行」挂到行上（`frontend/src/mapping/draft.ts`）。
   - 后端复用三份现成实现，不重写一遍结构校验：`FieldMappingConfig.problems()`（`validate()` 抛的就是它的头一条）、`JsonataRuleCompiler.compile`（编译期才发现的重复目标 / 前缀冲突也由它报）、`ChainConsistencyValidator.checkRules`（链级校验与草稿校验共用同一条规则）。
   - 每条问题带 `target`（出错那条规则的目标字段，数组子行写相对路径）与 `parent`（所属数组行的目标字段，顶层为 null）——界面据此定位到行：行右侧「有错 / 有警告 / 没问题」三种状态、问题列表点一下跳到那一行（收起的数组行会先展开）、保存时先校验一次（有错就拦下并跳到第一条错误）、底部两个标签页（JSONata / 规则 JSON）。
   - **顶层规则漏写 `sourceStep` 在这里是一条提示，不是错误**：后端把「没写」当成任务输入（0），查不出这是个错（#98 D10）。
   - 它替代不了 `POST /api/jobs/{id}/validate`：那个按 job id 校验**已经存进数据库**的配置，而编辑器里的还没保存。
   - 同一目标字段出现在两行时（用户加了一行重复的），问题挂到**后加**的那一行上——和后端编译器的口径一致（它在后出现的那条规则上报「重复映射」）。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行）。
+- **依赖目标清单与来源样例的六条检查（T6 / #104）**：这几条要看草稿之外的两份事实（请求里带的 `targets` 与 `sourceFields`），所以后端本来查不出来——对应的正是「不报错但结果不对」的四种情况（#98 问题陈述）。实现在 `service/MappingSampleChecks.java`，由 `MappingDraftValidationService` 接过去：
+
+  | 检查 | 级别 | 判据 |
+  |---|---|---|
+  | 必填的目标字段没有配置来源 | 错误 | 请求里的目标清单比草稿：必填（`required`）的目标字段没有对应规则。数组字段整行报一条（元素字段一条也进不来，逐个报只会刷屏）；数组配了、只是某个必填子字段没配，才逐条报子字段 |
+  | 来源字段在样例里不存在 | 错误 | 数组子行的来源按**相对路径**补上组节点的来源数组再查（嵌套数组逐层补）；`$root.<路径>` 是组内引用外层表头字段，去掉前缀按绝对路径查；`$index` 不是来源路径，不查 |
+  | 枚举表没有覆盖样例里出现过的值 | 警告 | 用来源字段**在这份样例里的实际值**（`SourceField.samples`，去重）比 `enumMap` 的键。查不到键时结果是 null、不报错，只能在这里提醒 |
+  | 文本值直接写进数字类型的字段（建议套一层数字转换） | 警告 | 目标清单里的列类型是数字类型（INT/DECIMAL/…）且来源字段在样例里是文本类型（STRING/VARCHAR/…）。数字转换（`INT`）、行号、常量不算——常量是不是数字由那一行的字面量说了算，不猜 |
+  | 拼接里存在空片段 | 警告 | `parts` 里有空串常量片段，或路径片段没写 `path`（编译出来是空字符串） |
+  | 顶层规则漏写 `sourceStep` | 提示 | 见上一条（#103 就有的那条提示） |
+
+  - **只查样例里的值，不执行表达式**（#98 D9）：不试算任何一条表达式，也就不需要「试算」那套机制。目标清单或来源样例空着时一条都不报——探不出结构不是配置的错；特别是「来源字段不在样例里」，取样例挂了就整份字段清单都不在，那时报出来的是探测的故障。
+  - **前五条里只有前两条是错误**（拦保存），后三条是警告：它们顺着样例数据走，样例陈旧（那是最近一次成功运行的取样）时会误伤，所以只提醒。
+  - **路径口径**：样例给的是探测路径（`items[0].materialCode`），草稿里的数组子行写相对路径（`materialCode`），目标清单给的是编辑器路径（数组元素不带下标）。比对前两边折成同一种形状（去掉 `[0]`）；嵌套数组的前缀沿路累积（`items` → `items.parts` → `items.parts.code`）；组节点填的来源数组（`items`）**只在样例里有以它开头的元素字段**时才算存在——结构探测不会单独给出 `items` 这一条。
+  - **只判来源步骤跟这份样例一样的规则**：请求里只带一份样例（左边清单是哪一步的探测结果就带哪一份，报在 `sourceFieldsStep` 里）。跨步骤引用、以及顶部默认来源一换之后留在原步骤的那些行，字段根本不在这一份清单里——拿它去判会整片误报「来源字段不在样例里」，而那是错误级、直接拦住保存。`sourceFieldsStep` 没给（步骤不明）时这一条整个不判。
+  - 界面这边**一条规则都没加**：新问题与 #103 那几条走同一条定位通路（`frontend/src/mapping/draft.ts` 按「目标字段 + 所属数组行」摆到行上），所以行右侧状态、问题列表、点一下跳行、保存前拦下都自动覆盖（`frontend/src/mapping/checks.ts` 第 8 组锁住这条路）。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行）。
 
 ## 决策时间线
 
@@ -46,6 +62,7 @@
 | 09-14 | 数组映射在三处来源写法上分开：数组 / 相对路径 / 外层引用 | 三种东西填串了就是自相矛盾的规则，后端不报错 | — | #101 / source-picker.ts |
 | 09-14 | 手工新增行 + 清除/撤销 | 目标字段清单不全（HTTP/MQ 做目标时探不出结构）时，参照原件那种「行全部由清单生成」的编辑器配不完 | — | #102 / editor-model.ts、rows.ts |
 | 09-14 | 「校验配置」：草稿校验收进后端一个只读接口 | 前端不复制任何一条校验规则；错要能定位到行、保存前拦得住 | — | #103 / ADR-0011 / MappingDraftValidationService |
+| 09-14 | 补上依赖目标清单与来源样例的六条检查 | 后端本来有四种情况不报错但结果不对（来源路径不存在、拼接有空片段、日期解析失败、枚举查不到键），这六条正是这次改版要照亮的东西 | — | #104 / MappingSampleChecks |
 
 ## 待办 / 已知限制
 
@@ -55,8 +72,7 @@
 - 来源清单只认「链上更早那个动作最近一次成功运行的输出」：**MQ 消费动作不记成功步**，所以 MQ 打头的任务在编辑器里没有来源样例（`FieldMappingEditorService.latestOutput` 按 step 查 `message_step`）。走 `READ_SQL` 打头的链不受影响。
 - 源里数组必须是**真数组**：直接读 MySQL 的 JSON 列拿到的是字符串（JDBC 行为），`$map` 会把整串当一个元素——那是源那边的形状问题，不是字段映射的问题。
 - **校验不是实时的**（#98 决定）：点「校验配置」才跑一次，改完行要再点一次；界面上给出的行状态是那一次的结果，不随编辑自动失效。
-- **基于目标清单与来源样例的六条检查还没做**（#104）：必填的目标字段没有配置来源、来源字段在样例里不存在、枚举表没覆盖样例里出现过的值、文本值直接写进数字类型的字段、拼接里存在空片段——请求里已经带着清单和样例，接口形状不用再改。
-- 校验只做结构判断，**不做值的试算**（#98：需要在受控边界里真的执行表达式，是另一件事）。
+- 校验只做结构判断与**样例值的比对**，**不做值的试算**（#98：需要在受控边界里真的执行表达式，是另一件事）。
 
 ## 当前生效
 

@@ -13,7 +13,9 @@
  *   6. 数组映射（#101）：数组行选来源数组、子行按相对路径、子行引用外层表头、展开收起、加子行，
  *      以及跑通制品 → BOM 的规则形状；
  *   7. 手工新增行（#102）：加空行、目标字段的补全清单按行给、手输路径照样进规则、加子字段与行号，
- *      以及清除一行与撤销这次清除。
+ *      以及清除一行与撤销这次清除；
+ *   8. 依赖样例与目标清单的问题（#104）：后端新报的那几条（必填没配来源 / 来源不在样例里 / 枚举没覆盖
+ *      样例值 / 文本写进数字字段 / 拼接有空片段）同样落在正确的行右侧、进得了问题列表、跳得过去。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -822,6 +824,7 @@ const draftBody = draftRequest({
   rows: [DRAFT_CONFIGURED, DRAFT_BLANK],
   targets: TARGETS,
   sourceFields: [UNIT_FIELD],
+  sourceFieldsStep: 1,
   earlierActionIndexes: [1],
   defaultSourceStep: 1,
   actionIndex: 2,
@@ -835,6 +838,9 @@ eq('请求带上默认来源与这个动作自己的序号',
   [draftBody.defaultSourceStep, draftBody.actionIndex], [1, 2])
 eq('请求带上目标清单与来源样例（基于样例的那几条检查要用）',
   [draftBody.targets.length, draftBody.sourceFields.length], [TARGETS.length, 1])
+// 只有这样样例是哪一步的，后端才判得了「来源字段在不在样例里」：只带一份样例，
+// 拿它去判别的步骤的规则必然误报（顶部一换默认来源、已配的行留在原步骤时就会整片误报）
+eq('请求还带上这份样例是哪个动作的探测结果', draftBody.sourceFieldsStep, 1)
 
 // 后端给的问题 → 界面上哪一行：靠「目标字段 + 它所属的数组行」，两者都一样才是同一行。
 const MATERIAL_CHILD = createRow(null, '', 'materialCode', 'STRING')
@@ -899,6 +905,62 @@ eq('定位不到行的说法', issueLocation({ target: null, parent: null, messa
 // 跳到收起的数组子行：得先把它上面的数组行展开，否则那一行根本铺不出来
 eq('一行的祖先数组行', ancestorRowIds(ISSUE_ROWS, MATERIAL_CHILD.id), [ISSUE_ARRAY.id])
 eq('顶层行没有祖先', ancestorRowIds(ISSUE_ROWS, MATERIAL_TOP.id), [])
+
+// ---------------------------------------------------------------- 依赖样例与目标清单的问题（#104）
+
+// 后端新报的那几条（必填没配来源 / 来源不在样例里 / 枚举没覆盖样例值 / 文本写进数字字段 / 拼接有空片段）
+// 与 #103 那几条走的是同一条定位通路：前端**一条规则都不复制**，只按「目标字段 + 所属数组行」摆到行上。
+// 这里锁的是那条通路：新问题必须落在正确的行右侧、进得了问题列表、点得着跳得过去。
+const SAMPLE_ISSUES: DraftValidation = {
+  valid: true,
+  errors: [
+    { target: 'bom.remark', parent: null, message: '必填的目标字段没有配置来源: bom.remark' },
+    { target: 'materialCode', parent: 'bom.bomLines', message: '来源字段不在样例里: materialCodex' },
+  ],
+  warnings: [
+    { target: 'bom.bomNo', parent: null, message: '枚举表没有覆盖样例里出现过的值: SET' },
+    { target: 'qty', parent: 'bom.bomLines', message: '目标字段 bom.bomLines.qty 是数字类型（INT）' },
+    { target: 'materialName', parent: 'bom.bomLines', message: '拼接里有 1 个空片段' },
+  ],
+  compiled: { jsonata: null, rulesJson: '{}' },
+}
+
+// 一份「必填字段没配来源」的草稿长什么样：那一行还在编辑器里，只是没进草稿
+const UNCONFIGURED_REQUIRED = createRow(1, '', 'bom.remark', 'STRING')
+// 数组那一行照旧带上几个子行：数字类型与拼接空片段这两条要落在子行上
+const SAMPLE_ARRAY = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+SAMPLE_ARRAY.children = [
+  createRow(null, 'materialCodex', 'materialCode', 'STRING'),
+  createRow(null, 'quantity', 'qty', 'STRING'),
+  createRow(null, 'materialCode', 'materialName', 'CONCAT'),
+]
+const SAMPLE_ROWS: MapRow[] = [leaf('bomNo', 'bom.bomNo', 'STRING'), UNCONFIGURED_REQUIRED, SAMPLE_ARRAY]
+const sampleLocated = locateIssues(flattenRows(SAMPLE_ROWS), SAMPLE_ISSUES)
+
+eq('样例检查的错误也按行定位（必填没配的那一行）', sampleLocated[0].rowId, UNCONFIGURED_REQUIRED.id)
+eq('样例检查的错误也按行定位（数组元素里的来源不在样例）', sampleLocated[1].rowId, SAMPLE_ARRAY.children[0].id)
+eq('样例检查的警告按行定位（枚举没覆盖）', sampleLocated[2].rowId, SAMPLE_ROWS[0].id)
+eq('样例检查的警告按行定位（数字类型）', sampleLocated[3].rowId, SAMPLE_ARRAY.children[1].id)
+eq('样例检查的警告按行定位（拼接空片段）', sampleLocated[4].rowId, SAMPLE_ARRAY.children[2].id)
+
+// 行右侧那三个状态照样由问题的级别算：错误压过警告
+const sampleByRow = issuesByRow(sampleLocated)
+eq('必填没配的行右侧显示「有错」', rowIssueState(sampleByRow.get(UNCONFIGURED_REQUIRED.id)), 'error')
+eq('有警告没错误的行右侧显示「有警告」', rowIssueState(sampleByRow.get(SAMPLE_ROWS[0].id)), 'warning')
+const warnOnly = { ...SAMPLE_ISSUES, errors: [], valid: true }
+eq('只有警告时 valid 仍是真（保存不被拦）', warnOnly.valid, true)
+eq('一条都没报的行仍是「没问题」', rowIssueState(sampleByRow.get(SAMPLE_ARRAY.id)), 'ok')
+
+// 保存被拦时跳第一条**定位得到**的错误：新问题一样跳得动
+eq('跳到第一条错误（必填没配那一行）', firstErrorRowId(sampleLocated), UNCONFIGURED_REQUIRED.id)
+
+// 问题列表里那一列的说法：数组元素里的问题带上它所属的数组行，才认得出是哪一行
+eq('数组元素里的必填没配：说法带上数组行',
+  issueLocation({ target: 'qty', parent: 'bom.bomLines', message: '必填的目标字段没有配置来源: qty' }),
+  'bom.bomLines · qty')
+
+// 界面文案里不出现 $：这几条新问题的原文都是后端给的整句中文
+SAMPLE_ISSUES.errors.concat(SAMPLE_ISSUES.warnings).forEach(issue => assertNoDollar(issue.message))
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

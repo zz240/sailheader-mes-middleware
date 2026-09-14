@@ -890,6 +890,8 @@ async function validateConfig(): Promise<DraftValidation | null> {
         rows: rows.value,
         targets: targets.value,
         sourceFields: sourceFields.value,
+        // 左边清单是哪一步的探测结果，后端就拿它判哪一步的来源路径
+        sourceFieldsStep: context.value?.source?.step ?? null,
         earlierActionIndexes: earlierActionIndexes.value,
         defaultSourceStep: defaultStep.value,
         actionIndex: props.actionIndex ?? null,

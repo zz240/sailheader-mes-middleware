@@ -28,15 +28,13 @@ import java.util.Set;
  * 也不改 {@code FieldMappingRule} 的格式。它替代不了 {@code POST /api/jobs/{id}/validate}——那个按 job id
  * 校验已经存进数据库的配置，而编辑器里的还没保存。</p>
  *
- * <p>判断对错全部在这里，前端一条校验规则都不复制（#98 D1）。三条现成的实现直接复用，不各写一遍：</p>
+ * <p>判断对错全部在这里，前端一条校验规则都不复制（#98 D1）。几条现成的实现直接复用，不各写一遍：</p>
  * <ul>
  *   <li>结构：{@link FieldMappingConfig#problems()}（{@code validate()} 抛的就是它的头一条）；</li>
  *   <li>链：{@link ChainConsistencyValidator#checkRules}（sourceStep 得指向链上更早的动作）；</li>
- *   <li>编译产物：{@link JsonataRuleCompiler#compile}，编译期才发现的问题（重复目标、前缀冲突）也由它报。</li>
+ *   <li>编译产物：{@link JsonataRuleCompiler#compile}，编译期才发现的问题（重复目标、前缀冲突）也由它报；</li>
+ *   <li>依赖**目标字段清单与来源样例**的那几条：#104 起在 {@link MappingSampleChecks} 里，这里只往外交接。</li>
  * </ul>
- *
- * <p>基于目标字段清单和来源样例的那几条检查（必填配没配、来源路径在不在样例里、枚举表覆没覆盖）不在这里，
- * 是下一张票（#104）的事——请求里已经带着清单和样例，形状先按 #103 定下来。</p>
  */
 @Service
 public class MappingDraftValidationService {
@@ -72,17 +70,53 @@ public class MappingDraftValidationService {
                     new Compiled(null, prettyJson(request.draft())));
         }
 
-        // 两处来的问题用同一个形状装（都定位到某条规则）：结构来自 FieldMappingConfig，
-        // sourceStep 链一致性来自 ChainConsistencyValidator——各自都是现成的实现，这里只往外交接
+        // 三处来的问题用同一个形状装（都定位到某条规则）：结构来自 FieldMappingConfig，sourceStep 链一致性
+        // 来自 ChainConsistencyValidator，依赖目标清单与来源样例的那两条来自 MappingSampleChecks（#104）
+        // ——各自都是现成的实现，这里只往外交接
         List<RuleProblem> problems = new ArrayList<>(config.problems());
         problems.addAll(chainProblems(config, request));
+        problems.addAll(sampleProblems(config, request));
         for (RuleProblem problem : problems) {
             errors.add(new Problem(problem.target(), problem.parent(), problem.message()));
         }
         warnings.addAll(missingSourceStepHints(config, request));
+        for (RuleProblem warning : sampleWarnings(config, request)) {
+            warnings.add(new Problem(warning.target(), warning.parent(), warning.message()));
+        }
 
         Compiled compiled = compile(config, errors);
         return new MappingDraftValidation(errors.isEmpty(), errors, warnings, compiled);
+    }
+
+    /**
+     * 要靠**目标字段清单和来源样例**才判得出来的错误（#104）：必填没配来源、来源路径不在样例里。
+     *
+     * <p>手写表达式（mode=EXPRESSION）没有规则树，这两条查不了；清单和样例空着时 {@link MappingSampleChecks}
+     * 自己一条都不报。</p>
+     */
+    private List<RuleProblem> sampleProblems(FieldMappingConfig config, MappingDraftRequest request) {
+        if (!isRules(config)) {
+            return List.of();
+        }
+        List<RuleProblem> problems = new ArrayList<>(MappingSampleChecks.missingRequiredTargets(config, request));
+        problems.addAll(MappingSampleChecks.unknownSources(config, request));
+        return problems;
+    }
+
+    /**
+     * 靠样例才判得出来的**警告**（#104）：枚举表没覆盖样例值、文本写进数字字段。
+     *
+     * <p>定成警告而不是错误，是因为它们顺着样例数据走：样例是最近一次成功运行的取样，陈旧的时候会误伤，
+     * 所以只提醒、不拦保存（真正拦保存的还是后端那三层：保存时 400、{@code /validate}、启用前链校验）。</p>
+     */
+    private List<RuleProblem> sampleWarnings(FieldMappingConfig config, MappingDraftRequest request) {
+        if (!isRules(config)) {
+            return List.of();
+        }
+        List<RuleProblem> warnings = new ArrayList<>(MappingSampleChecks.uncoveredEnumValues(config, request));
+        warnings.addAll(MappingSampleChecks.textIntoNumberTarget(config, request));
+        warnings.addAll(MappingSampleChecks.emptyConcatParts(config));
+        return warnings;
     }
 
     /** sourceStep 链一致性：复用链级校验那条规则（只查顶层规则，组内子规则继承组节点）。 */
