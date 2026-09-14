@@ -65,26 +65,27 @@
         <aside class="wb-source">
           <div class="wb-panel-title">来源字段</div>
           <div class="wb-panel-tip">{{ sourceTip }}</div>
+          <div class="wb-panel-tip">{{ pickerTip }}</div>
           <div v-if="loading" class="wb-empty">加载中…</div>
-          <div v-else-if="!sourceGroups.length" class="wb-empty">这一来源还没有字段清单</div>
+          <div v-else-if="!pickerGroups.length" class="wb-empty">这一来源还没有字段清单</div>
           <div v-else class="wb-source-list">
-            <div v-for="group in sourceGroups" :key="String(group.step)" class="wb-source-group">
-              <div class="wb-source-group-title">{{ group.label }}</div>
+            <div v-for="(group, gi) in pickerGroups" :key="gi" class="wb-source-group">
+              <div class="wb-source-group-title">{{ group.title }}</div>
+              <div v-if="group.tip" class="wb-source-group-tip">{{ group.tip }}</div>
               <div
-                v-for="field in group.fields"
-                :key="field.name"
+                v-for="item in group.items"
+                :key="item.label"
                 class="wb-source-item"
-                :class="{ used: group.used.has(field.name), 'array-field': isArrayPath(field.name) }"
+                :class="{ 'array-field': item.kind === 'array' }"
                 tabindex="0"
-                @click="pick(field, group)"
-                @keydown.enter.prevent="pick(field, group)"
+                @click="pick(item)"
+                @keydown.enter.prevent="pick(item)"
               >
                 <div class="wb-source-item-main">
-                  <span class="wb-source-name">{{ field.name }}</span>
-                  <span v-if="isArrayPath(field.name)" class="wb-chip">数组</span>
-                  <span v-if="group.used.has(field.name)" class="wb-chip used">已用 {{ group.used.get(field.name) }}</span>
+                  <span class="wb-source-name">{{ item.label }}</span>
+                  <span v-if="item.kind === 'array'" class="wb-chip">数组</span>
                 </div>
-                <div class="wb-source-meta">{{ field.type }}<template v-if="sampleOf(field)"> · 样例 {{ sampleOf(field) }}</template></div>
+                <div class="wb-source-meta">{{ item.type }}<template v-if="sampleOf(item)"> · 样例 {{ sampleOf(item) }}</template></div>
               </div>
             </div>
           </div>
@@ -94,6 +95,8 @@
           <div class="wb-rows-head">
             <div class="wb-panel-title">目标字段</div>
             <div class="wb-panel-tip">{{ targetTip }}</div>
+            <span class="wb-spacer" />
+            <el-button size="small" text @click="toggleAllArrays">{{ allCollapsed ? '展开全部数组' : '收起全部数组' }}</el-button>
             <el-button size="small" text type="primary" @click="reloadTargets">重新探测目标字段</el-button>
           </div>
 
@@ -102,8 +105,25 @@
           </div>
 
           <div v-else class="wb-row-list">
-            <template v-for="entry in displayRows" :key="entry.row.id">
+            <!-- 每一项只有在「数组行的分组标题」与「普通行」之间二选一。
+                 两者必须挂在同一个 v-if/v-else 上并共用 key：分成两个兄弟节点时，
+                 Vue 会按位置复用 DOM，把数组行复制成两份（真机实测踩到过）。 -->
+            <template v-for="entry in displayRows" :key="entry.key">
+              <!-- 数组行的「数组元素内」分组标题：展开 / 收起子行就在这里（#101 验收） -->
+              <div v-if="entry.arrayHeader" class="wb-group">
+                <button
+                  class="wb-chip chip-toggle"
+                  :title="isCollapsed(entry.row) ? '展开这一行的子字段' : '收起这一行的子字段'"
+                  @click.stop="toggleCollapse(entry.row)"
+                >
+                  {{ isCollapsed(entry.row) ? '▸ 展开' : '▾ 收起' }}
+                </button>
+                <span class="wb-group-title">{{ ELEMENT_GROUP_TITLE }}</span>
+                <span class="wb-group-note">{{ entry.row.target }} · {{ entry.row.children.length }} 个子字段</span>
+              </div>
+
               <div
+                v-else
                 class="wb-row"
                 :class="{ selected: entry.row.id === selectedId, child: entry.depth > 0 }"
                 :data-row-id="entry.row.id"
@@ -113,8 +133,9 @@
                   <el-input
                     v-model="entry.row.target"
                     size="small"
-                    placeholder="目标字段路径（可手输）"
+                    :placeholder="entry.depth > 0 ? '相对路径，例如 materialCode' : '目标字段路径（可手输）'"
                     @focus="select(entry.row)"
+                    @click="stop"
                   >
                     <template v-if="!entry.fromTargets" #append>
                       <span class="wb-chip">手写</span>
@@ -123,7 +144,7 @@
                 </div>
 
                 <!-- 这一行的值怎么取：一句中文，点一下就地改，不开弹窗 -->
-                <div class="wb-col-value" :title="rowFullLabel(entry)">
+                <div class="wb-col-value" :title="rowFullLabel(entry)" @click="stop">
                   <template v-if="entry.row.iterate === 'FOR_EACH'">
                     <button class="wb-chip chip-src" @click.stop="pickSourceFor(entry)">
                       {{ entry.row.source ? rowLabel(entry, false) : '还没选来源数组' }}
@@ -201,11 +222,17 @@
                       <span class="wb-paren">起</span>
                     </template>
                   </template>
+
+                  <!-- 数组行：往下面加子行（子行的目标字段写相对路径） -->
+                  <template v-if="entry.row.iterate === 'FOR_EACH'">
+                    <span class="wb-paren">·</span>
+                    <el-button size="small" text type="primary" @click.stop="addChild(entry.row)">+ 子字段</el-button>
+                  </template>
                 </div>
               </div>
 
               <!-- 就地参数编辑：就占这一行的下面一行，不开弹窗 -->
-              <div v-if="panelRowId === entry.row.id" class="wb-panel">
+              <div v-if="panelRowId === entry.row.id" class="wb-panel" @click="stop">
                 <div class="wb-panel-head">
                   <span class="wb-panel-title">{{ panelTitle }}</span>
                   <span class="wb-panel-target">{{ entry.row.target || '（还没填目标字段）' }}</span>
@@ -340,10 +367,6 @@
                   <div class="wb-panel-note">片段按顺序拼起来；来源片段在数组映射的子行里用相对路径。</div>
                 </template>
               </div>
-
-              <div v-if="entry.row.iterate === 'FOR_EACH' && entry.row.children.length" class="wb-children-title">
-                数组元素内
-              </div>
             </template>
           </div>
         </section>
@@ -358,7 +381,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { EditorSourceSample, FieldMappingEditorContext, SourceStructure } from '../types'
 import {
-  configFromRows, fillRowFromSource, flattenRows, isArrayPath, mergeRowsWithTargets, nextEmptyRow, progressOf,
+  configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow, progressOf,
   rowReferenceFullLabel, rowReferenceLabel, rowsFromConfig, rowsFromTargetFields, targetFieldsFromPaths,
   type FlatRow, type SourceField, type TargetField,
 } from '../mapping/editor-model.ts'
@@ -368,6 +391,10 @@ import {
   applyTransform, appendEnumSamples, datePatternFor, missingEnumKeys, setEnumKey,
   transformLabelOf, transformName, transformOptions, DATE_PRESETS, type EnumPair, type TransformOption,
 } from '../mapping/transforms.ts'
+import {
+  appendChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
+  visibleRows, ELEMENT_GROUP_TITLE, type PickableItem,
+} from '../mapping/source-picker.ts'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
 const TRANSFORM_HINTS: Record<string, string> = {
@@ -415,6 +442,8 @@ const targets = ref<TargetField[]>([])
 const targetSourceKey = ref<string>('')
 const selectedId = ref<number | null>(null)
 const defaultStep = ref<number>(0)
+/** 收起子行的数组行（默认全部展开）。 */
+const collapsedIds = ref<Set<number>>(new Set())
 
 const actionNames = computed<Record<number, string>>(() => {
   const map: Record<number, string> = {}
@@ -449,31 +478,65 @@ const targetTip = computed(() => {
   return `目标：${target.actionName ?? `动作 ${target.actionIndex}`}${targetSourceKey.value ? ` · ${targetSourceKey.value}` : ''}`
 })
 
-const sourceGroups = computed(() => {
-  const sample = context.value?.source
-  const groups: { step: number | null; label: string; fields: SourceField[]; used: Map<string, number> }[] = []
-  if (sample && sample.fields.length) {
-    groups.push({
-      step: sample.step,
-      label: stepLabel(sample.step, sample.stepName),
-      fields: sample.fields,
-      used: usedCounts(sample.step),
-    })
-  }
-  return groups
-})
+/** 左边清单给什么字段，取决于**当前选中的这一行**（#101：数组行只给数组、子行给相对路径与外层）。 */
+const pickerGroups = computed(() =>
+  sourcePickerFor(selectedEntry.value?.row ?? null, sourceFields.value, selectedEntry.value?.parent ?? null, defaultStep.value))
+
+/** 还没选行时先说清怎么开始。 */
+const pickerTip = computed(() =>
+  selectedEntry.value ? '点一下字段就填进选中的那一行' : '先点一行目标字段，再从这里选来源')
 
 const progress = computed(() => progressOf(rows.value, targets.value))
 const progressPercent = computed(() => (progress.value.total ? Math.round(progress.value.configured / progress.value.total * 100) : 0))
 
 interface DisplayRow extends FlatRow {
+  /** 铺出来的每一项的唯一键：分组标题与它上面那一行共用同一个 MapRow，键不能重。 */
+  key: string
   /** 这一行的目标字段来自目标清单（而不是手输的）。 */
   fromTargets: boolean
+  /** 数组行的「数组元素内」分组标题（铺在数组行与它的子行之间）。 */
+  arrayHeader: boolean
 }
 
-/** 行在界面上按层级铺开：数组行后面紧跟它的子行。 */
-const displayRows = computed<DisplayRow[]>(() =>
-  flattenRows(rows.value).map(entry => ({ ...entry, fromTargets: targetPaths.value.has(entry.row.target.trim()) })))
+/** 行在界面上按层级铺开：数组行后面紧跟「数组元素内」标题与它的子行（收起时只剩数组行）。 */
+const displayRows = computed<DisplayRow[]>(() => {
+  const out: DisplayRow[] = []
+  for (const entry of visibleRows(rows.value, collapsedIds.value)) {
+    out.push({
+      ...entry,
+      key: `r${entry.row.id}`,
+      fromTargets: targetPaths.value.has(entry.row.target.trim()),
+      arrayHeader: false,
+    })
+    // 有子行就补一条分组标题（#101：子行的来源默认按相对路径解析，标题上写明「数组元素内」）。
+    if (entry.row.children.length) {
+      out.push({
+        row: entry.row, depth: entry.depth, parent: entry.parent,
+        key: `h${entry.row.id}`, fromTargets: false, arrayHeader: true,
+      })
+    }
+  }
+  return out
+})
+
+/** 收起 / 展开一个数组行；「展开全部 / 收起全部」一次处理所有数组行。 */
+function toggleCollapse(row: MapRow) {
+  collapsedIds.value = toggledRowIds(rows.value, collapsedIds.value, row.id)
+}
+
+function toggleAllArrays() {
+  collapsedIds.value = allCollapsed.value ? new Set() : toggledRowIds(rows.value, new Set())
+}
+
+/** 所有带子行的数组行都收起了吗（决定按钮上写「展开全部」还是「收起全部」）。 */
+const allCollapsed = computed(() => {
+  const arrays = flattenRows(rows.value).filter(entry => entry.row.children.length)
+  return arrays.length > 0 && arrays.every(entry => collapsedIds.value.has(entry.row.id))
+})
+
+function isCollapsed(row: MapRow): boolean {
+  return collapsedIds.value.has(row.id)
+}
 
 /** 目标清单里的字段路径（含数组内的相对路径），用来标出哪些行是清单给的。 */
 const targetPaths = computed(() => {
@@ -487,6 +550,10 @@ const targetPaths = computed(() => {
   walk(targets.value)
   return paths
 })
+
+/** 选中的那一行（清单与参数面板都看它）。 */
+const selectedEntry = computed<DisplayRow | null>(() =>
+  displayRows.value.find(e => e.row.id === selectedId.value) ?? null)
 
 async function load() {
   loading.value = true
@@ -563,29 +630,18 @@ async function reloadTargets() {
   }
 }
 
-function usedCounts(step: number | null): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const { row } of flattenRows(rows.value)) {
-    if (row.sourceStep === step && row.source.trim() && row.transform !== 'INDEX') {
-      const key = row.source.trim()
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
-  }
-  return counts
-}
-
-function sampleOf(field: SourceField): string {
-  const first = field.samples?.[0]
+function sampleOf(item: PickableItem): string {
+  const first = item.samples?.[0]
   if (first == null) return ''
   const text = typeof first === 'object' ? JSON.stringify(first) : String(first)
   return text.length > 18 ? `${text.slice(0, 18)}…` : text
 }
 
-function rowLabel(entry: DisplayRow, isChild: boolean) {
+function rowLabel(entry: FlatRow, isChild: boolean) {
   return rowReferenceLabel(entry.row, actionNames.value, isChild)
 }
 
-function rowFullLabel(entry: DisplayRow) {
+function rowFullLabel(entry: FlatRow) {
   const inherited = entry.parent?.sourceStep ?? null
   return rowReferenceFullLabel(entry.row, actionNames.value, inherited)
 }
@@ -594,6 +650,17 @@ function select(row: MapRow) {
   selectedId.value = row.id
   // 换行就把上一行的参数面板收起来，免得面板留在别的行下面看着像它的。
   if (panelRowId.value !== null && panelRowId.value !== row.id) closePanel()
+}
+
+/**
+ * 行里那些控件的点击不要冒泡到行本身。
+ *
+ * 行的点击是「选中这一行」，而一行里有输入框、有参数面板、有「+ 子字段」——不拦住的话，
+ * 点「+ 子字段」会在加完子行之后又被行的处理函数改成「选中那一行」（真机实测：加出来的子行
+ * 明明选中了，一点就跳回数组行）。
+ */
+function stop(e: Event) {
+  e.stopPropagation()
 }
 
 // ---------------------------------------------------------------- 就地参数编辑（#100）
@@ -655,12 +722,21 @@ function onStartAtChange(row: MapRow, value: number | undefined) {
 }
 
 /** 点来源格子：这一行就是"要填哪一行"，用户在左边清单点一个字段即可。 */
-function pickSourceFor(entry: DisplayRow) {
+function pickSourceFor(entry: FlatRow) {
   select(entry.row)
 }
 
+/** 往数组行下面加一个子行（子行的目标字段写相对路径），加完就选中它。 */
+function addChild(row: MapRow) {
+  appendChildRow(row)
+  // 新加的子行在最后：把它铺出来才能接着填目标字段。
+  collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== row.id))
+  const added = row.children[row.children.length - 1]
+  if (added) selectedId.value = added.id
+}
+
 /** 操作符那一栏的悬停提示：一句话说清这一行在做什么。 */
-function operationHint(entry: DisplayRow): string {
+function operationHint(entry: FlatRow): string {
   const kind = entry.row.transform
   if (kind === 'STRING') return '点一下换一种转换'
   return `${transformLabelOf(entry.row, () => rowLabel(entry, entry.depth > 0))}——点一下换一种转换`
@@ -672,7 +748,7 @@ function enumCountText(row: MapRow): string {
 }
 
 /** 拼接片段的显示：常量显示值本身，来源片段显示字段名（人话）。 */
-function partLabel(entry: DisplayRow, i: number): string {
+function partLabel(entry: FlatRow, i: number): string {
   const part = entry.row.parts[i]
   if (!part) return '（空片段）'
   if (part.type === 'const') return part.value.trim() || '（空片段）'
@@ -682,12 +758,12 @@ function partLabel(entry: DisplayRow, i: number): string {
 }
 
 /** 把一个来源路径按这一行的上下文显示成人话（数组子行里就是相对路径本身）。 */
-function fieldLabelOf(entry: DisplayRow, path: string): string {
+function fieldLabelOf(entry: FlatRow, path: string): string {
   const step = entry.row.sourceStep ?? entry.parent?.sourceStep ?? defaultStep.value
   return fieldReferenceLabel({ step, path }, actionNames.value)
 }
 
-function isChild(entry: DisplayRow): boolean {
+function isChild(entry: FlatRow): boolean {
   return entry.depth > 0
 }
 
@@ -748,8 +824,18 @@ function removeEnumRow(index: number) {
   row.enumMap = enumMapOf(enumPairList.value.filter((_, i) => i !== index))
 }
 
-/** 这一行来源字段的样例值（用来算还缺哪些键）。 */
-const panelSourceField = computed(() => (panelEntry.value ? sourceFieldFor(panelEntry.value) : undefined))
+/** 这一行来源字段的样例值（枚举表「按样例补全」用；子行用相对路径，取元素里的那个字段）。 */
+const panelSourceField = computed<SourceField | undefined>(() => {
+  const entry = panelEntry.value
+  if (!entry) return undefined
+  const source = entry.row.source.trim()
+  if (!source) return undefined
+  if (entry.depth > 0) {
+    const array = entry.parent?.source.trim() ?? ''
+    return sourceFields.value.find(f => f.name === `${array}[0].${source}`)
+  }
+  return sourceFields.value.find(f => f.name === source)
+})
 
 /** 样例里出现过、枚举表里还没有的来源值（空键的占位行不算）。 */
 const missingEnumKeysOf = computed(() =>
@@ -767,8 +853,8 @@ function fillEnumFromSamples() {
 }
 
 /** 候选来源字段：数组子行用相对路径，其余用请到的清单。 */
-function selectableFields(entry: DisplayRow): SourceField[] {
-  const fields = sourceFieldsFor(entry)
+function selectableFields(entry: FlatRow): SourceField[] {
+  const fields = sourceFields.value
   if (!isChild(entry)) return fields
   // 子行的来源是相对当前元素的路径，只能从组来源数组的元素字段里挑。
   const array = entry.parent?.source ?? ''
@@ -780,35 +866,8 @@ function selectableFields(entry: DisplayRow): SourceField[] {
   return relative.length ? relative : fields.filter(f => !f.name.includes('.'))
 }
 
-/** 这一行的来源字段清单（子行跟着组节点的来源步骤走）。 */
-function sourceFieldsFor(entry: DisplayRow): SourceField[] {
-  const sample = context.value?.source
-  if (!sample?.fields?.length) return []
-  const step = entry.parent?.sourceStep ?? entry.row.sourceStep
-  if (step != null && step !== sample.step) return []
-  return sample.fields
-}
-
-/** 这一行当前来源字段的完整路径（子行要带上组节点的来源数组）。 */
-function fullSourcePath(entry: DisplayRow): string {
-  const source = entry.row.source.trim()
-  if (!source) return ''
-  if (!isChild(entry)) return source
-  return `${entry.parent?.source ?? ''}[0].${source}`
-}
-
-/** 这一行来源字段的探测结果（样例值的来源）。 */
-function sourceFieldFor(entry: DisplayRow): SourceField | undefined {
-  const path = fullSourcePath(entry)
-  if (!path) return undefined
-  const fields = sourceFieldsFor(entry)
-  const exact = fields.find(f => f.name === path)
-  if (exact) return exact
-  // 组来源数组本身（还没选来源数组的数组映射行会走到这里）。
-  const array = fields.find(f => f.name === entry.parent?.source)
-  if (array) return array
-  return fields.find(f => f.name.endsWith(`.${path}`))
-}
+/** 当前来源步骤的字段清单（探测结果）。 */
+const sourceFields = computed<SourceField[]>(() => context.value?.source?.fields ?? [])
 
 /** 日期预设的样例（拿一个真日期格式化一遍，让人一眼看出这个模式长什么样）。 */
 function datePatternExample(pattern: string): string {
@@ -830,29 +889,37 @@ function formatExample(date: Date, pattern: string): string {
   return pattern.replace(/yyyy|yy|MM|dd|HH|mm|ss/g, token => parts[token] ?? token)
 }
 
-/** 一行当前来源的完整说法（悬停提示）。 */
-
 function selectFirst() {
   const first = displayRows.value.find(e => e.row.target.trim())
   selectedId.value = first?.row.id ?? null
 }
 
-/** 点来源字段：填进当前行，然后自动走到下一个空行。 */
-function pick(field: SourceField, group: { step: number | null }) {
-  const entry = displayRows.value.find(e => e.row.id === selectedId.value)
-    ?? displayRows.value.find(e => !e.row.source.trim() && e.row.iterate !== 'FOR_EACH')
-    ?? null
-  const result = fillRowFromSource(entry?.row ?? null, field, group.step, (entry?.depth ?? 0) > 0)
-  if (!result.row) {
-    if (result.reason === 'array-expects-array') ElMessage.warning('这一行是数组映射，来源要选一个数组（左边带「数组」标记的字段）')
-    else if (result.reason === 'not-array') ElMessage.warning('这是一个数组，要填进数组映射行')
-    else if (result.reason === 'child-wants-relative') ElMessage.warning('数组子行的来源写的是相对路径——用下面这个数组元素内的字段')
-    else ElMessage.warning('先选一行要填的目标字段')
+/**
+ * 点左边清单里的一个字段：填进当前行，然后自动走到下一个空行。
+ *
+ * 「填不进去」的三种情况只说形状接不上（数组行要数组、数组要进数组行、相对路径要进子行），
+ * 对不对仍然由后端那个只读接口判（#98 D1/D4）。
+ */
+function pick(item: PickableItem) {
+  const entry = selectedEntry.value
+  const result = fillRowFromPick(entry?.row ?? null, item, entry != null && entry.depth > 0)
+  if (!result.row || !entry) {
+    ElMessage.warning(emptyPickResult(result).message)
     return
   }
-  selectedId.value = result.row.id
-  const next = nextEmptyRow(rows.value, result.row)
-  if (next && next.id !== result.row.id) selectedId.value = next.id
+  const picked = result.row
+  selectedId.value = picked.id
+  // 数组行选完来源数组后，接着去填这个数组里的子字段（第一个空子行）。
+  if (picked.iterate === 'FOR_EACH') {
+    const child = picked.children.find(c => c.target.trim() && !c.source.trim()) ?? picked.children[0]
+    if (child) {
+      selectedId.value = child.id
+      collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== picked.id))
+    }
+    return
+  }
+  const next = nextEmptyRow(rows.value, picked)
+  if (next && next.id !== picked.id) selectedId.value = next.id
 }
 
 /** 切默认来源：空行跟着换步骤，左边字段清单也要换成那个动作的清单。 */
@@ -982,9 +1049,9 @@ load()
 .wb-source-list { overflow: auto; flex: 1; }
 .wb-source-group + .wb-source-group { margin-top: 10px; }
 .wb-source-group-title { font-size: 12px; color: #374151; font-weight: 600; margin-bottom: 4px; }
+.wb-source-group-tip { font-size: 11px; color: #b45309; margin-bottom: 4px; }
 .wb-source-item { padding: 5px 6px; border-radius: 4px; cursor: pointer; }
 .wb-source-item:hover { background: #f3f4f6; }
-.wb-source-item.used { background: #f0f9ff; }
 .wb-source-item.array-field .wb-source-name { color: #7c3aed; }
 .wb-source-item-main { display: flex; align-items: center; gap: 6px; }
 .wb-source-name { font-family: Consolas, monospace; font-size: 12px; }
@@ -1008,9 +1075,13 @@ load()
 .wb-col-value { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .wb-source-value { font-size: 13px; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-child-hint { font-size: 11px; color: #9ca3af; }
-.wb-children-title { font-size: 11px; color: #6b7280; margin: 4px 0 2px 32px; }
 .wb-empty { font-size: 12px; color: #9ca3af; padding: 10px 0; }
 .wb-alert { margin: 8px 16px 0; }
+
+/* 数组行的「数组元素内」分组标题：展开 / 收起子行就在这里 */
+.wb-group { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px 24px; }
+.wb-group-title { font-size: 11px; color: #6b7280; font-weight: 600; }
+.wb-group-note { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
 
 /* 一行里能点的那些小块：点一下就就地改，不开弹窗 */
 .wb-chip {
@@ -1021,12 +1092,16 @@ load()
 .wb-chip:hover { border-color: #409eff; color: #409eff; }
 .wb-chip.chip-src { font-family: Consolas, monospace; }
 .wb-chip.chip-src.empty { color: #9ca3af; border-style: dashed; }
+/* 「还没选来源」这类空块至少要占住一块地方：塌成一小撮时，后面的「+ 子字段」会挪到行的正中间，
+   用户点行（想选中它）就会点到加子行上——真机实测踩到过。 */
+.wb-col-value > .wb-chip.chip-src { min-width: 120px; text-align: left; }
 .wb-chip.chip-op { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
 .wb-chip.chip-op-empty {
   border-style: dashed; color: #9ca3af; font-size: 11px; padding: 0 5px;
 }
 .wb-chip.chip-op-empty:hover { color: #409eff; border-color: #409eff; }
 .wb-chip.chip-const { border-color: #fde68a; background: #fffbeb; color: #92400e; font-family: Consolas, monospace; }
+.wb-chip.chip-toggle { font-size: 11px; padding: 0 5px; color: #4b5563; }
 .wb-paren { font-size: 12px; color: #6b7280; }
 .wb-start-at { width: 96px; }
 
@@ -1065,4 +1140,3 @@ load()
   .wb-chip { max-width: 200px; }
 }
 </style>
-

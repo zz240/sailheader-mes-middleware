@@ -1,17 +1,21 @@
 /**
- * 新版映射编辑器的前端检查（#99 验收项）：不测组件，只测纯逻辑的外部行为。
+ * 新版映射编辑器的前端检查（#99 / #100 / #101 验收项）：不测组件，只测纯逻辑的外部行为。
  *
  * 跑法（零新依赖）：
  *   node --experimental-strip-types frontend/src/mapping/checks.ts
  *
- * 断言三件事：
+ * 断言这几件事：
  *   1. 行与规则互转往返不丢字段；
  *   2. 每条顶层规则显式写了 `sourceStep`（后端查不出这个错，只能前端保住）；
- *   3. 人话标签符合对照表（界面上不出现 `$`）。
+ *   3. 人话标签符合对照表（界面上不出现 `$`）；
+ *   4. 目标清单 → 行（含数组行与子行）；
+ *   5. 七种转换的参数与人话；
+ *   6. 数组映射（#101）：数组行选来源数组、子行按相对路径、子行引用外层表头、展开收起、加子行，
+ *      以及跑通制品 → BOM 的规则形状。
  */
 import { createGroupRow, createRow, ENUM_PLACEHOLDER, isRowConfigured, rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
 import {
-  configFromRows, fillRowFromSource, mergeRowsWithTargets, rowReferenceFullLabel, rowReferenceLabel,
+  configFromRows, mergeRowsWithTargets, nextEmptyRow, rowReferenceFullLabel, rowReferenceLabel,
   rowsFromTargetFields, targetFieldsFromPaths, type SourceField, type TargetField,
 } from './editor-model.ts'
 import {
@@ -22,6 +26,10 @@ import {
   applyTransform, appendEnumSamples, canUseTransform, datePatternFor, DEFAULT_DATE_PATTERN, distinctSampleValues,
   missingEnumKeys, setEnumKey, transformDisabledReason, transformLabelOf, transformName, transformOptions,
 } from './transforms.ts'
+import {
+  appendChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds, visibleRows,
+  type PickableItem,
+} from './source-picker.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
 declare const process: { exitCode?: number }
@@ -261,24 +269,40 @@ eq('清单里没配过的行仍是空行', merged[1].source, '')
 const leafRow = createRow(1, '', 'bom.bomNo', 'STRING')
 const arrayRow = createGroupRow(1, '', 'bom.bomLines')
 const childRow = createRow(null, '', 'lineNo', 'STRING')
-const arrayField = { name: 'items[0].materialCode', type: 'STRING' }
-const plainField = { name: 'bomNo', type: 'STRING' }
+/** 左边清单上的一项，形状就是 `sourcePickerFor` 产出的那个。 */
+function item(path: string, extra: Partial<PickableItem> = {}): PickableItem {
+  return { kind: 'field', step: 1, path, root: false, label: path, ...extra }
+}
+/** 数组项：真清单里给的是**数组本身**的路径（`arrayItems` 把元素字段的 `[0]` 去掉）。 */
+const arrayField = item('items', { kind: 'array' })
+const plainField = item('bomNo', { step: null })
 
-eq('普通行接受普通字段', fillRowFromSource(leafRow, plainField, 1).row?.source, 'bomNo')
-eq('普通行不接受数组字段', fillRowFromSource(leafRow, arrayField, 1).reason, 'not-array')
-eq('数组行只接受数组', fillRowFromSource(arrayRow, plainField, 1).reason, 'array-expects-array')
-eq('数组行接受数组字段', fillRowFromSource(arrayRow, arrayField, 1).row?.source, 'items[0].materialCode')
-eq('数组子行的来源必须是数组元素内的字段', fillRowFromSource(childRow, plainField, 1, true).reason, 'child-wants-relative')
-eq('子行填相对路径时不自己存 sourceStep（继承组节点）', childRow.sourceStep, null)
-eq('没有选中行时给提示', fillRowFromSource(null, plainField, 1).reason, 'no-target')
+eq('普通行接受普通字段', fillRowFromPick(leafRow, plainField).row?.source, 'bomNo')
+eq('普通行不接受数组', fillRowFromPick(leafRow, arrayField).reason, 'not-array')
+eq('数组行只接受数组', fillRowFromPick(arrayRow, plainField).reason, 'array-expects-array')
+eq('数组行接受数组', fillRowFromPick(arrayRow, arrayField).row?.source, 'items')
+eq('数组行填上数组时带上它自己的来源步骤',
+  fillRowFromPick(createGroupRow(1, '', 'l'), arrayField).row?.sourceStep, 1)
+eq('子行里普通路径照样能填（相对路径与外层引用才是子行专属的）',
+  fillRowFromPick(childRow, item('bomNo', { kind: 'field', step: null }), true).row?.source, 'bomNo')
+eq('顶层行不收元素字段（收了编译出来只取第一个元素）',
+  fillRowFromPick(leafRow, item('items[0].qty', { kind: 'element', step: null })).reason, 'child-wants-relative')
+eq('顶层行也不收外层引用（它没有外面那一层）',
+  fillRowFromPick(leafRow, item('bomNo', { kind: 'outer', step: 1, root: true })).reason, 'child-wants-relative')
+eq('相对路径能填进子行（子行就是收这个的）',
+  fillRowFromPick(createRow(null, '', 'qty', 'STRING'), item('qty', { kind: 'element', step: null }), true)
+    .row?.source,
+  'qty')
+eq('没有选中行时给提示', fillRowFromPick(null, plainField).reason, 'no-target')
 
 // 选来源时按字段类型猜转换：没动过的行才猜，用户挑过的转换不能被冲掉
 const intRow = createRow(1, '', 'qty', 'STRING')
-eq('空行按来源类型猜数字转换', fillRowFromSource(intRow, { name: 'order_no', type: 'INT' }, 1).row?.transform, 'INT')
+eq('空行按来源类型猜数字转换', fillRowFromPick(intRow, item('order_no', { type: 'INT' })).row?.transform, 'INT')
 const dateRow = createRow(1, '', 'createdDate', 'DATE')
-eq('已经挑了转换的行不被改回默认', fillRowFromSource(dateRow, { name: 'order_no', type: 'STRING' }, 1).row?.transform, 'DATE')
+eq('已经挑了转换的行不被改回默认',
+  fillRowFromPick(dateRow, item('order_no', { type: 'STRING' })).row?.transform, 'DATE')
 const enumRow = createRow(1, '', 'status', 'ENUM')
-eq('用户挑的枚举映射也保住', fillRowFromSource(enumRow, { name: 'order_no', type: 'INT' }, 1).row?.transform, 'ENUM')
+eq('用户挑的枚举映射也保住', fillRowFromPick(enumRow, item('order_no', { type: 'INT' })).row?.transform, 'ENUM')
 
 /** 取规则里几个字段，方便一眼看出形状（顺序按键名排，因为 eq 的比较是键序无关的）。 */
 function pick(rule: Record<string, any>, ...keys: string[]): unknown[] {
@@ -458,6 +482,212 @@ for (const t of TRANSFORM_KINDS) {
   }), (addr: string) => (addr === '0' ? 'BOM-' : 'materialCode'))
   assertNoDollar(text)
 }
+
+// ---------------------------------------------------------------- 数组映射（#101）
+
+/** 数组行、子行、外层引用这三件事的入口都在 `source-picker.ts`；`label()` 就是左边清单上那行字。 */
+const BOM_SOURCE: SourceField[] = [
+  { name: 'product.productCode', type: 'STRING' },
+  { name: 'product.productName', type: 'STRING' },
+  { name: 'product.bomItems[0].materialCode', type: 'STRING' },
+  { name: 'product.bomItems[0].qty', type: 'NUMBER' },
+]
+
+/** 左边清单取出来的一项（点它就是按钮上的 onclick）。`step` 是这批字段来自哪个动作。 */
+function itemsOf(row: MapRow, group: MapRow | null = null, step: number | null = 1): PickableItem[] {
+  return sourcePickerFor(row, BOM_SOURCE, group, step).flatMap(g => g.items)
+}
+
+/** 点一下左边清单里的某一项，返回填完的行。 */
+function pickInto(entry: MapRow, item: PickableItem, isChildRow = false): MapRow {
+  const result = fillRowFromPick(entry, item, isChildRow)
+  if (!result.row) throw new Error(`没填进去：${item.label}｜${result.reason}`)
+  return result.row
+}
+
+const bomArrayRow = createGroupRow(1, '', 'bom.bomLines')
+const bomChildRow = createRow(null, '', 'materialCode', 'STRING')
+
+// 数组行上能选一个来源数组——来源清单里正好有它，点一下就是这一行的来源
+eq('数组行的来源清单只留数组', itemsOf(bomArrayRow).map(i => i.label), ['product.bomItems'])
+eq('点一下数组字段就填进数组行', pickInto(bomArrayRow, itemsOf(bomArrayRow)[0]).source, 'product.bomItems')
+eq('数组行不接受普通字段（核心里是两个东西：数组路径 vs 相对路径）',
+  fillRowFromPick(bomArrayRow, item('product.productCode')).reason,
+  'array-expects-array')
+
+// 子行的来源默认按相对路径解析，清单上只给数组元素内的字段
+eq('子行的来源清单开头是「数组元素内」分组',
+  sourcePickerFor(bomChildRow, BOM_SOURCE, bomArrayRow)[0].title, '数组元素内')
+eq('数组元素内的字段按相对路径给（不带数组前缀）',
+  sourcePickerFor(bomChildRow, BOM_SOURCE, bomArrayRow)[0].items.map(i => i.label), ['materialCode', 'qty'])
+eq('子行填相对路径时存的就是相对路径',
+  pickInto(bomChildRow, itemsOf(bomChildRow, bomArrayRow)[0], true).source, 'materialCode')
+// 子行还能引用数组外层的表头字段，界面上显示成「外层 · 字段名」
+const outerRow = createRow(null, '', 'lineNo', 'STRING')
+const outerItem = itemsOf(outerRow, bomArrayRow).find(i => i.label === '外层 · product.productName')
+ok('子行的来源清单里有「外层 · 字段名」这一项', !!outerItem)
+eq('外层引用存成 $root 前缀（编译器据此取这份来源数据的顶层）',
+  pickInto(outerRow, outerItem!, true).source, '$root.product.productName')
+eq('外层引用在界面上显示成「外层 · 字段名」',
+  rowReferenceLabel(pickInto(outerRow, outerItem!, true), { 1: '读 BOM' }, true), '外层 · product.productName')
+eq('外层引用的悬停提示带上取自哪个动作',
+  rowReferenceFullLabel(pickInto(outerRow, outerItem!, true), { 1: '读 BOM' }, 1),
+  '动作 1 · 读 BOM · 外层 · product.productName')
+eq('元素字段之后才是外层字段（数组元素内排最前）',
+  itemsOf(outerRow, bomArrayRow).map(i => i.label),
+  ['materialCode', 'qty', '外层 · product.productCode', '外层 · product.productName'])
+eq('外层引用自己不存来源步骤（子规则带 sourceStep 后端会拒）', [outerItem!.step, outerItem!.path],
+  [null, 'product.productName'])
+eq('填上外层引用之后行上也不留 sourceStep',
+  pickInto(outerRow, outerItem!, true).sourceStep, null)
+eq('数组行那一项也带着来源步骤（顶层行的取值依据）',
+  itemsOf(bomArrayRow).map(i => [i.step, i.path]), [[1, 'product.bomItems']])
+eq('界面文案不出现 $（外层引用的内部写法不上界面）',
+  sourcePickerFor(outerRow, BOM_SOURCE, bomArrayRow).flatMap(g => g.items.map(i => i.label))
+    .every(text => !text.includes('$')),
+  true)
+
+// 还没选来源数组的数组行：元素字段还没法按相对路径给出来，清单得说清为什么
+const sourceLessArray = createGroupRow(1, '', 'bom.bomLines')
+const arrayWithoutSource = sourcePickerFor(null, BOM_SOURCE, sourceLessArray)
+eq('数组元素子行还没选来源数组时，「数组元素内」是空的',
+  [arrayWithoutSource[0].title, arrayWithoutSource[0].items.length], ['数组元素内', 0])
+ok('空分组带着一句说明（为什么这里是空的）', (arrayWithoutSource[0].tip ?? '').length > 0)
+eq('「外层」照样给出来（表头字段不依赖数组选没选）', arrayWithoutSource[1].items.length > 0, true)
+eq('元素字段按相对路径给出来了，数组行本身没选来源数组也不影响外层',
+  arrayWithoutSource[1].items.map(i => i.path), ['product.productCode', 'product.productName'])
+
+// 源结构里没有独立的数组字段时（探到的是 items[0].x 这种展开路径），数组行也要能选到它
+eq('数组只有元素字段时，按元素字段推出数组本身',
+  itemsOf(createGroupRow(1, '', 'bom.bomLines')).map(i => [i.label, i.path]), [['product.bomItems', 'product.bomItems']])
+
+// 没填进去时要说清是哪一种接不上（界面上直接显示这句）
+eq('数组行点了普通字段的提示',
+  emptyPickResult({ row: null, reason: 'array-expects-array' }).message,
+  '这一行是数组映射，来源要选一个数组')
+eq('子行点了数组元素外的字段的提示',
+  emptyPickResult({ row: null, reason: 'child-wants-relative' }).message,
+  '数组子行的来源写的是相对路径——用数组元素内的字段，或「外层 · 」里的表头字段')
+eq('没选行时的提示', emptyPickResult({ row: null, reason: 'no-target' }).message, '先选一行要填的目标字段')
+
+// 点来源字段之后自动走到下一个空行（子行也在候选里：数组里几个字段是一路往下填的）
+const bomArrayForFlow = createGroupRow(1, '', 'bom.bomLines')
+bomArrayForFlow.children = [createRow(null, '$index', 'lineNo', 'INDEX'), createRow(null, '', 'materialCode', 'STRING')]
+const afterPick = pickInto(bomArrayForFlow, itemsOf(bomArrayForFlow)[0])
+eq('点完来源数组后落在第一个空行上（数组行自己不是候选）',
+  nextEmptyRow([bomArrayForFlow], afterPick)?.target, 'materialCode')
+
+// 展开 / 收起：数组行下面才有子行，收起时子行不铺出来
+const collapseTarget: TargetField[] = [{
+  path: 'bom.bomLines', type: 'ARRAY', required: true, element: [
+    { path: 'lineNo', type: 'INT', required: true },
+    { path: 'materialCode', type: 'VARCHAR', required: true },
+  ],
+}]
+const collapseRows = rowsFromTargetFields(collapseTarget, 1)
+const shown = new Set<number>()
+eq('默认全部展开', visibleRows(collapseRows, shown).map(e => e.row.target),
+  ['bom.bomLines', 'lineNo', 'materialCode'])
+eq('收起后只剩数组行自己', visibleRows(collapseRows, toggledRowIds(collapseRows, shown)).map(e => e.row.target),
+  ['bom.bomLines'])
+eq('再展开一次又都回来了',
+  visibleRows(collapseRows, toggledRowIds(collapseRows, toggledRowIds(collapseRows, shown)))
+    .map(e => e.row.target),
+  ['bom.bomLines', 'lineNo', 'materialCode'])
+
+// 加子行：子行的目标字段写相对路径
+const blankArray = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+eq('空数组行加一个子行', appendChildRow(blankArray).children.map(c => c.target), [''])
+eq('子行只有相对路径（数组前缀不写进来）',
+  appendChildRow(appendChildRow(blankArray)).children
+    .every(c => !c.target.includes('.') && !c.target.includes('[')),
+  true)
+eq('子行不存 sourceStep（后端校验要求子规则不带）', appendChildRow(blankArray).children[0].sourceStep, null)
+eq('不是数组行就没有子行可加', appendChildRow(createRow(1, 'a', 'bom.bomNo', 'STRING')).children.length, 0)
+
+ok('普通行不会给出「外层 · 」（它不是数组元素，没有外面那一层）',
+  !itemsOf(createRow(1, '', 'bom.bomNo', 'STRING')).some(i => i.label.startsWith('外层 · ')))
+
+// ---------------------------------------------------------------- 制品 → BOM（#101 验收场景）
+
+const BOM_TARGETS: TargetField[] = [
+  { path: 'sku', type: 'VARCHAR', required: true },
+  { path: 'name', type: 'VARCHAR', required: true },
+  { path: 'items', type: 'ARRAY', required: true, element: [
+    { path: 'itemCode', type: 'VARCHAR', required: true },
+    { path: 'itemName', type: 'VARCHAR', required: true },
+    { path: 'qty', type: 'INT', required: true },
+    { path: 'unit', type: 'VARCHAR', required: true },
+  ] },
+]
+/** 来源是一张 BOM 表：表头字段 + 一个 items 数组（元素路径由结构探测展开成 `[0]`）。 */
+const BOM_SAMPLE: SourceField[] = [
+  { name: 'product.productCode', type: 'STRING' },
+  { name: 'product.productName', type: 'STRING' },
+  { name: 'product.bomItems[0].itemCode', type: 'STRING' },
+  { name: 'product.bomItems[0].itemName', type: 'STRING' },
+  { name: 'product.bomItems[0].qty', type: 'NUMBER' },
+  { name: 'product.bomItems[0].unit', type: 'STRING' },
+]
+
+/** 目标清单里那个数组字段 → 一行数组映射（子行照清单铺开）。 */
+function bomArrayRowOf(): MapRow {
+  const rows = rowsFromTargetFields(BOM_TARGETS, 1)
+  // 目标路径按约定的 BOM 结构摆放：顶层三个字段 + bom.bomLines 数组。
+  const top = rows.slice(0, 2)
+  for (const [i, path] of ['bom.sku', 'bom.name'].entries()) top[i].target = path
+  const array = rows[2]
+  array.target = 'bom.bomLines'
+  return array
+}
+
+/** 在左边清单上按那一行字找一项，点进去。`step` 是编辑器当前绑定的默认来源动作。 */
+function bomPick(row: MapRow, label: string, group: MapRow | null = null, step = 1): MapRow {
+  const items = sourcePickerFor(row, BOM_SAMPLE, group, step).flatMap(g => g.items)
+  const item = items.find(i => i.label === label)
+  if (!item) {
+    throw new Error(`清单里没有：${label}｜清单是 ${JSON.stringify(items.map(i => i.label))}`
+      + `｜组来源 ${JSON.stringify(group?.source)}`)
+  }
+  return pickInto(row, item, group !== null)
+}
+
+/** 五列的数组行：先把来源步骤挪到「任务输入」，好看清是**选来源数组**这一步把它定下来的。 */
+const bomArray = bomArrayRowOf()
+bomArray.sourceStep = 0
+eq('数组行选到来源数组', bomPick(bomArray, 'product.bomItems').source, 'product.bomItems')
+eq('选来源数组时把这一行的来源步骤定成那个动作（不是留在原地的任务输入）', bomArray.sourceStep, 1)
+eq('子行的目标字段写的都是相对路径', bomArray.children.map(c => c.target),
+  ['itemCode', 'itemName', 'qty', 'unit'])
+eq('子行按相对路径取数组元素内的字段',
+  bomArray.children.map(c => bomPick(c, c.target, bomArray).source), ['itemCode', 'itemName', 'qty', 'unit'])
+
+// 五列的目标字段：行号 + 三个元素字段 + 一个外层表头字段
+const bomLineNo = bomArray.children[0]
+bomLineNo.target = 'lineNo'
+applyTransform(bomLineNo, 'INDEX', { startAt: 1 })
+eq('行号行取行号（从 1 起）', [bomLineNo.transform, bomLineNo.source, bomLineNo.startAt], ['INDEX', '$index', 1])
+// 数组元素里没有这个字段，取外层表头要显式走「外层 · 」
+eq('子行里也能引用数组外层的表头字段',
+  bomPick(bomArray.children[1], '外层 · product.productName', bomArray).source, '$root.product.productName')
+// 子行一概不存 sourceStep：元素字段（相对路径）与外层引用都不存——后端校验要求子规则不带。
+ok('子行一个都不带 sourceStep',
+  bomArray.children.every(c => c.sourceStep === null),
+  JSON.stringify(bomArray.children.map(c => c.sourceStep)))
+eq('子行填了来源后都算配好', bomArray.children.slice(1).every(isRowConfigured), true)
+
+// 保存后的规则形状：数组那一行带 sourceStep，子规则不带（后端校验要求子规则不带）
+const bomRules = configFromRows([bomArray]).rules
+eq('数组那一行带 sourceStep', bomRules[0].sourceStep, 1)
+ok('子规则一个都不带 sourceStep', bomRules[0].children.every((c: Record<string, any>) => c.sourceStep === undefined))
+eq('数组规则是 iterate=FOR_EACH 加 children', [bomRules[0].iterate, bomRules[0].children.length], ['FOR_EACH', 4])
+eq('数组行自己的来源是来源数组路径（不是相对路径）', bomRules[0].source, 'product.bomItems')
+eq('外层引用原样存成 $root 前缀（编译器据此还原成那个动作的根对象）',
+  bomRules[0].children[1].source, '$root.product.productName')
+ok('子行目标字段里没有数组下标（相对路径就是字段名）',
+  bomRules[0].children.every((c: Record<string, any>) => !c.target.includes('[0]')))
+// 编译产物里数组用 $map 生成、外层的 [ ] 由 JsonataRuleCompiler 加——那一条在
+// JsonataRuleCompilerTest 里断言（前端不复制编译器，也不复制编译产物 #98 D1）
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

@@ -168,50 +168,10 @@ export function rowHasValue(row: MapRow): boolean {
   return row.source.trim() !== ''
 }
 
-export interface PickResult {
-  /** 填了哪一行；没填返回 null。 */
-  row: MapRow | null
-  /** 为什么没填。 */
-  reason?: 'no-target' | 'not-array' | 'array-expects-array' | 'child-wants-relative'
-}
-
-/**
- * 把一份来源字段填进当前行（#99 验收：点来源列表里的字段就填进当前行）。
- *
- * 这里挡的不是「对不对」，而是**形状接不上**：数组映射行与数组元素子行放的来源字段
- * 在规则里根本不是同一种东西（一个是数组路径，一个是相对路径），点错了写进去就是一份
- * 自相矛盾的规则。真正的合法性判断（枚举表、片段、必填、类型）仍然只在后端那个只读接口里，
- * 前端没有复制任何一条校验规则（#98 D1/D4）。
- */
-export function fillRowFromSource(
-  row: MapRow | null,
-  field: SourceField,
-  step: number | null,
-  inArray = false,
-): PickResult {
-  if (!row) return { row: null, reason: 'no-target' }
-  const isArray = isArrayPath(field.name)
-  if (row.iterate === 'FOR_EACH' && !isArray) return { row: null, reason: 'array-expects-array' }
-  if (row.iterate !== 'FOR_EACH' && isArray) return { row: null, reason: 'not-array' }
-  if (inArray && row.iterate !== 'FOR_EACH' && !isArray) return { row: null, reason: 'child-wants-relative' }
-  row.source = field.name
-  row.sourceStep = step
-  // 只在行还没被加工过时按来源类型猜转换；用户挑过的转换（非直接映射）不动它。
-  if (row.iterate !== 'FOR_EACH' && (row.transform === 'STRING' || row.transform === '')) {
-    row.transform = transformForType(field.type)
-  }
-  return { row }
-}
-
-/** 结构探测给数组元素的字段路径加了 `[0]` 段，据此认出来源是一整个数组。 */
-export function isArrayPath(path: string): boolean {
-  return path.includes('[0]')
-}
-
 /**
  * 挑出「下一个该填的行」：当前行之后的第一个空行，没找到就用当前行。
  * 点一下来源就往下走一行，是配一张长清单最省事的走法。
- * 数组映射行不参与——它要的是来源数组，得自己选中（#99 只做骨架，数组在下一张票里配）。
+ * 数组映射行不参与——它要的是来源数组，得自己选中（选中之后由 `pick` 落到它的子行上）。
  */
 export function nextEmptyRow(rows: MapRow[], from: MapRow | null): MapRow | null {
   const flat = flattenRows(rows).map(e => e.row)

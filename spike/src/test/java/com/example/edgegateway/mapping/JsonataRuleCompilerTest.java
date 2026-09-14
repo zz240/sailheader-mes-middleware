@@ -62,6 +62,102 @@ class JsonataRuleCompilerTest {
         assertThat(((Number) lines.get(1).get("qty")).intValue()).isEqualTo(24);
     }
 
+    /**
+     * #101 验收：制品 → BOM 的层级映射，目标「行号 + 三列元素字段 + 一列外层表头字段」。
+     *
+     * 规则 JSON 就是前端编辑器保存出来的那一份（`configFromRows` 的形状）：数组那一行带
+     * `sourceStep` 与 `iterate=FOR_EACH`，子规则**不带** `sourceStep`（后端校验会拒），
+     * 元素字段用相对路径、外层引用用 `$root.` 前缀。断言两件事：文档里的编译产物一致、执行结果一致。
+     */
+    @Test
+    void bomArrayMappingCompilesToMapAndCarriesEveryColumn() {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("sourceStep", 1);
+        config.put("source", "product.bomItems");
+        config.put("target", "bom.bomLines");
+        config.put("transform", "STRING");
+        config.put("iterate", "FOR_EACH");
+        Map<String, Object> lineNo = new LinkedHashMap<>();
+        lineNo.put("source", "$index");
+        lineNo.put("target", "lineNo");
+        lineNo.put("transform", "INDEX");
+        lineNo.put("startAt", 1);
+        Map<String, Object> itemCode = new LinkedHashMap<>();
+        itemCode.put("source", "materialCode");
+        itemCode.put("target", "itemCode");
+        itemCode.put("transform", "STRING");
+        Map<String, Object> itemName = new LinkedHashMap<>();
+        // 外层引用：取这份来源数据的顶层对象（#98 B8），组内相对路径取不到它。
+        itemName.put("source", "$root.product.productName");
+        itemName.put("target", "itemName");
+        itemName.put("transform", "STRING");
+        Map<String, Object> qty = new LinkedHashMap<>();
+        qty.put("source", "qty");
+        qty.put("target", "qty");
+        qty.put("transform", "INT");
+        Map<String, Object> unit = new LinkedHashMap<>();
+        unit.put("source", "unit");
+        unit.put("target", "unit");
+        unit.put("transform", "ENUM");
+        // 键序固定（`Map.of` 的迭代顺序不保证，编译产物的文本断言要看顺序）。
+        Map<String, Object> unitMap = new LinkedHashMap<>();
+        unitMap.put("PCS", "件");
+        unitMap.put("SET", "套");
+        unit.put("enumMap", unitMap);
+        config.put("children", List.of(lineNo, itemCode, itemName, qty, unit));
+
+        Map<String, Object> addition = Map.of("rules", List.of(config));
+        FieldMappingConfig parsed = FieldMappingConfig.from(addition);
+        parsed.validate();
+
+        // 编译产物：数组用 $map 生成，外层套 [ ]——$map 的单元素结果会被 JSONata 拍扁成对象（S0 实测）
+        String compiled = JsonataRuleCompiler.compile(parsed.rules());
+        assertThat(compiled).contains("\"bomLines\": [ $map($s_1.product.bomItems, function($g0, $i0) { {")
+                .contains("\"lineNo\": $i0 + 1")
+                .contains("\"itemCode\": $g0.materialCode")
+                .contains("\"itemName\": $s_1.product.productName")
+                .contains("\"qty\": $number($g0.qty)")
+                .contains("\"unit\": $lookup({\"PCS\":\"件\",\"SET\":\"套\"}, $g0.unit)");
+        // 子规则不带 sourceStep 由 parsed.validate() 上面那一步证明（带了它 FieldMappingConfig 会拒），
+        // 前端那边由 checks.ts 断言存出来的规则里子规则没有这个键——编译产物里不会有这个标识符，
+        // 在这里 doesNotContain 是一条永远为真的断言。
+
+        // 执行：来源两个元素 → bomLines 两行，每行五个字段都对，行号从 1 起
+        JsonataFieldMapper mapper = new JsonataFieldMapper(parsed.rules());
+        List<Map<String, Object>> lines = bomLines(bom(mapper.apply(context(1, sourceProduct()))));
+
+        assertThat(lines).hasSize(2);
+        assertThat(lines.get(0)).containsEntry("lineNo", 1)
+                .containsEntry("itemCode", "MAT-718H")
+                .containsEntry("itemName", "前保险杠")
+                .containsEntry("unit", "件");
+        assertThat(((Number) lines.get(0).get("qty")).intValue()).isEqualTo(1);
+        assertThat(lines.get(1)).containsEntry("lineNo", 2)
+                .containsEntry("itemCode", "MAT-SKD61")
+                .containsEntry("itemName", "前保险杠")
+                .containsEntry("unit", "件");
+        assertThat(((Number) lines.get(1).get("qty")).intValue()).isEqualTo(24);
+    }
+
+    /**
+     * 源码里源的数组只有一个元素时，`bomLines` 也必须还是数组（S0 实测的序列扁平化）。
+     * 「外层套 [ ]」这条编译约定就是为它存在的。
+     */
+    @Test
+    void singleElementArrayStaysAnArray() {
+        FieldMappingRule group = new FieldMappingRule(1, "items", "bom.bomLines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(leaf(null, "name", "name", TransformType.STRING)), null, null);
+
+        JsonataFieldMapper mapper = new JsonataFieldMapper(List.of(group));
+        Map<String, Object> source = Map.of("items", List.of(Map.of("name", "only")));
+
+        assertThat(bom(mapper.apply(context(1, source))).get("bomLines"))
+                .isInstanceOf(List.class)
+                .asList()
+                .hasSize(1);
+    }
+
     /** 旧版扁平规则（含数组下标路径）经 JSONata 引擎执行，结果与自研 FieldMapper 一致。 */
     @Test
     void legacyFlatRulesBehaveAsBefore() {
