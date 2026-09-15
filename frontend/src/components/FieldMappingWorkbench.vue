@@ -79,65 +79,13 @@
         :description="expressionReplaced()"
       />
       <div v-if="rowsMode" class="wb-body">
-        <aside class="wb-source">
-          <div class="wb-panel-title">来源字段</div>
-          <div class="wb-panel-tip">{{ sourceTip }}</div>
-          <div class="wb-panel-tip">{{ pickerTip }}</div>
-          <el-input
-            v-model="sourceQuery"
-            size="small"
-            clearable
-            class="wb-source-search"
-            placeholder="搜路径或样例值，例如 qty / PCS"
-          />
-          <div class="wb-source-filters">
-            <button
-              v-for="f in SOURCE_FILTERS"
-              :key="f"
-              class="wb-filterbtn"
-              :class="{ current: sourceFilter === f }"
-              @click="sourceFilter = f"
-            >{{ SOURCE_FILTER_LABELS[f] }} <small>{{ sourceFilterCounts[f] }}</small></button>
-          </div>
-          <div v-if="loading" class="wb-empty">加载中…</div>
-          <div v-else-if="!sourceFields.length" class="wb-empty">这一来源还没有字段清单</div>
-          <div v-else-if="!pickerGroups.length" class="wb-empty">{{ emptyPickerText }}</div>
-          <div
-            v-else
-            ref="sourceListEl"
-            class="wb-source-list"
-            :class="{ picking: pickingSource }"
-            tabindex="-1"
-          >
-            <div v-for="(group, gi) in pickerViews" :key="gi" class="wb-source-group">
-              <div class="wb-source-group-title">{{ group.title }}</div>
-              <div v-if="group.tip" class="wb-source-group-tip">{{ group.tip }}</div>
-              <div
-                v-for="view in group.items"
-                :key="view.item.label"
-                class="wb-source-item"
-                :class="{
-                  'array-field': view.item.kind === 'array',
-                  used: isUsed(view.item),
-                  'kb-current': pickingSource && view.index === pickIndex,
-                }"
-                :data-pick-index="view.index"
-                tabindex="0"
-                :title="usedHint(view.item)"
-                @click="pick(view.item)"
-                @keydown.enter.prevent="pick(view.item)"
-              >
-                <div class="wb-source-item-main">
-                  <span class="wb-source-name">{{ view.item.label }}</span>
-                  <span v-if="view.item.kind === 'array'" class="wb-chip">数组</span>
-                  <!-- 已经被用过的来源字段高亮，并写明被引用了几处（#105） -->
-                  <span v-if="isUsed(view.item)" class="wb-chip used-badge">{{ usedCount(view.item) }} 处</span>
-                </div>
-                <div class="wb-source-meta">{{ view.item.type }}<template v-if="sampleOf(view.item)"> · 样例 {{ sampleOf(view.item) }}</template></div>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <!-- 左边来源清单（#117 拆出去）：给哪些字段看当前选中的那一行，点一项就填进这一行 -->
+        <MappingSourcePanel
+          ref="sourcePanel"
+          :source-tip="sourceTip"
+          :loading="loading"
+          @pick="pick"
+        />
 
         <section class="wb-rows">
           <div class="wb-rows-head">
@@ -553,28 +501,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { EditorSourceSample, FieldMappingEditorContext, SourceStructure } from '../types'
 import {
-  appendArrayRow, appendLeafRow, configFromRows, flattenRows, mergeRowsWithTargets, nextEmptyRow, progressOf,
-  rowReferenceFullLabel, rowReferenceLabel, rowsFromConfig, rowsFromTargetFields, targetCandidatesFor,
-  targetFieldsFromPaths, type FlatRow, type SourceField, type TargetField,
+  configFromRows, flattenRows, mergeRowsWithTargets, progressOf, rowsFromConfig, rowsFromTargetFields,
+  targetCandidatesFor, targetFieldsFromPaths, type FlatRow, type SourceField, type TargetField,
 } from '../mapping/editor-model.ts'
+import { autoSourceNotices } from '../mapping/fast-config.ts'
 import {
-  autoMatchSameName, autoSourceNotices, filterSourceGroups, nextMatchRowId, requiredSourceKeys,
-  sourceUsageOf, SOURCE_FILTER_LABELS, SOURCE_FILTERS, targetRowsView,
-  usedCountOf, usedRowIdsOf, type SourceFilter,
-} from '../mapping/fast-config.ts'
-import {
-  clearRowMapping, hasMapping, isRowConfigured, markHumanEdited, restoreRowMapping, ruleFromRow,
-  type ConcatPart, type MapRow, type RowMapping,
+  hasMapping, isRowConfigured, markHumanEdited, type ConcatPart, type MapRow,
 } from '../mapping/rows.ts'
-import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
+import { emptyRowLabel, stepLabel } from '../mapping/labels.ts'
 import {
-  applyTransform, datePatternFor, normalizeDatePattern, transformLabelFor, transformLabelOf,
-  transformName, transformOptions, DATE_PRESETS, type TransformOption,
+  datePatternFor, normalizeDatePattern, transformLabelFor, transformLabelOf, transformName,
+  transformOptions,
 } from '../mapping/transforms.ts'
-import {
-  appendChildRow, appendIndexChildRow, ancestorRowIds, emptyPickResult, fillRowFromPick, sourcePickerFor,
-  toggledRowIds, visibleRows, ELEMENT_GROUP_TITLE, type PickableItem,
-} from '../mapping/source-picker.ts'
+import { ELEMENT_GROUP_TITLE } from '../mapping/source-picker.ts'
 import {
   draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
   type DraftValidation,
@@ -583,33 +522,18 @@ import {
   editorModeOf, expressionConfig, expressionOf, expressionReplacedNotice, expressionSkipNotice,
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
-import { keyIntent, rowStepIndex, stepIndex, type PanelKey } from '../mapping/keyboard.ts'
+import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
 import {
   PART_KINDS, applyPartKind, canUsePartKind, partEmpty, partKindLabel, partKindOf, partLabelSpec,
 } from '../mapping/parts.ts'
+import {
+  createWorkbenchState, provideWorkbenchState, type DisplayRow,
+} from '../mapping/workbench-state.ts'
 import MappingDateParams from './MappingDateParams.vue'
 import MappingEnumParams from './MappingEnumParams.vue'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
 import MappingIndexParams from './MappingIndexParams.vue'
-
-/** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
-const TRANSFORM_HINTS: Record<string, string> = {
-  STRING: '原值直接搬过去',
-  INT: '转成数字，非数字会失败',
-  DATE: '按模式输出日期字符串',
-  ENUM: '来源值 → 目标值的查表替换',
-  CONSTANT: '不取来源，写死一个值',
-  CONCAT: '常量与来源字段按顺序拼接',
-  INDEX: '数组映射内每个元素的行号',
-}
-
-/** 有参数要填的转换 → 它的面板；没有的（直接映射、数字转换、行号）不在这里。 */
-const PANEL_KEYS: Partial<Record<string, PanelKey>> = {
-  DATE: 'date',
-  CONSTANT: 'const',
-  ENUM: 'enum',
-  CONCAT: 'concat',
-}
+import MappingSourcePanel from './MappingSourcePanel.vue'
 
 const props = defineProps<{
   jobId: number
@@ -630,10 +554,36 @@ const saving = ref(false)
 const validating = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
 
-/** 上一次「校验配置」的结果（后端给的）；没点过就是 null，界面上什么都不显示。 */
-const validation = ref<DraftValidation | null>(null)
 /** 底部编译产物那两个标签页。 */
 const artifactTab = ref('jsonata')
+
+/**
+ * 编辑器里那些**跨组件共用**的状态（行、选中、参数面板、收起集合、清单）：建一份，provide 给子组件。
+ *
+ * 左边来源清单、行列表、问题面板拆出去之后（#117），这几样是它们与键盘那一段共用的：一处状态源比
+ * 一层层 props / emit 传下去短得多，也不会出现两个副本各自记着「选中的是哪一行」。
+ * 状态的来龙去脉与「行上的操作」都在 `mapping/workbench-state.ts`。
+ */
+const state = createWorkbenchState()
+provideWorkbenchState(state)
+const {
+  rows, targets, sourceFields, selectedId, defaultStep, collapsedIds, clearedRows, panel, panelRowId,
+  optionIndex, targetQuery, typingTargetRowId, actionNames, validation,
+  displayRows, rowView, selectedEntry, panelEntry, panelTitle, allCollapsed,
+  select, isCollapsed, toggleCollapse, toggleAllArrays,
+  closePanel, openPanel, transformHint, chooseTransform, chooseDatePattern,
+  walkPanelOption, confirmPanelOption,
+  clearRow, undoClear, canUndo, clearHint, jumpToRowId, jumpToNextMatch,
+  focusRow, addLeafRow, addArrayRow, addChild, addIndexChild, autoMatch, pick,
+  rowLabel, rowFullLabel, fieldLabelOf,
+} = state
+
+/** 左边来源清单那一块（「走清单」那一段的状态归它，这里只按键盘的意图调它）。 */
+const sourcePanel = ref<InstanceType<typeof MappingSourcePanel> | null>(null)
+
+/** 编辑器上下文（哪一步能当来源、写目标是谁），以及正在编辑的动作那一条。 */
+const context = ref<FieldMappingEditorContext | null>(null)
+const targetSourceKey = ref<string>('')
 
 /**
  * 这个编辑器现在在哪一边（#106）：逐行配置，还是手写 JSONata。
@@ -649,32 +599,6 @@ const rowsMode = computed(() => editorMode.value === 'rows')
 /** 已存配置里本来就有一段手写表达式（切回逐行后要说清它会被替换）。 */
 const storedExpression = computed(() => hasExpression(expressionOf(props.config)))
 const expressionReplaced = () => expressionReplacedNotice()
-
-const context = ref<FieldMappingEditorContext | null>(null)
-const rows = ref<MapRow[]>([])
-const targets = ref<TargetField[]>([])
-const targetSourceKey = ref<string>('')
-const selectedId = ref<number | null>(null)
-const defaultStep = ref<number>(0)
-/** 收起子行的数组行（默认全部展开）。 */
-const collapsedIds = ref<Set<number>>(new Set())
-
-/** 左边来源清单的容器：键盘选来源时把焦点放进来，让上下键不再落在某个输入框里（#106）。 */
-const sourceListEl = ref<HTMLElement | null>(null)
-/** 「选来源」这一段开着（回车进来的）：↑↓ 在清单里走，回车填进这一行，Esc 退出。 */
-const pickingSource = ref(false)
-/** 键盘走到清单上的第几项（跨分组连着数，与 `pickerViews` 的编号一致）。 */
-const pickIndex = ref(0)
-/** 面板里键盘走到第几个选项（换转换、日期预设）。 */
-const optionIndex = ref(0)
-
-const actionNames = computed<Record<number, string>>(() => {
-  const map: Record<number, string> = {}
-  for (const a of context.value?.actions ?? []) {
-    if (a.index != null) map[a.index] = a.name ?? ''
-  }
-  return map
-})
 
 /** 链上更早的动作都能当默认来源；任务输入（0）永远在选项里。 */
 const stepOptions = computed(() => {
@@ -701,106 +625,7 @@ const targetTip = computed(() => {
   return `目标：${target.actionName ?? `动作 ${target.actionIndex}`}${targetSourceKey.value ? ` · ${targetSourceKey.value}` : ''}`
 })
 
-/** 左边清单给什么字段，取决于**当前选中的这一行**（#101：数组行只给数组、子行给相对路径与外层）。 */
-const pickerGroupsAll = computed(() =>
-  sourcePickerFor(selectedEntry.value?.row ?? null, sourceFields.value, selectedEntry.value?.parent ?? null, defaultStep.value))
-
-/** 来源清单的搜索词与过滤档（#105）：搜路径、搜样例值；按「全部 / 只看未配置 / 只看必填」筛。 */
-const sourceQuery = ref('')
-const sourceFilter = ref<SourceFilter>('all')
-
-/** 行里每个来源字段被引用了几处、被哪几行引用（高亮与计数用它）。 */
-const sourceUsage = computed(() => sourceUsageOf(rows.value))
-
-/** 「只看必填」要用的那份清单：还没配好、且目标字段标了 required 的那些。 */
-const requiredSources = computed(() =>
-  requiredSourceKeys(rows.value, targets.value, defaultStep.value, sourceFields.value))
-
-/**
- * 左边清单实际铺出来的那些项（搜索 + 过滤之后）。
- *
- * 「只看必填」比的是「这一项会被填到哪一步、哪一层」：子行里数组元素字段存的是相对路径，
- * 它取哪份来源数据由组节点决定（`sourcePickerFor` 把那一组给出来，就说明组节点就是这一步的）。
- */
-const pickerStep = computed(() => selectedEntry.value?.parent
-  ? selectedEntry.value.parent.sourceStep ?? defaultStep.value
-  : defaultStep.value)
-
-/** 当前清单给的是不是数组元素子行那一组（必填那一档要按层分开看）。 */
-const pickerInArray = computed(() => selectedEntry.value?.parent != null)
-
-const pickerGroups = computed(() => filterSourceGroups(
-  pickerGroupsAll.value, sourceQuery.value, sourceFilter.value, sourceUsage.value, requiredSources.value,
-  pickerStep.value, pickerInArray.value))
-
-/**
- * 清单铺出来时带上「第几项」（键盘走清单用的编号，#106）。
- *
- * 键盘走的顺序就是眼睛看到的顺序（分组一段接一段），所以编号要跨分组连着数——分组各数各的，
- * 上下键走到分组边界就会跳回去。
- */
-const pickerViews = computed(() => {
-  let index = 0
-  return pickerGroups.value.map(group => ({
-    title: group.title,
-    tip: group.tip,
-    items: group.items.map(item => ({ item, index: index++ })),
-  }))
-})
-
-/** 每一档下能显示几项（按钮上的数字）；空档也要看得见，所以按整份清单算，不按已经筛过的那份。 */
-const sourceFilterCounts = computed<Record<SourceFilter, number>>(() => {
-  const groups = pickerGroupsAll.value
-  const count = (filter: SourceFilter) => filterSourceGroups(
-    groups, sourceQuery.value, filter, sourceUsage.value, requiredSources.value,
-    pickerStep.value, pickerInArray.value)
-    .reduce((sum, group) => sum + group.items.length, 0)
-  return { all: count('all'), unconfigured: count('unconfigured'), required: count('required') }
-})
-
-/** 筛完一项都不剩时说清是搜索词的问题还是这一档本来就没有。 */
-const emptyPickerText = computed(() => {
-  if (sourceQuery.value.trim()) return `没有路径或样例值里有「${sourceQuery.value.trim()}」的字段`
-  const texts: Record<SourceFilter, string> = {
-    all: '这一来源还没有字段清单',
-    unconfigured: '这一来源的字段都已经被用过了',
-    required: '必填的目标字段都配好了',
-  }
-  return texts[sourceFilter.value]
-})
-
-/** 这一项被用过（清单上高亮 + 显示几处）。 */
-function isUsed(item: PickableItem): boolean {
-  return usedCount(item) > 0
-}
-
-function usedCount(item: PickableItem): number {
-  // 参数顺序是（来源清单，这一步）：相对路径要靠清单认出「属于哪个数组」，再按步骤分开算（#105）
-  return usedCountOf(sourceUsage.value, item, sourceFields.value, pickerStep.value)
-}
-
-/** 已用那一项的悬停提示：被几处引用、第一处在哪个目标字段上。 */
-function usedHint(item: PickableItem): string {
-  const count = usedCount(item)
-  if (!count) return ''
-  const ids = usedRowIdsOf(sourceUsage.value, item, sourceFields.value, pickerStep.value)
-  const first = flattenRows(rows.value).find(e => e.row.id === ids[0])
-  const where = first ? `：${first.parent ? `${first.parent.target.trim()} · ` : ''}${first.row.target.trim()}` : ''
-  return `这个来源已经被引用了 ${count} 处${where}`
-}
-
-/**
- * 目标字段的搜索词（#105）：回车跳到命中的那一行。
- *
- * 这里**只有搜索、没有过滤档**：票里那三档（全部 / 只看未配置 / 只看必填）说的是左边那份来源字段
- * 列表（与开工前确认的口径一致）。右边再加一排同名按钮，两处的「必填」却不是一回事
- * （来源那份是「还没配好的必填字段要用的来源」，行列表这份只能是「清单里标了 required 的行」），
- * 摆在一起只会让人以为它们是一回事。
- */
-const targetQuery = ref('')
-
-/** 搜索之后行列表该铺出哪些行（含收起的子行——搜索要能搜到它们）。 */
-const rowView = computed(() => targetRowsView(flattenRows(rows.value), targetQuery.value, 'all', targets.value))
+/** 左边来源清单（搜索、三档过滤、已用高亮与计数、键盘「走清单」那一段）在 `MappingSourcePanel.vue`（#117）。 */
 
 /** 搜索框右边那句：命中几行（含数组内几行）。 */
 const matchNote = computed(() => {
@@ -814,92 +639,10 @@ const emptyRowsText = computed(() => (targetQuery.value.trim()
   ? `没有目标字段跟「${targetQuery.value.trim()}」对得上`
   : '还没有任何目标字段'))
 
-/** 搜索框回车：跳到下一个命中的行（一路回车就是在命中项之间走一圈）。 */
-function jumpToNextMatch() {
-  const view = rowView.value
-  const rowId = nextMatchRowId(view, selectedId.value)
-  if (rowId == null) {
-    ElMessage.warning(targetQuery.value.trim() ? '没有目标字段跟这个词对得上' : '先输一个要搜的目标字段')
-    return
-  }
-  jumpToRowId(rowId)
-}
-
-/**
- * 还没选行时先说清怎么开始；「选来源」这一段开着时（回车进来的）说清键盘怎么走（#106）。
- */
-const pickerTip = computed(() => {
-  if (pickingSource.value) return '选来源：↑↓ 走，回车填进这一行，Esc 退出'
-  return selectedEntry.value ? '点一下字段就填进选中的那一行（也可以按回车用键盘选）' : '先点一行目标字段，再从这里选来源'
-})
-
 const progress = computed(() => progressOf(rows.value, targets.value))
 const progressPercent = computed(() => (progress.value.total ? Math.round(progress.value.configured / progress.value.total * 100) : 0))
 
-interface DisplayRow extends FlatRow {
-  /** 铺出来的每一项的唯一键：分组标题与它上面那一行共用同一个 MapRow，键不能重。 */
-  key: string
-  /** 这一行的目标字段是清单给的那一个（而不是手输的）。 */
-  fromTargets: boolean
-  /** 数组行的「数组元素内」分组标题（铺在数组行与它的子行之间）。 */
-  arrayHeader: boolean
-}
-
-/** 行在界面上按层级铺开：数组行后面紧跟「数组元素内」标题与它的子行（收起时只剩数组行）。 */
-const displayRows = computed<DisplayRow[]>(() => {
-  // 行过滤与搜索（#105）只决定「铺不铺这一行」，行的树形结构照旧：留在列表里的子行前面，
-  // 它所属的数组行那把「数组元素内」标题也留着（标题跟着子行走，不单独过滤）。
-  const view = rowView.value
-  const visible = visibleRows(rows.value, collapsedIds.value)
-  const kept = new Set(view.rowIds)
-  const out: DisplayRow[] = []
-  for (const entry of visible) {
-    if (!kept.has(entry.row.id)) continue
-    out.push({
-      ...entry,
-      key: `r${entry.row.id}`,
-      // 「手写」是拿这一行的补全清单比出来的，不是拿整份目标字段比：数组元素里的相对路径
-      // （`lineNo` 这种）也在清单里，顶层行手输一个同名的路径不该因此摘掉「手写」标记。
-      fromTargets: isFromTargets(entry),
-      arrayHeader: false,
-    })
-    // 有子行就补一条分组标题（#101：子行的来源默认按相对路径解析，标题上写明「数组元素内」）。
-    // 子行被过滤掉时标题不铺：一条「0 个子字段」的标题只会让人以为行丢了。
-    const children = entry.row.children.filter(child => kept.has(child.id))
-    if (children.length) {
-      out.push({
-        row: entry.row, depth: entry.depth, parent: entry.parent,
-        key: `h${entry.row.id}`, fromTargets: false, arrayHeader: true,
-      })
-    }
-  }
-  return out
-})
-
-/** 这一行的目标字段是不是清单给的（空行既不是清单给的、也不算手输，所以不标）。 */
-function isFromTargets(entry: FlatRow): boolean {
-  const target = entry.row.target.trim()
-  return target !== '' && targetCandidatesFor(targets.value, entry).includes(target)
-}
-
-/** 收起 / 展开一个数组行；「展开全部 / 收起全部」一次处理所有数组行。 */
-function toggleCollapse(row: MapRow) {
-  collapsedIds.value = toggledRowIds(rows.value, collapsedIds.value, row.id)
-}
-
-function toggleAllArrays() {
-  collapsedIds.value = allCollapsed.value ? new Set() : toggledRowIds(rows.value, new Set())
-}
-
-/** 所有带子行的数组行都收起了吗（决定按钮上写「展开全部」还是「收起全部」）。 */
-const allCollapsed = computed(() => {
-  const arrays = flattenRows(rows.value).filter(entry => entry.row.children.length)
-  return arrays.length > 0 && arrays.every(entry => collapsedIds.value.has(entry.row.id))
-})
-
-function isCollapsed(row: MapRow): boolean {
-  return collapsedIds.value.has(row.id)
-}
+// 行的铺开、展开/收起、选中、新增行、清除/撤销、参数面板那一套都在 `mapping/workbench-state.ts`（#117）。
 
 // ---------------------------------------------------------------- 手工新增行（#102）
 
@@ -919,9 +662,6 @@ function targetSuggestions(entry: DisplayRow, query: string): Record<string, any
     .map(path => ({ value: path }))
 }
 
-/** 这一行的目标字段输入框里，用户是不是正在打字（决定补全要不要按查询词筛）。 */
-const typingTargetRowId = ref<number | null>(null)
-
 function onTargetInput(entry: DisplayRow) {
   typingTargetRowId.value = entry.row.id
 }
@@ -931,121 +671,7 @@ function suggestFor(entry: DisplayRow) {
   return (query: string, cb: (items: Record<string, any>[]) => void) => cb(targetSuggestions(entry, query))
 }
 
-/** 「+ 字段映射」：加一行空的字段映射，加完就选中它并把光标放进目标字段（清单里选一个，或者手输）。 */
-function addLeafRow() {
-  focusRow(appendLeafRow(rows.value, defaultStep.value))
-}
-
-/** 「+ 数组映射」：加一行空的数组映射（目标写数组路径，来源在左边清单里选一个数组）。 */
-function addArrayRow() {
-  focusRow(appendArrayRow(rows.value, defaultStep.value))
-}
-
-// ---------------------------------------------------------------- 自动匹配同名（#105）
-
-/**
- * 一键「自动匹配同名」：把空白的行按同名字段填上。
- *
- * 整件事在 `fast-config.ts` 里做完（纯逻辑，**一个请求都不发**，票里那条验收就是这么保住的）：
- * 只填空行、不覆盖已经配好的行。这里只负责把结果画出来并标上「自动」——从这一刻起，
- * 校验时会给这些行一条提醒确认的提示（`autoNotices`）。
- */
-function autoMatch() {
-  const result = autoMatchSameName(rows.value, sourceFields.value, defaultStep.value)
-  if (!result.rowIds.length) {
-    ElMessage.warning(sourceFields.value.length
-      ? '没有空白的行能按同名对上——已经配好的行不动，数组映射行也要你自己选来源数组'
-      : '左边还没有来源字段清单，先在上面选一个默认来源')
-    return
-  }
-  // 标上「自动」：这一行的来源不是手点的，校验时要提醒确认（用户一碰这一行标记就掉）。
-  const filled = new Set(result.rowIds)
-  for (const entry of flattenRows(rows.value)) {
-    if (filled.has(entry.row.id)) entry.row.auto = true
-  }
-  ElMessage.success(`已按同名填上 ${result.rowIds.length} 行（只补空行，来源在界面上标成了「自动」）`)
-}
-
-/** 「+ 子字段」：往数组行下面加一个子行（目标字段写相对路径）。 */
-function addChild(row: MapRow) {
-  appendChildRow(row)
-  focusNewChild(row)
-}
-
-/** 「+ 行号」：往数组行下面加一个行号子行（来源就是行号，起始值在行里改）。 */
-function addIndexChild(row: MapRow) {
-  appendIndexChildRow(row)
-  focusNewChild(row)
-}
-
-/** 新加的子行：数组行先展开（否则新行根本不铺出来），再选中它。 */
-function focusNewChild(arrayRow: MapRow) {
-  collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== arrayRow.id))
-  const added = arrayRow.children[arrayRow.children.length - 1]
-  if (added) focusRow(added)
-}
-
-/** 新加的行：选中它、滚到看得见、把光标放进目标字段里（补全清单跟着出来）。 */
-function focusRow(row: MapRow) {
-  closePanel()
-  selectedId.value = row.id
-  nextTick(() => {
-    const el = document.querySelector<HTMLElement>(`[data-row-id="${row.id}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
-    el?.querySelector('input')?.focus()
-  })
-}
-
-// ---- 清除 / 撤销（#102）：清除的是这一行「值怎么取」，目标字段与子行都留着
-
-/**
- * 清掉的行 → 撤销用的快照。放在组件里而不是行上：行模型是「存进规则的那份数据」，
- * 撤销只是编辑器里的一次回头路，不该跟着行跑进规则里（`ruleFromRow` 只认它自己那些字段）。
- */
-const clearedRows = ref<Map<number, RowMapping>>(new Map())
-
-/** 这一行现在能撤销吗：刚清除过、并且还没重新配（重新配了就不该再退回清除前那一份）。 */
-function canUndo(row: MapRow): boolean {
-  return clearedRows.value.has(row.id) && !hasMapping(row)
-}
-
-/**
- * 「清除」按钮上的说法。
- *
- * 数组行要说清后果：清除之后这一行没有来源数组，而**数组行没有来源数组就整行不发**
- * （`isRowConfigured`／`configFromRows`），子行的映射会跟着一起不进保存——界面上子行还在，
- * 所以这句话得先讲明白（保存时还会再确认一次「只保存配好的」）。
- */
-function clearHint(entry: FlatRow): string {
-  if (!hasMapping(entry.row)) return '这一行还没配，没什么可清除的'
-  if (entry.row.iterate === 'FOR_EACH') {
-    return '清除这一行的来源数组（子行留着；没有来源数组这一行就不发出去，子行的映射也跟着不保存）'
-  }
-  return '清除这一行的取值方式（目标字段留着，清除后能撤销）'
-}
-
-function clearRow(entry: DisplayRow) {
-  const snapshot = clearRowMapping(entry.row)
-  if (!snapshot) return
-  clearedRows.value = new Map(clearedRows.value).set(entry.row.id, snapshot)
-  // 参数面板开在这一行上时收起来：转换已经回到默认，面板里显示的是上一份参数。
-  if (panelRowId.value === entry.row.id) closePanel()
-  ElMessage.success(`已清除「${entry.row.target.trim() || '这一行'}」的映射——行里的「撤销」能还原`)
-}
-
-function undoClear(row: MapRow) {
-  const snapshot = clearedRows.value.get(row.id)
-  if (!snapshot) return
-  restoreRowMapping(row, snapshot)
-  const next = new Map(clearedRows.value)
-  next.delete(row.id)
-  clearedRows.value = next
-  select(row)
-}
-
-/** 选中的那一行（清单与参数面板都看它）。 */
-const selectedEntry = computed<DisplayRow | null>(() =>
-  displayRows.value.find(e => e.row.id === selectedId.value) ?? null)
+// ---------------------------------------------------------------- 加载（上下文、目标清单、来源清单）
 
 async function load() {
   loading.value = true
@@ -1055,6 +681,8 @@ async function load() {
     else if (props.actionIndex != null) query.set('actionIndex', String(props.actionIndex))
     const ctx = await api<FieldMappingEditorContext>(`/jobs/${props.jobId}/field-mapping-editor?${query.toString()}`)
     context.value = ctx
+    actionNames.value = actionNamesOf(ctx)
+    sourceFields.value = ctx.source?.fields ?? []
     defaultStep.value = ctx.source?.step ?? previousActionIndex(ctx)
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
@@ -1078,6 +706,15 @@ function previousActionIndex(ctx: FieldMappingEditorContext): number {
     .filter((i): i is number => i != null)
     .filter(i => props.actionIndex == null || i < props.actionIndex)
   return earlier.length ? Math.max(...earlier) : 0
+}
+
+/** 动作序号 → 动作名（行与片段上那些人话要用；由上下文给）。 */
+function actionNamesOf(ctx: FieldMappingEditorContext): Record<number, string> {
+  const map: Record<number, string> = {}
+  for (const a of ctx.actions ?? []) {
+    if (a.index != null) map[a.index] = a.name ?? ''
+  }
+  return map
 }
 
 /** 目标字段清单：连库探测写目标那张表；探不出来就空着，编辑器退化成手写目标字段。 */
@@ -1133,28 +770,6 @@ async function reloadTargets() {
   } finally {
     loading.value = false
   }
-}
-
-function sampleOf(item: PickableItem): string {
-  const first = item.samples?.[0]
-  if (first == null) return ''
-  const text = typeof first === 'object' ? JSON.stringify(first) : String(first)
-  return text.length > 18 ? `${text.slice(0, 18)}…` : text
-}
-
-function rowLabel(entry: FlatRow, isChild: boolean) {
-  return rowReferenceLabel(entry.row, actionNames.value, isChild)
-}
-
-function rowFullLabel(entry: FlatRow) {
-  const inherited = entry.parent?.sourceStep ?? null
-  return rowReferenceFullLabel(entry.row, actionNames.value, inherited)
-}
-
-function select(row: MapRow) {
-  selectedId.value = row.id
-  // 换行就把上一行的参数面板收起来，免得面板留在别的行下面看着像它的。
-  if (panelRowId.value !== null && panelRowId.value !== row.id) closePanel()
 }
 
 /**
@@ -1279,82 +894,7 @@ function issueText(rowId: number): string {
   return (rowIssues.value.get(rowId) ?? []).map(issue => issue.message).join('\n')
 }
 
-/** 跳到某一行：先把上面收起的数组行展开（收着的子行根本没铺出来），再选中它、滚到看得见。 */
-function jumpToRowId(rowId: number | null) {
-  if (rowId == null) return
-  const ancestors = ancestorRowIds(rows.value, rowId)
-  if (ancestors.length) {
-    collapsedIds.value = new Set([...collapsedIds.value].filter(id => !ancestors.includes(id)))
-  }
-  closePanel()
-  selectedId.value = rowId
-  nextTick(() => {
-    document.querySelector<HTMLElement>(`[data-row-id="${rowId}"]`)?.scrollIntoView({ block: 'center' })
-  })
-}
-
 // ---------------------------------------------------------------- 就地参数编辑（#100）
-
-// 面板的种类只有一处定义（`keyboard.ts` 的 `PanelKey`）：键盘要按它决定「这个面板能不能用上下键选」
-const panel = ref<PanelKey | null>(null)
-const panelRowId = ref<number | null>(null)
-
-const PANEL_TITLES: Record<PanelKey, string> = {
-  op: '这一行的值怎么取',
-  date: '日期格式化',
-  const: '常量',
-  enum: '枚举映射',
-  concat: '拼接',
-}
-
-const panelTitle = computed(() => (panel.value ? PANEL_TITLES[panel.value] : ''))
-
-/** 当前面板所在的那一行（行 + 层级 + 父行），脚本里的操作都从这里取。 */
-const panelEntry = computed<DisplayRow | null>(() =>
-  displayRows.value.find(e => e.row.id === panelRowId.value) ?? null)
-
-/** 当前打开面板的行。 */
-const panelRow = computed<MapRow | null>(() => panelEntry.value?.row ?? null)
-
-/**
- * 打开某一行的参数面板。
- *
- * 顺手把键盘停在第几个选项上（#106）：`/` 进来时停在它现在用的那一种上，接着按 ↑↓ 就是换。
- */
-function openPanel(entry: DisplayRow, kind: PanelKey) {
-  select(entry.row)
-  panel.value = kind
-  panelRowId.value = entry.row.id
-  const presets: readonly string[] = DATE_PRESETS
-  const start = kind === 'date'
-    ? presets.indexOf(datePatternFor(entry.row))
-    : transformOptions(entry.row, entry.depth).findIndex(o => o.value === entry.row.transform)
-  optionIndex.value = Math.max(start, 0)
-}
-
-function closePanel() {
-  panel.value = null
-  panelRowId.value = null
-}
-
-/** 转换下拉里每一项的一句说明。 */
-function transformHint(kind: string): string {
-  return TRANSFORM_HINTS[kind] ?? ''
-}
-
-/** 选一个转换：参数跟着换；有参数可填的转换顺手把它的面板打开。 */
-function chooseTransform(entry: DisplayRow, option: TransformOption) {
-  if (option.disabled) return
-  applyTransform(entry.row, option.value)
-  // 有参数要填的转换（PANEL_KEYS 里那几个）顺手把它的面板打开；其余选完就收起。
-  const next = PANEL_KEYS[option.value]
-  if (next) openPanel(entry, next)
-  else closePanel()
-}
-
-function chooseDatePattern(row: MapRow, pattern: string) {
-  applyTransform(row, 'DATE', { datePattern: pattern })
-}
 
 /**
  * 手输日期格式串（#111）：边打边落进这一行，摘要跟着变。
@@ -1421,12 +961,6 @@ function partChipHint(part: ConcatPart): string {
   if (kind === 'CONSTANT') return '常量片段——点一下改这个片段的取值方式'
   if (kind === 'STRING') return '直接取值——点一下换这个片段的转换'
   return `${partKindLabel(kind)}片段——点一下改这个片段的参数`
-}
-
-/** 把一个来源路径按这一行的上下文显示成人话（数组子行里就是相对路径本身）。 */
-function fieldLabelOf(entry: FlatRow, path: string): string {
-  const step = entry.row.sourceStep ?? entry.parent?.sourceStep ?? defaultStep.value
-  return fieldReferenceLabel({ step, path }, actionNames.value)
 }
 
 function isChild(entry: FlatRow): boolean {
@@ -1501,13 +1035,13 @@ function sourceFieldOf(entry: DisplayRow | FlatRow | null, path: string): Source
 
 /** 面板这一行来源字段的样例值。 */
 const panelSourceField = computed<SourceField | undefined>(() =>
-  sourceFieldOf(panelEntry.value, panelRow.value?.source ?? ''))
+  sourceFieldOf(panelEntry.value, panelEntry.value?.row.source ?? ''))
 
 /** 候选来源字段：数组子行用相对路径，其余用请到的清单。 */
 function selectableFields(entry: FlatRow): SourceField[] {
   const fields = sourceFields.value
   if (!isChild(entry)) return fields
-  // 子行的来源是相对当前元素的路径，只能从组来源数组的元素字段里挑。
+  // 子行的来源是相对当前路径的元素路径，只能从组来源数组的元素字段里挑。
   const array = entry.parent?.source ?? ''
   if (!array) return fields
   const prefix = `${array.replace(/\[0\]$/, '')}[0].`
@@ -1517,44 +1051,9 @@ function selectableFields(entry: FlatRow): SourceField[] {
   return relative.length ? relative : fields.filter(f => !f.name.includes('.'))
 }
 
-/** 当前来源步骤的字段清单（探测结果）。 */
-const sourceFields = computed<SourceField[]>(() => context.value?.source?.fields ?? [])
-
 function selectFirst() {
   const first = displayRows.value.find(e => e.row.target.trim())
   selectedId.value = first?.row.id ?? null
-}
-
-/**
- * 点左边清单里的一个字段：填进当前行，然后自动走到下一个空行。
- *
- * 「填不进去」的三种情况只说形状接不上（数组行要数组、数组要进数组行、相对路径要进子行），
- * 对不对仍然由后端那个只读接口判（#98 D1/D4）。
- */
-function pick(item: PickableItem) {
-  // 鼠标点进来的也算把「选来源」这一段走完了：键盘那一段的状态不留到下一次
-  leavePicking()
-  const entry = selectedEntry.value
-  const result = fillRowFromPick(entry?.row ?? null, item, entry != null && entry.depth > 0)
-  if (!result.row || !entry) {
-    ElMessage.warning(emptyPickResult(result).message)
-    return
-  }
-  const picked = result.row
-  // 手点了一次来源：这一行不再是「自动匹配填上的那一行」（#105 那条提醒只对没碰过的行有用）。
-  markHumanEdited(picked)
-  selectedId.value = picked.id
-  // 数组行选完来源数组后，接着去填这个数组里的子字段（第一个空子行）。
-  if (picked.iterate === 'FOR_EACH') {
-    const child = picked.children.find(c => c.target.trim() && !c.source.trim()) ?? picked.children[0]
-    if (child) {
-      selectedId.value = child.id
-      collapsedIds.value = new Set([...collapsedIds.value].filter(id => id !== picked.id))
-    }
-    return
-  }
-  const next = nextEmptyRow(rows.value, picked)
-  if (next && next.id !== picked.id) selectedId.value = next.id
 }
 
 /** 切默认来源：空行跟着换步骤，左边字段清单也要换成那个动作的清单。 */
@@ -1581,6 +1080,7 @@ async function loadSourceFields(step: number) {
   try {
     const sample = await api<EditorSourceSample>(`/jobs/${props.jobId}/field-mapping-editor/source-fields?step=${step}`)
     if (context.value) context.value = { ...context.value, source: sample }
+    sourceFields.value = sample.fields ?? []
   } catch (e) {
     ElMessage.error((e as ApiError).message)
   } finally {
@@ -1608,7 +1108,7 @@ function onKeydown(e: KeyboardEvent) {
   const intent = keyIntent(e.key, {
     inTextEntry: inTextEntryFor(e.key, e.target),
     hasSelection: selectedId.value != null,
-    pickingSource: pickingSource.value,
+    pickingSource: sourcePanel.value?.picking === true,
     panel: panel.value,
   })
   if (!intent) return
@@ -1627,16 +1127,16 @@ function onKeydown(e: KeyboardEvent) {
       clearSelectedRow()
       return
     case 'leave':
-      leavePicking()
+      sourcePanel.value?.endPick()
       return
     case 'close-panel':
       closePanel()
       return
     case 'walk-item':
-      walkPick(intent.delta)
+      sourcePanel.value?.movePick(intent.delta)
       return
     case 'confirm-pick':
-      confirmPick()
+      sourcePanel.value?.confirmPick()
       return
     case 'walk-option':
       walkPanelOption(intent.delta)
@@ -1665,7 +1165,7 @@ function openTransformPanel() {
   openPanel(entry, 'op')
 }
 
-/** 回车选来源：进「走清单」这一段，把焦点从输入框里挪开，停在第一项上。 */
+/** 回车选来源：进「走清单」这一段（清单那一侧自己把焦点收进去、停在第一项上）。 */
 function startPickingSource() {
   const entry = selectedEntry.value
   if (!entry) return
@@ -1675,41 +1175,13 @@ function startPickingSource() {
       : '这一行是行号：来源就是行号本身，不用选来源字段')
     return
   }
-  if (!flatPickItems.value.length) {
-    ElMessage.warning(emptyPickerText.value)
+  const panel = sourcePanel.value
+  if (!panel?.itemCount) {
+    ElMessage.warning(panel?.emptyText ?? '')
     return
   }
-  pickingSource.value = true
-  pickIndex.value = 0
   closePanel()
-  nextTick(() => {
-    sourceListEl.value?.focus()
-    scrollPickItemIntoView()
-  })
-}
-
-/** 走清单：跳过没有的项，走到头就停在原地（`stepIndex` 的口径与面板那边一样）。 */
-function walkPick(delta: -1 | 1) {
-  pickIndex.value = stepIndex(pickIndex.value, delta, flatPickItems.value.length)
-  nextTick(scrollPickItemIntoView)
-}
-
-/** 键盘走到的那一项要看得见：清单可能是滚动的（长清单 + 过滤之后）。 */
-function scrollPickItemIntoView() {
-  document.querySelector<HTMLElement>(`[data-pick-index="${pickIndex.value}"]`)?.scrollIntoView({ block: 'nearest' })
-}
-
-/** 回车：把清单里停着的那一项填进这一行，然后退出这一段（选中的行会自己往下走一行）。 */
-function confirmPick() {
-  const item = flatPickItems.value[pickIndex.value]
-  leavePicking()
-  if (item) pick(item)
-}
-
-/** 退出「选来源」这一段（Esc，或者已经填进去了）。 */
-function leavePicking() {
-  pickingSource.value = false
-  pickIndex.value = 0
+  panel.beginPick()
 }
 
 /** 退格 / 删除：清除选中这一行的取值方式（和行里的「清除」是同一件事，清除后照样能撤销）。 */
@@ -1717,43 +1189,6 @@ function clearSelectedRow() {
   const entry = selectedEntry.value
   if (!entry || !hasMapping(entry.row)) return
   clearRow(entry)
-}
-
-/** 面板里走选项（换转换、日期预设）：跳过置灰的那一项。 */
-function walkPanelOption(delta: -1 | 1) {
-  const count = panelOptionCount()
-  optionIndex.value = stepIndex(optionIndex.value, delta, count, index => panelOptionDisabled(index))
-}
-
-/** 面板里回车：用键盘停着的那一个选项。 */
-function confirmPanelOption() {
-  const entry = panelEntry.value
-  if (!entry) return
-  if (panel.value === 'op') {
-    const option = transformOptions(entry.row, entry.depth)[optionIndex.value]
-    if (option) chooseTransform(entry, option)
-    return
-  }
-  if (panel.value === 'date') {
-    const pattern = DATE_PRESETS[optionIndex.value]
-    if (pattern) chooseDatePattern(entry.row, pattern)
-  }
-}
-
-/** 当前面板里有几个选项（只有「一排选项」的两个面板有得走）。 */
-function panelOptionCount(): number {
-  if (panel.value === 'op') {
-    const entry = panelEntry.value
-    return entry ? transformOptions(entry.row, entry.depth).length : 0
-  }
-  if (panel.value === 'date') return DATE_PRESETS.length
-  return 0
-}
-
-function panelOptionDisabled(index: number): boolean {
-  const entry = panelEntry.value
-  if (!entry || panel.value !== 'op') return false
-  return transformOptions(entry.row, entry.depth)[index]?.disabled === true
 }
 
 /** 这个事件发生在某个输入框 / 下拉框里吗。 */
@@ -1794,9 +1229,6 @@ function hasOpenAutocomplete(): boolean {
     .some(el => el.offsetParent !== null)
 }
 
-/** 清单一整份摊平（键盘走清单的顺序就是它）。 */
-const flatPickItems = computed(() => pickerGroups.value.flatMap(group => group.items))
-
 onMounted(() => window.addEventListener('keydown', onKeydown, { capture: true }))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, { capture: true }))
 
@@ -1834,7 +1266,7 @@ async function openExpression() {
   // 上一次校验是逐行那边跑的：换了一边就不该再显示它的行状态与问题
   validation.value = null
   closePanel()
-  leavePicking()
+  sourcePanel.value?.endPick()
 }
 
 /** 切回逐行配置（#106）：说清保存时规则树会替换掉这份手写表达式。 */
@@ -1937,45 +1369,8 @@ load()
 .wb-progress-text { font-size: 12px; color: #6b7280; white-space: nowrap; }
 
 .wb-body { display: flex; flex: 1; min-height: 0; }
-.wb-source {
-  width: 280px; flex-shrink: 0; border-right: 1px solid #e5e7eb;
-  display: flex; flex-direction: column; padding: 10px; min-height: 0;
-}
-.wb-panel-title { font-size: 13px; font-weight: 600; color: #111827; }
-.wb-panel-tip { font-size: 11px; color: #9ca3af; margin: 2px 0 8px; }
-.wb-source-list { overflow: auto; flex: 1; outline: none; }
-.wb-source-group + .wb-source-group { margin-top: 10px; }
-.wb-source-group-title { font-size: 12px; color: #374151; font-weight: 600; margin-bottom: 4px; }
-.wb-source-group-tip { font-size: 11px; color: #b45309; margin-bottom: 4px; }
-.wb-source-item { padding: 5px 6px; border-radius: 4px; cursor: pointer; }
-.wb-source-item:hover { background: #f3f4f6; }
-.wb-source-item.array-field .wb-source-name { color: #7c3aed; }
-/* 键盘走到的那一项（#106）：与鼠标悬停同一个落点，用边框区分是键盘在走 */
-.wb-source-list.picking .wb-source-item.kb-current {
-  background: #ecf5ff; outline: 2px solid #409eff; outline-offset: -2px;
-}
-/* 已经被用过的来源字段：整项高亮，右侧写清被引用了几处（#105） */
-.wb-source-item.used { background: #f0f9ff; }
-.wb-source-item.used:hover { background: #e0f2fe; }
-.wb-source-item.used .wb-source-name { color: #0369a1; }
-.wb-source-item-main { display: flex; align-items: center; gap: 6px; }
-.wb-source-name { font-family: Consolas, monospace; font-size: 12px; }
-.wb-source-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.wb-chip { font-size: 10px; color: #6b7280; border: 1px solid #d1d5db; border-radius: 3px; padding: 0 4px; }
-.wb-chip.used { color: #0369a1; border-color: #bae6fd; }
-.wb-chip.used-badge { color: #0369a1; border-color: #bae6fd; background: #e0f2fe; }
 
-/* 来源清单的搜索与三档过滤（#105） */
-.wb-source-search { margin-bottom: 6px; }
-.wb-source-filters { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
-.wb-filterbtn {
-  font: inherit; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: pointer;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #374151;
-}
-.wb-filterbtn:hover { border-color: #409eff; color: #409eff; }
-.wb-filterbtn.current { border-color: #409eff; background: #ecf5ff; color: #1d4ed8; }
-.wb-filterbtn small { color: #9ca3af; }
-.wb-filterbtn.current small { color: #1d4ed8; }
+/* 来源清单那一整块（含它的样式）在 `MappingSourcePanel.vue` 里（#117）。 */
 
 /* 目标字段的搜索与三档过滤（#105） */
 .wb-target-search { width: 200px; flex-shrink: 0; }
@@ -2002,7 +1397,6 @@ load()
 .wb-col-value { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .wb-source-value { font-size: 13px; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-child-hint { font-size: 11px; color: #9ca3af; }
-.wb-empty { font-size: 12px; color: #9ca3af; padding: 10px 0; }
 .wb-alert { margin: 8px 16px 0; }
 
 /* 数组行的「数组元素内」分组标题：展开 / 收起子行就在这里 */
@@ -2010,13 +1404,9 @@ load()
 .wb-group-title { font-size: 11px; color: #6b7280; font-weight: 600; }
 .wb-group-note { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
 
-/* 一行里能点的那些小块：点一下就就地改，不开弹窗 */
-.wb-chip {
-  font: inherit; font-size: 12px; line-height: 18px; padding: 1px 6px;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #111827;
-  cursor: pointer; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.wb-chip:hover { border-color: #409eff; color: #409eff; }
+/* 一行里能点的那些小块：点一下就就地改，不开弹窗。
+   基元（`.wb-chip` 与悬停那一条）在 styles/workbench-panel.css——行列表与来源清单两处都用它，
+   这里只留这一行里那几种小块的落点（拼接片段、清除/撤销、换转换……）。 */
 .wb-chip.chip-src { font-family: Consolas, monospace; }
 .wb-chip.chip-src.empty { color: #9ca3af; border-style: dashed; }
 /* 「还没选来源」这类空块至少要占住一块地方：塌成一小撮时，后面的「+ 子字段」会挪到行的正中间，
@@ -2071,7 +1461,6 @@ load()
 }
 .wb-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .wb-panel-target { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
-.wb-spacer { flex: 1; }
 /* 这一组（行、说明、转换按钮、枚举表、片段）在下面那个**非 scoped** 的 style 块里：
    两个参数编辑器组件（MappingDateParams / MappingEnumParams）在行级与片段级共用，
    它们内部的元素也要用到这套样式，scoped 到不了子组件里面（#112）。 */
@@ -2093,13 +1482,9 @@ load()
 }
 
 @media (max-width: 1024px) {
-  /* 来源清单铺在上面：宽度不够时它和行列表并排，两边都读不成 */
+  /* 来源清单铺在上面：宽度不够时它和行列表并排，两边都读不成
+     （清单自己那一侧的尺寸在 `MappingSourcePanel.vue` 里） */
   .wb-body { flex-direction: column; }
-  .wb-source {
-    width: auto; max-height: 220px; border-right: 0;
-    border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
-  }
-  .wb-source-list { flex: none; max-height: 140px; }
 }
 
 @media (max-width: 820px) {
@@ -2117,7 +1502,7 @@ load()
 }
 
 @media (max-width: 640px) {
-  .wb-rows, .wb-source { padding: 8px; }
+  .wb-rows { padding: 8px; }
   .wb-head { padding: 8px; }
   .wb-progress { width: 120px; }
   .wb-step-select, .wb-target-search { width: 100%; }

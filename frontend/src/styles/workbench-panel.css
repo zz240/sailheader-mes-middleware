@@ -1,14 +1,28 @@
 /*
- * 就地参数面板的那几个基元：一条参数行、说明文字、拉伸的输入框、转换按钮（一排选项）、枚举表、拼接片段。
+ * 字段映射编辑器里**跨组件共用**的那几个基元：一条参数行、说明文字、拉伸的输入框、转换按钮（一排选项）、
+ * 枚举表、拼接片段，以及标题 / 说明 / 小块 / 空态这几个到处都在用的落点（#117 拆组件之后又多了三处用量）。
  *
  * **为什么是独立的一份普通样式表**（不是组件里的 `<style scoped>`）：`MappingDateParams.vue` 与
  * `MappingEnumParams.vue` 两个参数编辑器在「行级转换」与「片段转换」两处共用（#112 验收二），
- * scoped 样式到不了子组件内部的元素；而把这几条塞进 Workbench 的非 scoped `<style>` 块里时，
- * 响应式那几条（窄屏下按钮换行、输入框铺满）留在了 scoped 的 `@media` 里，成了够不着子组件的死规则。
- * 现在基元与它们自己的响应式规则放在同一处，谁都不用去猜哪一条生效。
+ * 而拆出去的来源清单、行列表、问题面板也都是工作台这棵树上的兄弟组件——scoped 样式到不了别人内部的元素。
+ * 以前把几条塞进 Workbench 的非 scoped `<style>` 块里时，响应式那几条（窄屏下按钮换行、输入框铺满）
+ * 留在了 scoped 的 `@media` 里，成了够不着子组件的死规则。现在基元与它们自己的响应式规则放在同一处，
+ * 谁都不用去猜哪一条生效（#112 走查、#117）。
  *
  * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
  */
+/* 标题 / 说明 / 空态：面板、来源清单、行列表、问题面板都用 */
+.wb-panel-title { font-size: 13px; font-weight: 600; color: #111827; }
+.wb-panel-tip { font-size: 11px; color: #9ca3af; margin: 2px 0 8px; }
+.wb-empty { font-size: 12px; color: #9ca3af; padding: 10px 0; }
+.wb-spacer { flex: 1; }
+/* 一行里能点的那些小块：点一下就就地改，不开弹窗（行列表与来源清单共用同一份落点） */
+.wb-chip {
+  font: inherit; font-size: 12px; line-height: 18px; padding: 1px 6px;
+  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #111827;
+  cursor: pointer; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wb-chip:hover { border-color: #409eff; color: #409eff; }
 .wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .wb-panel-note { font-size: 11px; color: #9ca3af; }
 .wb-grow { flex: 1; min-width: 200px; }
