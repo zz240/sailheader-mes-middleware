@@ -16,9 +16,10 @@ Single-context: `CONTEXT.md` at the repo root plus `docs/adr/` for decisions. Se
 
 ## Token budget
 
-账单的大头是「每次调用重读整个上下文」（占八成以上），不是思考。四条习惯直接压这块：
+账单的大头是「每次调用重读整个上下文」（占八成以上），不是思考。五条习惯直接压这块：
 
 - **换票先开新会话。** 一张票一个会话；新会话从 20k 上下文起步，连做三张会涨到 380k。
-- **大文件先 grep 定位、再读窗口。** 本仓库单文件常见一千到两千行（`FieldMappingWorkbench.vue`、`MappingDraftValidationServiceTest`、`MappingSampleChecks`）。
-- **命令输出一律加上限**（`Select-Object -First/-Last`）；进程表、大 JSON、整份测试日志按需取几行。
-- **测试分层跑。** 平时只跑相关测试类与前端纯模块检查（`node --experimental-strip-types frontend/src/mapping/checks.ts`），全量 `mvn test` 与真机脚本 `tools/ui/*.cjs` 留到收尾各跑一次。
+- **一轮多发几个工具。** 相互独立的读与命令合并进同一条消息（本仓库一次典型会话里 607 个工具调用摊在 564 次模型调用上，约等于每轮都重读一遍上下文）；等子代理不用轮询，结束会通知。
+- **大文件先 grep 定位、再读窗口。** `FieldMappingWorkbench.vue` 2187 行是全仓库最大的文件，其次 `checks.ts`、`MappingDraftValidationServiceTest`。
+- **改一个文件能一次写全就一次写。** 大改用 `write` 落一次，别拆成十几次 `edit`。
+- **命令输出加上限、测试分层跑。** 进程表、大 JSON、整份日志按需取几行；平时只跑相关测试类与 `node --experimental-strip-types frontend/src/mapping/checks.ts`，全量 `mvn test` 与 `tools/ui/*.cjs` 留到收尾各一次。
