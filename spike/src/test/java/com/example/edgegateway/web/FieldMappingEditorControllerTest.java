@@ -67,9 +67,30 @@ class FieldMappingEditorControllerTest {
                 .andExpect(jsonPath("$.data.errors[0].message").value("映射规则缺少来源字段 source"));
     }
 
+    /**
+     * 非法日期格式串从编辑器这条路上回来的是**错误**（#111 验收二）：编辑器据此在保存前拦下。
+     *
+     * <p>拦它的是与保存那道门同一份结构校验实现（{@code FieldMappingConfig.problems()}）——保存那一半在
+     * {@code ActionServiceTest} 里断言，这里管的是「编辑器发出去的那一份请求拿得回这条错误」。</p>
+     */
     @Test
-    void reportsAMissingSourceStepAsAWarningNotAnError() throws Exception {
+    void reportsAnIllegalDatePatternAsAnError() throws Exception {
         mockMvc.perform(post("/api/field-mapping-editor/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"draft":{"rules":[{"sourceStep":1,"source":"createdTime",
+                                  "target":"bom.createdDate","transform":"DATE","datePattern":"ISO-8601"}]},
+                                 "earlierActionIndexes":[1],"defaultSourceStep":1,"actionIndex":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.valid").value(false))
+                .andExpect(jsonPath("$.data.errors[0].target").value("bom.createdDate"))
+                .andExpect(jsonPath("$.data.errors[0].message")
+                        .value(containsString("日期格式串不合法: ISO-8601")));
+    }
+
+    @Test
+    void reportsAMissingSourceStepAsAWarningNotAnError() throws Exception {        mockMvc.perform(post("/api/field-mapping-editor/validate")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"draft":{"rules":[{"source":"bomNo","target":"bom.bomNo","transform":"STRING"}]},

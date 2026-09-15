@@ -3,6 +3,8 @@ package com.example.edgegateway.service;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.FieldMappingConfig.RuleProblem;
 import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.mapping.DatePatterns;
+import com.example.edgegateway.mapping.JsonataFunctions;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
@@ -126,6 +128,29 @@ final class MappingSampleChecks {
         List<RuleProblem> problems = new ArrayList<>();
         for (FieldMappingRule rule : rules(config)) {
             collectEmptyConcatParts(rule, null, problems);
+        }
+        return problems;
+    }
+
+    /**
+     * 日期格式串在**样例值**上真跑一遍（#111 验收三、四）。
+     *
+     * <p>不执行表达式，只拿这一行来源字段在这份样例里的实际取值，过一遍 runtime 真正用的那个格式化实现
+     * （{@link JsonataFunctions#formatDate}）：跑不出来时运行时会把这个值**原样发出去**、任务照样成功，
+     * 错只在目标那边看得见——所以在这里说出来。定成**警告**：样例是最近一次成功运行的取样，会陈旧，
+     * 而且是「值和格式对不对得上」，后端从来不拦这种。</p>
+     *
+     * <p>试不了的时候（没带样例、样例是别的步骤的、这一行的来源字段没探到取值）只给一句
+     * 「没在样例上试过」的提示：冷启动手上没有样例是常态，不该因此配不完（#111 验收四）。</p>
+     *
+     * <p>格式串本身非法是结构校验那条**错误**的事（{@code FieldMappingConfig.problems()}），这里既不重复
+     * 报，也不拿一个非法格式串去试——平台解析器会直接抛。</p>
+     */
+    static List<RuleProblem> datePatternWarnings(FieldMappingConfig config, MappingDraftRequest request) {
+        Map<String, SourceField> sample = sampleFields(request);
+        List<RuleProblem> problems = new ArrayList<>();
+        for (FieldMappingRule rule : rules(config)) {
+            collectDatePatternWarnings(rule, RuleScope.root(rule, request), sample, problems);
         }
         return problems;
     }
@@ -273,6 +298,60 @@ final class MappingSampleChecks {
         for (FieldMappingRule child : children(rule)) {
             collectEmptyConcatParts(child, rule, problems);
         }
+    }
+
+    /**
+     * 日期格式串：在样例值上跑一遍，或说明「没在样例上试过」。
+     *
+     * <p>判不了这一行的三种情况分得很清：样例根本管不到这一行（没带样例 / 是别的步骤的）→ 给提示；
+     * 样例里有这个字段但没取到值 → 也给提示；样例里有（说明这份样例管得到这一行）却没这个字段 →
+     * 什么都不补，因为「来源字段不在样例里」那条**错误**已经在说这件事了，同一行上说两遍是噪声。</p>
+     */
+    private static void collectDatePatternWarnings(FieldMappingRule rule, RuleScope scope,
+                                                   Map<String, SourceField> sample, List<RuleProblem> problems) {
+        if (rule.transform() == TransformType.DATE && DatePatterns.isLegal(rule.datePattern())) {
+            String pattern = datePatternOf(rule);
+            SourceField field = scope.judgedAgainstRequestSample()
+                    ? sample.get(scope.sourcePath(sourceOf(rule)))
+                    : null;
+            if (field == null || distinctSamples(field).isEmpty()) {
+                if (field == null && !sample.isEmpty() && scope.judgedAgainstRequestSample()) {
+                    // 样例管得到这一行、里面却没这个字段：上面那条错误说过了
+                } else {
+                    problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
+                            notTriedDatePatternMessage(pattern)));
+                }
+            } else {
+                List<String> unformattable = distinctSamples(field).stream()
+                        .filter(value -> !JsonataFunctions.canFormat(value, pattern))
+                        .toList();
+                if (!unformattable.isEmpty()) {
+                    problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
+                            unformattableDatePatternMessage(pattern, unformattable)));
+                }
+            }
+        }
+        for (FieldMappingRule child : children(rule)) {
+            collectDatePatternWarnings(child, scope.child(rule), sample, problems);
+        }
+    }
+
+    /** 这一行生效的格式串：没写就是编译器与运行时的默认值。 */
+    private static String datePatternOf(FieldMappingRule rule) {
+        String pattern = rule.datePattern();
+        return pattern == null || pattern.isBlank() ? DatePatterns.DEFAULT : pattern.trim();
+    }
+
+    /** 样例值跑不出来时的说明——说清运行时会怎么处理（原样发出去，不报错）。 */
+    private static String unformattableDatePatternMessage(String pattern, List<String> values) {
+        return "日期格式串 " + pattern + " 在样例值上解析不出来: " + String.join("、", values)
+                + "（运行时会原样发出去，不报错）";
+    }
+
+    /** 试都没试过时的说明（提示，不拦保存）。 */
+    private static String notTriedDatePatternMessage(String pattern) {
+        return "日期格式串 " + pattern + " 没在样例上试过（这份样例里没有这一行取的那个字段的值）"
+                + "——配错了要到目标系统那边才发现";
     }
 
     // ---------- 判断 ----------

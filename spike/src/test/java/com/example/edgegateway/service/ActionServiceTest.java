@@ -119,9 +119,32 @@ class ActionServiceTest {
                 .hasMessageContaining("映射规则");
     }
 
+    /**
+     * 非法日期格式串在**保存**这一步就被拦下（#111 验收二）。
+     *
+     * <p>拦它的是与「校验配置」同一份实现（{@code FieldMappingConfig.problems()}）：非法格式串在运行时
+     * 必炸（{@code JsonataFunctions.formatDate} 的 {@code ofPattern} 写在所有 try 之外），不能等任务
+     * 跑起来才发现。草稿校验那边报不报错是那一组 fixture 的事，这里只看保存这道门。</p>
+     */
     @Test
-    void fieldMappingSaveRecordsMappingHistory() {
+    void rejectsIllegalDatePattern() {
         Job job = new Job();
+        job.setId(1L);
+        when(jobMapper.selectById(1L)).thenReturn(job);
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(Map.of(
+                        "source", "createdTime", "target", "createdDate",
+                        "transform", "DATE", "datePattern", "ISO-8601")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("日期格式串不合法: ISO-8601");
+    }
+
+    @Test
+    void fieldMappingSaveRecordsMappingHistory() {        Job job = new Job();
         job.setId(1L);
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectCount(any())).thenReturn(0L);

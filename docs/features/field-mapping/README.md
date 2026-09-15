@@ -52,7 +52,12 @@
   - **补全的筛法**：真在这一行里打字时按打进去的词筛；只是聚焦（没打字）时把清单整个给出来（#102 的坑：聚焦时 el-autocomplete 拿这一行现有的值当查询词，照它筛就只剩它自己）。
   - **手写 JSONata 入口**：顶部一个不显眼的文字按钮「高级：手写 JSONata」。切过去就是写**一整段表达式**（与后端 `mode=EXPRESSION` 一致：保存写 `{mode: 'EXPRESSION', expression, rules: []}`），那一边没有默认来源下拉、也没有必填进度——判断只看这段表达式能不能跑，**跳过规则树校验**（这句话写在切过去的确认框里，也常驻在那一页上）。**这一页是界面上唯一会出现 `$` 的地方**（`$s_N` / `$dateFormat` 这些变量名跟着写才有效，ADR-0011 第 13 条记了这条例外）；逐行配置那一侧照旧一个 `$` 都没有。切回逐行配置时会说清「保存时规则树会替换掉这份表达式」，切回后行列表上还有一条常驻提示。**打开一个 `mode=EXPRESSION` 的动作直接进手写这一边并把表达式回填**（以前只给一条「这一轮看不了它」的警告，等于把配好的表达式藏起来）。两侧读写的是同一份数据格式，所以随时能来回切。手写这一边的校验结果按错误 / 警告列在表达式下面（没有「哪一行」可言）。
   - **两条口径**：①「写没写表达式」「这一行填了目标字段没有」都是编辑器里的本地事实，对错仍然只在后端那个只读接口里判（#98 D4）；②校验草稿就是**保存会写出去的那一份**——手写这一边发 `{mode: 'EXPRESSION', expression, rules: []}`，后端按 `mode` 分岔（`MappingDraftValidationService.isRules`）。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
+- **日期格式手输 + 格式串合法性（#111，第二轮）**：日期格式化那一行除了四个预设（`yyyy-MM-dd`、`yyyy-MM-dd HH:mm:ss`、`yyyyMMdd`、`yyyy/MM/dd`）还能**手输任意格式串**，两者写进同一个 `datePattern`，行摘要里显示的就是它。以前挑不到只能整行走手写 JSONata——而那条路是给深层重排准备的（#110 问题 1）。
+  - **手输框清空时回落到默认格式**（`yyyy-MM-dd`），不是把空串送进编译器：空串会让后端读成「写了一个空格式串」而不是「没写」。
+  - **格式串合法性是配置期校验里的错误**（`mapping/DatePatterns.java`，接在 `FieldMappingConfig.problems()` 上，所以保存时那道 400 与「校验配置」共用同一条）。两层判据：① 平台解析器认（`DateTimeFormatter.ofPattern`）；② 没有「长得像、含义却不是」的陷阱字母——`Y` 是「周所在年」不是年、`D` 是「一年中的第几天」不是日，`YYYY-MM-DD` 能过解析器却会算出 `2026-08-233` 这种值。以前三层（结构、编译、草稿校验）一层都不查，非法格式串运行到这个转换时**必炸**（`JsonataFunctions.formatDate` 的 `ofPattern` 写在所有 try 之外）。
+  - **有来源字段样例时按样例真跑一遍**（警告，不拦保存）：拿这一行来源字段在样例里的实际取值过一遍运行时的格式化实现（`JsonataFunctions.canFormat`），跑不出来就报——那种情况运行时会**原样发出去**、任务照样成功，错只在目标那边看得见。**没有样例（或样例是别的步骤的）时只给一句「没在样例上试过」的提示**，冷启动也配得完。
+  - **它不查「值和格式对不对得上」**（ADR-0012 决策 2 的括注）：那要拿真数据试算，是试算（#110 第六张票）的事。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、DatePatterns、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
 
 ## 决策时间线
 
@@ -73,6 +78,8 @@
 | 09-14 | 补上依赖目标清单与来源样例的六条检查 | 后端本来有四种情况不报错但结果不对（来源路径不存在、拼接有空片段、日期解析失败、枚举查不到键），这六条正是这次改版要照亮的东西 | — | #104 / MappingSampleChecks |
 | 09-14 | 窄屏依次排列、键盘补齐（`/` 换转换、回车选来源、退格清行）、手写 JSONata 入口回到编辑器里 | 深层数组的任意重排只能走手写表达式（#98 F1）：界面不给入口等于悄悄砍掉一条已经承诺的出路；键盘与窄屏是 G 里留给原型的最后一档 | — | #106 / keyboard.ts、expression.ts |
 | 09-15 | 撤掉旧编辑器（三栏 + 多级表格 + 建议面板 + ENUM/CONCAT 弹窗） | 新版覆盖了旧版的全部能力，两套编辑器读写的又是同一份数据格式，留着只会让人不知道点哪个入口 | — | #107 / JobsView.vue（`MappingEditor.vue`、`MappingRowsTable.vue` 已删） |
+| 09-15 | 第二轮六条：日期格式手输、片段转换、清除的行=未配置、校验两档、来源字段样例导入、试算 | 第一轮上线后实施工程师在真机上撞到的六件事；第 2、5 条推翻第一轮写下的决定（ADR-0011 决策 1/2/9/11/12） | — | ADR-0012 / #110 |
+| 09-15 | 日期格式手输 + 格式串合法性校验（配置期错误 + 按样例的警告） | 非法格式串运行时必炸而三层都不查；只加输入框等于把一个必炸的口子装到界面上 | — | #111 / DatePatterns、JsonataFunctions.canFormat、MappingSampleChecks.datePatternWarnings |
 
 ## 待办 / 已知限制
 
@@ -84,10 +91,12 @@
 - **校验不是实时的**（#98 决定）：点「校验配置」才跑一次，改完行要再点一次；界面上给出的行状态是那一次的结果，不随编辑自动失效。
 - 校验只做结构判断与**样例值的比对**，**不做值的试算**（#98：需要在受控边界里真的执行表达式，是另一件事）。
 - **`Esc` 不关编辑器**（#106 起）：它归「收起参数面板 / 退出选来源」这一段；关编辑器用「取消」。原因是 `Esc` 一下就把没保存的草稿一起关掉太容易误触。
+- **日期格式串的合法性只在后端判**（#111）：前端不复制那条规则（#98 D1），手输框也不做即时红框——点了「校验配置」才有结论。手输框里按住不放的中间状态（比如只打了半个格式串）不会被拦，也不会被改。
+- **「没在样例上试过」只对管得到这一行的样例说话**：样例是别的步骤的、或这一行的来源字段不在这份样例里时，前者给提示、后者不补（「来源字段不在样例里」那条错误已经在说同一件事）。
 - **切回逐行配置之后**：手写那一边没有规则树可回填，所以界面上是打开编辑器时那份逐行配置——原配置本来就是手写表达式时，那一份是按目标字段清单生成的行（都还没配来源）。界面在切回的确认框与行列表上各说了一次。
 
 ## 当前生效
 
 - 执行引擎：JSONata（dashjoin），规则→表达式编译器（T36）
 - 规则模型：递归 children + mode:EXPRESSION（T37）
-- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、以及顶部那个「高级：手写 JSONata」入口）；它是**唯一**的字段映射编辑器（#107 起旧三栏编辑器已删），动作表上「编辑映射」那一个入口同时管新建与修改
+- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、日期那一行可手输格式串（#111）、以及顶部那个「高级：手写 JSONata」入口）；它是**唯一**的字段映射编辑器（#107 起旧三栏编辑器已删），动作表上「编辑映射」那一个入口同时管新建与修改

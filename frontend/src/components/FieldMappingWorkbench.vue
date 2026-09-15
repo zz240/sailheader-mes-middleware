@@ -402,7 +402,7 @@
                   </div>
                 </template>
 
-                <!-- 日期格式化：从预设里选（键盘同样是 ↑↓ 走、回车用这一个） -->
+                <!-- 日期格式化：四个预设 + 手输任意格式串（#111）。键盘同样是 ↑↓ 走预设、回车用这一个 -->
                 <template v-else-if="panel === 'date'">
                   <div class="wb-ops">
                     <button
@@ -415,6 +415,19 @@
                       <span>{{ p }}</span>
                       <small>{{ datePatternExample(p) }}</small>
                     </button>
+                  </div>
+                  <div class="wb-panel-row">
+                    <el-input
+                      :model-value="entry.row.extra"
+                      size="small"
+                      class="wb-grow"
+                      placeholder="客户数据的格式不在这四个里？直接手输一个，例如 yyyyMMddHHmmss"
+                      @update:model-value="onDatePatternInput(entry.row, $event)"
+                      @change="onDatePatternCommit(entry.row)"
+                    />
+                    <span class="wb-panel-note">
+                      清空就回落到默认的 {{ DEFAULT_DATE_PATTERN }}；格式串对不对由「校验配置」判。
+                    </span>
                   </div>
                   <div class="wb-panel-note">目标系统收到的就是按这个格式串格式化后的文本。</div>
                 </template>
@@ -599,8 +612,9 @@ import {
 } from '../mapping/rows.ts'
 import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
 import {
-  applyTransform, appendEnumSamples, datePatternFor, missingEnumKeys, setEnumKey,
-  transformLabelOf, transformName, transformOptions, DATE_PRESETS, type EnumPair, type TransformOption,
+  applyTransform, appendEnumSamples, datePatternFor, DEFAULT_DATE_PATTERN, missingEnumKeys,
+  normalizeDatePattern, setEnumKey, transformLabelOf, transformName, transformOptions, DATE_PRESETS,
+  type EnumPair, type TransformOption,
 } from '../mapping/transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, ancestorRowIds, emptyPickResult, fillRowFromPick, sourcePickerFor,
@@ -1379,6 +1393,22 @@ function chooseTransform(entry: DisplayRow, option: TransformOption) {
 
 function chooseDatePattern(row: MapRow, pattern: string) {
   applyTransform(row, 'DATE', { datePattern: pattern })
+}
+
+/**
+ * 手输日期格式串（#111）：边打边落进这一行，摘要跟着变。
+ *
+ * 打字中途允许是空串（否则「全选删掉再打」会被自己填回去），空串在界面上显示成默认格式；
+ * 真正归一在失焦/回车那一下（{@link onDatePatternCommit}）。
+ */
+function onDatePatternInput(row: MapRow, value: string) {
+  row.extra = value
+  markHumanEdited(row)
+}
+
+/** 手输框提交（失焦 / 回车）：清空的话回落到默认格式，不把空串留给编译器（#111 验收五）。 */
+function onDatePatternCommit(row: MapRow) {
+  row.extra = normalizeDatePattern(row.extra)
 }
 
 function onStartAtChange(row: MapRow, value: number | undefined) {

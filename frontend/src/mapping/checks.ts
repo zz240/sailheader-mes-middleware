@@ -38,8 +38,9 @@ import {
   type TransformKind,
 } from './labels.ts'
 import {
-  applyTransform, appendEnumSamples, canUseTransform, datePatternFor, DEFAULT_DATE_PATTERN, distinctSampleValues,
-  missingEnumKeys, setEnumKey, transformDisabledReason, transformLabelOf, transformName, transformOptions,
+  applyTransform, appendEnumSamples, canUseTransform, DATE_PRESETS, datePatternFor, DEFAULT_DATE_PATTERN,
+  distinctSampleValues, missingEnumKeys, normalizeDatePattern, setEnumKey, transformDisabledReason,
+  transformLabelOf, transformName, transformOptions,
 } from './transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
@@ -508,6 +509,43 @@ eq('选中的日期预设就是行里显示的那个',
   datePatternFor(leaf('a', 'x', 'DATE', { datePattern: 'yyyyMMdd' })), 'yyyyMMdd')
 eq('换过的预设也照原样显示（预设之外自己写的格式串同样认）',
   datePatternFor(leaf('a', 'x', 'DATE', { datePattern: 'yyyy/MM/dd' })), 'yyyy/MM/dd')
+
+// ---------------------------------------------------------------- 日期格式手输（#111）
+
+// 预设之外能**手输任意格式串**：手输的那一个与四个预设走同一个 `datePattern`，摘要里显示的就是它
+eq('手输的格式串原样进规则',
+  ruleOf(applyTransform(leaf('createdAt', 'createdDate', 'STRING'), 'DATE',
+    { datePattern: 'yyyyMMddHHmmss' })).datePattern, 'yyyyMMddHHmmss')
+eq('手输的格式串显示在这一行的摘要里',
+  transformLabelOf(leaf('createdAt', 'x', 'DATE', { datePattern: 'yyyyMMddHHmmss' }), () => 'createdAt'),
+  '日期格式化 · yyyyMMddHHmmss（createdAt）')
+ok('日期那一项的说明里写着当前格式串（手输的也认）',
+  transformOptions(leaf('createdAt', 'x', 'DATE', { datePattern: 'yyyyMMddHHmmss' }))
+    .find(o => o.value === 'DATE')?.reason.includes('yyyyMMddHHmmss') === true)
+eq('四个预设原样进规则（手输这条路不改变预设那条）',
+  DATE_PRESETS.map(p => ruleOf(applyTransform(leaf('createdAt', 'createdDate', 'STRING'), 'DATE',
+    { datePattern: p })).datePattern), [...DATE_PRESETS])
+
+// 输入框清空时回落到默认格式，而不是把空串送进编译器（#111 验收五）
+eq('清空的格式串回落到默认格式', normalizeDatePattern(''), DEFAULT_DATE_PATTERN)
+eq('只有空白也算清空', normalizeDatePattern('   '), DEFAULT_DATE_PATTERN)
+eq('手输的格式串去掉首尾空格之后再用', normalizeDatePattern('  yyyyMMddHHmmss  '), 'yyyyMMddHHmmss')
+eq('换转换时参数给的是空串也落回默认格式（不是空串）',
+  pick(ruleOf(applyTransform(leaf('createdAt', 'createdDate', 'STRING'), 'DATE', { datePattern: '' })),
+    'transform', 'datePattern'), [DEFAULT_DATE_PATTERN, 'DATE'])
+
+// 老配置里 `datePattern` 是空串时，存出去的那一份**不带这个键**——后端按「没写」用默认值
+const blankDateRow = rowFromRule({ sourceStep: 1, source: 'createdAt', target: 'createdDate',
+  transform: 'DATE', datePattern: '' })
+eq('空的格式串不写成空串（这个键干脆不写）', ruleOf(blankDateRow).datePattern, undefined)
+eq('空的格式串在界面上显示的是默认格式', datePatternFor(blankDateRow), DEFAULT_DATE_PATTERN)
+
+// 第一轮存下来的配置打开后行为完全一致（#111 验收六）：四个预设与老配置里写过的格式串都原样往返
+for (const pattern of [...DATE_PRESETS, 'yyyy/MM/dd HH:mm:ss', 'yyyyMMddHHmmss']) {
+  const saved = { sourceStep: 1, source: 'createdAt', target: 'createdDate', transform: 'DATE',
+    datePattern: pattern }
+  eq(`老配置打开 → 保存：${pattern} 一个字都不变`, ruleOf(rowFromRule(saved)), saved)
+}
 
 // 界面上不出现 $ 符号：七种转换在界面上的说法里一个 $ 都没有
 for (const t of TRANSFORM_KINDS) {

@@ -125,9 +125,10 @@ export function applyTransform(row: MapRow, kind: string, params: TransformParam
 
   switch (kind) {
     case 'DATE':
-      // 显式选的预设优先，其次沿用这行配过的；都没有就用编译器默认值（和界面上显示的一致）。
-      row.extra = params.datePattern
-        ?? (previous === 'DATE' && keptExtra.trim() ? keptExtra.trim() : DEFAULT_DATE_PATTERN)
+      // 显式选的预设或手输的格式串优先，其次沿用这行配过的；都没有（或刚被清空）就用默认格式。
+      // 空串在这里就归一到默认值，不留到编译器那边当「写了一个空格式串」（#111 验收五）。
+      row.extra = normalizeDatePattern(
+        params.datePattern ?? (previous === 'DATE' ? keptExtra : DEFAULT_DATE_PATTERN))
       break
     case 'ENUM':
       row.enumMap = params.enumMap ?? (previous === 'ENUM' ? row.enumMap ?? {} : {})
@@ -158,13 +159,23 @@ export function applyTransform(row: MapRow, kind: string, params: TransformParam
 }
 
 /**
- * 日期转换当前生效的格式串：没有就按编译器的默认值显示
+ * 手输 / 选中的格式串归一：清空（或只有空白）时回落到默认格式（#111 验收五）。
+ *
+ * 回落而不是送一个空串，是因为空串会一路进规则（`datePattern: ''`）——后端读到的就成了「写了一个空
+ * 格式串」而不是「没写」。前后端都用 `DEFAULT_DATE_PATTERN` 这一个默认值。
+ */
+export function normalizeDatePattern(value: string): string {
+  return value.trim() || DEFAULT_DATE_PATTERN
+}
+
+/**
+ * 日期转换当前生效的格式串：没写就按编译器的默认值显示
  * （`JsonataRuleCompiler` 在 `datePattern` 为空时用 `yyyy-MM-dd`）。
  *
  * 显示与存进规则用的是同一个值——界面上写着什么格式，目标系统收到的就是什么格式。
  */
 export function datePatternFor(row: MapRow): string {
-  return row.extra.trim() || DEFAULT_DATE_PATTERN
+  return normalizeDatePattern(row.extra)
 }
 
 // ---------------------------------------------------------------- 枚举映射的样例补全

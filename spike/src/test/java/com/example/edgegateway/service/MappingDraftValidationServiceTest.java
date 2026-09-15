@@ -539,6 +539,185 @@ class MappingDraftValidationServiceTest {
                         + "来源字段 materialCode 是文本（STRING）——建议套一层数字转换");
     }
 
+    // ---------- 日期格式串（#111） ----------
+
+    /**
+     * 非法格式串是**错误**，保存前就被拦下（#111 验收）。
+     *
+     * <p>为什么必须在这里拦：{@code JsonataFunctions.formatDate} 的 {@code ofPattern} 写在所有 try 之外，
+     * 非法格式串运行到这个转换时任务直接失败；而结构校验、编译、草稿校验三层以前一层都不查它
+     * （ADR-0012 背景第五条）。</p>
+     *
+     * <p>两种「非法」各看一条：{@code ISO-8601} 是平台解析器直接拒的写法（Unknown pattern letter: I）；
+     * {@code YYYY-MM-DD} 能过解析器，但 {@code Y} / {@code D} 的含义跟长相不是一回事（周所在年 / 一年中的
+     * 第几天），算出来是 {@code 2026-08-233} 这种值——同样是写错了，一样拦。</p>
+     */
+    @Test
+    void anIllegalDatePatternIsAnErrorThatBlocksSaving() {
+        assertThat(datePatternErrors("ISO-8601")).containsExactly(
+                "bom.createdDate|null|日期格式串不合法: ISO-8601（Unknown pattern letter: I）"
+                        + "——运行到这个转换时任务会直接失败");
+
+        assertThat(datePatternErrors("YYYY-MM-DD")).containsExactly(
+                "bom.createdDate|null|日期格式串不合法: YYYY-MM-DD（Y 是「周所在年」不是年、D 是「一年中的第几天」"
+                        + "不是日，拿 2026-08-21 试一下会写成 2026-08-233；年月日请写 yyyy-MM-dd）");
+    }
+
+    /** 对照：四个预设与常见的客户格式串都放行（这条校验只拦「写错了」，不拦「没见过的写法」）。 */
+    @Test
+    void legalDatePatternsAreAccepted() {
+        for (String pattern : List.of("yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyyMMdd", "yyyy/MM/dd",
+                "yyyyMMddHHmmss", "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy年MM月dd日", "yyyy-MM")) {
+            assertThat(datePatternErrors(pattern)).as(pattern).isEmpty();
+        }
+    }
+
+    /** 格式串整个没写（空串 / 只有空白 / 键都不在）不是错：编译器和运行时都用默认的 `yyyy-MM-dd`。 */
+    @Test
+    void aBlankDatePatternIsNotAnError() {
+        for (String pattern : java.util.Arrays.asList("", "  ", null)) {
+            Map<String, Object> rule = new LinkedHashMap<>();
+            rule.put("sourceStep", 1);
+            rule.put("source", "createdTime");
+            rule.put("target", "bom.createdDate");
+            rule.put("transform", "DATE");
+            if (pattern != null) {
+                rule.put("datePattern", pattern);
+            }
+
+            MappingDraftValidation result = service.validate(new MappingDraftRequest(
+                    Map.of("rules", List.of(rule)), dateTargets(), List.of(), 1, List.of(1), 1, 2));
+
+            assertThat(problems(result.errors())).as("[" + pattern + "]").isEmpty();
+        }
+    }
+
+    /**
+     * 只看「日期格式串」那一条的问题。
+     *
+     * <p>目标清单收窄到这一条规则的目标字段、来源样例空着——同一份草稿里别的检查（必填配没配、来源在不在
+     * 样例里）就没话可说，断言里只剩这一条。</p>
+     */
+    private List<String> datePatternErrors(String pattern) {
+        return problems(service.validate(new MappingDraftRequest(
+                dateDraft(pattern), dateTargets(), List.of(), 1, List.of(1), 1, 2)).errors());
+    }
+
+    /** 一条日期格式化规则（来源 `createdTime`）——日期格式串那几组 fixture 共用。 */
+    private static Map<String, Object> dateDraft(String pattern) {
+        return Map.of("rules", List.of(
+                leaf(1, "createdTime", "bom.createdDate", "DATE", Map.of("datePattern", pattern))));
+    }
+
+    /** 日期格式串那一组的目标清单：只有它映射的那一个字段。 */
+    private static List<MappingDraftRequest.TargetFieldSpec> dateTargets() {
+        return spec(topSpec("bom.createdDate", "DATE"));
+    }
+
+    /**
+     * 格式串在样例值上真跑一遍：跑不出来的给一条**警告**（#111 验收三）。
+     *
+     * <p>这正是「挑不到预设就只能整行走手写 JSONata」那条抱怨的正面：客户数据里 `createdTime` 只有日期
+     * （`2026-08-21`），格式串却要时分秒——运行时的四次 parse 全失败后**原样发出去**，任务照样 SUCCESS，
+     * 错在目标那边才看得见。样例在手时这里就能说出来。</p>
+     */
+    @Test
+    void aDatePatternThatCannotFormatTheSampleValuesIsWarnedAbout() {
+        MappingDraftValidation result = service.validate(new MappingDraftRequest(
+                dateDraft("yyyyMMddHHmmss"), dateTargets(),
+                List.of(source("createdTime", "STRING", "2026-08-21", "2026-08-22")),
+                1, List.of(1), 1, 2));
+
+        assertThat(problems(result.warnings())).containsExactly(
+                "bom.createdDate|null|日期格式串 yyyyMMddHHmmss 在样例值上解析不出来: 2026-08-21、2026-08-22"
+                        + "（运行时会原样发出去，不报错）");
+        // 警告不拦保存：拦保存的是错误那一档（#111 验收三）
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    /** 对照：格式串跟样例值对得上时一条都不报（这条检查不是「见到日期就提醒」）。 */
+    @Test
+    void aDatePatternThatFormatsTheSampleValuesIsNotWarnedAbout() {
+        // 带时分秒的时间戳 + 要时分秒的格式串：这正是客户数据常见的那个组合
+        assertThat(datePatternWarnings(dateDraft("yyyyMMddHHmmss"),
+                List.of(source("createdTime", "STRING", "2026-08-21T10:20:30Z")))).isEmpty();
+
+        // 纯日期 + 纯日期的格式串（也是四个预设里的第一个）
+        assertThat(datePatternWarnings(dateDraft("yyyy-MM-dd"),
+                List.of(source("createdTime", "STRING", "2026-08-21")))).isEmpty();
+
+        // 时间戳 + 只要日期：解析得出来，格式化也做得成
+        assertThat(datePatternWarnings(dateDraft("yyyy-MM-dd"),
+                List.of(source("createdTime", "STRING", "2026-08-21T10:20:30Z")))).isEmpty();
+    }
+
+    /** 数组子行里的日期转换：值的来源字段按相对路径补前缀（样例里是 `items[0].createdTime`）。 */
+    @Test
+    void aDatePatternInsideAnArrayUsesTheElementSampleValues() {
+        Map<String, Object> draft = Map.of("rules", List.of(groupWith(
+                leaf(null, "createdTime", "createdDate", "DATE", Map.of("datePattern", "yyyyMMddHHmmss")))));
+
+        MappingDraftValidation result = service.validate(new MappingDraftRequest(draft,
+                spec(arraySpec("bom.bomLines", elementSpec("createdDate", "DATE", true))),
+                List.of(source("items[0].createdTime", "STRING", "2026-08-21")), 1, List.of(1), 1, 2));
+
+        assertThat(problems(result.warnings())).containsExactly(
+                "createdDate|bom.bomLines|日期格式串 yyyyMMddHHmmss 在样例值上解析不出来: 2026-08-21"
+                        + "（运行时会原样发出去，不报错）");
+    }
+
+    /**
+     * 没有样例可试时只给一句提示（#111 验收四）：不拦保存。
+     *
+     * <p>两种「没样例」：请求里根本没带样例；带的是**别的步骤**的样例（跨步骤引用、或顶部默认来源换过
+     * 之后留在原步骤的那些行）——判不了就别猜，与「来源字段不在样例里」那条同一条口径。</p>
+     */
+    @Test
+    void aDatePatternWithoutASampleIsOnlyAHint() {
+        String hint = "日期格式串 yyyyMMddHHmmss 没在样例上试过"
+                + "（这份样例里没有这一行取的那个字段的值）——配错了要到目标系统那边才发现";
+
+        assertThat(datePatternWarnings(dateDraft("yyyyMMddHHmmss"), List.of()))
+                .containsExactly("bom.createdDate|null|" + hint);
+
+        // 样例是动作 1 的，这一行取的是动作 2 的输出：这一份样例判不了它（同「来源字段在不在样例里」的口径）
+        Map<String, Object> otherStep = Map.of("rules", List.of(
+                leaf(2, "createdTime", "bom.createdDate", "DATE", Map.of("datePattern", "yyyyMMddHHmmss"))));
+        assertThat(problems(service.validate(new MappingDraftRequest(otherStep,
+                dateTargets(), List.of(source("createdTime", "STRING", "2026-08-21")), 1, List.of(1, 2), 1, 3))
+                .warnings()))
+                .containsExactly("bom.createdDate|null|" + hint);
+    }
+
+    /** 只有字段名、没有样例值（探测没取到样本）时同样试不了，给的还是那句提示。 */
+    @Test
+    void aDatePatternIsOnlyAHintWhenTheSampleHasNoValues() {
+        assertThat(datePatternWarnings(dateDraft("yyyyMMddHHmmss"), List.of(source("createdTime", "STRING"))))
+                .containsExactly("bom.createdDate|null|日期格式串 yyyyMMddHHmmss 没在样例上试过"
+                        + "（这份样例里没有这一行取的那个字段的值）——配错了要到目标系统那边才发现");
+    }
+
+    /**
+     * 这一行的来源字段压根不在样例里时不补这条提示：「来源字段不在样例里」那条**错误**已经在说这件事，
+     * 同一行上报两条说的是同一件事。
+     */
+    @Test
+    void aDatePatternIsNotTriedWhenItsSourceFieldIsNotInTheSample() {
+        MappingDraftValidation result = service.validate(new MappingDraftRequest(dateDraft("yyyyMMddHHmmss"),
+                dateTargets(), List.of(source("created_time", "STRING", "2026-08-21")), 1, List.of(1), 1, 2));
+
+        assertThat(problems(result.errors())).containsExactly(
+                "bom.createdDate|null|来源字段不在样例里: createdTime（按样例算是 createdTime，字段清单里没有它）");
+        assertThat(result.warnings()).isEmpty();
+    }
+
+    /** 只看日期格式串那两条（在样例上试没试过）的警告。 */
+    private List<String> datePatternWarnings(Map<String, Object> draft, List<SourceField> sample) {
+        return problems(service.validate(new MappingDraftRequest(
+                draft, dateTargets(), sample, 1, List.of(1), 1, 2)).warnings());
+    }
+
     // ---------- fixture 与共用形状 ----------
 
     /**
@@ -843,6 +1022,11 @@ class MappingDraftValidationServiceTest {
     /** 一条样本字段（只看路径与类型时用；样例值另给）。 */
     private static SourceField source(String name, String type) {
         return new SourceField(name, type, false, List.of());
+    }
+
+    /** 一条样本字段，连样例值一起给（结构探测给的 `samples` 就是这些原始值）。 */
+    private static SourceField source(String name, String type, String... values) {
+        return new SourceField(name, type, false, List.of(values));
     }
 
     /**

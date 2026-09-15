@@ -104,10 +104,12 @@ public class MappingDraftValidationService {
     }
 
     /**
-     * 靠样例才判得出来的**警告**（#104）：枚举表没覆盖样例值、文本写进数字字段。
+     * 靠样例才判得出来的**警告**（#104 起，#111 补上日期格式串那条）：枚举表没覆盖样例值、文本写进数字字段、
+     * 日期格式串在这份样例值上跑不出来。
      *
      * <p>定成警告而不是错误，是因为它们顺着样例数据走：样例是最近一次成功运行的取样，陈旧的时候会误伤，
-     * 所以只提醒、不拦保存（真正拦保存的还是后端那三层：保存时 400、{@code /validate}、启用前链校验）。</p>
+     * 所以只提醒、不拦保存（真正拦保存的还是后端那几层：保存时 400、{@code /validate}、启用前链校验）。
+     * 除它们之外还有一句更软的提示：「这个日期格式串没在样例上试过」——手上没样例时给的，同样不拦保存。</p>
      */
     private List<RuleProblem> sampleWarnings(FieldMappingConfig config, MappingDraftRequest request) {
         if (!isRules(config)) {
@@ -116,6 +118,7 @@ public class MappingDraftValidationService {
         List<RuleProblem> warnings = new ArrayList<>(MappingSampleChecks.uncoveredEnumValues(config, request));
         warnings.addAll(MappingSampleChecks.textIntoNumberTarget(config, request));
         warnings.addAll(MappingSampleChecks.emptyConcatParts(config));
+        warnings.addAll(MappingSampleChecks.datePatternWarnings(config, request));
         return warnings;
     }
 

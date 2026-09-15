@@ -1,5 +1,6 @@
 package com.example.edgegateway.config;
 
+import com.example.edgegateway.mapping.DatePatterns;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.model.ActionKind;
 
@@ -150,6 +151,14 @@ public record FieldMappingConfig(
             }
             if (rule.transform() == TransformType.ENUM && rule.enumMap().isEmpty()) {
                 problems.add(problem(rule, parentTarget, "枚举转换需要 enumMap"));
+            }
+            if (rule.transform() == TransformType.DATE) {
+                // 非法格式串在运行时必炸（JsonataFunctions.formatDate 的 ofPattern 在所有 try 之外），
+                // 所以它是配置期错误：保存与「校验配置」两边都靠这一条拦（#111 / ADR-0012 决策 2）
+                String patternProblem = DatePatterns.problem(rule.datePattern());
+                if (patternProblem != null) {
+                    problems.add(problem(rule, parentTarget, patternProblem));
+                }
             }
             if (rule.transform() != TransformType.CONSTANT
                     && (rule.source() == null || rule.source().isBlank())) {
