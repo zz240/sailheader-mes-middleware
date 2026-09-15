@@ -296,8 +296,11 @@ function dropTempActions() {
       { timeout: 30000 }),
     (async () => {
       await workbench(page).locator('.wb-head-actions').getByRole('button', { name: '保存', exact: true }).click()
+      // 保存先跑一次校验（一个来回），「这些行不会被保存」那个确认框是校验回来之后才弹的：
+      // 等它一下，别拿「点完这一瞬间在不在」当判据（与上面第 5 段同一个写法）
       const keep = page.locator('.el-message-box').filter({ hasText: '不会被保存' })
-      if (await keep.count()) await keep.getByRole('button', { name: '只保存配好的' }).click()
+      await keep.waitFor({ timeout: 5000 })
+      await keep.getByRole('button', { name: '只保存配好的' }).click()
     })(),
   ])
   const createdBody = JSON.parse(createdResponse.request().postData() ?? '{}')
