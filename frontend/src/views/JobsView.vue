@@ -198,21 +198,24 @@
           <el-form-item label="body 步骤"><el-input-number v-model="kindForm.bodySourceStep" :min="1" placeholder="必填：发布哪一步输出（通常 FIELD_MAP 序号）" /></el-form-item>
         </template>
 
-        <!-- FIELD_MAP 的映射整份在全屏编辑器里配（动作表上的「编辑映射」），弹窗里只留提示（#107）。
-             新建也走同一个入口：「去配字段映射」开编辑器，编辑器点保存时才建动作——空规则的动作
-             后端存不下去（「字段映射动作需要至少一条映射规则」是保存期校验）。 -->
+        <!-- 字段映射弹窗里没有可编辑的配置：映射整份在全屏编辑器里配（#107）。两句提示按
+             新建 / 已有分开说，因为两边的保存各自做什么不一样（见 `buildActionAddition`）。 -->
         <el-alert
           v-if="actionForm.type === 'FIELD_MAP'"
           type="info"
           :closable="false"
           show-icon
-          title="字段映射整份在编辑器里配"
-          description="点下面的「去配字段映射」打开编辑器，保存时会把动作与这份映射一起建出来。"
+          :title="editingAction ? '改名称 / 序号顺便保存映射' : '字段映射整份在编辑器里配'"
+          :description="editingAction
+            ? '点「保存」会把名称、序号与这份映射一起写回去。'
+            : '点「去配字段映射」打开编辑器，保存时把动作与这份映射一起建出来；直接点「保存」建不出来。'"
         />
       </el-form>
       <template #footer>
         <el-button @click="actionFormVisible = false">取消</el-button>
-        <el-button v-if="actionForm.type === 'FIELD_MAP'" type="primary" plain @click="openMappingWorkbenchForDraft">
+        <!-- 只有新建才走「去配字段映射」：已有的动作用「保存」就够了，再开一次会拿空草稿盖掉它 -->
+        <el-button v-if="actionForm.type === 'FIELD_MAP' && !editingAction"
+                  type="primary" plain @click="openMappingWorkbenchForDraft">
           去配字段映射
         </el-button>
         <el-button type="primary" @click="saveAction">保存</el-button>
@@ -237,16 +240,16 @@
       <el-table-column label="内容"><template #default="{ row }">{{ JSON.stringify(row) }}</template></el-table-column>
     </el-table>
 
-    <!-- 字段映射编辑器（新版，全屏抽屉）：动作表上「编辑映射」的唯一出口。
-         `workbenchAction` 为空时是在新建动作——编辑器点保存会把动作一起建出来。 -->
+    <!-- 字段映射编辑器（全屏抽屉）：动作表上「编辑映射」的唯一出口，新建 FIELD_MAP 也从这里进
+         （弹窗里的「去配字段映射」）。`workbenchTarget` 收拢了「已有动作 / 还没建的动作」两种情况。 -->
     <FieldMappingWorkbench
       v-if="workbenchOpen && selectedJob"
-      :key="`wb-${workbenchAction?.id ?? 'new'}-${workbenchDraftAction?.index ?? ''}`"
+      :key="`wb-${workbenchTarget.actionId ?? 'new'}-${workbenchTarget.actionIndex ?? ''}`"
       :job-id="selectedJob.id"
       :job-name="selectedJob.name"
-      :action-id="workbenchAction?.id ?? null"
-      :action-index="workbenchAction?.index ?? workbenchDraftAction?.index ?? null"
-      :action-name="workbenchAction?.name ?? workbenchDraftAction?.name ?? ''"
+      :action-id="workbenchTarget.actionId"
+      :action-index="workbenchTarget.actionIndex"
+      :action-name="workbenchTarget.actionName"
       :config="workbenchConfig"
       @saved="onWorkbenchSaved"
       @closed="workbenchOpen = false"
@@ -291,16 +294,22 @@ const validation = ref<ValidationResult | null>(null)
 /**
  * 字段映射编辑器（全屏抽屉）的入口状态：动作表上的「编辑映射」。
  *
- * `workbenchAction` 为 null 表示这个动作**还没建**：从「添加动作」里选 FIELD_MAP 时，映射跟动作
- * 一起在编辑器里配（编辑器点保存时先建动作、再写映射）。
- *
- * 为什么要这样：后端「字段映射动作需要至少一条映射规则」是保存期校验，所以一个 FIELD_MAP 动作
- * 没法先空着建出来再配——创建这一步得由编辑器里的那份草稿一起完成。
+ * 两种情况：`workbenchAction` 有值 = 改已有动作的那份映射；为 null = 这个动作**还没建**
+ * （从「添加动作」里选 FIELD_MAP 进来的，`workbenchDraftAction` 装着它准备占用的名字与序号）。
+ * 为什么会后者：后端「字段映射动作需要至少一条映射规则」是保存期校验，空规则的动作存不下去，
+ * 所以创建这一步只能与那份草稿一起完成（细节见 `buildActionAddition`）。
  */
 const workbenchOpen = ref(false)
 const workbenchAction = ref<Action | null>(null)
 const workbenchConfig = ref<Record<string, any> | null>(null)
-const workbenchDraftAction = ref<{ name: string; index: number } | null>(null)
+const workbenchDraftAction = ref<Partial<Action> | null>(null)
+
+/** 抽屉打开时那份身份（`key` 与三个 prop 都从这一份来）：已有动作用它自己，新建用弹窗里刚填的。 */
+const workbenchTarget = computed(() => ({
+  actionId: workbenchAction.value?.id ?? null,
+  actionIndex: workbenchAction.value?.index ?? workbenchDraftAction.value?.index ?? null,
+  actionName: workbenchAction.value?.name ?? workbenchDraftAction.value?.name ?? '',
+}))
 
 function openMappingWorkbench(row: Action) {
   workbenchAction.value = row
@@ -329,16 +338,18 @@ function actionBody(action: { name: string; type: string; index: number }, addit
 
 /** 编辑器点保存：已有动作写回去，新建动作先建出来再写这份映射。 */
 async function onWorkbenchSaved(config: Record<string, any>) {
-  const row = workbenchAction.value
   try {
-    if (row) {
-      await api(`/actions/${row.id}`, { method: 'PUT', body: JSON.stringify(actionBody(row, config)) })
+    if (workbenchAction.value) {
+      await api(`/actions/${workbenchAction.value.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(actionBody({ ...workbenchAction.value }, config)),
+      })
     } else {
       const draft = workbenchDraftAction.value
       if (!draft || !selectedJob.value) return
       await api(`/jobs/${selectedJob.value.id}/actions`, {
         method: 'POST',
-        body: JSON.stringify(actionBody({ name: draft.name, type: 'FIELD_MAP', index: draft.index }, config)),
+        body: JSON.stringify(actionBody({ ...draft, type: 'FIELD_MAP' } as Action, config)),
       })
     }
     workbenchOpen.value = false
@@ -347,6 +358,8 @@ async function onWorkbenchSaved(config: Record<string, any>) {
     ElMessage.success('字段映射已保存')
     await loadActions()
   } catch (e) {
+    // 存不下去（400 / 网络）时抽屉还开着：`FieldMappingWorkbench` 保存失败时不会自己关，
+    // 点「取消」就能把它放回来
     ElMessage.error((e as ApiError).message)
   }
 }
@@ -504,12 +517,21 @@ function openActionEdit(row: Action) {
 /**
  * 弹窗发出的 addition。
  *
- * FIELD_MAP 没有可在这里编辑的配置——映射整份在编辑器里配（#107），所以走「保存」这条路时
- * 只能发一份空规则；后端会以「字段映射动作需要至少一条映射规则」拒掉新建，那条消息正好指向
- * 弹窗里那句提示与「去配字段映射」。改动已有动作的映射不经过这里（编辑器自己 PUT）。
+ * 新建 FIELD_MAP：只能发一份空规则，后端会以「字段映射动作需要至少一条映射规则」拒掉
+ * （`FieldMappingConfig.problems()` 是保存期校验）——界面上的出路是「去配字段映射」，
+ * 从编辑器里把动作与那份草稿一起建出来。这句原因写在这里，别处只指过来。
+ *
+ * 改已有 FIELD_MAP：把那一行的映射原样带上（弹窗里刚改过就用编辑器里那份）——它是
+ * 「改名称 / 序号」唯一能存下去的办法（不带映射的 PUT 会被同一条校验拒掉），代价是弹窗里
+ * 改了映射没人知道，所以按钮上写「改名称 / 序号顺便保存映射」。
  */
 function buildActionAddition(): Record<string, any> {
-  if (actionForm.type === 'FIELD_MAP') return { rules: [] }
+  if (actionForm.type === 'FIELD_MAP') {
+    if (!editingAction.value) return { rules: [] }
+    return workbenchAction.value?.id === editingAction.value.id && workbenchConfig.value
+      ? workbenchConfig.value
+      : editingAction.value.addition ?? { rules: [] }
+  }
   const out: Record<string, any> = {}
   Object.entries(kindForm).forEach(([k, v]) => {
     if (v !== '' && v != null) out[k] = v
