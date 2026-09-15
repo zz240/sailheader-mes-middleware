@@ -120,29 +120,13 @@
           </div>
 
           <!-- 校验结果（#103）：点「校验配置」才有；每条问题点一下就跳到对应的行 -->
-          <div v-if="validation" class="wb-issues">
-            <div class="wb-issues-head">
-              <span class="wb-panel-title">校验结果</span>
-              <span class="wb-issue-summary" :class="{ bad: validation.errors.length > 0 }">{{ issueSummary }}</span>
-              <span class="wb-spacer" />
-              <span class="wb-issues-note">改完再点一次「校验配置」</span>
-            </div>
-            <div v-if="!locatedIssues.length" class="wb-issues-ok">没有发现问题。</div>
-            <div v-else class="wb-issue-list">
-              <button
-                v-for="(issue, i) in locatedIssues"
-                :key="i"
-                class="wb-issue"
-                :class="issue.severity"
-                :title="issue.rowId == null ? '这条问题定位不到某一行' : '点一下跳到这一行'"
-                @click="jumpToRowId(issue.rowId)"
-              >
-                <span class="wb-issue-tag">{{ issue.severity === 'error' ? '错误' : '警告' }}</span>
-                <span class="wb-issue-where">{{ issueLocation(issue) }}</span>
-                <span class="wb-issue-message">{{ issue.message }}</span>
-              </button>
-            </div>
-          </div>
+          <MappingIssuesPanel
+            v-if="validation"
+            :issues="locatedIssues"
+            :summary="issueSummary"
+            :has-errors="validation.errors.length > 0"
+            @jump="jumpToRowId"
+          />
 
           <div v-if="!rows.length" class="wb-empty">
             还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。清单不全也没关系：
@@ -515,7 +499,7 @@ import {
 } from '../mapping/transforms.ts'
 import { ELEMENT_GROUP_TITLE } from '../mapping/source-picker.ts'
 import {
-  draftRequest, firstErrorRowId, issueLocation, issuesByRow, locateIssues, rowIssueState,
+  draftRequest, firstErrorRowId, issuesByRow, locateIssues, rowIssueState,
   type DraftValidation,
 } from '../mapping/draft.ts'
 import {
@@ -533,6 +517,7 @@ import MappingDateParams from './MappingDateParams.vue'
 import MappingEnumParams from './MappingEnumParams.vue'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
 import MappingIndexParams from './MappingIndexParams.vue'
+import MappingIssuesPanel from './MappingIssuesPanel.vue'
 import MappingSourcePanel from './MappingSourcePanel.vue'
 
 const props = defineProps<{
@@ -1429,12 +1414,8 @@ load()
 .wb-paren { font-size: 12px; color: #6b7280; }
 .wb-start-at { width: 96px; }
 
-/* 校验结果与行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分 */
-.wb-issues { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #fafafa; }
-.wb-issues-head { display: flex; align-items: center; gap: 10px; }
-.wb-issues-note { font-size: 11px; color: #9ca3af; }
-.wb-issues-ok { font-size: 12px; color: #15803d; padding: 4px 0; }
-.wb-issue-where { flex-shrink: 0; font-family: Consolas, monospace; color: #374151; }
+/* 行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分。
+   那个问题盒子在 `MappingIssuesPanel.vue` 里（#117 拆出去了） */
 .wb-col-issues { display: flex; align-items: center; gap: 6px; max-width: 280px; flex-shrink: 0; }
 .wb-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 5px; border: 1px solid #e5e7eb; color: #9ca3af; }
 .wb-state.error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
