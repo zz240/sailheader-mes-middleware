@@ -520,51 +520,17 @@
         </section>
       </div>
 
-      <!-- 手写 JSONata 这一边（#106）：整段表达式就是这次映射要执行的东西（与后端 mode=EXPRESSION 一致） -->
-      <section v-else class="wb-expression">
-        <el-alert
-          class="wb-alert"
-          type="warning"
-          :closable="false"
-          title="手写 JSONata：这条路跳过规则树校验"
-          :description="expressionSkip()"
-        />
-        <div class="wb-expression-head">
-          <span class="wb-panel-title">表达式</span>
-          <!-- 这是界面上唯一会出现 `$` 的地方（#106 的决定，记在 ADR-0011 第 13 条）：
-               这一段本来就是要写的 JSONata，变量名跟着写才有效，所以原样给出来。 -->
-          <span class="wb-panel-tip">
-            变量：<code>$s_&lt;动作序号&gt;</code> 是链上那个动作的输出（<code>$s_0</code> 是任务输入），
-            <code>$dateFormat(值, "yyyy-MM-dd")</code> 格式化日期。
-          </span>
-          <span class="wb-spacer" />
-          <el-button size="small" @click="switchBackToRows()">切回逐行配置</el-button>
-        </div>
-        <el-input
-          v-model="expressionText"
-          type="textarea"
-          class="wb-expression-input"
-          :rows="18"
-          resize="vertical"
-          spellcheck="false"
-          placeholder='例如 { "sheet_no": $s_1.bomNo }'
-        />
-        <div class="wb-expression-note">
-          保存写出去的就是这一整段（`mode: EXPRESSION`）：判断只看它跑不跑得起来。
-        </div>
-
-        <!-- 校验结果（#103）：手写这一边没有「哪一行」可言，所以只按错误 / 警告列原文 -->
-        <div v-if="mergedValidation" class="wb-expression-issues">
-          <span class="wb-panel-title">校验结果</span>
-          <span class="wb-issue-summary" :class="{ bad: mergedValidation.errors.length > 0 }">{{ issueSummary }}</span>
-          <div v-if="expressionIssues.length" class="wb-issue-list">
-            <div v-for="(issue, i) in expressionIssues" :key="i" class="wb-issue" :class="issue.severity">
-              <span class="wb-issue-tag">{{ issue.severity === 'error' ? '错误' : '警告' }}</span>
-              <span class="wb-issue-message">{{ issue.message }}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <!-- 手写 JSONata 这一边（#106）：整段表达式就是这次映射要执行的东西（与后端 mode=EXPRESSION 一致）。
+           表达式的正文仍存在工作台这一层（保存与送校验读的都是它），子组件只负责把它画出来、改它。 -->
+      <MappingExpressionEditor
+        v-else
+        v-model="expressionText"
+        :has-validation="validation != null"
+        :has-errors="(validation?.errors.length ?? 0) > 0"
+        :summary="issueSummary"
+        :issues="expressionIssues"
+        @switch-back="switchBackToRows"
+      />
 
       <!-- 底部编译产物（#103）：两个标签页，JSONata 与规则 JSON -->
       <div v-if="validation" class="wb-foot">
@@ -623,6 +589,7 @@ import {
 } from '../mapping/parts.ts'
 import MappingDateParams from './MappingDateParams.vue'
 import MappingEnumParams from './MappingEnumParams.vue'
+import MappingExpressionEditor from './MappingExpressionEditor.vue'
 import MappingIndexParams from './MappingIndexParams.vue'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
@@ -681,7 +648,6 @@ const expressionText = ref(expressionOf(props.config))
 const rowsMode = computed(() => editorMode.value === 'rows')
 /** 已存配置里本来就有一段手写表达式（切回逐行后要说清它会被替换）。 */
 const storedExpression = computed(() => hasExpression(expressionOf(props.config)))
-const expressionSkip = () => expressionSkipNotice()
 const expressionReplaced = () => expressionReplacedNotice()
 
 const context = ref<FieldMappingEditorContext | null>(null)
@@ -2076,22 +2042,9 @@ load()
 /* 校验结果与行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分 */
 .wb-issues { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #fafafa; }
 .wb-issues-head { display: flex; align-items: center; gap: 10px; }
-.wb-issue-summary { font-size: 12px; color: #6b7280; }
-.wb-issue-summary.bad { color: #b91c1c; font-weight: 600; }
 .wb-issues-note { font-size: 11px; color: #9ca3af; }
 .wb-issues-ok { font-size: 12px; color: #15803d; padding: 4px 0; }
-.wb-issue-list { max-height: 132px; overflow: auto; margin-top: 4px; }
-.wb-issue {
-  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
-  font: inherit; font-size: 12px; background: none; border: 0; border-radius: 4px;
-  padding: 3px 4px; cursor: pointer;
-}
-.wb-issue:hover { background: #f3f4f6; }
-.wb-issue-tag { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 4px; border: 1px solid; }
-.wb-issue.error .wb-issue-tag { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-.wb-issue.warning .wb-issue-tag { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 .wb-issue-where { flex-shrink: 0; font-family: Consolas, monospace; color: #374151; }
-.wb-issue-message { color: #6b7280; }
 .wb-col-issues { display: flex; align-items: center; gap: 6px; max-width: 280px; flex-shrink: 0; }
 .wb-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 5px; border: 1px solid #e5e7eb; color: #9ca3af; }
 .wb-state.error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
@@ -2123,18 +2076,8 @@ load()
    两个参数编辑器组件（MappingDateParams / MappingEnumParams）在行级与片段级共用，
    它们内部的元素也要用到这套样式，scoped 到不了子组件里面（#112）。 */
 
-/* 手写 JSONata 这一边（#106）：一段表达式占满中间，说明都摆在明面上 */
-.wb-expression { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 16px; }
-.wb-expression .wb-alert { margin: 0 0 8px; }
-.wb-expression-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.wb-expression-head .wb-panel-tip { margin: 0; }
-.wb-expression-input { flex: 1; min-height: 260px; margin-top: 6px; }
-.wb-expression-input :deep(textarea) {
-  height: 100%; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
-}
-.wb-expression-note { font-size: 11px; color: #b45309; margin-top: 6px; }
-.wb-expression-issues { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.wb-expression-issues .wb-issue { width: auto; cursor: default; }
+/* 手写 JSONata 那一边的样式与它的问题列表在 `MappingExpressionEditor.vue` 里（#117 拆出去了）。 */
+
 /* 头部那个「手写 JSONata」的当前模式标，与「高级」入口的样式（不显眼，但一直都在） */
 .wb-chip.chip-mode { color: #3730a3; border-color: #c7d2fe; background: #eef2ff; cursor: default; }
 .wb-advanced { color: #9ca3af; }
@@ -2169,13 +2112,12 @@ load()
   .wb-chip { max-width: 100%; }
   .wb-row.child { margin-left: 12px; }
   .wb-panel { margin-left: 0; }
-  .wb-expression-input :deep(textarea) { height: auto; }
   /* 参数面板里那几条（按钮换行、输入框铺满）在 styles/workbench-panel.css：
      它们要作用到两个参数编辑器组件**内部**，scoped 的 @media 够不着（#112 走查发现） */
 }
 
 @media (max-width: 640px) {
-  .wb-rows, .wb-source, .wb-expression { padding: 8px; }
+  .wb-rows, .wb-source { padding: 8px; }
   .wb-head { padding: 8px; }
   .wb-progress { width: 120px; }
   .wb-step-select, .wb-target-search { width: 100%; }
@@ -2184,3 +2126,5 @@ load()
 
 <!-- 参数面板的基元与它们的响应式规则：两个参数编辑器组件（行级 / 片段级共用）内部也要用，见那个文件 -->
 <style src="../styles/workbench-panel.css"></style>
+<!-- 校验结果列表的基元：逐行那边的问题列表与手写那边的结果列表共用，见那个文件 -->
+<style src="../styles/workbench-issues.css"></style>

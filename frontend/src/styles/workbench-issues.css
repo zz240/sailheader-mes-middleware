@@ -1,0 +1,24 @@
+/*
+ * 校验结果列表的那几个基元：一条问题、它的「错误 / 警告」标签、问题列表与那句统计。
+ *
+ * **为什么是独立的一份普通样式表**（不是组件里的 `<style scoped>`）：同一份列表在两处出现——
+ * 逐行配置那边是 `MappingIssuesPanel.vue`（每条问题点一下跳到那一行），手写 JSONata 那边是
+ * `MappingExpressionEditor.vue`（只列原文，点不动）。两处都在工作台这棵树上，而 scoped 样式到不了
+ * 兄弟组件内部的元素，所以基元放在这里，谁都不用复制一份（与 `workbench-panel.css` 同一个理由）。
+ *
+ * 只放**两处都用**的那几条：`.wb-issues*`（那个带边框的盒子）与行右侧的状态块归各自组件。
+ * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
+ */
+.wb-issue-summary { font-size: 12px; color: #6b7280; }
+.wb-issue-summary.bad { color: #b91c1c; font-weight: 600; }
+.wb-issue-list { max-height: 132px; overflow: auto; margin-top: 4px; }
+.wb-issue {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  font: inherit; font-size: 12px; background: none; border: 0; border-radius: 4px;
+  padding: 3px 4px; cursor: pointer;
+}
+.wb-issue:hover { background: #f3f4f6; }
+.wb-issue-tag { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 4px; border: 1px solid; }
+.wb-issue.error .wb-issue-tag { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+.wb-issue.warning .wb-issue-tag { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+.wb-issue-message { color: #6b7280; }
