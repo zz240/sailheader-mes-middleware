@@ -30,7 +30,7 @@
 
 - 序号调整（上移/下移）无专门交互，目前靠改序号；
 - 链一致性只校验 `sourceStep` 的**存在性与先后**，不校验语义漂移（重排后同序号换成了另一个动作但仍在更早位置）；`MQ_PUBLISH.bodySourceStep` 的链级悬空仍靠运行时显式失败兜底（写时校验见 ed50f35）；
-- 前端 `MappingEditor` 仍不联动改写已保存规则的 sourceStep（新增行取前一步）；任务列表的启用开关 `toggleStatus` 未捕获异常，启用被拦时只有接口 400 与 `job.lastError` 说明原因，界面不弹提示（用「校验配置」可看到 errors）；
+- 前端映射编辑器（`FieldMappingWorkbench.vue`）仍不联动改写已保存规则的 sourceStep（新增行取前一步）；任务列表的启用开关 `toggleStatus` 未捕获异常，启用被拦时只有接口 400 与 `job.lastError` 说明原因，界面不弹提示（编辑器里的「校验配置」可看到 errors）；
 - 自动调度触发由 `JobScheduler`（Spring `TaskScheduler`）依调度配置（不自动/间隔/每天/每周）注册，投递 `direct:job-<id>`，并结合 `timezone`；MQ_CONSUME 链首不设定时。
 
 ## 决策时间线

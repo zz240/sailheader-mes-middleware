@@ -107,13 +107,14 @@
         <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <el-button size="small" @click="openActionEdit(row)">编辑</el-button>
+            <!-- 字段映射的配置入口只有这一个：打开新版逐行编辑器（#107 起旧编辑器已删） -->
             <el-button
               v-if="row.type === 'FIELD_MAP'"
               size="small"
               type="primary"
               plain
               @click="openMappingWorkbench(row)"
-            >编辑映射（新版）</el-button>
+            >编辑映射</el-button>
             <el-button size="small" type="danger" @click="removeAction(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -123,7 +124,7 @@
       <el-button size="small" @click="loadReceived">刷新 MES 接收</el-button>
     </div>
 
-    <el-dialog v-model="actionFormVisible" :title="editingAction ? '编辑动作' : '添加动作'" :width="actionDialogWidth">
+    <el-dialog v-model="actionFormVisible" :title="editingAction ? '编辑动作' : '添加动作'" width="720px">
       <el-form label-width="100px">
         <el-form-item label="名称"><el-input v-model="actionForm.name" /></el-form-item>
         <el-form-item label="类型">
@@ -197,13 +198,23 @@
           <el-form-item label="body 步骤"><el-input-number v-model="kindForm.bodySourceStep" :min="1" placeholder="必填：发布哪一步输出（通常 FIELD_MAP 序号）" /></el-form-item>
         </template>
 
-        <el-form-item v-if="actionForm.type === 'FIELD_MAP'" label="映射规则">
-          <MappingEditor ref="mappingEditorRef" :job-id="selectedJob!.id"
-                         :source-steps="actionIndices" :previous-step="previousStep" @validate="validateSelected" />
-        </el-form-item>
+        <!-- FIELD_MAP 的映射整份在全屏编辑器里配（动作表上的「编辑映射」），弹窗里只留提示（#107）。
+             新建也走同一个入口：「去配字段映射」开编辑器，编辑器点保存时才建动作——空规则的动作
+             后端存不下去（「字段映射动作需要至少一条映射规则」是保存期校验）。 -->
+        <el-alert
+          v-if="actionForm.type === 'FIELD_MAP'"
+          type="info"
+          :closable="false"
+          show-icon
+          title="字段映射整份在编辑器里配"
+          description="点下面的「去配字段映射」打开编辑器，保存时会把动作与这份映射一起建出来。"
+        />
       </el-form>
       <template #footer>
         <el-button @click="actionFormVisible = false">取消</el-button>
+        <el-button v-if="actionForm.type === 'FIELD_MAP'" type="primary" plain @click="openMappingWorkbenchForDraft">
+          去配字段映射
+        </el-button>
         <el-button type="primary" @click="saveAction">保存</el-button>
       </template>
     </el-dialog>
@@ -226,15 +237,16 @@
       <el-table-column label="内容"><template #default="{ row }">{{ JSON.stringify(row) }}</template></el-table-column>
     </el-table>
 
-    <!-- 新版字段映射编辑器（#99）：临时入口，旧编辑器保留，第 9 张票里删掉旧入口 -->
+    <!-- 字段映射编辑器（新版，全屏抽屉）：动作表上「编辑映射」的唯一出口。
+         `workbenchAction` 为空时是在新建动作——编辑器点保存会把动作一起建出来。 -->
     <FieldMappingWorkbench
-      v-if="workbenchOpen && selectedJob && workbenchAction"
-      :key="`wb-${workbenchAction.id}`"
+      v-if="workbenchOpen && selectedJob"
+      :key="`wb-${workbenchAction?.id ?? 'new'}-${workbenchDraftAction?.index ?? ''}`"
       :job-id="selectedJob.id"
       :job-name="selectedJob.name"
-      :action-id="workbenchAction.id"
-      :action-index="workbenchAction.index"
-      :action-name="workbenchAction.name"
+      :action-id="workbenchAction?.id ?? null"
+      :action-index="workbenchAction?.index ?? workbenchDraftAction?.index ?? null"
+      :action-name="workbenchAction?.name ?? workbenchDraftAction?.name ?? ''"
       :config="workbenchConfig"
       @saved="onWorkbenchSaved"
       @closed="workbenchOpen = false"
@@ -247,7 +259,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
-import MappingEditor from '../components/MappingEditor.vue'
 import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
 const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP']
@@ -273,19 +284,41 @@ const actionFormVisible = ref(false)
 const editingAction = ref<Action | null>(null)
 const actionForm = reactive({ name: '', type: 'READ_SQL' as string, index: 1 })
 const kindForm = reactive<Record<string, any>>({})
-const mappingEditorRef = ref<InstanceType<typeof MappingEditor> | null>(null)
 
 const validateVisible = ref(false)
 const validation = ref<ValidationResult | null>(null)
 
-/** 新版字段映射编辑器（#99）的入口状态。 */
+/**
+ * 字段映射编辑器（全屏抽屉）的入口状态：动作表上的「编辑映射」。
+ *
+ * `workbenchAction` 为 null 表示这个动作**还没建**：从「添加动作」里选 FIELD_MAP 时，映射跟动作
+ * 一起在编辑器里配（编辑器点保存时先建动作、再写映射）。
+ *
+ * 为什么要这样：后端「字段映射动作需要至少一条映射规则」是保存期校验，所以一个 FIELD_MAP 动作
+ * 没法先空着建出来再配——创建这一步得由编辑器里的那份草稿一起完成。
+ */
 const workbenchOpen = ref(false)
 const workbenchAction = ref<Action | null>(null)
 const workbenchConfig = ref<Record<string, any> | null>(null)
+const workbenchDraftAction = ref<{ name: string; index: number } | null>(null)
 
 function openMappingWorkbench(row: Action) {
   workbenchAction.value = row
+  workbenchDraftAction.value = null
   workbenchConfig.value = (row.addition ?? {}) as Record<string, any>
+  workbenchOpen.value = true
+}
+
+/** 「添加动作」里选 FIELD_MAP：不建动作，直接开编辑器（保存时连动作一起建）。 */
+function openMappingWorkbenchForDraft() {
+  if (!actionForm.name.trim()) {
+    ElMessage.warning('先给这个动作起个名字')
+    return
+  }
+  workbenchAction.value = null
+  workbenchDraftAction.value = { name: actionForm.name.trim(), index: actionForm.index }
+  workbenchConfig.value = null
+  actionFormVisible.value = false
   workbenchOpen.value = true
 }
 
@@ -294,13 +327,23 @@ function actionBody(action: { name: string; type: string; index: number }, addit
   return { name: action.name, type: action.type, index: action.index, addition }
 }
 
-/** 新版编辑器点保存：写回这个动作的 addition（格式与旧编辑器完全一致）。 */
+/** 编辑器点保存：已有动作写回去，新建动作先建出来再写这份映射。 */
 async function onWorkbenchSaved(config: Record<string, any>) {
   const row = workbenchAction.value
-  if (!row) return
   try {
-    await api(`/actions/${row.id}`, { method: 'PUT', body: JSON.stringify(actionBody(row, config)) })
+    if (row) {
+      await api(`/actions/${row.id}`, { method: 'PUT', body: JSON.stringify(actionBody(row, config)) })
+    } else {
+      const draft = workbenchDraftAction.value
+      if (!draft || !selectedJob.value) return
+      await api(`/jobs/${selectedJob.value.id}/actions`, {
+        method: 'POST',
+        body: JSON.stringify(actionBody({ name: draft.name, type: 'FIELD_MAP', index: draft.index }, config)),
+      })
+    }
     workbenchOpen.value = false
+    workbenchAction.value = null
+    workbenchDraftAction.value = null
     ElMessage.success('字段映射已保存')
     await loadActions()
   } catch (e) {
@@ -309,8 +352,6 @@ async function onWorkbenchSaved(config: Record<string, any>) {
 }
 
 const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
-/** 字段映射编辑区较大，弹窗加宽；其余动作保持常规宽度。 */
-const actionDialogWidth = computed(() => (actionForm.type === 'FIELD_MAP' ? '1280px' : '720px'))
 
 const filteredDataSources = computed(() => {
   const typeFilter: Record<string, string[]> = {
@@ -323,12 +364,6 @@ const filteredDataSources = computed(() => {
   }
   const allowed = typeFilter[actionForm.type] ?? []
   return dataSources.value.filter(ds => allowed.includes(ds.type))
-})
-
-const actionIndices = computed(() => actions.value.map(a => a.index).sort((a, b) => a - b))
-const previousStep = computed(() => {
-  const idx = actionForm.index ?? 0
-  return actionIndices.value.filter(i => i < idx).pop() ?? 0
 })
 
 async function load() {
@@ -463,18 +498,18 @@ function openActionEdit(row: Action) {
   resetKindFields()
   const a = row.addition ?? {}
   Object.keys(a).forEach(k => { kindForm[k] = a[k] })
-  if (row.type === 'FIELD_MAP') {
-    actionFormVisible.value = true
-    setTimeout(() => mappingEditorRef.value?.setConfig(a), 0)
-  } else {
-    actionFormVisible.value = true
-  }
+  actionFormVisible.value = true
 }
 
+/**
+ * 弹窗发出的 addition。
+ *
+ * FIELD_MAP 没有可在这里编辑的配置——映射整份在编辑器里配（#107），所以走「保存」这条路时
+ * 只能发一份空规则；后端会以「字段映射动作需要至少一条映射规则」拒掉新建，那条消息正好指向
+ * 弹窗里那句提示与「去配字段映射」。改动已有动作的映射不经过这里（编辑器自己 PUT）。
+ */
 function buildActionAddition(): Record<string, any> {
-  if (actionForm.type === 'FIELD_MAP') {
-    return mappingEditorRef.value?.getConfig() ?? { rules: [] }
-  }
+  if (actionForm.type === 'FIELD_MAP') return { rules: [] }
   const out: Record<string, any> = {}
   Object.entries(kindForm).forEach(([k, v]) => {
     if (v !== '' && v != null) out[k] = v

@@ -10,8 +10,9 @@
 - **模式**：`mode: STRUCTURED`（默认，rules）+ `mode: EXPRESSION`（手写 JSONata，逃生通道，保存期校验）。
   注：代码里实际是「不是 EXPRESSION 就当 RULES」（`FieldMappingConfig`），文档口径以代码为准。
 - **建议器（ADR-0005 / T39）**：`MappingSuggester` 接口，默认规则实现（结构探测、同名归一化、相似度、历史复用、转换推断），站点级可覆盖为 LLM（Ollama，配置 `edge.mapping.suggester=llm`）；数组路径（`items[0].x`）生成**组建议**（MatchSource.ARRAY）；单值样例不再推荐 CONSTANT（DS-10.4）。
-- **编辑器（T38/T39，旧）**：三栏（左来源树 / 中映射表 / 右目标树）+ 数组组行展开子表 + ENUM/CONCAT 弹窗 + 建议面板（表格/分页/已采用标记）；保存/回填递归 rules，旧扁平配置兼容。
-- **编辑器（新版，ADR-0011 / #99 起）**：全屏抽屉，**每个目标字段一行**、一行一个转换；左边常驻来源字段清单（按默认来源步骤列出字段、类型、样例值），点一下填进当前行；界面上不出现 `$` 符号。顶部默认来源下拉，进度条只统计必填字段。动作表上临时并存「编辑映射（新版）」入口，旧编辑器在 #107 里删。
+- **编辑器（T38/T39，旧）**：三栏（左来源树 / 中映射表 / 右目标树）+ 数组组行展开子表 + ENUM/CONCAT 弹窗 + 建议面板（表格/分页/已采用标记）；保存/回填递归 rules，旧扁平配置兼容。**已在 #107 删除**（组件 `MappingEditor.vue` / `MappingRowsTable.vue` 一并删掉，保留这一条只为记录它曾经是什么、以及它写进库的那份数据格式）。
+- **编辑器（新版，ADR-0011 / #99 起）**：全屏抽屉，**每个目标字段一行**、一行一个转换；左边常驻来源字段清单（按默认来源步骤列出字段、类型、样例值），点一下填进当前行；界面上不出现 `$` 符号。顶部默认来源下拉，进度条只统计必填字段。**动作表上只剩一个「编辑映射」入口**（#107 起旧三栏编辑器已删），点它打开的就是这个抽屉。
+  - **新建 FIELD_MAP 也走同一个入口**（#107）：弹窗里选 FIELD_MAP 之后多一个「去配字段映射」，直接开抽屉；抽屉点保存时才建动作（`POST /jobs/{id}/actions`，带编辑器里那份规则）。为什么建不出来再配：后端「字段映射动作需要至少一条映射规则」是保存期校验（`FieldMappingConfig.problems()`），空规则的动作存不下去，所以创建这一步必须与那份草稿一起完成。
 - **数组映射（新版，T3 / #101）**：数组类型的目标字段占一行，在这一行上选**来源数组**；下面展开子行（分组标题「数组元素内」，可展开/收起、可「+ 子字段」），子行的目标字段与来源都写**相对路径**。子行要取数组外层的表头字段时，从左边清单的「外层」分组点一项，界面显示成「外层 · 字段名」，规则里存成 `$root.<路径>`，编译器还原成 `$s_<step>.<路径>`。**「外层」不是「上一层」**：它始终指这份来源数据的顶层对象，直接引用父级数组元素在现有编译规则下做不到。
   三处来源写法落进规则是同一种东西的三种形状（行上有 `iterate='FOR_EACH'` 的是数组行）：
 
@@ -50,7 +51,7 @@
   - **补全的筛法**：真在这一行里打字时按打进去的词筛；只是聚焦（没打字）时把清单整个给出来（#102 的坑：聚焦时 el-autocomplete 拿这一行现有的值当查询词，照它筛就只剩它自己）。
   - **手写 JSONata 入口**：顶部一个不显眼的文字按钮「高级：手写 JSONata」。切过去就是写**一整段表达式**（与后端 `mode=EXPRESSION` 一致：保存写 `{mode: 'EXPRESSION', expression, rules: []}`），那一边没有默认来源下拉、也没有必填进度——判断只看这段表达式能不能跑，**跳过规则树校验**（这句话写在切过去的确认框里，也常驻在那一页上）。**这一页是界面上唯一会出现 `$` 的地方**（`$s_N` / `$dateFormat` 这些变量名跟着写才有效，ADR-0011 第 13 条记了这条例外）；逐行配置那一侧照旧一个 `$` 都没有。切回逐行配置时会说清「保存时规则树会替换掉这份表达式」，切回后行列表上还有一条常驻提示。**打开一个 `mode=EXPRESSION` 的动作直接进手写这一边并把表达式回填**（以前只给一条「这一轮看不了它」的警告，等于把配好的表达式藏起来）。两侧读写的是同一份数据格式，所以随时能来回切。手写这一边的校验结果按错误 / 警告列在表达式下面（没有「哪一行」可言）。
   - **两条口径**：①「写没写表达式」「这一行填了目标字段没有」都是编辑器里的本地事实，对错仍然只在后端那个只读接口里判（#98 D4）；②校验草稿就是**保存会写出去的那一份**——手写这一边发 `{mode: 'EXPRESSION', expression, rules: []}`，后端按 `mode` 分岔（`MappingDraftValidationService.isRules`）。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/components/MappingEditor.vue`、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
 
 ## 决策时间线
 
@@ -70,6 +71,7 @@
 | 09-14 | 「校验配置」：草稿校验收进后端一个只读接口 | 前端不复制任何一条校验规则；错要能定位到行、保存前拦得住 | — | #103 / ADR-0011 / MappingDraftValidationService |
 | 09-14 | 补上依赖目标清单与来源样例的六条检查 | 后端本来有四种情况不报错但结果不对（来源路径不存在、拼接有空片段、日期解析失败、枚举查不到键），这六条正是这次改版要照亮的东西 | — | #104 / MappingSampleChecks |
 | 09-14 | 窄屏依次排列、键盘补齐（`/` 换转换、回车选来源、退格清行）、手写 JSONata 入口回到编辑器里 | 深层数组的任意重排只能走手写表达式（#98 F1）：界面不给入口等于悄悄砍掉一条已经承诺的出路；键盘与窄屏是 G 里留给原型的最后一档 | — | #106 / keyboard.ts、expression.ts |
+| 09-15 | 撤掉旧编辑器（三栏 + 多级表格 + 建议面板 + ENUM/CONCAT 弹窗） | 新版覆盖了旧版的全部能力，两套编辑器读写的又是同一份数据格式，留着只会让人不知道点哪个入口 | — | #107 / JobsView.vue（`MappingEditor.vue`、`MappingRowsTable.vue` 已删） |
 
 ## 待办 / 已知限制
 
@@ -87,4 +89,4 @@
 
 - 执行引擎：JSONata（dashjoin），规则→表达式编译器（T36）
 - 规则模型：递归 children + mode:EXPRESSION（T37）
-- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、以及顶部那个「高级：手写 JSONata」入口）；旧三栏编辑器在 #107 里删
+- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、以及顶部那个「高级：手写 JSONata」入口）；它是**唯一**的字段映射编辑器（#107 起旧三栏编辑器已删），动作表上「编辑映射」那一个入口同时管新建与修改
