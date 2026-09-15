@@ -12,7 +12,7 @@ import { INDEX_SOURCE, TRANSFORM_KINDS, transformLabel, type TransformKind } fro
 import { markHumanEdited, realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
 // 片段转换那几条判断（#112）在 parts.ts：这是**函数级**的相互引用（两个模块都只在函数体里用对方），
 // 用来保证「片段/行上值那一格怎么读」只有一处定义。
-import { partAsRow, partFilled } from './parts.ts'
+import { partFilled, partLabelSpec } from './parts.ts'
 import type { SourceField } from './editor-model.ts'
 
 /** 日期格式化的预设（#100：从几个预设里选，不用记格式串）。 */
@@ -258,6 +258,23 @@ export function appendEnumSamples(
 // ---------------------------------------------------------------- 人话
 
 /**
+ * 一行（或一个片段）的转换在界面上读起来要用的那几格。
+ *
+ * 单独抽出来是因为片段也要用**同一份**说法（#112）：片段不是行，但「值怎么取」这件事的形状是一样的
+ * （转换 + 来源/值 + 参数）。`MapRow` 天然满足这个形状，`parts.ts` 的 `partLabelSpec` 把片段也折成它
+ * ——两边共用下面那一个 switch，不各写一套人话。
+ */
+export interface TransformLabelSpec {
+  transform: string
+  source: string
+  /** 按转换解释的那一格：日期是格式串、常量是那个写死的值。 */
+  extra: string
+  enumMap?: Record<string, any> | null
+  startAt?: number | null
+  parts?: ConcatPart[]
+}
+
+/**
  * 一行当前转换在界面上读起来的那句话。
  *
  * - 直接映射 → 来源字段本身
@@ -268,7 +285,8 @@ export function appendEnumSamples(
  *
  * `operand` 负责把行里的来源（含拼接片段的地址）翻成人话；这里不碰 `$` 和路径。
  */
-export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
+export function transformLabelFor(spec: TransformLabelSpec, operand: OperandLabel): string {
+  const row = spec
   switch (row.transform) {
     case 'CONSTANT': {
       const value = row.extra.trim()
@@ -277,11 +295,13 @@ export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
     case 'INDEX':
       return `行号 · 从 ${row.startAt == null ? 1 : row.startAt} 起`
     case 'CONCAT': {
-      const parts = row.parts.map((part, i) => {
+      const parts = (row.parts ?? []).map((part, i) => {
         // 常量片段的值本身就是它显示出来的样子（不用走来源那一套）。
         if (part.type === 'const') return part.value.trim() === '' ? '（空片段）' : part.value
         // 挂了片段转换的那一段（#112）按它自己的转换念，与行级转换共用这一份人话
-        if ((part.transform ?? 'STRING') !== 'STRING') return transformLabelOf(partAsRow(part, row), operand)
+        if ((part.transform ?? 'STRING') !== 'STRING') {
+          return transformLabelFor(partLabelSpec(part), operand)
+        }
         return operand(String(i))
       })
       return `拼接（${parts.join(' + ')}）`
@@ -291,7 +311,7 @@ export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
       return `枚举映射 · ${count ? `${count} 条` : '空表'}（${operand('source')}）`
     }
     case 'DATE':
-      return `日期格式化 · ${datePatternFor(row)}（${operand('source')}）`
+      return `日期格式化 · ${normalizeDatePattern(row.extra)}（${operand('source')}）`
     case 'INT':
       return `数字转换（${operand('source')}）`
     case 'STRING':
@@ -300,4 +320,9 @@ export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
       // 认不出来的转换值原样显示，不假装认识。
       return `${row.transform || '（没选转换）'}（${operand('source')}）`
   }
+}
+
+/** 行的人话：`MapRow` 天然就是 `TransformLabelSpec`（那几格名字一样）。 */
+export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
+  return transformLabelFor(row, operand)
 }

@@ -241,6 +241,12 @@ public final class JsonataRuleCompiler {
                     + sourceExpr(partPath(rule, part, index), step, depth) + ")";
         }
         if (TransformType.INDEX.name().equals(transform)) {
+            if (depth == 0) {
+                // 顶层拼接行上 `$i` 根本没绑定（编出来是 `($i-1 + 1)` 这种跑不起来的东西）。
+                // 结构校验也拦这一条，消息逐字相同——服务那边把同一条合成一条
+                throw new CompileException(rule.target(), null,
+                        partAt(index, "行号片段只能在数组映射的子行里用") + ": " + rule.target());
+            }
             // 行号片段的源就是行号本身，不带 path（startAt 默认 1）。
             // 括号不能省：这个引擎里 `&` 与 `+` **同级左结合**（实测 `"a" & 1 + 2` 解析成
             // `("a" & 1) + 2` 直接抛「+ 的左边要是数字」），不括起来整条拼接一跑到就炸。

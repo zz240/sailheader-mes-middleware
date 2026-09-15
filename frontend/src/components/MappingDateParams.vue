@@ -28,23 +28,22 @@ function current(): string {
   return normalizeDatePattern(props.pattern)
 }
 
+/** 预设的样例用的那个参考日期（只是给用户看的例子，不参与任何判断）。 */
+const EXAMPLE_DATE = new Date(2026, 7, 21, 9, 5, 7)
+
 /** 预设的样例：拿一个真日期格式化一遍，让人一眼看出这个模式长什么样。 */
 function datePatternExample(pattern: string): string {
-  return formatExample(new Date(2026, 7, 21, 9, 5, 7), pattern)
-}
-
-/** 只支持后端那几个预设与常见日期记号；认不出来就原样返回模式串。 */
-function formatExample(date: Date, pattern: string): string {
   const pad = (n: number, width = 2) => String(n).padStart(width, '0')
   const parts: Record<string, string> = {
-    yyyy: String(date.getFullYear()),
-    yy: String(date.getFullYear()).slice(-2),
-    MM: pad(date.getMonth() + 1),
-    dd: pad(date.getDate()),
-    HH: pad(date.getHours()),
-    mm: pad(date.getMinutes()),
-    ss: pad(date.getSeconds()),
+    yyyy: String(EXAMPLE_DATE.getFullYear()),
+    yy: String(EXAMPLE_DATE.getFullYear()).slice(-2),
+    MM: pad(EXAMPLE_DATE.getMonth() + 1),
+    dd: pad(EXAMPLE_DATE.getDate()),
+    HH: pad(EXAMPLE_DATE.getHours()),
+    mm: pad(EXAMPLE_DATE.getMinutes()),
+    ss: pad(EXAMPLE_DATE.getSeconds()),
   }
+  // 只支持后端那几个预设与常见日期记号；认不出来就原样返回模式串
   return pattern.replace(/yyyy|yy|MM|dd|HH|mm|ss/g, token => parts[token] ?? token)
 }
 </script>

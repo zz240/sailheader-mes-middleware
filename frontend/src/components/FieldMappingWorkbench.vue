@@ -327,15 +327,12 @@
                       <span class="wb-paren">」</span>
                     </template>
 
-                    <!-- 行号：起始值直接显示在这一行里 -->
+                    <!-- 行号：起始值直接显示在这一行里（与片段级的那个输入框是同一个组件） -->
                     <template v-if="entry.row.transform === 'INDEX'">
                       <span class="wb-paren">从</span>
-                      <el-input-number
-                        :model-value="entry.row.startAt ?? 1"
-                        size="small"
-                        controls-position="right"
-                        class="wb-start-at"
-                        @update:model-value="onStartAtChange(entry.row, $event)"
+                      <MappingIndexParams
+                        :start-at="entry.row.startAt"
+                        @update:start-at="onStartAtChange(entry.row, $event)"
                       />
                       <span class="wb-paren">起</span>
                     </template>
@@ -454,7 +451,7 @@
                           :key="kind"
                           :value="kind"
                           :label="partKindLabel(kind)"
-                          :disabled="!canUsePartKind(part, kind, entry.depth)"
+                          :disabled="!canUsePartKind(kind, entry.depth)"
                         />
                       </el-select>
                       <el-input
@@ -499,12 +496,9 @@
                     <div v-else-if="partKindOf(part) === 'INDEX'" class="wb-part-params">
                       <div class="wb-panel-row">
                         <span class="wb-panel-note">起始值</span>
-                        <el-input-number
-                          :model-value="part.startAt ?? 1"
-                          size="small"
-                          controls-position="right"
-                          class="wb-start-at"
-                          @update:model-value="onPartStartAt(entry.row, part, $event)"
+                        <MappingIndexParams
+                          :start-at="part.startAt"
+                          @update:start-at="onPartStartAt(entry.row, part, $event)"
                         />
                         <span class="wb-panel-note">数组里第 1 个元素拼出来的就是起始值本身</span>
                       </div>
@@ -608,7 +602,7 @@ import {
 } from '../mapping/rows.ts'
 import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
 import {
-  applyTransform, datePatternFor, normalizeDatePattern, transformLabelOf,
+  applyTransform, datePatternFor, normalizeDatePattern, transformLabelFor, transformLabelOf,
   transformName, transformOptions, DATE_PRESETS, type TransformOption,
 } from '../mapping/transforms.ts'
 import {
@@ -625,10 +619,11 @@ import {
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex, stepIndex, type PanelKey } from '../mapping/keyboard.ts'
 import {
-  PART_KINDS, applyPartKind, canUsePartKind, partAsRow, partEmpty, partKindLabel, partKindOf,
+  PART_KINDS, applyPartKind, canUsePartKind, partEmpty, partKindLabel, partKindOf, partLabelSpec,
 } from '../mapping/parts.ts'
 import MappingDateParams from './MappingDateParams.vue'
 import MappingEnumParams from './MappingEnumParams.vue'
+import MappingIndexParams from './MappingIndexParams.vue'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
 const TRANSFORM_HINTS: Record<string, string> = {
@@ -1411,8 +1406,9 @@ function onDatePatternCommit(row: MapRow) {
   row.extra = normalizeDatePattern(row.extra)
 }
 
-function onStartAtChange(row: MapRow, value: number | undefined) {
-  row.startAt = value == null ? 1 : Number(value)
+/** 行号起始值改了：写进行上（「空 → 1」那条规矩在 `MappingIndexParams` 里，只写一处）。 */
+function onStartAtChange(row: MapRow, value: number) {
+  row.startAt = value
   markHumanEdited(row)
 }
 
@@ -1442,7 +1438,7 @@ function enumCountText(row: MapRow): string {
 function partLabel(entry: FlatRow, i: number): string {
   const part = entry.row.parts[i]
   if (!part || partEmpty(part)) return '（空片段）'
-  return transformLabelOf(partAsRow(part, entry.row),
+  return transformLabelFor(partLabelSpec(part),
     () => (entry.depth > 0 ? part.value : fieldLabelOf(entry, part.value)))
 }
 
@@ -1509,8 +1505,9 @@ function onPartEnumMap(row: MapRow, part: ConcatPart, map: Record<string, any>) 
   markHumanEdited(row)
 }
 
-function onPartStartAt(row: MapRow, part: ConcatPart, value: number | undefined) {
-  part.startAt = value == null ? 1 : Number(value)
+/** 片段的起始值改了：写在片段上（与行级同一个输入框组件、同一条默认值规矩）。 */
+function onPartStartAt(row: MapRow, part: ConcatPart, value: number) {
+  part.startAt = value
   markHumanEdited(row)
 }
 
@@ -2172,8 +2169,9 @@ load()
   .wb-chip { max-width: 100%; }
   .wb-row.child { margin-left: 12px; }
   .wb-panel { margin-left: 0; }
-  .wb-opbtn { min-width: 120px; flex: 1; }
   .wb-expression-input :deep(textarea) { height: auto; }
+  /* 参数面板里那几条（按钮换行、输入框铺满）在 styles/workbench-panel.css：
+     它们要作用到两个参数编辑器组件**内部**，scoped 的 @media 够不着（#112 走查发现） */
 }
 
 @media (max-width: 640px) {
@@ -2181,39 +2179,8 @@ load()
   .wb-head { padding: 8px; }
   .wb-progress { width: 120px; }
   .wb-step-select, .wb-target-search { width: 100%; }
-  .wb-grow, .wb-part-kind { min-width: 0; width: 100%; }
 }
 </style>
 
-<!--
-  就地参数面板的那几个基元（行、说明、转换按钮、枚举表、片段）。
-  **故意不 scoped**：`MappingDateParams` / `MappingEnumParams` 两个参数编辑器在「行级转换」与「片段转换」
-  两处共用（#112 验收二），scoped 样式到不了子组件内部的元素。类名都带 `wb-` 前缀，只有这棵树上用。
--->
-<style>
-.wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.wb-panel-note { font-size: 11px; color: #9ca3af; }
-.wb-grow { flex: 1; min-width: 200px; }
-.wb-part-kind { width: 132px; flex-shrink: 0; }
-.wb-part { border-top: 1px dashed #e5e7eb; padding-top: 6px; margin-bottom: 6px; }
-.wb-part:first-child { border-top: 0; padding-top: 0; }
-.wb-part-params { margin-left: 140px; }
-.wb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
-.wb-opbtn {
-  font: inherit; text-align: left; min-width: 150px; padding: 4px 8px;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
-  display: flex; flex-direction: column; gap: 1px;
-}
-.wb-opbtn small { font-size: 10px; color: #9ca3af; }
-.wb-opbtn:hover:not(.disabled) { border-color: #409eff; }
-.wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
-.wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
-.wb-opbtn.disabled small { color: #b45309; }
-/* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
-.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
-.wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
-.wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
-.wb-enum td { padding: 2px 4px; }
-.wb-enum-arrow { color: #9ca3af; font-size: 12px; }
-.wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
-</style>
+<!-- 参数面板的基元与它们的响应式规则：两个参数编辑器组件（行级 / 片段级共用）内部也要用，见那个文件 -->
+<style src="../styles/workbench-panel.css"></style>

@@ -1,0 +1,45 @@
+/*
+ * 就地参数面板的那几个基元：一条参数行、说明文字、拉伸的输入框、转换按钮（一排选项）、枚举表、拼接片段。
+ *
+ * **为什么是独立的一份普通样式表**（不是组件里的 `<style scoped>`）：`MappingDateParams.vue` 与
+ * `MappingEnumParams.vue` 两个参数编辑器在「行级转换」与「片段转换」两处共用（#112 验收二），
+ * scoped 样式到不了子组件内部的元素；而把这几条塞进 Workbench 的非 scoped `<style>` 块里时，
+ * 响应式那几条（窄屏下按钮换行、输入框铺满）留在了 scoped 的 `@media` 里，成了够不着子组件的死规则。
+ * 现在基元与它们自己的响应式规则放在同一处，谁都不用去猜哪一条生效。
+ *
+ * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
+ */
+.wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.wb-panel-note { font-size: 11px; color: #9ca3af; }
+.wb-grow { flex: 1; min-width: 200px; }
+.wb-part-kind { width: 132px; flex-shrink: 0; }
+.wb-part { border-top: 1px dashed #e5e7eb; padding-top: 6px; margin-bottom: 6px; }
+.wb-part:first-child { border-top: 0; padding-top: 0; }
+.wb-part-params { margin-left: 140px; }
+.wb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
+.wb-opbtn {
+  font: inherit; text-align: left; min-width: 150px; padding: 4px 8px;
+  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.wb-opbtn small { font-size: 10px; color: #9ca3af; }
+.wb-opbtn:hover:not(.disabled) { border-color: #409eff; }
+.wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
+.wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
+.wb-opbtn.disabled small { color: #b45309; }
+/* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
+.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
+.wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
+.wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
+.wb-enum td { padding: 2px 4px; }
+.wb-enum-arrow { color: #9ca3af; font-size: 12px; }
+.wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
+
+/* 窄屏（#106 的两档退化）：面板里的按钮允许换行、输入框铺满——子组件里的元素也吃这几条 */
+@media (max-width: 820px) {
+  .wb-opbtn { min-width: 120px; flex: 1; }
+}
+@media (max-width: 640px) {
+  .wb-grow, .wb-part-kind { min-width: 0; width: 100%; }
+  .wb-part-params { margin-left: 0; }
+}

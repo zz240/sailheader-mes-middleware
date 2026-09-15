@@ -447,6 +447,26 @@ class JsonataRuleCompilerTest {
     // ---------- 片段转换（#112）：拼接的每一段各自挂一个转换 ----------
 
     /**
+     * 老配置（字符串片段 / `{"path"}` 片段）打开 → 保存 → 编译产物**逐字节不变**（#112 验收八）。
+     *
+     * <p>这条是本票最重要的一条：存储形状第一次变化，只有「编译产物一个字节都没动」能证明
+     * 「没迁移、也没破坏」。断言的是**写死的产物文本**（不是拿同一份实现再算一遍），加上真跑出来的值
+     * ——前者管形状，后者管行为。</p>
+     */
+    @Test
+    void legacyConcatPartsCompileByteForByteTheSame() {
+        assertThat(JsonataRuleCompiler.compile(List.of(CONCAT))).isEqualTo("""
+                {
+                  "bom": {
+                  "bomNo": "BOM-" & $s_1.product.productCode
+                  }
+                }""");
+
+        Object result = new JsonataFieldMapper(List.of(CONCAT)).apply(context(1, sourceProduct()));
+        assertThat(bom(result)).containsEntry("bomNo", "BOM-PRD-BUMPER-001");
+    }
+
+    /**
      * 存储形状第一次变化：片段可以是字符串常量、`{"path"}`、`{"path", "transform", 参数}`、`{"transform": "INDEX"}`。
      *
      * <p>老形状是加工片段的退化情形（没有 `transform` 就是直接取值），读取兼容、不做数据迁移。编译产物仍然
@@ -508,6 +528,24 @@ class JsonataRuleCompilerTest {
                         Map.of("materialCode", "MAT-1"), Map.of("materialCode", "MAT-2"))))));
         assertThat(bomLines(bom(result))).extracting(line -> line.get("lineNo"))
                 .containsExactly("LOT-1", "LOT-2");
+    }
+
+    /**
+     * 顶层拼接行上的行号片段：编译器也不放行（与结构校验同一条消息，服务那边合成一条）。
+     *
+     * <p>不拦的话它会编成 `($i-1 + 1)`——`$i` 在顶层根本没绑定，「编译产物」那一页显示的就是一段
+     * 跑不起来的东西。结构校验本来就拦（保存那道 400 也会响），这里补的是**编译这一侧**：产物面板不该
+     * 给人看一段假的表达式。</p>
+     */
+    @Test
+    void anIndexPartOnATopLevelConcatIsRejectedWhenCompiling() {
+        FieldMappingRule rule = new FieldMappingRule(1, null, "bom.bomNo", TransformType.CONCAT,
+                null, Map.of(), null, null, null,
+                List.of("LOT-", Map.of("transform", "INDEX", "startAt", 1)), null);
+
+        assertThatThrownBy(() -> JsonataRuleCompiler.compile(List.of(rule)))
+                .isInstanceOf(JsonataRuleCompiler.CompileException.class)
+                .hasMessage("拼接第 2 个片段：行号片段只能在数组映射的子行里用: bom.bomNo");
     }
 
     /**

@@ -40,7 +40,7 @@ import {
 import {
   applyTransform, appendEnumSamples, canUseTransform, DATE_PRESETS, datePatternFor, DEFAULT_DATE_PATTERN,
   distinctSampleValues, missingEnumKeys, normalizeDatePattern, setEnumKey, transformDisabledReason,
-  transformLabelOf, transformName, transformOptions,
+  transformLabelFor, transformLabelOf, transformName, transformOptions,
 } from './transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, emptyPickResult, fillRowFromPick, sourcePickerFor, toggledRowIds,
@@ -54,8 +54,8 @@ import {
   editorModeOf, expressionConfig, expressionOf, expressionReplacedNotice, expressionSkipNotice, hasExpression,
 } from './expression.ts'
 import {
-  PART_KINDS, applyPartKind, canUsePartKind, partAsRow, partDisabledReason, partEmpty, partFromRule,
-  partKindLabel, partKindOf, partRuleOf,
+  PART_KINDS, applyPartKind, canUsePartKind, partEmpty, partFromRule, partKindDisabledReason,
+  partKindLabel, partKindOf, partLabelSpec, partRuleOf,
 } from './parts.ts'
 import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
 
@@ -601,11 +601,11 @@ eq('整数片段往返（数字转换）',
   partRuleOf(partFromRule({ path: 'qty', transform: 'INT' })), { path: 'qty', transform: 'INT' })
 
 // 行号片段只在数组元素子行里给（顶层置灰，并且写明原因）
-eq('顶层拼接行上不给行号片段', canUsePartKind({ type: 'path', value: '' }, 'INDEX', 0), false)
-eq('数组子行里给行号片段', canUsePartKind({ type: 'path', value: '' }, 'INDEX', 1), true)
-ok('置灰时写明原因', partDisabledReason({ type: 'path', value: '' }, 'INDEX', 0).includes('数组映射的子行'))
+eq('顶层拼接行上不给行号片段', canUsePartKind('INDEX', 0), false)
+eq('数组子行里给行号片段', canUsePartKind('INDEX', 1), true)
+ok('置灰时写明原因', partKindDisabledReason('INDEX', 0).includes('数组映射的子行'))
 ok('别的片段转换不受位置影响（只有行号看位置）',
-  PART_KINDS.every(kind => kind === 'INDEX' || canUsePartKind({ type: 'path', value: 'x' }, kind, 0)))
+  PART_KINDS.every(kind => kind === 'INDEX' || canUsePartKind(kind, 0)))
 
 // 存储形状往返：老片段打开 → 保存逐字段不变（#112 验收八最重要的一条）
 for (const raw of ['BOM-', { path: 'materialCode' }]) {
@@ -635,23 +635,22 @@ eq('行号片段进得了规则',
     parts: [{ type: 'path', value: '', transform: 'INDEX', startAt: 1 }] }).parts,
   [{ transform: 'INDEX', startAt: 1 }])
 
-// 片段的人话与行级转换共用同一份（摘要里看得见参数）
+// 片段的人话与行级转换共用同一份（`transformLabelFor` 那一个 switch，摘要里看得见参数）
 eq('日期片段的人话带着格式串',
-  transformLabelOf(partAsRow({ type: 'path', value: 'createdTime', transform: 'DATE', datePattern: 'yyyyMMdd' },
-    leaf('createdTime', 'x', 'STRING')), () => '动作 1 · 读 BOM · createdTime'),
+  transformLabelFor(partLabelSpec({ type: 'path', value: 'createdTime', transform: 'DATE',
+    datePattern: 'yyyyMMdd' }), () => '动作 1 · 读 BOM · createdTime'),
   '日期格式化 · yyyyMMdd（动作 1 · 读 BOM · createdTime）')
 eq('行号片段的人话带着起始值',
-  transformLabelOf(partAsRow({ type: 'path', value: '', transform: 'INDEX', startAt: 10 },
-    leaf('x', 'y', 'STRING')), () => ''), '行号 · 从 10 起')
+  transformLabelFor(partLabelSpec({ type: 'path', value: '', transform: 'INDEX', startAt: 10 }), () => ''),
+  '行号 · 从 10 起')
 eq('常量片段的人话写着值',
-  transformLabelOf(partAsRow({ type: 'const', value: 'BOM-' }, leaf('x', 'y', 'STRING')), () => ''),
-  '常量「BOM-」')
+  transformLabelFor(partLabelSpec({ type: 'const', value: 'BOM-' }), () => ''), '常量「BOM-」')
 
 // 界面上不出现 $：片段的人话里一个 $ 都没有（#98 对照表）
 for (const kind of PART_KINDS) {
   const part = applyPartKind({ type: 'path', value: 'createdTime' }, kind)
   if (kind !== 'CONSTANT') part.value = 'createdTime'
-  assertNoDollar(transformLabelOf(partAsRow(part, leaf('createdTime', 'x', 'STRING')), () => 'createdTime'))
+  assertNoDollar(transformLabelFor(partLabelSpec(part), () => 'createdTime'))
 }
 
 // ---------------------------------------------------------------- 数组映射（#101）

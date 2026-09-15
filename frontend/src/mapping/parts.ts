@@ -18,8 +18,10 @@
  * （见 `checks.ts`）。`$` 一个都不出现：括号那段只写在编译产物里（#98 对照表）。
  */
 import { transformLabel, type TransformKind } from './labels.ts'
-import { realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
-import { DEFAULT_DATE_PATTERN, normalizeDatePattern, type TransformParams } from './transforms.ts'
+import { realEnumMap, type ConcatPart } from './rows.ts'
+import {
+  DEFAULT_DATE_PATTERN, normalizeDatePattern, type TransformLabelSpec, type TransformParams,
+} from './transforms.ts'
 
 /** 片段能挂的转换，界面上按这个顺序排：「常量」在前，其余与行级那七种同序。 */
 export const PART_KINDS = ['CONSTANT', 'STRING', 'INT', 'DATE', 'ENUM', 'INDEX'] as const
@@ -82,8 +84,9 @@ export function partFromRule(raw: unknown): ConcatPart {
 /**
  * 换片段转换：参数跟着换，不该留的旧参数清掉（否则存进去的是自相矛盾的片段）。
  *
- * 与行级的 `applyTransform` 同一条口径——切回同一种转换时把配过的参数留着是行级那边的事，
- * 这里是「一个片段只有一个转换」，所以换过去就是换过去了。
+ * 参数形状与行级 `applyTransform` 共用 `TransformParams`：界面上真传进来的只有日期那一个
+ * （点预设 / 手输格式串），枚举表与起始值是在片段上直接编的——两边的参数形状保持一致，
+ * 换转换时「哪些该清、哪些该留」才只有一套说法。
  */
 export function applyPartKind(part: ConcatPart, kind: PartKind, params: TransformParams = {}): ConcatPart {
   const keptPath = part.type === 'path' ? part.value : ''
@@ -128,16 +131,15 @@ export function applyPartKind(part: ConcatPart, kind: PartKind, params: Transfor
 }
 
 /** 这个片段转换在这个位置上能不能选。 */
-export function canUsePartKind(part: ConcatPart, kind: string, depth = 0): boolean {
-  return partDisabledReason(part, kind, depth) === ''
+export function canUsePartKind(kind: string, depth = 0): boolean {
+  return partKindDisabledReason(kind, depth) === ''
 }
 
-/** 禁用一个片段转换的原因；能选时是空串。与后端校验同一条口径。 */
-export function partDisabledReason(part: ConcatPart, kind: string, depth = 0): string {
-  if (kind === 'INDEX' && depth === 0) {
-    return '行号片段只能在数组映射的子行里用（与后端校验一致）'
-  }
-  return ''
+/** 禁用一个片段转换的原因；能选时是空串。与后端校验同一条口径（行号只在数组元素子行里有意义）。 */
+export function partKindDisabledReason(kind: string, depth = 0): string {
+  return kind === 'INDEX' && depth === 0
+    ? '行号片段只能在数组映射的子行里用（与后端校验一致）'
+    : ''
 }
 
 /**
@@ -169,16 +171,14 @@ export function partNeedsPath(part: ConcatPart): boolean {
 }
 
 /**
- * 片段拼成人话要用的那个「像行一样」的对象：`transformLabelOf` 认的是行上那几个字段。
+ * 片段折成「人话」要用的那几格（`TransformLabelSpec`）：行与片段共用同一个
+ * `transformLabelFor`，所以片段只要把自己折成那个形状。
  *
- * 行上「值那一格」是按转换解释的（常量与格式串都在 `extra` 里、取值在 `source` 里），片段也一样——
- * 这样片段与行级转换共用同一份人话（「日期格式化 · yyyyMMdd（动作 1 · 读 BOM · createdTime）」），
- * 不用为片段再写一套说法。行号片段的来源由 `transformLabelOf` 自己说成「行号 · 从 N 起」。
+ * 行上「值那一格」是按转换解释的（常量与格式串都在 `extra` 里、取值在 `source` 里），片段也一样。
  */
-export function partAsRow(part: ConcatPart, row: MapRow): MapRow {
+export function partLabelSpec(part: ConcatPart): TransformLabelSpec {
   const kind = partKindOf(part)
   return {
-    ...row,
     transform: kind,
     source: kind === 'CONSTANT' ? '' : part.value,
     extra: kind === 'CONSTANT' ? part.value : (part.datePattern ?? ''),
@@ -187,5 +187,4 @@ export function partAsRow(part: ConcatPart, row: MapRow): MapRow {
   }
 }
 
-/** 片段转换的类型（行级那个 `TransformKind` 去掉拼接，就是这六个）。 */
-export type PartTransformKind = Extract<TransformKind, PartKind>
+/** 这里只放片段的模型与判断：转换的名字与人话在 `transforms.ts` / `labels.ts`，两处都是同一份。 */
