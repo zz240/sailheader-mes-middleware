@@ -130,19 +130,7 @@ public record FieldMappingConfig(
                 continue;
             }
             if (rule.transform() == TransformType.CONCAT) {
-                if (rule.parts() == null || rule.parts().isEmpty()) {
-                    problems.add(problem(rule, parentTarget, "CONCAT 转换需要 parts 片段: " + rule.target()));
-                } else {
-                    for (Object part : rule.parts()) {
-                        if (!(part instanceof String) && !(part instanceof Map<?, ?>)) {
-                            problems.add(problem(rule, parentTarget,
-                                    "CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: " + rule.target()));
-                        } else if (part instanceof Map<?, ?> m
-                                && (m.get("path") == null || m.get("path").toString().isBlank())) {
-                            problems.add(problem(rule, parentTarget, "CONCAT 路径片段缺少 path: " + rule.target()));
-                        }
-                    }
-                }
+                problems.addAll(concatPartProblems(rule, depth, parentTarget));
                 continue;
             }
             if (rule.transform() == TransformType.CONSTANT
@@ -169,6 +157,72 @@ public record FieldMappingConfig(
 
     private RuleProblem problem(FieldMappingRule rule, String parentTarget, String message) {
         return new RuleProblem(rule.target(), parentTarget, message);
+    }
+
+    /**
+     * 拼接片段的检查（#112）：片段是字符串常量，或一个带转换的对象。
+     *
+     * <p>四种形状：字符串常量、取值片段 `{"path": "..."}`（老形状，不带 transform 就是「直接取值」的
+     * 退化情形）、加工片段 `{"path": "...", "transform": "DATE", "datePattern": "..."}`、行号片段
+     * `{"transform": "INDEX", "startAt": 1}`（源就是行号本身，不带 path）。</p>
+     *
+     * <p>问题都带上「第几个片段」：一个片段配错了，光有目标字段认不出是哪一个（#112 验收五）。</p>
+     */
+    private List<RuleProblem> concatPartProblems(FieldMappingRule rule, int depth, String parentTarget) {
+        if (rule.parts() == null || rule.parts().isEmpty()) {
+            return List.of(problem(rule, parentTarget, "CONCAT 转换需要 parts 片段: " + rule.target()));
+        }
+        List<RuleProblem> problems = new ArrayList<>();
+        for (int i = 0; i < rule.parts().size(); i++) {
+            problems.addAll(partProblems(rule, rule.parts().get(i), i + 1, depth, parentTarget));
+        }
+        return problems;
+    }
+
+    /** 一个片段的问题（可能不止一条：路径没写、参数也没填）。 */
+    private List<RuleProblem> partProblems(FieldMappingRule rule, Object part, int index, int depth,
+                                           String parentTarget) {
+        if (part instanceof String) {
+            return List.of(); // 字符串常量：老形状，没有参数可言
+        }
+        if (!(part instanceof Map<?, ?> map)) {
+            return List.of(partProblem(rule, parentTarget, index, "片段只能是字符串常量或一个对象"));
+        }
+        String transform = ConfigValues.str(map.get("transform"));
+        transform = transform == null ? "" : transform.trim();
+        List<RuleProblem> problems = new ArrayList<>();
+        boolean indexPart = TransformType.INDEX.name().equals(transform);
+        // 行号片段的源就是行号本身，别的片段都要写 path（老形状与加工片段一样）
+        if (!indexPart && (ConfigValues.str(map.get("path")) == null || ConfigValues.str(map.get("path")).isBlank())) {
+            problems.add(partProblem(rule, parentTarget, index, "缺少来源字段 path"));
+        }
+        if (indexPart) {
+            if (depth == 0) {
+                // 与行级 INDEX 同一条理由：$index 只在数组元素里有意义
+                problems.add(partProblem(rule, parentTarget, index, "行号片段只能在数组映射的子行里用"));
+            }
+        } else if (transform.isEmpty() || TransformType.STRING.name().equals(transform)
+                || TransformType.INT.name().equals(transform)) {
+            // 直接取值与数字转换没有别的参数
+        } else if (TransformType.DATE.name().equals(transform)) {
+            String patternProblem = DatePatterns.problem(ConfigValues.str(map.get("datePattern")));
+            if (patternProblem != null) {
+                problems.add(partProblem(rule, parentTarget, index, patternProblem));
+            }
+        } else if (TransformType.ENUM.name().equals(transform)) {
+            if (ConfigValues.map(map.get("enumMap")).isEmpty()) {
+                problems.add(partProblem(rule, parentTarget, index, "枚举转换需要 enumMap"));
+            }
+        } else {
+            problems.add(partProblem(rule, parentTarget, index, "认不出的片段转换 " + transform));
+        }
+        return problems;
+    }
+
+    /** 一条片段问题：消息带上「第几个片段」，末尾照旧带上目标字段（与这个文件里别的消息同一条口径）。 */
+    private RuleProblem partProblem(FieldMappingRule rule, String parentTarget, int index, String message) {
+        return new RuleProblem(rule.target(), parentTarget,
+                "拼接第 " + index + " 个片段：" + message + ": " + rule.target());
     }
 
     @Override

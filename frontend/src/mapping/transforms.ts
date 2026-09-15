@@ -10,6 +10,9 @@
  */
 import { INDEX_SOURCE, TRANSFORM_KINDS, transformLabel, type TransformKind } from './labels.ts'
 import { markHumanEdited, realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
+// 片段转换那几条判断（#112）在 parts.ts：这是**函数级**的相互引用（两个模块都只在函数体里用对方），
+// 用来保证「片段/行上值那一格怎么读」只有一处定义。
+import { partAsRow, partFilled } from './parts.ts'
 import type { SourceField } from './editor-model.ts'
 
 /** 日期格式化的预设（#100：从几个预设里选，不用记格式串）。 */
@@ -46,7 +49,8 @@ export interface TransformParams {
 
 /** 转换下拉的选项：七种全都在，不可用的置灰并带上原因（#100：不是藏起来）。 */
 export function transformOptions(row: MapRow, depth = 0): TransformOption[] {
-  const pairs = row.parts.filter(part => part.value.trim() !== '')
+  // 「填了的片段」也算上挂了转换的那些（行号片段的值那一格是空的，但它有内容，#112）
+  const pairs = row.parts.filter(partFilled)
   return TRANSFORM_KINDS.map(kind => {
     const disabledByDepth = kind === 'INDEX' && depth === 0
     return {
@@ -276,6 +280,8 @@ export function transformLabelOf(row: MapRow, operand: OperandLabel): string {
       const parts = row.parts.map((part, i) => {
         // 常量片段的值本身就是它显示出来的样子（不用走来源那一套）。
         if (part.type === 'const') return part.value.trim() === '' ? '（空片段）' : part.value
+        // 挂了片段转换的那一段（#112）按它自己的转换念，与行级转换共用这一份人话
+        if ((part.transform ?? 'STRING') !== 'STRING') return transformLabelOf(partAsRow(part, row), operand)
         return operand(String(i))
       })
       return `拼接（${parts.join(' + ')}）`

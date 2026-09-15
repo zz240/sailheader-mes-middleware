@@ -71,7 +71,7 @@ sequenceDiagram
 | 失败样例 | `sourceStep` 指向已删除/更晚的动作 | 400 或 `/validate` errors | `动作 2（map）映射规则 sheet_no 的 sourceStep=1 在动作链中不存在` |
 | 边界 | 组内 INDEX 出现在顶层 | 400 | `INDEX 转换只能在数组组内使用` |
 
-覆盖样例：STRING / INT / DATE / ENUM / CONSTANT / CONCAT / INDEX；组节点（制品→BOM 两级）与 `$root` 跨层。
+覆盖样例：STRING / INT / DATE / ENUM / CONSTANT / CONCAT / INDEX；组节点（制品→BOM 两级）与 `$root` 跨层；拼接片段上的五种片段转换（#112：直接取值 / 数字转换 / 日期格式化 / 枚举映射 / 行号）。
 
 ## 验证操作
 

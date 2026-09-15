@@ -1,7 +1,25 @@
 /** 映射规则行模型：叶子行（sourceStep+source→target+transform）与数组组行（iterate=FOR_EACH + children 相对路径）。 */
+import { partFilled, partFromRule, partRuleOf } from './parts.ts'
+
+/**
+ * 拼接里的一个片段（#112）。
+ *
+ * 老形状（字符串常量、`{"path": "..."}`）是它的退化情形：没有 `transform` 就是「直接取值」。
+ * 存储形状与这里的一一对应见 `parts.ts`。
+ */
 export interface ConcatPart {
+  /** 片段的值从哪来：常量片段，还是取来源（行号片段也走 `'path'`，它的源就是行号本身）。 */
   type: 'const' | 'path'
+  /** 常量片段的值，或来源片段的路径；行号片段是空串。 */
   value: string
+  /** 片段转换（#112）：`STRING`/`INT`/`DATE`/`ENUM`/`INDEX`；没有就是「直接取值」（老形状）。 */
+  transform?: string
+  /** 日期格式化片段的格式串。 */
+  datePattern?: string
+  /** 枚举映射片段的键值表。 */
+  enumMap?: Record<string, any> | null
+  /** 行号片段的起始值。 */
+  startAt?: number | null
 }
 
 /**
@@ -97,9 +115,7 @@ export function rowFromRule(rule: Record<string, any>): MapRow {
     extra,
     startAt,
     enumMap: rule.enumMap ?? null,
-    parts: Array.isArray(rule.parts) ? rule.parts.map((p: any) =>
-      typeof p === 'string' ? { type: 'const' as const, value: p }
-        : { type: 'path' as const, value: String(p.path ?? '') }) : [],
+    parts: Array.isArray(rule.parts) ? rule.parts.map(partFromRule) : [],
     iterate: rule.iterate ?? (children.length ? 'FOR_EACH' : null),
     children,
   }
@@ -131,12 +147,9 @@ export function ruleFromRow(row: MapRow, index: number, inGroup = false): Record
     if (Object.keys(map).length) rule.enumMap = map
   }
   if (row.transform === 'CONCAT' && row.parts.length) {
-    // 空片段不进规则：后端 FieldMappingConfig.validate 会拒掉没写 path 的路径片段，
-    // 而界面上「空片段」是个正常状态（用户加了片段还没填）。全空时不写 parts，
-    // 「拼接需要片段」这条错留给后端那个只读接口去报（#98 D1：前端不复制校验规则）。
-    rule.parts = row.parts
-      .filter(p => p.value.trim() !== '')
-      .map(p => (p.type === 'const' ? p.value : { path: p.value }))
+    // 空片段不进规则：后端会拒没写 path 的路径片段，而界面上「空片段」是个正常状态（用户加了片段还没填）。
+    // 行号片段没有路径，但它有内容——按 partFilled 判，别看「值那一格空不空」（#112）。
+    rule.parts = row.parts.filter(partFilled).map(partRuleOf)
     if (!rule.parts.length) delete rule.parts
   }
   if (row.transform === 'INDEX') {
@@ -185,7 +198,8 @@ export function isRowConfigured(row: MapRow): boolean {
       return Object.keys(realEnumMap(row.enumMap)).length > 0
     case 'CONCAT':
       // 后端：「CONCAT 转换需要 parts 片段」——一个片段都没填就等于没有 parts。
-      return row.parts.some(part => part.value.trim() !== '')
+      // 行号片段自带内容（值那一格是空的），所以按 partFilled 判（#112）。
+      return row.parts.some(partFilled)
     default:
       return row.source.trim() !== ''
   }
@@ -211,7 +225,8 @@ export function hasMapping(row: MapRow): boolean {
   if (row.transform !== 'STRING') return true
   if (row.extra.trim() !== '') return true
   if (Object.keys(row.enumMap ?? {}).length) return true
-  return row.parts.some(part => part.value.trim() !== '')
+  // 行号片段的值那一格是空的，但它有内容（#112）：按「这个片段填够了没有」判
+  return row.parts.some(partFilled)
 }
 
 /**

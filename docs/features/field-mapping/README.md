@@ -38,7 +38,7 @@
   | 来源字段在样例里不存在 | 错误 | 数组子行的来源按**相对路径**补上组节点的来源数组再查（嵌套数组逐层补）；`$root.<路径>` 是组内引用外层表头字段，去掉前缀按绝对路径查；`$index` 不是来源路径，不查 |
   | 枚举表没有覆盖样例里出现过的值 | 警告 | 用来源字段**在这份样例里的实际值**（`SourceField.samples`，去重）比 `enumMap` 的键。查不到键时这个字段从目标报文里整个消失（不是变成 null）、不报错，只能在这里提醒 |
   | 文本值直接写进数字类型的字段（建议套一层数字转换） | 警告 | 目标清单里的列类型是数字类型（INT/DECIMAL/…）且来源字段在样例里是文本类型（STRING/VARCHAR/…）。数字转换（`INT`）、行号、常量不算——常量是不是数字由那一行的字面量说了算，不猜 |
-  | 拼接里存在空片段 | 警告 | `parts` 里有空串常量片段，或路径片段没写 `path`（编译出来是空字符串） |
+  | 拼接里存在空片段 | 警告 | `parts` 里有空串常量片段，或路径片段没写 `path`（编译出来是空字符串）。**行号片段没有路径但有内容，不算空**（#112） |
   | 日期格式串在这份样例值上跑不出来（#111） | 警告 | 拿这一行来源字段在样例里的实际取值过一遍运行时的格式化实现（`JsonataFunctions.canFormat`）：跑不出来时运行时会**原样发出去**、任务照样 SUCCESS。组节点不看（它的 `transform` 不参与编译） |
   | 顶层规则漏写 `sourceStep` | 提示 | 见上一条（#103 就有的那条提示） |
 
@@ -58,7 +58,13 @@
   - **格式串合法性是配置期校验里的错误**（`mapping/DatePatterns.java`，接在 `FieldMappingConfig.problems()` 上，所以保存时那道 400 与「校验配置」共用同一条）。两层判据：① 平台解析器认（`DateTimeFormatter.ofPattern`）；② 没有「长得像、含义却不是」的陷阱字母——`Y` 是「周所在年」不是年、`D` 是「一年中的第几天」不是日，`YYYY-MM-DD` 能过解析器却会算出 `2026-08-233` 这种值。以前三层（结构、编译、草稿校验）一层都不查，非法格式串运行到这个转换时**必炸**（`JsonataFunctions.formatDate` 的 `ofPattern` 写在所有 try 之外）。
   - **有来源字段样例时按样例真跑一遍**（警告，不拦保存）：拿这一行来源字段在样例里的实际取值过一遍运行时的格式化实现（`JsonataFunctions.canFormat`），跑不出来就报——那种情况运行时会**原样发出去**、任务照样成功，错只在目标那边看得见。**没有样例（或样例是别的步骤的）时只给一句「没在样例上试过」的提示**，冷启动也配得完。
   - **它不查「值和格式对不对得上」**（ADR-0012 决策 2 的括注）：那要拿真数据试算，是试算（#110 第六张票）的事。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、DatePatterns、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
+- **片段转换（#112，第二轮）**：拼接的每个片段各自挂一个转换，**六选一**——常量、直接取值、数字转换、日期格式化、枚举映射、行号；参数就在片段那一行里就地编辑。**一个片段只能挂一个转换**（深度锁死一层，界面与存储形状里都没有第二层的入口）。日期与枚举这两份参数编辑器与行级转换**是同一个组件**（`MappingDateParams.vue` / `MappingEnumParams.vue`），所以 #111 做的手输格式串在片段里自动也有。
+  - **存储形状第一次变化**（ADR-0012 决策 1）：`"BOM-"`（常量）/ `{"path": "..."}`（取值）/ `{"path": "...", "transform": "DATE", "datePattern": "..."}`（加工）/ `{"transform": "INDEX", "startAt": 1}`（行号，**不带 `path`**）。老形状是加工片段的退化情形：**读取兼容、不做数据迁移**——老配置打开 → 保存 → 编译产物**逐字节不变**（`JsonataRuleCompilerTest.legacyConcatRuleCompilesToTheSameExpression` 把这一条钉住）。新片段旧版本读不懂，向下不兼容是单向的。
+  - **行号片段只在数组元素子行里给**：顶层拼接行上「行号」那一项置灰，并在面板上写明原因（与行级 INDEX 同一条理由——`$index` 只在数组元素里有意义）。
+  - **编译产物仍然是一段人眼能读的 `&` 拼接串**（这条是验收里写明的）。行号那一段编译成 `($i0 + 1)`——**括号不能省**：这个引擎里 `&` 与 `+` 同级左结合（实测 `"a" & 1 + 2` 解析成 `("a" & 1) + 2`，一跑到就抛「+ 的左边要是数字」）。
+  - **报错指到那一个片段**：结构校验与编译器的消息都带「拼接第 N 个片段：…」（序号从 1 数）。同一个片段上两处报的是**同一条**，服务那边合成一条（`MappingDraftValidationService.addOnce`）——界面上把一条错显示成两条会让人以为有两个问题要改。
+  - **「空片段」只看值那一格有没有内容**：行号片段没有路径但不算空（`partEmpty`）；「自动匹配同名」也只往**等路径**的片段里填，而且只填路径那一格、片段上已配好的转换与参数留着（`partNeedsPath`）——#112 之前那两处判的是「`type === 'path'` 且值是空串」，会把行号片段误当成空片段、还会把它的转换冲掉。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、DatePatterns、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`、`frontend/src/components/MappingDateParams.vue`（日期参数，行级与片段级共用）、`frontend/src/components/MappingEnumParams.vue`（枚举表，同上）、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`parts.ts` = 片段模型与片段转换，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`draft.ts` = 校验请求与问题定位到行，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）。
 
 ## 决策时间线
 
@@ -81,6 +87,7 @@
 | 09-15 | 撤掉旧编辑器（三栏 + 多级表格 + 建议面板 + ENUM/CONCAT 弹窗） | 新版覆盖了旧版的全部能力，两套编辑器读写的又是同一份数据格式，留着只会让人不知道点哪个入口 | — | #107 / JobsView.vue（`MappingEditor.vue`、`MappingRowsTable.vue` 已删） |
 | 09-15 | 第二轮六条：日期格式手输、片段转换、清除的行=未配置、校验两档、来源字段样例导入、试算 | 第一轮上线后实施工程师在真机上撞到的六件事；第 2、5 条推翻第一轮写下的决定（ADR-0011 决策 1/2/9/11/12） | — | ADR-0012 / #110 |
 | 09-15 | 日期格式手输 + 格式串合法性校验（配置期错误 + 按样例的警告） | 非法格式串运行时必炸而三层都不查；只加输入框等于把一个必炸的口子装到界面上 | — | #111 / DatePatterns、JsonataFunctions.canFormat、MappingSampleChecks.datePatternWarnings |
+| 09-15 | **片段转换：拼接的每段能挂一个转换，存储形状第一次变化** | 客户要的复合值（`BOM-20260821-0001`、`A-启用`）要先加工再拼；做不到就整行走手写 JSONata——而那条路是给深层重排准备的 | — | #112 / ADR-0012 决策 1 / parts.ts、MappingDateParams、MappingEnumParams |
 
 ## 待办 / 已知限制
 
@@ -95,10 +102,13 @@
 - **日期格式串的合法性只在后端判**（#111）：前端不复制那条规则（#98 D1），手输框也不做即时红框——点了「校验配置」才有结论。手输框里按住不放的中间状态（比如只打了半个格式串）不会被拦，也不会被改。
 - **「没在样例上试过」只对管得到这一行的样例说话**：样例是别的步骤的、或这一行的来源字段不在这份样例里时，前者给提示、后者不补（「来源字段不在样例里」那条错误已经在说同一件事）。
 - **建议器给出的 `datePattern` 还没跟着改**（`transform-flow.md` 建议表 F1 的建议 A 仍待）：`TransformInferrer` 里那个候选名至今还是 `ISO-8601`——它不是合法格式串，所以**现在采用了也存不下去**（保存被 #111 那条校验拒掉；比原来「存下去、跑起来炸」好）。建议器接回界面之前要把它改成合法 pattern。
+- **片段里那两个参数不做样例检查**（#112 的取舍）：行级那两条（日期格式串在样例值上跑不跑得出来、枚举表覆没覆盖样例值）只覆盖行级转换——片段上的日期/枚举参数配错了，「校验配置」不会按样例提醒（结构错照报：非法格式串、空枚举表都拦）。原因是问题的定位只有「目标字段 + 所属数组行」，没有片段序号。
+- **拼接片段里的来源路径不进「来源字段在不在样例里」那条检查**（#104 起就如此）：那条查的是规则自己的 `source`，拼接行的片段写在 `parts` 里。片段里写错路径运行时会让那一段变成空串，目前只能靠「空片段」那条警告间接看见。
 - **切回逐行配置之后**：手写那一边没有规则树可回填，所以界面上是打开编辑器时那份逐行配置——原配置本来就是手写表达式时，那一份是按目标字段清单生成的行（都还没配来源）。界面在切回的确认框与行列表上各说了一次。
 
 ## 当前生效
 
 - 执行引擎：JSONata（dashjoin），规则→表达式编译器（T36）
 - 规则模型：递归 children + mode:EXPRESSION（T37）
-- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、日期那一行可手输格式串（#111）、以及顶部那个「高级：手写 JSONata」入口）；它是**唯一**的字段映射编辑器（#107 起旧三栏编辑器已删），动作表上「编辑映射」那一个入口同时管新建与修改
+- 编辑器：新版逐行编辑器（全屏抽屉，含数组映射的展开/收起与「外层 · 」引用、手工新增行与清除/撤销、点一下「校验配置」看问题与编译产物、窄屏依次排列、键盘 `/` 换转换 / 回车选来源 / 退格清行、日期那一行可手输格式串（#111）、拼接的每个片段可挂一个片段转换（#112）、以及顶部那个「高级：手写 JSONata」入口）；它是**唯一**的字段映射编辑器（#107 起旧三栏编辑器已删），动作表上「编辑映射」那一个入口同时管新建与修改
+- 存储契约：`rules` 是唯一存储契约；拼接片段的四种形状（常量 / 取值 / 加工 / 行号，见上）自 #112 起生效，老形状读取兼容、不做迁移

@@ -190,25 +190,103 @@ public final class JsonataRuleCompiler {
         return pattern == null || pattern.isBlank() ? DEFAULT_DATE_PATTERN : pattern;
     }
 
-    /** CONCAT：片段交替拼接，字符串片段转字面量，路径片段转来源表达式。 */
+    /**
+     * CONCAT：片段按顺序拼接，产物仍然是一段人眼能读的 `&` 串（#112 验收六）。
+     *
+     * <p>片段有两种写法：字符串常量，或一个对象。对象不带 `transform`（老形状 `{"path": "..."}`）就是
+     * 「直接取值」——老配置的退化情形，编译结果逐字节不变。</p>
+     */
     private static String concatExpr(FieldMappingRule rule, int step, int depth) {
         List<String> parts = new ArrayList<>();
-        for (Object part : rule.parts()) {
+        List<Object> raw = rule.parts() == null ? List.of() : rule.parts();
+        for (int i = 0; i < raw.size(); i++) {
+            Object part = raw.get(i);
             if (part instanceof String s) {
                 parts.add(jsonString(s));
-            } else if (part instanceof Map<?, ?> m && m.get("path") != null) {
-                parts.add(sourceExpr(m.get("path").toString(), step, depth));
+            } else if (part instanceof Map<?, ?> m) {
+                parts.add(partExpr(rule, m, i + 1, step, depth));
             } else {
-                // 认不出的片段（不是字符串、不是 {"path": ...}、或路径整个没写）：报清楚，别在下面
-                // m.get("path").toString() 上抛 NPE——「校验配置」那条链路要靠这条异常变成一条问题
+                // 认不出的片段（不是字符串、也不是对象）：报清楚是哪一个，别在下面抛 NPE——
+                // 「校验配置」那条链路要靠这条异常变成一条问题
                 throw new CompileException(rule.target(), null,
-                        "CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: " + rule.target());
+                        partAt(i + 1, "片段只能是字符串常量或一个对象") + ": " + rule.target());
             }
         }
         if (parts.isEmpty()) {
             throw new CompileException(rule.target(), null, "CONCAT 转换需要 parts 片段: " + rule.target());
         }
         return String.join(" & ", parts);
+    }
+
+    /**
+     * 一个片段（#112）：按它自己挂的那一个转换编译，参数就是那一份。
+     *
+     * <p>允许的片段转换五种：直接取值 / 数字转换 / 日期格式化 / 枚举映射 / 行号。不给拼接（拼接是结合的，
+     * 摊平即可）与数组迭代（会改变片段数量）；一个片段只能挂一个转换，所以这里没有嵌套。</p>
+     */
+    private static String partExpr(FieldMappingRule rule, Map<?, ?> part, int index, int step, int depth) {
+        String transform = part.get("transform") == null ? "" : part.get("transform").toString().trim();
+        if (transform.isEmpty() || TransformType.STRING.name().equals(transform)) {
+            return sourceExpr(partPath(rule, part, index), step, depth);
+        }
+        if (TransformType.INT.name().equals(transform)) {
+            return "$number(" + sourceExpr(partPath(rule, part, index), step, depth) + ")";
+        }
+        if (TransformType.DATE.name().equals(transform)) {
+            return "$dateFormat(" + sourceExpr(partPath(rule, part, index), step, depth) + ", "
+                    + jsonString(datePatternOf(part.get("datePattern"))) + ")";
+        }
+        if (TransformType.ENUM.name().equals(transform)) {
+            return "$lookup(" + enumLiteral(enumMapOf(part)) + ", "
+                    + sourceExpr(partPath(rule, part, index), step, depth) + ")";
+        }
+        if (TransformType.INDEX.name().equals(transform)) {
+            // 行号片段的源就是行号本身，不带 path（startAt 默认 1）。
+            // 括号不能省：这个引擎里 `&` 与 `+` **同级左结合**（实测 `"a" & 1 + 2` 解析成
+            // `("a" & 1) + 2` 直接抛「+ 的左边要是数字」），不括起来整条拼接一跑到就炸。
+            return "(" + indexExpr(depth, startAtOf(part.get("startAt"))) + ")";
+        }
+        throw new CompileException(rule.target(), null,
+                partAt(index, "认不出的片段转换 " + transform) + ": " + rule.target());
+    }
+
+    /** 片段取的来源路径；没写就报清楚是哪一个片段（结构校验也有一条同样的）。 */
+    private static String partPath(FieldMappingRule rule, Map<?, ?> part, int index) {
+        Object path = part.get("path");
+        if (path == null || path.toString().isBlank()) {
+            throw new CompileException(rule.target(), null,
+                    partAt(index, "缺少来源字段 path") + ": " + rule.target());
+        }
+        return path.toString();
+    }
+
+    /** 问题定位到哪一个片段：片段相关的消息都带它（#112 验收五）。 */
+    private static String partAt(int index, String message) {
+        return "拼接第 " + index + " 个片段：" + message;
+    }
+
+    /** 片段里那个格式串（与行级同一条口径：没写就用默认值）。 */
+    private static String datePatternOf(Object pattern) {
+        String text = pattern == null ? null : pattern.toString();
+        return text == null || text.isBlank() ? DEFAULT_DATE_PATTERN : text;
+    }
+
+    /** 片段里的起始值（认不出来的按默认 1 算）。 */
+    private static Integer startAtOf(Object startAt) {
+        if (startAt instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return startAt == null ? null : Integer.valueOf(startAt.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> enumMapOf(Map<?, ?> part) {
+        Object map = part.get("enumMap");
+        return map instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
     /**

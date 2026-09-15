@@ -16,6 +16,7 @@ import {
 } from './editor-model.ts'
 import { ROOT_PREFIX, INDEX_SOURCE } from './labels.ts'
 import { createGroupRow, isRowConfigured, type MapRow } from './rows.ts'
+import { partNeedsPath } from './parts.ts'
 import { fillRowFromPick, sourcePickerFor, type PickableGroup, type PickableItem } from './source-picker.ts'
 
 // ---------------------------------------------------------------- 来源字段的搜索
@@ -525,7 +526,7 @@ function fillBlankRow(
 function isBlankRow(row: MapRow): boolean {
   if (row.iterate === 'FOR_EACH' || !row.target.trim()) return false
   if (row.source.trim() || row.transform === 'INDEX') return false
-  if (row.transform === 'CONCAT') return row.parts.some(part => part.type === 'path' && part.value.trim() === '')
+  if (row.transform === 'CONCAT') return row.parts.some(partNeedsPath)
   return !isRowConfigured(row)
 }
 
@@ -603,8 +604,8 @@ export function nameSegment(path: string): string {
  * 拼接行的空片段按同名补上来源字段（票里「把空白的行填上」：这一行本身没选来源，
  * 而拼接行上「来源」就是它的片段）。
  *
- * 一条拼接里有好几个片段，只补名字对得上的那一个（对不上就留着让用户自己点）；常量片段不动。
- * 片段里存成的形状与用户手选一个片段完全一致（`{ type: 'path', value }`）。
+ * 一条拼接里有好几个片段，只补名字对得上的那一个（对不上就留着让用户自己点）；常量片段与行号片段不动。
+ * 补的是**路径那一格**：片段上已经配好的转换与参数留着（#112 起片段能挂转换了）。
  */
 function fillBlankConcatPart(
   row: MapRow,
@@ -617,10 +618,10 @@ function fillBlankConcatPart(
   const item = sameNameSourceItem(row.target, fields, step, group, groupStep)
   if (!item) return false
   const next = [...row.parts]
-  const at = next.findIndex(part => part.type === 'path' && part.value.trim() === '')
+  const at = next.findIndex(partNeedsPath)
   // 没有空片段时什么都不填：不该悄悄往这一行里塞一个片段。
   if (at < 0) return false
-  next[at] = { type: 'path', value: item.path }
+  next[at] = { ...next[at], value: item.path }
   row.parts = next
   return true
 }

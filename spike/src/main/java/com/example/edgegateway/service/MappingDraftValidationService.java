@@ -77,15 +77,28 @@ public class MappingDraftValidationService {
         problems.addAll(chainProblems(config, request));
         problems.addAll(sampleProblems(config, request));
         for (RuleProblem problem : problems) {
-            errors.add(new Problem(problem.target(), problem.parent(), problem.message()));
+            addOnce(errors, new Problem(problem.target(), problem.parent(), problem.message()));
         }
         warnings.addAll(missingSourceStepHints(config, request));
         for (RuleProblem warning : sampleWarnings(config, request)) {
-            warnings.add(new Problem(warning.target(), warning.parent(), warning.message()));
+            addOnce(warnings, new Problem(warning.target(), warning.parent(), warning.message()));
         }
 
         Compiled compiled = compile(config, errors);
         return new MappingDraftValidation(errors.isEmpty(), errors, warnings, compiled);
+    }
+
+    /**
+     * 同一条问题只留一条。
+     *
+     * <p>结构校验与编译器会看到同一件事：结构那一边按片段报一条，编译器在同一处也编不出来、报了逐字相同
+     * 的一条（#112 起片段问题带序号，两条一模一样）。界面上把一条错显示成两条，会让人以为有两个问题要改。</p>
+     */
+    private static void addOnce(List<Problem> problems, Problem problem) {
+        Problem same = new Problem(problem.target(), problem.parent(), problem.message());
+        if (!problems.contains(same)) {
+            problems.add(same);
+        }
     }
 
     /**
@@ -176,9 +189,9 @@ public class MappingDraftValidationService {
             try {
                 return new Compiled(JsonataRuleCompiler.compile(config.rules()), rulesJson);
             } catch (JsonataRuleCompiler.CompileException e) {
-                errors.add(new Problem(e.target(), e.parent(), e.getMessage()));
+                addOnce(errors, new Problem(e.target(), e.parent(), e.getMessage()));
             } catch (IllegalArgumentException e) {
-                errors.add(new Problem(null, null, e.getMessage()));
+                addOnce(errors, new Problem(null, null, e.getMessage()));
             }
             return new Compiled(null, rulesJson);
         }

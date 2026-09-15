@@ -469,11 +469,29 @@ class MappingDraftValidationServiceTest {
     }
 
     /**
-     * 路径片段整个没写 `path` 键不算这条警告：结构校验已经报了一条错误（「CONCAT 片段只能是字符串常量或
-     * {"path": ...}」），再补一条说同一件事的警告只会把一条错说成两条。
+     * 片段转换（#112）：加工片段与行号片段都不是「空片段」——它们有内容，只是参数在别处。
+     *
+     * <p>这条守着的是「判空只看值那一格」：行号片段整个不带 `path`，照「没有 path 就算空」判会把每一行
+     * 正常的行号片段都报成空片段。</p>
+     */
+    @Test
+    void transformedPartsAreNotEmptyParts() {
+        Map<String, Object> draft = leaf(1, null, "bom.bomNo", "CONCAT",
+                Map.of("parts", List.of("LOT-",
+                        Map.of("transform", "INDEX", "startAt", 1),
+                        Map.of("path", "createdTime", "transform", "DATE", "datePattern", "yyyyMMdd"),
+                        Map.of("path", "unit", "transform", "ENUM", "enumMap", Map.of("PCS", "件")))));
+
+        assertThat(concatWarnings(draft)).isEmpty();
+    }
+
+    /**
+     * 对象片段没写 `path` 不算那条警告：结构校验已经报了一条错误，再补一条说同一件事的警告只会把一条错
+     * 说成两条（#112 起还带上「第几个片段」）。
      *
      * <p>编译器那边也认这种片段了：不认的话它会在 {@code m.get("path").toString()} 上抛 NPE，把整个接口
-     * 打成 500——「校验配置」这条链路要的是「报一条问题」。</p>
+     * 打成 500——「校验配置」这条链路要的是「报一条问题」。结构与编译在同一个片段上报的是**同一条**
+     * （消息逐字相同），服务那边合成一条（{@code MappingDraftValidationService.addOnce}）。</p>
      */
     @Test
     void aPathPartWithoutTheKeyIsStructuralNotAWarning() {
@@ -482,8 +500,8 @@ class MappingDraftValidationServiceTest {
 
         MappingDraftValidation result = service.validate(draftOnly(Map.of("rules", List.of(rule))));
 
-        assertThat(problems(result.errors()))
-                .contains("bom.bomNo|null|CONCAT 片段只能是字符串常量或 {\"path\": \"...\"}: bom.bomNo");
+        assertThat(problems(result.errors())).containsExactly(
+                "bom.bomNo|null|拼接第 2 个片段：缺少来源字段 path: bom.bomNo");
         assertThat(concatWarnings(rule)).isEmpty();
     }
 
@@ -755,6 +773,90 @@ class MappingDraftValidationServiceTest {
                 List.of(), 1, List.of(1), 1, 2));
 
         assertThat(result.warnings()).isEmpty();
+    }
+
+    // ---------- 片段转换（#112） ----------
+
+    /**
+     * 片段配错了要指到**哪一个片段**（#112 验收五）：序号从 1 数。
+     *
+     * <p>五种错法各一条：认不出的转换、缺 `path`、日期格式串非法、枚举表空、行号片段用在顶层拼接行上
+     * （最后一条与行级 INDEX 同一条理由——`$index` 只在数组元素里有意义）。</p>
+     */
+    @Test
+    void partProblemsPointAtTheOffendingPart() {
+        assertThat(partProblems(Map.of("path", "bomNo", "transform", "NOT_A_TRANSFORM"))).containsExactly(
+                "bom.bomNo|null|拼接第 1 个片段：认不出的片段转换 NOT_A_TRANSFORM: bom.bomNo");
+
+        assertThat(partProblems(Map.of("transform", "DATE", "datePattern", "yyyyMMdd"))).containsExactly(
+                "bom.bomNo|null|拼接第 1 个片段：缺少来源字段 path: bom.bomNo");
+
+        assertThat(partProblems(Map.of("path", "createdTime", "transform", "DATE", "datePattern", "ISO-8601")))
+                .containsExactly("bom.bomNo|null|拼接第 1 个片段：日期格式串不合法: ISO-8601"
+                        + "（Unknown pattern letter: I）——运行到这个转换时任务会直接失败: bom.bomNo");
+
+        assertThat(partProblems(Map.of("path", "unit", "transform", "ENUM"))).containsExactly(
+                "bom.bomNo|null|拼接第 1 个片段：枚举转换需要 enumMap: bom.bomNo");
+
+        assertThat(partProblems(Map.of("transform", "INDEX", "startAt", 1))).containsExactly(
+                "bom.bomNo|null|拼接第 1 个片段：行号片段只能在数组映射的子行里用: bom.bomNo");
+    }
+
+    /** 片段整个不是字符串也不是对象时照样指到那一个片段（老消息换成带序号的那一句）。 */
+    @Test
+    void anUnreadablePartPointsAtItsIndex() {
+        assertThat(partProblems(42)).containsExactly(
+                "bom.bomNo|null|拼接第 1 个片段：片段只能是字符串常量或一个对象: bom.bomNo");
+    }
+
+    /**
+     * 六种片段（常量 + 五种转换）都配对了时一条错都不报，编译产物还是那段 `&` 串。
+     *
+     * <p>这就是「每个片段各自挂一个转换」的正常形态。</p>
+     */
+    @Test
+    void validPartTransformsAreAccepted() {
+        Map<String, Object> draft = Map.of("rules", List.of(leaf(1, null, "bom.bomNo", "CONCAT",
+                Map.of("parts", List.of(
+                        "BOM-",
+                        Map.of("path", "productCode"),
+                        Map.of("path", "productCode", "transform", "STRING"),
+                        Map.of("path", "qty", "transform", "INT"),
+                        Map.of("path", "createdTime", "transform", "DATE", "datePattern", "yyyyMMdd"),
+                        Map.of("path", "unit", "transform", "ENUM", "enumMap", Map.of("PCS", "件")))))));
+
+        MappingDraftValidation result = service.validate(draftOnly(draft));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.compiled().jsonata()).contains(
+                "\"bomNo\": \"BOM-\" & $s_1.productCode & $s_1.productCode & $number($s_1.qty)"
+                        + " & $dateFormat($s_1.createdTime, \"yyyyMMdd\") & $lookup({\"PCS\":\"件\"}, $s_1.unit)");
+    }
+
+    /** 行号片段在**数组元素子行**里合法（顶层拼接行上才拦），编译成行号加起始值。 */
+    @Test
+    void anIndexPartIsAllowedInsideAnArrayChildRow() {
+        Map<String, Object> draft = Map.of("rules", List.of(groupWith(
+                leaf(null, null, "lineNo", "CONCAT",
+                        Map.of("parts", List.of("LOT-", Map.of("transform", "INDEX", "startAt", 1)))))));
+
+        MappingDraftValidation result = service.validate(new MappingDraftRequest(draft,
+                spec(arraySpec("bom.bomLines", elementSpec("lineNo", "VARCHAR", false))),
+                List.of(), 1, List.of(1), 1, 2));
+
+        assertThat(ruleProblems(result.errors())).isEmpty();
+        assertThat(result.compiled().jsonata()).contains("\"lineNo\": \"LOT-\" & ($i0 + 1)");
+    }
+
+    /**
+     * 只看拼接片段那一条的错：一条 CONCAT 规则只有一个片段（序号 1），目标清单与样例都空着
+     * ——同一份草稿里别的检查就没话可说。
+     */
+    private List<String> partProblems(Object part) {
+        Map<String, Object> draft = Map.of("rules", List.of(
+                leaf(1, null, "bom.bomNo", "CONCAT", Map.of("parts", List.of(part)))));
+
+        return problems(service.validate(draftOnly(draft)).errors());
     }
 
     // ---------- fixture 与共用形状 ----------

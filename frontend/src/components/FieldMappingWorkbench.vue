@@ -301,15 +301,15 @@
                       </button>
                     </template>
 
-                    <!-- 拼接：片段挪到行外单独一行，才能既读得出来又加删得动 -->
+                    <!-- 拼接（#112）：每个片段一个小块，挂着转换的那几段按转换高亮；点一下就地改 -->
                     <template v-if="entry.row.transform === 'CONCAT'">
                       <span class="wb-paren">（</span>
                       <template v-for="(part, i) in entry.row.parts" :key="i">
                         <span v-if="i" class="wb-paren"> + </span>
                         <button
-                          class="wb-chip"
-                          :class="part.type === 'path' ? 'chip-src' : 'chip-const'"
-                          :title="part.type === 'path' ? '点一下换片段' : '点一下改常量'"
+                          class="wb-chip chip-part"
+                          :class="partChipClass(part)"
+                          :title="partChipHint(part)"
                           @click.stop="openPanel(entry, 'concat')"
                         >
                           {{ partLabel(entry, i) }}
@@ -402,34 +402,16 @@
                   </div>
                 </template>
 
-                <!-- 日期格式化：四个预设 + 手输任意格式串（#111）。键盘同样是 ↑↓ 走预设、回车用这一个 -->
+                <!-- 日期格式化：预设 + 手输格式串（#111）。键盘 ↑↓ 走预设、回车用这一个。
+                     这一份与片段级的日期参数是同一个组件（#112 验收二） -->
                 <template v-else-if="panel === 'date'">
-                  <div class="wb-ops">
-                    <button
-                      v-for="(p, i) in DATE_PRESETS"
-                      :key="p"
-                      class="wb-opbtn"
-                      :class="{ current: p === datePatternFor(entry.row), 'kb-current': i === optionIndex }"
-                      @click="chooseDatePattern(entry.row, p)"
-                    >
-                      <span>{{ p }}</span>
-                      <small>{{ datePatternExample(p) }}</small>
-                    </button>
-                  </div>
-                  <div class="wb-panel-row">
-                    <el-input
-                      :model-value="entry.row.extra"
-                      size="small"
-                      class="wb-grow"
-                      placeholder="客户数据的格式不在这四个里？直接手输一个，例如 yyyyMMddHHmmss"
-                      @update:model-value="onDatePatternInput(entry.row, $event)"
-                      @change="onDatePatternCommit(entry.row)"
-                    />
-                    <span class="wb-panel-note">
-                      清空就回落到默认的 {{ DEFAULT_DATE_PATTERN }}；格式串对不对由「校验配置」判。
-                    </span>
-                  </div>
-                  <div class="wb-panel-note">目标系统收到的就是按这个格式串格式化后的文本。</div>
+                  <MappingDateParams
+                    :pattern="entry.row.extra"
+                    :option-index="optionIndex"
+                    @update:pattern="onDatePatternInput(entry.row, $event)"
+                    @commit="onDatePatternCommit(entry.row)"
+                    @pick="chooseDatePattern(entry.row, $event)"
+                  />
                 </template>
 
                 <!-- 常量：当场输入 -->
@@ -446,83 +428,97 @@
                   </div>
                 </template>
 
-                <!-- 枚举映射：表格加行、删行、改键改值 -->
+                <!-- 枚举映射：表格加行、删行、改键改值（与片段级的枚举参数是同一个组件） -->
                 <template v-else-if="panel === 'enum'">
-                  <table class="wb-enum">
-                    <thead>
-                      <tr><th>来源值</th><th /><th>目标值</th><th /></tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(pair, i) in enumPairList" :key="pair.id">
-                        <td>
-                          <el-input
-                            :model-value="pair.key"
-                            size="small"
-                            placeholder="来源值"
-                            @update:model-value="setEnumPair(i, { key: $event })"
-                          />
-                        </td>
-                        <td class="wb-enum-arrow">→</td>
-                        <td>
-                          <el-input
-                            :model-value="pair.value"
-                            size="small"
-                            placeholder="目标值"
-                            @update:model-value="setEnumPair(i, { value: $event })"
-                          />
-                        </td>
-                        <td>
-                          <el-button size="small" text type="danger" @click="removeEnumRow(i)">删</el-button>
-                        </td>
-                      </tr>
-                      <tr v-if="!enumPairList.length">
-                        <td colspan="4" class="wb-enum-empty">还没有键值对，点「加一行」或「按样例补全」</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <div class="wb-panel-row">
-                    <el-button size="small" @click="addEnumRow">加一行</el-button>
-                    <el-button size="small" :disabled="!missingEnumKeysOf.length" @click="fillEnumFromSamples">
-                      按样例补全{{ sampleHint }}
-                    </el-button>
-                  </div>
-                  <div class="wb-panel-note">
-                    查不到键的来源值会变成空值（不报错）——样例里出现过的值最好都在表里。
-                  </div>
+                  <MappingEnumParams
+                    :map="entry.row.enumMap"
+                    :sample-field="panelSourceField"
+                    @update:map="onEnumMapChange(entry.row, $event)"
+                  />
                 </template>
 
-                <!-- 拼接：增删片段，每个片段选常量或来源字段 -->
+                <!-- 拼接（#112）：每个片段挂一个片段转换，参数就在片段这一行里编辑。
+                     「一个片段只能挂一个转换」——这里没有第二层的入口 -->
                 <template v-else-if="panel === 'concat'">
-                  <div v-for="(part, i) in entry.row.parts" :key="i" class="wb-panel-row">
-                    <el-select v-model="part.type" size="small" class="wb-part-kind">
-                      <el-option value="const" label="常量" />
-                      <el-option value="path" label="来源字段" />
-                    </el-select>
-                    <el-select
-                      v-if="part.type === 'path'"
-                      v-model="part.value"
-                      size="small"
-                      filterable
-                      allow-create
-                      default-first-option
-                      class="wb-grow"
-                      placeholder="选一个来源字段（也可以手输路径）"
-                    >
-                      <el-option v-for="f in selectableFields(entry)" :key="f.name" :value="f.name" :label="f.name" />
-                    </el-select>
-                    <el-input
-                      v-else
-                      v-model="part.value"
-                      size="small"
-                      class="wb-grow"
-                      placeholder="常量片段，例如 BOM-"
-                    />
-                    <el-button size="small" text type="danger" @click="removePart(entry.row, i)">删</el-button>
+                  <div v-for="(part, i) in entry.row.parts" :key="i" class="wb-part">
+                    <div class="wb-panel-row">
+                      <el-select
+                        :model-value="partKindOf(part)"
+                        size="small"
+                        class="wb-part-kind"
+                        title="这个片段是六种里的哪一种；一个片段只能挂一个转换"
+                        @update:model-value="choosePartKind(entry, part, $event)"
+                      >
+                        <el-option
+                          v-for="kind in PART_KINDS"
+                          :key="kind"
+                          :value="kind"
+                          :label="partKindLabel(kind)"
+                          :disabled="!canUsePartKind(part, kind, entry.depth)"
+                        />
+                      </el-select>
+                      <el-input
+                        v-if="partKindOf(part) === 'CONSTANT'"
+                        v-model="part.value"
+                        size="small"
+                        class="wb-grow"
+                        placeholder="常量片段，例如 BOM-"
+                      />
+                      <el-select
+                        v-else-if="partKindOf(part) !== 'INDEX'"
+                        v-model="part.value"
+                        size="small"
+                        filterable
+                        allow-create
+                        default-first-option
+                        class="wb-grow"
+                        placeholder="选一个来源字段（也可以手输路径）"
+                      >
+                        <el-option v-for="f in selectableFields(entry)" :key="f.name" :value="f.name" :label="f.name" />
+                      </el-select>
+                      <span v-else class="wb-panel-note">源就是行号本身，不用选字段</span>
+                      <el-button size="small" text type="danger" @click="removePart(entry.row, i)">删</el-button>
+                    </div>
+
+                    <!-- 参数跟着转换就地展开：日期 / 枚举这两份与行级转换是同一套组件 -->
+                    <div v-if="partKindOf(part) === 'DATE'" class="wb-part-params">
+                      <MappingDateParams
+                        :pattern="part.datePattern ?? ''"
+                        @update:pattern="onPartDatePattern(entry.row, part, $event)"
+                        @commit="onPartDateCommit(entry.row, part)"
+                        @pick="choosePartDatePattern(entry.row, part, $event)"
+                      />
+                    </div>
+                    <div v-else-if="partKindOf(part) === 'ENUM'" class="wb-part-params">
+                      <MappingEnumParams
+                        :map="part.enumMap"
+                        :sample-field="sourceFieldOf(entry, part.value)"
+                        @update:map="onPartEnumMap(entry.row, part, $event)"
+                      />
+                    </div>
+                    <div v-else-if="partKindOf(part) === 'INDEX'" class="wb-part-params">
+                      <div class="wb-panel-row">
+                        <span class="wb-panel-note">起始值</span>
+                        <el-input-number
+                          :model-value="part.startAt ?? 1"
+                          size="small"
+                          controls-position="right"
+                          class="wb-start-at"
+                          @update:model-value="onPartStartAt(entry.row, part, $event)"
+                        />
+                        <span class="wb-panel-note">数组里第 1 个元素拼出来的就是起始值本身</span>
+                      </div>
+                    </div>
                   </div>
                   <div class="wb-panel-row">
                     <el-button size="small" @click="addPart(entry.row, entry.depth > 0)">加片段</el-button>
                   </div>
-                  <div class="wb-panel-note">片段按顺序拼起来；来源片段在数组映射的子行里用相对路径。</div>
+                  <div class="wb-panel-note">
+                    片段按顺序拼起来；来源片段在数组映射的子行里用相对路径。
+                    <template v-if="entry.depth === 0">
+                      行号片段只能在数组映射的子行里用——这一行在顶层，所以「行号」那一项是置灰的。
+                    </template>
+                  </div>
                 </template>
               </div>
             </template>
@@ -607,14 +603,13 @@ import {
   usedCountOf, usedRowIdsOf, type SourceFilter,
 } from '../mapping/fast-config.ts'
 import {
-  clearRowMapping, hasMapping, isRowConfigured, markHumanEdited, realEnumMap, restoreRowMapping, ruleFromRow,
-  ENUM_PLACEHOLDER, type ConcatPart, type MapRow, type RowMapping,
+  clearRowMapping, hasMapping, isRowConfigured, markHumanEdited, restoreRowMapping, ruleFromRow,
+  type ConcatPart, type MapRow, type RowMapping,
 } from '../mapping/rows.ts'
 import { emptyRowLabel, fieldReferenceLabel, stepLabel } from '../mapping/labels.ts'
 import {
-  applyTransform, appendEnumSamples, datePatternFor, DEFAULT_DATE_PATTERN, missingEnumKeys,
-  normalizeDatePattern, setEnumKey, transformLabelOf, transformName, transformOptions, DATE_PRESETS,
-  type EnumPair, type TransformOption,
+  applyTransform, datePatternFor, normalizeDatePattern, transformLabelOf,
+  transformName, transformOptions, DATE_PRESETS, type TransformOption,
 } from '../mapping/transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, ancestorRowIds, emptyPickResult, fillRowFromPick, sourcePickerFor,
@@ -629,6 +624,11 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex, stepIndex, type PanelKey } from '../mapping/keyboard.ts'
+import {
+  PART_KINDS, applyPartKind, canUsePartKind, partAsRow, partEmpty, partKindLabel, partKindOf,
+} from '../mapping/parts.ts'
+import MappingDateParams from './MappingDateParams.vue'
+import MappingEnumParams from './MappingEnumParams.vue'
 
 /** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
 const TRANSFORM_HINTS: Record<string, string> = {
@@ -1433,14 +1433,32 @@ function enumCountText(row: MapRow): string {
   return count ? `${count} 条` : '空表'
 }
 
-/** 拼接片段的显示：常量显示值本身，来源片段显示字段名（人话）。 */
+/**
+ * 拼接片段的显示（#112）：片段与行级转换共用同一份人话（`transformLabelOf`）。
+ *
+ * 常量片段显示值本身；取值的片段走来源那一套（动作名、相对路径）；挂了转换的片段显示成
+ * 「日期格式化 · yyyyMMdd（动作 1 · 读 BOM · createdTime）」这种——与行上读到的是同一句话。
+ */
 function partLabel(entry: FlatRow, i: number): string {
   const part = entry.row.parts[i]
-  if (!part) return '（空片段）'
-  if (part.type === 'const') return part.value.trim() || '（空片段）'
-  const label = transformLabelOf({ ...entry.row, transform: 'STRING', source: part.value },
+  if (!part || partEmpty(part)) return '（空片段）'
+  return transformLabelOf(partAsRow(part, entry.row),
     () => (entry.depth > 0 ? part.value : fieldLabelOf(entry, part.value)))
-  return part.value.trim() ? label : '（空片段）'
+}
+
+/** 片段小块的样式：常量一种、直接取值一种、挂了转换的一种（一眼看出哪几段被加工过）。 */
+function partChipClass(part: ConcatPart): string {
+  const kind = partKindOf(part)
+  if (kind === 'CONSTANT') return 'chip-const'
+  return kind === 'STRING' ? 'chip-src' : 'chip-op'
+}
+
+/** 片段小块的悬停提示：点一下做什么、这一段现在是怎么取的。 */
+function partChipHint(part: ConcatPart): string {
+  const kind = partKindOf(part)
+  if (kind === 'CONSTANT') return '常量片段——点一下改这个片段的取值方式'
+  if (kind === 'STRING') return '直接取值——点一下换这个片段的转换'
+  return `${partKindLabel(kind)}片段——点一下改这个片段的参数`
 }
 
 /** 把一个来源路径按这一行的上下文显示成人话（数组子行里就是相对路径本身）。 */
@@ -1453,7 +1471,7 @@ function isChild(entry: FlatRow): boolean {
   return entry.depth > 0
 }
 
-// ---- 拼接片段
+// ---- 拼接片段（#112：每个片段挂一个片段转换）
 
 function addPart(row: MapRow, inArray: boolean) {
   row.parts = [...row.parts, { type: inArray ? 'path' : 'const', value: '' } as ConcatPart]
@@ -1465,84 +1483,62 @@ function removePart(row: MapRow, index: number) {
   markHumanEdited(row)
 }
 
-// ---- 枚举映射表：表格里改的每一格立刻写回行上的 enumMap（行是唯一副本，不另存一份编辑状态）
-
-function enumPairsOf(row: MapRow): EnumPair[] {
-  const map = row.enumMap ?? {}
-  return Object.keys(map).map((key, i) => ({
-    // 行的身份 = 它在表里的位置（键会随用户输入变，拿键当 key 会让正在输入的那行被重建）。
-    id: i,
-    key: key.startsWith(ENUM_PLACEHOLDER) ? '' : key,
-    value: String(map[key] ?? ''),
-  }))
+/** 换这个片段的转换：参数跟着换，旧的清掉（一个片段只有一个转换）。 */
+function choosePartKind(entry: FlatRow, part: ConcatPart, kind: string) {
+  applyPartKind(part, kind as Parameters<typeof applyPartKind>[1])
+  markHumanEdited(entry.row)
 }
 
-/** 面板里编辑中的枚举表：读的是行，改的也是行。 */
-const enumPairList = computed<EnumPair[]>(() => (panelRow.value ? enumPairsOf(panelRow.value) : []))
-
-/** 表格里改了一格：把这一格并进 enumMap（值照抄，键按已填的算）。 */
-function setEnumPair(index: number, patch: Partial<Pick<EnumPair, 'key' | 'value'>>) {
-  const row = panelRow.value
-  if (!row) return
-  const base = enumPairList.value.map((pair, i) => (i === index ? { ...pair, ...patch } : pair))
-  // 改键撞上已有的键时按「后改的赢」合并（setEnumKey 负责把被撞掉的那行去掉）。
-  const pairs = patch.key === undefined ? base : setEnumKey(base, index, patch.key)
-  row.enumMap = enumMapOf(pairs)
+function choosePartDatePattern(row: MapRow, part: ConcatPart, pattern: string) {
+  applyPartKind(part, 'DATE', { datePattern: pattern })
   markHumanEdited(row)
 }
 
-function enumMapOf(pairs: EnumPair[]): Record<string, any> {
-  const map: Record<string, any> = {}
-  pairs.forEach((pair, i) => {
-    const key = pair.key.trim()
-    // 空键的两条会互相覆盖，用占位键各占一个位置，等用户填上真键。
-    map[key || `${ENUM_PLACEHOLDER}${i}`] = pair.value
-  })
-  return map
-}
-
-function addEnumRow() {
-  const row = panelRow.value
-  if (!row) return
-  row.enumMap = enumMapOf([...enumPairList.value, { id: enumPairList.value.length, key: '', value: '' }])
+/** 手输格式串：边打边落在这个片段上（清空那一格等失焦/回车再归一）。 */
+function onPartDatePattern(row: MapRow, part: ConcatPart, value: string) {
+  part.datePattern = value
   markHumanEdited(row)
 }
 
-function removeEnumRow(index: number) {
-  const row = panelRow.value
-  if (!row) return
-  row.enumMap = enumMapOf(enumPairList.value.filter((_, i) => i !== index))
+function onPartDateCommit(row: MapRow, part: ConcatPart) {
+  part.datePattern = normalizeDatePattern(part.datePattern ?? '')
+}
+
+function onPartEnumMap(row: MapRow, part: ConcatPart, map: Record<string, any>) {
+  part.enumMap = map
   markHumanEdited(row)
 }
 
-/** 这一行来源字段的样例值（枚举表「按样例补全」用；子行用相对路径，取元素里的那个字段）。 */
-const panelSourceField = computed<SourceField | undefined>(() => {
-  const entry = panelEntry.value
-  if (!entry) return undefined
-  const source = entry.row.source.trim()
-  if (!source) return undefined
+function onPartStartAt(row: MapRow, part: ConcatPart, value: number | undefined) {
+  part.startAt = value == null ? 1 : Number(value)
+  markHumanEdited(row)
+}
+
+// ---- 枚举映射表：组件里改的每一格立刻写回行上的 enumMap（行是唯一副本，不另存一份编辑状态）
+
+function onEnumMapChange(row: MapRow, map: Record<string, any>) {
+  row.enumMap = map
+  markHumanEdited(row)
+}
+
+/**
+ * 一个来源路径在这份清单里的那条样例（枚举表「按样例补全」用）。
+ *
+ * 数组子行里写的是相对路径，要去元素字段里找（`items[0].<路径>`）。
+ */
+function sourceFieldOf(entry: DisplayRow | FlatRow | null, path: string): SourceField | undefined {
+  const source = (path ?? '').trim()
+  if (!entry || !source) return undefined
   if (entry.depth > 0) {
     const array = entry.parent?.source.trim() ?? ''
     return sourceFields.value.find(f => f.name === `${array}[0].${source}`)
   }
   return sourceFields.value.find(f => f.name === source)
-})
-
-/** 样例里出现过、枚举表里还没有的来源值（空键的占位行不算）。 */
-const missingEnumKeysOf = computed(() =>
-  missingEnumKeys(realEnumMap(panelRow.value?.enumMap), panelSourceField.value))
-
-const sampleHint = computed(() => {
-  const count = missingEnumKeysOf.value.length
-  return count ? `（补 ${count} 个）` : ''
-})
-
-function fillEnumFromSamples() {
-  const row = panelRow.value
-  if (!row) return
-  row.enumMap = appendEnumSamples(realEnumMap(row.enumMap), missingEnumKeysOf.value)
-  markHumanEdited(row)
 }
+
+/** 面板这一行来源字段的样例值。 */
+const panelSourceField = computed<SourceField | undefined>(() =>
+  sourceFieldOf(panelEntry.value, panelRow.value?.source ?? ''))
 
 /** 候选来源字段：数组子行用相对路径，其余用请到的清单。 */
 function selectableFields(entry: FlatRow): SourceField[] {
@@ -1560,26 +1556,6 @@ function selectableFields(entry: FlatRow): SourceField[] {
 
 /** 当前来源步骤的字段清单（探测结果）。 */
 const sourceFields = computed<SourceField[]>(() => context.value?.source?.fields ?? [])
-
-/** 日期预设的样例（拿一个真日期格式化一遍，让人一眼看出这个模式长什么样）。 */
-function datePatternExample(pattern: string): string {
-  return formatExample(new Date(2026, 7, 21, 9, 5, 7), pattern)
-}
-
-/** 只支持后端那几个预设与常见日期记号；认不出来就原样返回模式串。 */
-function formatExample(date: Date, pattern: string): string {
-  const pad = (n: number, width = 2) => String(n).padStart(width, '0')
-  const parts: Record<string, string> = {
-    yyyy: String(date.getFullYear()),
-    yy: String(date.getFullYear()).slice(-2),
-    MM: pad(date.getMonth() + 1),
-    dd: pad(date.getDate()),
-    HH: pad(date.getHours()),
-    mm: pad(date.getMinutes()),
-    ss: pad(date.getSeconds()),
-  }
-  return pattern.replace(/yyyy|yy|MM|dd|HH|mm|ss/g, token => parts[token] ?? token)
-}
 
 function selectFirst() {
   const first = displayRows.value.find(e => e.row.target.trim())
@@ -2146,28 +2122,9 @@ load()
 .wb-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .wb-panel-target { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
 .wb-spacer { flex: 1; }
-.wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.wb-panel-note { font-size: 11px; color: #9ca3af; }
-.wb-grow { flex: 1; min-width: 200px; }
-.wb-part-kind { width: 120px; flex-shrink: 0; }
-.wb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
-.wb-opbtn {
-  font: inherit; text-align: left; min-width: 150px; padding: 4px 8px;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
-  display: flex; flex-direction: column; gap: 1px;
-}
-.wb-opbtn small { font-size: 10px; color: #9ca3af; }
-.wb-opbtn:hover:not(.disabled) { border-color: #409eff; }
-.wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
-.wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
-.wb-opbtn.disabled small { color: #b45309; }
-/* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
-.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
-.wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
-.wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
-.wb-enum td { padding: 2px 4px; }
-.wb-enum-arrow { color: #9ca3af; font-size: 12px; }
-.wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
+/* 这一组（行、说明、转换按钮、枚举表、片段）在下面那个**非 scoped** 的 style 块里：
+   两个参数编辑器组件（MappingDateParams / MappingEnumParams）在行级与片段级共用，
+   它们内部的元素也要用到这套样式，scoped 到不了子组件里面（#112）。 */
 
 /* 手写 JSONata 这一边（#106）：一段表达式占满中间，说明都摆在明面上 */
 .wb-expression { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 16px; }
@@ -2226,4 +2183,37 @@ load()
   .wb-step-select, .wb-target-search { width: 100%; }
   .wb-grow, .wb-part-kind { min-width: 0; width: 100%; }
 }
+</style>
+
+<!--
+  就地参数面板的那几个基元（行、说明、转换按钮、枚举表、片段）。
+  **故意不 scoped**：`MappingDateParams` / `MappingEnumParams` 两个参数编辑器在「行级转换」与「片段转换」
+  两处共用（#112 验收二），scoped 样式到不了子组件内部的元素。类名都带 `wb-` 前缀，只有这棵树上用。
+-->
+<style>
+.wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.wb-panel-note { font-size: 11px; color: #9ca3af; }
+.wb-grow { flex: 1; min-width: 200px; }
+.wb-part-kind { width: 132px; flex-shrink: 0; }
+.wb-part { border-top: 1px dashed #e5e7eb; padding-top: 6px; margin-bottom: 6px; }
+.wb-part:first-child { border-top: 0; padding-top: 0; }
+.wb-part-params { margin-left: 140px; }
+.wb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
+.wb-opbtn {
+  font: inherit; text-align: left; min-width: 150px; padding: 4px 8px;
+  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.wb-opbtn small { font-size: 10px; color: #9ca3af; }
+.wb-opbtn:hover:not(.disabled) { border-color: #409eff; }
+.wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
+.wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
+.wb-opbtn.disabled small { color: #b45309; }
+/* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
+.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
+.wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
+.wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
+.wb-enum td { padding: 2px 4px; }
+.wb-enum-arrow { color: #9ca3af; font-size: 12px; }
+.wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
 </style>

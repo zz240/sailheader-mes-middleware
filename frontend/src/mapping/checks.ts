@@ -53,6 +53,10 @@ import {
 import {
   editorModeOf, expressionConfig, expressionOf, expressionReplacedNotice, expressionSkipNotice, hasExpression,
 } from './expression.ts'
+import {
+  PART_KINDS, applyPartKind, canUsePartKind, partAsRow, partDisabledReason, partEmpty, partFromRule,
+  partKindLabel, partKindOf, partRuleOf,
+} from './parts.ts'
 import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -436,7 +440,7 @@ eq('行号 → 直接映射：不再抓着 $index 不放（否则编译成「字
   pick(applyTransform(childOf('$index', 'INDEX', { startAt: 5 }), 'STRING'), 'transform', 'source', 'startAt'),
   ['', null, 'STRING'])
 
-// 枚举映射的键值表：按样例值把缺的键补上（后端查不到键时该字段静默变成 null）
+// 枚举映射的键值表：按样例值把缺的键补上（后端查不到键时该字段静默从目标报文里整个消失）
 // samples 的形状按后端结构探测契约来（SourceField.samples 就是原始值那列）。
 const UNIT_FIELD: SourceField = { name: 'unit', type: 'STRING', nullable: false, samples: ['PCS', 'SET', 'PCS'] }
 const ELEMENT_UNIT: SourceField = { name: 'items[0].unit', type: 'STRING', nullable: false, samples: ['PCS', 'SET'] }
@@ -556,8 +560,94 @@ for (const t of TRANSFORM_KINDS) {
   assertNoDollar(text)
 }
 
-// ---------------------------------------------------------------- 数组映射（#101）
+// ---------------------------------------------------------------- 片段转换（#112）
 
+// 一个片段挂一个转换，六选一（常量 + 直接取值/数字转换/日期格式化/枚举映射/行号）
+eq('片段转换的六项与人话', PART_KINDS.map(partKindLabel),
+  ['常量', '直接取值', '数字转换', '日期格式化', '枚举映射', '行号'])
+eq('老片段（字符串常量）读进来是常量', partKindOf({ type: 'const', value: 'BOM-' }), 'CONSTANT')
+eq('老片段（{"path"}）读进来是直接取值', partKindOf({ type: 'path', value: 'materialCode' }), 'STRING')
+eq('加工片段读进来是它自己那一种',
+  partKindOf({ type: 'path', value: 'createdTime', transform: 'DATE', datePattern: 'yyyyMMdd' }), 'DATE')
+eq('行号片段读进来是行号（值那一格是空的）',
+  partKindOf({ type: 'path', value: '', transform: 'INDEX', startAt: 1 }), 'INDEX')
+
+// 换转换：参数跟着换、旧的清掉——一个片段只有一个转换，界面上没有第二层的入口
+const datePart = applyPartKind({ type: 'path', value: 'createdTime' }, 'DATE')
+eq('选日期格式化：默认格式串落在片段自己身上',
+  partRuleOf(datePart), { path: 'createdTime', transform: 'DATE', datePattern: DEFAULT_DATE_PATTERN })
+eq('选日期格式化时给的那一个就用那一个',
+  partRuleOf(applyPartKind({ type: 'path', value: 'createdTime' }, 'DATE', { datePattern: 'yyyyMMdd' })),
+  { path: 'createdTime', transform: 'DATE', datePattern: 'yyyyMMdd' })
+eq('再选数字转换：日期那一份参数跟着清掉',
+  partRuleOf(applyPartKind(datePart, 'INT')), { path: 'createdTime', transform: 'INT' })
+eq('再选直接取值：不带任何参数（老形状）',
+  partRuleOf(applyPartKind(datePart, 'STRING')), { path: 'createdTime' })
+eq('选枚举映射：带一张空的键值表（让「枚举转换需要 enumMap」由后端说）',
+  partRuleOf(applyPartKind({ type: 'path', value: 'unit' }, 'ENUM')),
+  { path: 'unit', transform: 'ENUM', enumMap: {} })
+eq('选常量：变成常量片段、值清空、参数一并清掉',
+  partRuleOf(applyPartKind(datePart, 'CONSTANT')), '')
+eq('选行号：值那一格清掉、起始值默认从 1 起',
+  partRuleOf(applyPartKind({ type: 'path', value: 'anything' }, 'INDEX')), { transform: 'INDEX', startAt: 1 })
+eq('整数片段往返（数字转换）',
+  partRuleOf(partFromRule({ path: 'qty', transform: 'INT' })), { path: 'qty', transform: 'INT' })
+
+// 行号片段只在数组元素子行里给（顶层置灰，并且写明原因）
+eq('顶层拼接行上不给行号片段', canUsePartKind({ type: 'path', value: '' }, 'INDEX', 0), false)
+eq('数组子行里给行号片段', canUsePartKind({ type: 'path', value: '' }, 'INDEX', 1), true)
+ok('置灰时写明原因', partDisabledReason({ type: 'path', value: '' }, 'INDEX', 0).includes('数组映射的子行'))
+ok('别的片段转换不受位置影响（只有行号看位置）',
+  PART_KINDS.every(kind => kind === 'INDEX' || canUsePartKind({ type: 'path', value: 'x' }, kind, 0)))
+
+// 存储形状往返：老片段打开 → 保存逐字段不变（#112 验收八最重要的一条）
+for (const raw of ['BOM-', { path: 'materialCode' }]) {
+  eq(`老片段 ${JSON.stringify(raw)} 往返不变`, partRuleOf(partFromRule(raw)), raw)
+}
+const legacyConcatRule = { sourceStep: 1, source: '', target: 'bomNo', transform: 'CONCAT',
+  parts: ['BOM-', { path: 'materialCode' }] }
+eq('老配置的整条拼接规则往返不变', ruleOf(rowFromRule(legacyConcatRule)), legacyConcatRule)
+
+// 新片段往返：加工片段与行号片段各一种
+const NEW_PARTS = ['BOM-',
+  { path: 'createdTime', transform: 'DATE', datePattern: 'yyyyMMdd' },
+  { path: 'unit', transform: 'ENUM', enumMap: { PCS: '件' } },
+  { path: 'qty', transform: 'INT' },
+  { transform: 'INDEX', startAt: 1 }]
+eq('加工片段与行号片段往返不变',
+  ruleOf(rowFromRule({ sourceStep: 1, target: 'bomNo', transform: 'CONCAT', parts: NEW_PARTS })).parts, NEW_PARTS)
+
+// 行号片段不算「空片段」：它没有路径，但有内容（别看值那一格空不空）
+eq('行号片段不算空片段', partEmpty({ type: 'path', value: '', transform: 'INDEX', startAt: 1 }), false)
+eq('没填值的取值片段算空片段', partEmpty({ type: 'path', value: '  ' }), true)
+eq('只配了一个行号片段的拼接行算配好了',
+  isRowConfigured({ ...createRow(1, '', 'bomNo', 'CONCAT'),
+    parts: [{ type: 'path', value: '', transform: 'INDEX', startAt: 1 }] }), true)
+eq('行号片段进得了规则',
+  ruleOf({ ...createRow(1, '', 'bomNo', 'CONCAT'),
+    parts: [{ type: 'path', value: '', transform: 'INDEX', startAt: 1 }] }).parts,
+  [{ transform: 'INDEX', startAt: 1 }])
+
+// 片段的人话与行级转换共用同一份（摘要里看得见参数）
+eq('日期片段的人话带着格式串',
+  transformLabelOf(partAsRow({ type: 'path', value: 'createdTime', transform: 'DATE', datePattern: 'yyyyMMdd' },
+    leaf('createdTime', 'x', 'STRING')), () => '动作 1 · 读 BOM · createdTime'),
+  '日期格式化 · yyyyMMdd（动作 1 · 读 BOM · createdTime）')
+eq('行号片段的人话带着起始值',
+  transformLabelOf(partAsRow({ type: 'path', value: '', transform: 'INDEX', startAt: 10 },
+    leaf('x', 'y', 'STRING')), () => ''), '行号 · 从 10 起')
+eq('常量片段的人话写着值',
+  transformLabelOf(partAsRow({ type: 'const', value: 'BOM-' }, leaf('x', 'y', 'STRING')), () => ''),
+  '常量「BOM-」')
+
+// 界面上不出现 $：片段的人话里一个 $ 都没有（#98 对照表）
+for (const kind of PART_KINDS) {
+  const part = applyPartKind({ type: 'path', value: 'createdTime' }, kind)
+  if (kind !== 'CONSTANT') part.value = 'createdTime'
+  assertNoDollar(transformLabelOf(partAsRow(part, leaf('createdTime', 'x', 'STRING')), () => 'createdTime'))
+}
+
+// ---------------------------------------------------------------- 数组映射（#101）
 /** 数组行、子行、外层引用这三件事的入口都在 `source-picker.ts`；`label()` 就是左边清单上那行字。 */
 const BOM_SOURCE: SourceField[] = [
   { name: 'product.productCode', type: 'STRING' },
@@ -1328,6 +1418,18 @@ eq('数组元素子行里的拼接片段按相对路径补（组行还没选来�
 eq('补上的是相对路径', childConcat.parts, [{ type: 'path', value: 'materialCode' }])
 const noNameConcat = rowFromRule({ sourceStep: 1, source: '', target: 'whatever', transform: 'CONCAT', parts: [{ path: '' }] })
 eq('对不上名字的拼接片段不填', autoMatchSameName([noNameConcat], AUTO_FIELDS, 1).rowIds, [])
+
+// 行号片段与加工片段都不是「空片段」：自动匹配同名不该往它们的路径那一格里塞东西（#112）
+const indexPartRow = rowFromRule({ sourceStep: 1, source: '', target: 'productCode', transform: 'CONCAT',
+  parts: ['LOT-', { transform: 'INDEX', startAt: 1 }] })
+eq('只差行号片段的拼接行不算空白行', autoMatchSameName([indexPartRow], AUTO_FIELDS, 1).rowIds, [])
+eq('行号片段没被同名来源覆盖', indexPartRow.parts[1], { type: 'path', value: '', transform: 'INDEX', startAt: 1 })
+
+const datedPartRow = rowFromRule({ sourceStep: 1, source: '', target: 'productCode', transform: 'CONCAT',
+  parts: [{ path: '', transform: 'DATE', datePattern: 'yyyyMMdd' }] })
+eq('加工片段还等着路径，算空白片段', autoMatchSameName([datedPartRow], AUTO_FIELDS, 1).rowIds, [datedPartRow.id])
+eq('补上路径时转换与参数留着（补的是路径那一格）', datedPartRow.parts,
+  [{ type: 'path', value: 'productCode', transform: 'DATE', datePattern: 'yyyyMMdd' }])
 
 // 自动匹配只认同名：大小写不敏感、按最后一段比（`bomLines.qty` 对 `items[0].qty`）
 eq('同名按最后一段比（大小写不敏感）', nameSegment('bom.bomLines.QTY'), 'qty')

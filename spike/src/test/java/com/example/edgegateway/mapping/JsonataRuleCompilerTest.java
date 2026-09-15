@@ -444,6 +444,89 @@ class JsonataRuleCompilerTest {
         }
     }
 
+    // ---------- 片段转换（#112）：拼接的每一段各自挂一个转换 ----------
+
+    /**
+     * 存储形状第一次变化：片段可以是字符串常量、`{"path"}`、`{"path", "transform", 参数}`、`{"transform": "INDEX"}`。
+     *
+     * <p>老形状是加工片段的退化情形（没有 `transform` 就是直接取值），读取兼容、不做数据迁移。编译产物仍然
+     * 是一段人眼能读的 `&` 拼接串——这条断言就是「产物还读得懂」的证据。</p>
+     */
+    @Test
+    void concatPartsCarryTheirOwnTransform() {
+        FieldMappingRule rule = new FieldMappingRule(1, null, "bom.bomNo", TransformType.CONCAT,
+                null, Map.of(), null, null, null,
+                List.of("BOM-",
+                        Map.of("path", "product.productCode", "transform", "STRING"),
+                        Map.of("path", "createdTime", "transform", "DATE", "datePattern", "yyyyMMdd"),
+                        Map.of("path", "status", "transform", "ENUM", "enumMap", Map.of("A", "启用")),
+                        Map.of("path", "qty", "transform", "INT")),
+                null);
+
+        assertThat(JsonataRuleCompiler.compile(List.of(rule))).isEqualTo("""
+                {
+                  "bom": {
+                  "bomNo": "BOM-" & $s_1.product.productCode & $dateFormat($s_1.createdTime, "yyyyMMdd") & $lookup({"A":"启用"}, $s_1.status) & $number($s_1.qty)
+                  }
+                }""");
+
+        Object result = new JsonataFieldMapper(List.of(rule)).apply(context(1, Map.of(
+                "product", Map.of("productCode", "PRD-001"),
+                "createdTime", "2026-08-21T10:20:30Z",
+                "status", "A",
+                "qty", 24)));
+        assertThat(bom(result)).containsEntry("bomNo", "BOM-PRD-00120260821启用24");
+    }
+
+    /** 日期片段没写格式串时按默认值（与行级 DATE 同一条口径）。 */
+    @Test
+    void aDatePartWithoutAPatternUsesTheDefaultFormat() {
+        FieldMappingRule rule = new FieldMappingRule(1, null, "bom.bomNo", TransformType.CONCAT,
+                null, Map.of(), null, null, null,
+                List.of(Map.of("path", "createdTime", "transform", "DATE")), null);
+
+        assertThat(JsonataRuleCompiler.compile(List.of(rule)))
+                .contains("$dateFormat($s_1.createdTime, \"yyyy-MM-dd\")");
+    }
+
+    /** 行号片段：源就是行号本身（不带 `path`），编译成数组元素的行号加起始值。 */
+    @Test
+    void indexPartCompilesToTheArrayRowNumber() {
+        FieldMappingRule group = new FieldMappingRule(1, "product.bomItems", "bom.bomLines",
+                TransformType.STRING, null, Map.of(), null, "FOR_EACH",
+                List.of(new FieldMappingRule(null, null, "lineNo", TransformType.CONCAT,
+                        null, Map.of(), null, null, null,
+                        List.of("LOT-", Map.of("transform", "INDEX", "startAt", 1)), null)),
+                null, null);
+
+        // 括号是必须的：引擎里 `&` 与 `+` 同级左结合，`"LOT-" & $i0 + 1` 会当成 `("LOT-" & $i0) + 1` 抛错
+        assertThat(JsonataRuleCompiler.compile(List.of(group)))
+                .contains("\"lineNo\": \"LOT-\" & ($i0 + 1)");
+
+        Object result = new JsonataFieldMapper(List.of(group)).apply(context(1, Map.of(
+                "product", Map.of("bomItems", List.of(
+                        Map.of("materialCode", "MAT-1"), Map.of("materialCode", "MAT-2"))))));
+        assertThat(bomLines(bom(result))).extracting(line -> line.get("lineNo"))
+                .containsExactly("LOT-1", "LOT-2");
+    }
+
+    /**
+     * 认不出的片段转换：报清楚是**哪个片段**（序号从 1 数），别让人自己去找。
+     *
+     * <p>消息形状与结构校验那条一致（`MappingSampleChecks`/`FieldMappingConfig` 也用「拼接第 N 个片段」）。</p>
+     */
+    @Test
+    void anUnknownPartTransformIsReportedWithItsIndex() {
+        FieldMappingRule rule = new FieldMappingRule(1, null, "bom.bomNo", TransformType.CONCAT,
+                null, Map.of(), null, null, null,
+                List.of("BOM-", Map.of("path", "productCode", "transform", "NOT_A_TRANSFORM")), null);
+
+        assertThatThrownBy(() -> JsonataRuleCompiler.compile(List.of(rule)))
+                .isInstanceOf(JsonataRuleCompiler.CompileException.class)
+                .hasMessageContaining("拼接第 2 个片段")
+                .hasMessageContaining("NOT_A_TRANSFORM");
+    }
+
     // ---------- helpers ----------
     private static FieldMappingRule leaf(Integer step, String source, String target, TransformType type) {
         return new FieldMappingRule(step, source, target, type, null, Map.of(), null,
