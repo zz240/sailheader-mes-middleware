@@ -21,11 +21,17 @@ import java.util.List;
  * </ol>
  *
  * <p>它不查「值和格式对不对得上」：那要拿真数据试算（ADR-0012 决策 2 的括注）。这里只回答
- * 「这个串本身能不能用」。</p>
+ * 「这个串本身能不能用」——运行时的宽容语义会把「值和格式对不上」变成**原样透传**（不抛错），
+ * 所以那种情况归「有来源字段样例时按样例真跑一遍」那条警告管（{@code MappingSampleChecks}）。</p>
  */
 public final class DatePatterns {
 
-    /** 没写格式串时编译器与运行时用的默认值（`JsonataRuleCompiler.DEFAULT_DATE_PATTERN`）。 */
+    /**
+     * 没写格式串时用的默认值。
+     *
+     * <p>编译器（{@code JsonataRuleCompiler}）、运行时（{@code JsonataFunctions}）与校验（这里）都引用
+     * 这一个常量；前端有它自己那份 {@code DEFAULT_DATE_PATTERN}，两边是这个值。</p>
+     */
     public static final String DEFAULT = "yyyy-MM-dd";
 
     /** 说明陷阱字母时拿来举例的参考日期——只是给用户看的例子，不参与判断。 */
@@ -84,7 +90,14 @@ public final class DatePatterns {
         }
     }
 
-    /** 单引号里的是字面量（`'T'` 就是字母 T 本身），不算格式字母。 */
+    /**
+     * 单引号里的是字面量（`'T'` 就是字母 T 本身），不算格式字母。
+     *
+     * <p>连续两个单引号按平台解析器的读法：`''D''` 是「字面量单引号 + 格式字母 D + 字面量单引号」——
+     * D 在这里**是**「一年中的第几天」（实测这个格式串把 2026-08-21 写成 `'233'`），所以该拦；
+     * 真要让 D 当字面量得写 `'D'`，那一个不拦。整串引号的开关与解析器的状态机等价（`''` 在引号内外
+     * 都是转义的单引号，翻两次回到原状态）。</p>
+     */
     private static boolean hasLetter(String pattern, char letter) {
         boolean quoted = false;
         for (int i = 0; i < pattern.length(); i++) {

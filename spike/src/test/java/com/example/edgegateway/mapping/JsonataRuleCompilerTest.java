@@ -397,8 +397,54 @@ class JsonataRuleCompilerTest {
         assertThat(out.get("createdAt")).isEqualTo("2026-08-21T10:00");
     }
 
-    // ---------- helpers ----------
+    /**
+     * 第一轮存下来的日期那一行：编译产物**逐字节不变**、跑出来还是那个值（#111 验收六）。
+     *
+     * <p>#111 只加了「手输格式串」与「格式串合法性校验」，存储格式一个字段都没动——所以一份第一轮
+     * 存下来的规则（`transform=DATE` + 显式格式串）编译出来必须还是原来那一串。这条断言是那句
+     * 「老配置打开后行为完全一致」在编译这一层的证据（`checks.ts` 那组只管行↔规则那一层）。</p>
+     */
+    @Test
+    void legacyDateRuleCompilesToTheSameExpression() {
+        List<FieldMappingRule> rules = List.of(
+                new FieldMappingRule(1, "createdTime", "bom.createdDate", TransformType.DATE,
+                        null, Map.of(), "yyyyMMdd", null, null, null, null));
 
+        assertThat(JsonataRuleCompiler.compile(rules)).isEqualTo("""
+                {
+                  "bom": {
+                  "createdDate": $dateFormat($s_1.createdTime, "yyyyMMdd")
+                  }
+                }""");
+        assertThat(bom(new JsonataFieldMapper(rules)
+                .apply(context(1, Map.of("createdTime", "2026-08-21T10:20:30Z")))))
+                .containsEntry("createdDate", "20260821");
+    }
+
+    /**
+     * 格式串是空串（或只有空白）时按默认格式编译（#111 验收五）。
+     *
+     * <p>编辑器保证清空的手输框不会把空串写进规则，但手写/存量配置里可能是这个形状：原样送进
+     * `$dateFormat` 的话目标收到的是一串空。与「键不在」同一条口径——都算没写。</p>
+     */
+    @Test
+    void blankDatePatternFallsBackToTheDefaultFormat() {
+        for (String pattern : new String[]{"", "   "}) {
+            List<FieldMappingRule> rules = List.of(
+                    new FieldMappingRule(1, "createdTime", "bom.createdDate", TransformType.DATE,
+                            null, Map.of(), pattern, null, null, null, null));
+
+            assertThat(JsonataRuleCompiler.compile(rules))
+                    .as("[" + pattern + "]")
+                    .contains("$dateFormat($s_1.createdTime, \"yyyy-MM-dd\")");
+            assertThat(bom(new JsonataFieldMapper(rules)
+                    .apply(context(1, Map.of("createdTime", "2026-08-21T10:20:30Z")))))
+                    .as("[" + pattern + "]")
+                    .containsEntry("createdDate", "2026-08-21");
+        }
+    }
+
+    // ---------- helpers ----------
     private static FieldMappingRule leaf(Integer step, String source, String target, TransformType type) {
         return new FieldMappingRule(step, source, target, type, null, Map.of(), null,
                 null, null, null, null);

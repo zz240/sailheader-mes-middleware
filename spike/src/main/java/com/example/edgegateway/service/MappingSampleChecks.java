@@ -19,25 +19,32 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 依赖**目标字段清单和来源样例**的那几条草稿检查（#104），外加一条只看草稿的拼接检查。
+ * 依赖**目标字段清单和来源样例**的那几条草稿检查（#104 起，#111 补上日期格式串那条），外加一条只看
+ * 草稿的拼接检查。
  *
  * <p>{@link MappingDraftValidationService} 原来那几条只看草稿本身（结构、sourceStep 链、编译产物）；
  * 这几条要看草稿之外的两份事实，所以后端本来查不出来。它们照亮的正是 ADR-0011 背景里那类「不报错但
- * 结果不对」的情况（#98 问题陈述）：来源路径不存在时目标字段整个消失、枚举查不到键时结果是 null、
- * 必填字段没配来源时整个消失、文本直接写进数字字段。另外两条（拼接里有空片段、顶层规则漏写
- * sourceStep）本身不看样例，只是同样是「静默出错」那一类——sourceStep 那条在
- * {@link MappingDraftValidationService} 里出。</p>
+ * 结果不对」的情况（#98 问题陈述）：来源路径不存在时目标字段整个消失、枚举查不到键时这个字段从结果里
+ * 整个消失、必填字段没配来源时整个消失、文本直接写进数字字段、日期格式串在样例值上解析不出来时原样
+ * 透传。另外两条（拼接里有空片段、顶层规则漏写 sourceStep）本身不看样例，只是同样是「静默出错」那一类
+ * ——sourceStep 那条在 {@link MappingDraftValidationService} 里出。</p>
  *
- * <p><b>只查样例里的值，不执行表达式</b>（#98 D9）：来源字段在不在、枚举覆没覆盖，都是拿这份样例里
- * 的实际取值（结构探测给的 samples）比对的，不试算任何一条表达式，也就不需要试算那套机制。</p>
+ * <p><b>只查样例里的值，不执行表达式</b>（#98 D9）：来源字段在不在、枚举覆没覆盖、日期格式串跑不跑得
+ * 出来，都是拿这份样例里的实际取值（结构探测给的 samples）比对的，不试算任何一条表达式，也就不需要
+ * 试算那套机制。</p>
  *
  * <p>定级（#104 验收）：必填没配、来源路径不在样例里是<b>错误</b>——这两条是「这份配置就是配错了」；
- * 枚举没覆盖样例值、文本写进数字字段、拼接里有空片段是<b>警告</b>——它们顺着样例数据和用户手输的片段
- * 走，样例陈旧或片段是故意留的时候会误伤，所以只提醒。</p>
+ * 枚举没覆盖样例值、文本写进数字字段、拼接里有空片段、日期格式串在样例值上跑不出来是<b>警告</b>——
+ * 它们顺着样例数据和用户手输的片段走，样例陈旧或片段是故意留的时候会误伤，所以只提醒。</p>
  *
  * <p>要看清单或样例的那几条，在那份输入空着时一条都不报：探不出结构不是配置的错。特别是「来源字段不在
  * 样例里」——取样例时挂了就整份字段清单都不在，那时候报出来的是探测的故障，不是草稿的问题。
  * {@link #emptyConcatParts} 两样都不要，所以不受这条限制。</p>
+ *
+ * <p><b>一处例外</b>：{@link #datePatternWarnings} 在**试不了**时反而要说话——「没在样例上试过」正是
+ * 手上没有样例时该说的话（#111 验收四：只提示、不拦保存）。它进的是响应里的 {@code warnings}，因为
+ * 那个响应只有错误 / 警告两档（与顶层漏写 sourceStep 那条提示同一档，见
+ * {@link MappingDraftValidationService}）。</p>
  *
  * <p>路径口径：样例给的是探测路径（{@code items[0].materialCode}），草稿里的数组子行写的是相对路径
  * （{@code materialCode}），目标清单给的是编辑器路径（数组元素不带下标）。这里把样例路径折成编辑器口径
@@ -89,7 +96,7 @@ final class MappingSampleChecks {
         return problems;
     }
 
-    /** 枚举表没有覆盖样例里出现过的值——查不到键时结果是 null，不报错，只能在这里提醒。 */
+    /** 枚举表没有覆盖样例里出现过的值——查不到键时这个字段从结果里整个消失，不报错，只能在这里提醒。 */
     static List<RuleProblem> uncoveredEnumValues(FieldMappingConfig config, MappingDraftRequest request) {
         Map<String, SourceField> sample = sampleFields(request);
         if (sample.isEmpty() || request.sourceFieldsStep() == null) {
@@ -260,7 +267,7 @@ final class MappingSampleChecks {
             if (!missing.isEmpty()) {
                 problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
                         "枚举表没有覆盖样例里出现过的值: " + String.join("、", missing)
-                                + "（查不到键的来源值在目标那边是 null）"));
+                                + "（查不到键的来源值不会出现在目标报文里：这个字段整个消失）"));
             }
         }
         for (FieldMappingRule child : children(rule)) {
@@ -303,36 +310,53 @@ final class MappingSampleChecks {
     /**
      * 日期格式串：在样例值上跑一遍，或说明「没在样例上试过」。
      *
+     * <p>组节点（数组行）不看：它的 transform 不参与编译（编译器只认它的 children），结构校验对组节点
+     * 也是先走组那几条就 `continue`——拿它报一条运行时根本不会发生的问题只会是噪声。</p>
+     */
+    private static void collectDatePatternWarnings(FieldMappingRule rule, RuleScope scope,
+                                                   Map<String, SourceField> sample, List<RuleProblem> problems) {
+        if (children(rule).isEmpty() && rule.transform() == TransformType.DATE
+                && DatePatterns.isLegal(rule.datePattern())) {
+            checkDatePattern(rule, scope, sample, problems);
+        }
+        for (FieldMappingRule child : children(rule)) {
+            collectDatePatternWarnings(child, scope.child(rule), sample, problems);
+        }
+    }
+
+    /**
+     * 一条规则的日期格式串：能试就试，试不了就说清为什么。
+     *
      * <p>判不了这一行的三种情况分得很清：样例根本管不到这一行（没带样例 / 是别的步骤的）→ 给提示；
      * 样例里有这个字段但没取到值 → 也给提示；样例里有（说明这份样例管得到这一行）却没这个字段 →
      * 什么都不补，因为「来源字段不在样例里」那条**错误**已经在说这件事了，同一行上说两遍是噪声。</p>
      */
-    private static void collectDatePatternWarnings(FieldMappingRule rule, RuleScope scope,
-                                                   Map<String, SourceField> sample, List<RuleProblem> problems) {
-        if (rule.transform() == TransformType.DATE && DatePatterns.isLegal(rule.datePattern())) {
-            String pattern = datePatternOf(rule);
-            SourceField field = scope.judgedAgainstRequestSample()
-                    ? sample.get(scope.sourcePath(sourceOf(rule)))
-                    : null;
-            if (field == null || distinctSamples(field).isEmpty()) {
-                if (field == null && !sample.isEmpty() && scope.judgedAgainstRequestSample()) {
-                    // 样例管得到这一行、里面却没这个字段：上面那条错误说过了
-                } else {
-                    problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
-                            notTriedDatePatternMessage(pattern)));
-                }
-            } else {
-                List<String> unformattable = distinctSamples(field).stream()
-                        .filter(value -> !JsonataFunctions.canFormat(value, pattern))
-                        .toList();
-                if (!unformattable.isEmpty()) {
-                    problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
-                            unformattableDatePatternMessage(pattern, unformattable)));
-                }
+    private static void checkDatePattern(FieldMappingRule rule, RuleScope scope,
+                                         Map<String, SourceField> sample, List<RuleProblem> problems) {
+        String pattern = datePatternOf(rule);
+        SourceField field = scope.judgedAgainstRequestSample()
+                ? sample.get(scope.sourcePath(sourceOf(rule)))
+                : null;
+        if (field == null) {
+            if (!sample.isEmpty() && scope.judgedAgainstRequestSample()) {
+                return;
             }
+            problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
+                    notTriedDatePatternMessage(pattern, NO_SAMPLE)));
+            return;
         }
-        for (FieldMappingRule child : children(rule)) {
-            collectDatePatternWarnings(child, scope.child(rule), sample, problems);
+        Set<String> values = distinctSamples(field);
+        if (values.isEmpty()) {
+            problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
+                    notTriedDatePatternMessage(pattern, NO_VALUES)));
+            return;
+        }
+        List<String> unformattable = values.stream()
+                .filter(value -> !JsonataFunctions.canFormat(value, pattern))
+                .toList();
+        if (!unformattable.isEmpty()) {
+            problems.add(new RuleProblem(rule.target(), parentTarget(scope.parent()),
+                    unformattableDatePatternMessage(pattern, unformattable)));
         }
     }
 
@@ -349,10 +373,15 @@ final class MappingSampleChecks {
     }
 
     /** 试都没试过时的说明（提示，不拦保存）。 */
-    private static String notTriedDatePatternMessage(String pattern) {
-        return "日期格式串 " + pattern + " 没在样例上试过（这份样例里没有这一行取的那个字段的值）"
-                + "——配错了要到目标系统那边才发现";
+    private static String notTriedDatePatternMessage(String pattern, String why) {
+        return "日期格式串 " + pattern + " 没在样例上试过（" + why + "）——配错了要到目标系统那边才发现";
     }
+
+    /** 试不了的一种成因：这份来源数据压根没有样例（或样例是别的步骤的）。 */
+    private static final String NO_SAMPLE = "手上还没有这一步的来源样例";
+
+    /** 试不了的另一种成因：样例里有这个字段，但没取到值。 */
+    private static final String NO_VALUES = "样例里这个字段一条值都没取到";
 
     // ---------- 判断 ----------
 

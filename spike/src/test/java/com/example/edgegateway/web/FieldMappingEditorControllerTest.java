@@ -90,7 +90,8 @@ class FieldMappingEditorControllerTest {
     }
 
     @Test
-    void reportsAMissingSourceStepAsAWarningNotAnError() throws Exception {        mockMvc.perform(post("/api/field-mapping-editor/validate")
+    void reportsAMissingSourceStepAsAWarningNotAnError() throws Exception {
+        mockMvc.perform(post("/api/field-mapping-editor/validate")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"draft":{"rules":[{"source":"bomNo","target":"bom.bomNo","transform":"STRING"}]},

@@ -26,7 +26,8 @@ import java.util.Map;
 public final class JsonataRuleCompiler {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String DEFAULT_DATE_PATTERN = "yyyy-MM-dd";
+    /** 没写格式串时用的默认值（与运行时、校验共用 {@link DatePatterns#DEFAULT} 这一个定义）。 */
+    private static final String DEFAULT_DATE_PATTERN = DatePatterns.DEFAULT;
 
     private JsonataRuleCompiler() {
     }
@@ -171,11 +172,22 @@ public final class JsonataRuleCompiler {
             case CONCAT -> concatExpr(rule, step, depth);
             case INT -> "$number(" + sourceExpr(rule.source(), step, depth) + ")";
             case DATE -> "$dateFormat(" + sourceExpr(rule.source(), step, depth) + ", "
-                    + jsonString(rule.datePattern() == null ? DEFAULT_DATE_PATTERN : rule.datePattern()) + ")";
+                    + jsonString(datePatternOf(rule)) + ")";
             case ENUM -> "$lookup(" + enumLiteral(rule.enumMap()) + ", " + sourceExpr(rule.source(), step, depth) + ")";
             case INDEX -> indexExpr(depth, rule.startAt());
             default -> sourceExpr(rule.source(), step, depth);
         };
+    }
+
+    /**
+     * 这一行生效的格式串：没写（键不在、空串、只有空白）都用默认值。
+     *
+     * <p>空串也当「没写」而不是「写了一个空格式串」——编辑器清空手输框时不会把空串写进规则，
+     * 但手写/存量配置里可能是这个形状，送进去的话目标收到的是一串空（#111 验收五）。</p>
+     */
+    private static String datePatternOf(FieldMappingRule rule) {
+        String pattern = rule.datePattern();
+        return pattern == null || pattern.isBlank() ? DEFAULT_DATE_PATTERN : pattern;
     }
 
     /** CONCAT：片段交替拼接，字符串片段转字面量，路径片段转来源表达式。 */

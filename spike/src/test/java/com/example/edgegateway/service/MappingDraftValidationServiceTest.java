@@ -285,7 +285,7 @@ class MappingDraftValidationServiceTest {
     }
 
     /**
-     * 枚举表没有覆盖样例里出现过的值：查不到键的来源值在目标那边是 null，不报错，所以定成警告。
+     * 枚举表没有覆盖样例里出现过的值：查不到键的来源值在目标报文里整个消失（不是变成 null），不报错，所以定成警告。
      *
      * <p>用的是来源字段**在这份样例里的实际值**（结构探测给的 samples），不试算表达式。</p>
      */
@@ -297,7 +297,7 @@ class MappingDraftValidationServiceTest {
 
         assertThat(problems(result.warnings())).containsExactly(
                 "bom.bomNo|null|枚举表没有覆盖样例里出现过的值: SET"
-                        + "（查不到键的来源值在目标那边是 null）");
+                        + "（查不到键的来源值不会出现在目标报文里：这个字段整个消失）");
         // 警告不拦保存：真正拦的是保存时那个 400、/validate、启用前链校验这三层
         assertThat(result.errors()).isEmpty();
         assertThat(result.valid()).isTrue();
@@ -323,7 +323,7 @@ class MappingDraftValidationServiceTest {
 
         assertThat(problems(result.warnings())).containsExactly(
                 "unit|bom.bomLines|枚举表没有覆盖样例里出现过的值: SET"
-                        + "（查不到键的来源值在目标那边是 null）");
+                        + "（查不到键的来源值不会出现在目标报文里：这个字段整个消失）");
     }
 
     /** 样例里没有这个来源字段时这条判不了（「来源不在样例里」那条已经在说这件事了）。 */
@@ -354,7 +354,7 @@ class MappingDraftValidationServiceTest {
                 spec(arraySpec("bom.bomLines", elementSpec("materialCode", "VARCHAR", true))),
                 sample, List.of(1), 1, 2)).warnings()))
                 .containsExactly("materialCode|bom.bomLines|枚举表没有覆盖样例里出现过的值: SET"
-                        + "（查不到键的来源值在目标那边是 null）");
+                        + "（查不到键的来源值不会出现在目标报文里：这个字段整个消失）");
     }
 
     /**
@@ -572,6 +572,24 @@ class MappingDraftValidationServiceTest {
         }
     }
 
+    /**
+     * 单引号里的字母是字面量，不是格式字母——`'D'` 与 `'T'` 都不该被当成陷阱拦掉。
+     *
+     * <p>反过来 `''D''`（两个单引号 = 一个转义的单引号，D 仍然是格式字母）**要**拦：实测那个格式串把
+     * 2026-08-21 写成 `'233'`，D 真的是「一年中的第几天」。这一条把「引号怎么读」钉住，免得以后有人
+     * 把陷阱字母的扫描改成「看见 D 就拦」或者「看见引号就整段跳过」。</p>
+     */
+    @Test
+    void quotedLettersAreLiteralsNotPatternLetters() {
+        for (String pattern : List.of("'D'", "'T'", "yyyy''MM''dd", "'a''D''b'", "yyyy-MM-dd'T'HH:mm:ss")) {
+            assertThat(datePatternErrors(pattern)).as(pattern).isEmpty();
+        }
+
+        assertThat(datePatternErrors("''D''")).as("''D''")
+                .containsExactly("bom.createdDate|null|日期格式串不合法: ''D''（D 是「一年中的第几天」不是日，"
+                        + "拿 2026-08-21 试一下会写成 '233'；年月日请写 yyyy-MM-dd）");
+    }
+
     /** 格式串整个没写（空串 / 只有空白 / 键都不在）不是错：编译器和运行时都用默认的 `yyyy-MM-dd`。 */
     @Test
     void aBlankDatePatternIsNotAnError() {
@@ -675,8 +693,8 @@ class MappingDraftValidationServiceTest {
      */
     @Test
     void aDatePatternWithoutASampleIsOnlyAHint() {
-        String hint = "日期格式串 yyyyMMddHHmmss 没在样例上试过"
-                + "（这份样例里没有这一行取的那个字段的值）——配错了要到目标系统那边才发现";
+        String hint = "日期格式串 yyyyMMddHHmmss 没在样例上试过（手上还没有这一步的来源样例）"
+                + "——配错了要到目标系统那边才发现";
 
         assertThat(datePatternWarnings(dateDraft("yyyyMMddHHmmss"), List.of()))
                 .containsExactly("bom.createdDate|null|" + hint);
@@ -690,12 +708,12 @@ class MappingDraftValidationServiceTest {
                 .containsExactly("bom.createdDate|null|" + hint);
     }
 
-    /** 只有字段名、没有样例值（探测没取到样本）时同样试不了，给的还是那句提示。 */
+    /** 只有字段名、没有样例值（探测没取到样本）时同样试不了，给的还是那句提示——成因不同，话也说清。 */
     @Test
     void aDatePatternIsOnlyAHintWhenTheSampleHasNoValues() {
         assertThat(datePatternWarnings(dateDraft("yyyyMMddHHmmss"), List.of(source("createdTime", "STRING"))))
                 .containsExactly("bom.createdDate|null|日期格式串 yyyyMMddHHmmss 没在样例上试过"
-                        + "（这份样例里没有这一行取的那个字段的值）——配错了要到目标系统那边才发现");
+                        + "（样例里这个字段一条值都没取到）——配错了要到目标系统那边才发现");
     }
 
     /**
@@ -716,6 +734,27 @@ class MappingDraftValidationServiceTest {
     private List<String> datePatternWarnings(Map<String, Object> draft, List<SourceField> sample) {
         return problems(service.validate(new MappingDraftRequest(
                 draft, dateTargets(), sample, 1, List.of(1), 1, 2)).warnings());
+    }
+
+    /**
+     * 数组行（组节点）上写着日期转换与格式串时两条都不判。
+     *
+     * <p>组节点的 transform 不参与编译——编译器只看它的 children（`JsonataRuleCompiler.groupExpr`），
+     * 结构校验也是先走组那几条就 `continue`。拿它报一条「没在样例上试过」等于报一件运行时根本不会
+     * 发生的事。</p>
+     */
+    @Test
+    void aDatePatternOnAGroupNodeIsNotJudged() {
+        Map<String, Object> group = groupWith(leaf(null, "materialCode", "materialCode"));
+        group.put("transform", "DATE");
+        group.put("datePattern", "yyyyMMddHHmmss");
+
+        MappingDraftValidation result = service.validate(new MappingDraftRequest(
+                Map.of("rules", List.of(group)),
+                spec(arraySpec("bom.bomLines", elementSpec("materialCode", "VARCHAR", true))),
+                List.of(), 1, List.of(1), 1, 2));
+
+        assertThat(result.warnings()).isEmpty();
     }
 
     // ---------- fixture 与共用形状 ----------

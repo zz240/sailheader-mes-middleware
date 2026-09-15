@@ -144,7 +144,8 @@ class ActionServiceTest {
     }
 
     @Test
-    void fieldMappingSaveRecordsMappingHistory() {        Job job = new Job();
+    void fieldMappingSaveRecordsMappingHistory() {
+        Job job = new Job();
         job.setId(1L);
         when(jobMapper.selectById(1L)).thenReturn(job);
         when(actionMapper.selectCount(any())).thenReturn(0L);

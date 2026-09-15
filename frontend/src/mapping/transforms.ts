@@ -162,7 +162,7 @@ export function applyTransform(row: MapRow, kind: string, params: TransformParam
  * 手输 / 选中的格式串归一：清空（或只有空白）时回落到默认格式（#111 验收五）。
  *
  * 回落而不是送一个空串，是因为空串会一路进规则（`datePattern: ''`）——后端读到的就成了「写了一个空
- * 格式串」而不是「没写」。前后端都用 `DEFAULT_DATE_PATTERN` 这一个默认值。
+ * 格式串」而不是「没写」。这个值与后端 `DatePatterns.DEFAULT`（编译器与运行时都引用它）是同一个。
  */
 export function normalizeDatePattern(value: string): string {
   return value.trim() || DEFAULT_DATE_PATTERN
@@ -209,7 +209,7 @@ export function sampleText(sample: unknown): string {
 
 /**
  * 枚举表里还缺哪些键：样例里出现过、表里没有的值。
- * 后端查不到键时该字段会静默变成 null（不报错），所以这些值最好都在表里（#98 问题 2）。
+ * 后端查不到键时该字段会静默从目标报文里整个消失（不报错），所以这些值最好都在表里（#98 问题 2）。
  */
 export function missingEnumKeys(map: Record<string, any> | null | undefined, field?: SourceField | null): string[] {
   const known = map ?? {}
