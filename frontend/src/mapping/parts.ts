@@ -18,9 +18,8 @@
  * （见 `checks.ts`）。`$` 一个都不出现：括号那段只写在编译产物里（#98 对照表）。
  */
 import { transformLabel, type TransformKind } from './labels.ts'
+import { realEnumMap, type ConcatPart, type MapRow } from './rows.ts'
 import { DEFAULT_DATE_PATTERN, normalizeDatePattern, type TransformParams } from './transforms.ts'
-import type { ConcatPart } from './rows.ts'
-import type { MapRow } from './rows.ts'
 
 /** 片段能挂的转换，界面上按这个顺序排：「常量」在前，其余与行级那七种同序。 */
 export const PART_KINDS = ['CONSTANT', 'STRING', 'INT', 'DATE', 'ENUM', 'INDEX'] as const
@@ -38,8 +37,13 @@ export function partKindOf(part: ConcatPart): PartKind {
   return PART_KINDS.includes(kind) ? kind : 'STRING'
 }
 
-/** 这个片段要怎么存（#112 的存储形状）；`undefined` 表示这个片段还写不成规则。 */
-export function partRuleOf(part: ConcatPart): string | Record<string, any> | null {
+/**
+ * 这个片段要怎么存（#112 的存储形状）。
+ *
+ * 它不管「这个片段填够了没有」——那是 `partFilled` 的事，`ruleFromRow` 先筛再调这里
+ * （与行级 `ruleFromRow` 和 `isRowConfigured` 的分工一样）。
+ */
+export function partRuleOf(part: ConcatPart): string | Record<string, any> {
   const kind = partKindOf(part)
   if (kind === 'CONSTANT') return part.value
   if (kind === 'INDEX') {
@@ -48,7 +52,12 @@ export function partRuleOf(part: ConcatPart): string | Record<string, any> | nul
   }
   const rule: Record<string, any> = { path: part.value }
   if (kind === 'DATE') rule.datePattern = normalizeDatePattern(part.datePattern ?? '')
-  if (kind === 'ENUM') rule.enumMap = part.enumMap ?? {}
+  if (kind === 'ENUM') {
+    // 还没填键的占位格不进规则（与行级同一条）：整张表都没填时干脆不写这个键，
+    // 「枚举转换需要 enumMap」留给后端那条校验去报（前端不复制校验规则，#98 D1）
+    const map = realEnumMap(part.enumMap)
+    if (Object.keys(map).length) rule.enumMap = map
+  }
   if (kind !== 'STRING') rule.transform = kind
   return rule
 }

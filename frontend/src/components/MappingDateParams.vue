@@ -12,8 +12,6 @@ const props = defineProps<{
   pattern: string
   /** 键盘停在哪个预设上（行级面板用 ↑↓ 走选项时给；片段级不给）。 */
   optionIndex?: number
-  /** 上面那排预设点一下选中的是哪一个（片段级不用键盘，就只回写）。 */
-  pickable?: boolean
 }>()
 
 const emit = defineEmits<{

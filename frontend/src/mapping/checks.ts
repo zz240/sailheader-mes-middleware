@@ -583,9 +583,16 @@ eq('再选数字转换：日期那一份参数跟着清掉',
   partRuleOf(applyPartKind(datePart, 'INT')), { path: 'createdTime', transform: 'INT' })
 eq('再选直接取值：不带任何参数（老形状）',
   partRuleOf(applyPartKind(datePart, 'STRING')), { path: 'createdTime' })
-eq('选枚举映射：带一张空的键值表（让「枚举转换需要 enumMap」由后端说）',
+eq('选枚举映射：还不写 enumMap（「枚举转换需要 enumMap」由后端说，与行级同一条）',
   partRuleOf(applyPartKind({ type: 'path', value: 'unit' }, 'ENUM')),
-  { path: 'unit', transform: 'ENUM', enumMap: {} })
+  { path: 'unit', transform: 'ENUM' })
+eq('枚举片段里填了键值对才写进规则',
+  partRuleOf(applyPartKind({ type: 'path', value: 'unit' }, 'ENUM', { enumMap: { PCS: '件' } })),
+  { path: 'unit', transform: 'ENUM', enumMap: { PCS: '件' } })
+eq('枚举片段里还没填键的占位格不进规则（与行级同一条）',
+  partRuleOf({ type: 'path', value: 'unit', transform: 'ENUM',
+    enumMap: { [ENUM_PLACEHOLDER + '0']: '', PCS: '件' } }),
+  { path: 'unit', transform: 'ENUM', enumMap: { PCS: '件' } })
 eq('选常量：变成常量片段、值清空、参数一并清掉',
   partRuleOf(applyPartKind(datePart, 'CONSTANT')), '')
 eq('选行号：值那一格清掉、起始值默认从 1 起',
