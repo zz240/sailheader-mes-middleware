@@ -5,6 +5,10 @@
 - 实现：#70（消息历史：死信升维为运行/消息步）——已按本文落地
 - 补充：#90（断点重投回填上游步骤快照 `edge.resumeContext`）——断点续跑对引用上游输出的 FIELD_MAP 同样可用；
   详见 `docs/flows/reliability-flow.md` ⑤ 与 `docs/features/reliability/README.md`
+- 补充：#108（断点重投失败即失败）——`redeliver` 投递后检查返回 exchange 的异常，失败时抛"重投失败：<根因>"且
+  **不改**原步状态：`REDELIVERED` 只表示"该步已成功续跑"，不再把失败的重投也标成它
+- 补充：#109（`attempt` = 总尝试次数）——`message_step.attempt` 记该步的总投递次数（含 run 内自动重试），
+  由 `onExceptionOccurred` 自计数；本文"预留 RETRYING"的语义后续同样依赖该计数
 
 ## 背景
 
@@ -19,6 +23,7 @@
 - `message_step` 关键字段：`run_id`、`message_id`、`step`（动作序号）、`action_name`、`status`、
   `data_snapshot`（该步数据/上下文）、`input_snapshot`（原始输入）、`error`、`created_at`、`attempt`、断点信息；
 - 状态机：`SUCCESS / FAILED / REDELIVERED` 必做；`RETRYING / SUPPRESSED` 预留；
+  `REDELIVERED` 的准确含义是"该步已成功续跑"（#108：重投失败不得标它）；`attempt` 记**总尝试次数**（#109）；
 - 死信页改为**历史页**，默认查询 `status=FAILED`，按运行/消息/业务键分组展示，提供"从此步断点续跑"；
 - 业务键：源动作新增 `businessKey` 配置（READ_SQL=源列、MQ_CONSUME/任务输入=JSON 路径），在**消息创建时**提取，
   可为空（未配则不分组/去重）；

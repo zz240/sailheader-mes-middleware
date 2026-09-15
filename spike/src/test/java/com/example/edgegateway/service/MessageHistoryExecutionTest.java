@@ -55,6 +55,8 @@ class MessageHistoryExecutionTest {
         TableInfoHelper.initTableInfo(assistant, MessageStep.class);
         TableInfoHelper.initTableInfo(assistant, JobRun.class);
         TableInfoHelper.initTableInfo(assistant, Action.class);
+        // Job 也要初始化：任务启用校验 + isSourceAction 都是 LambdaQueryWrapper（#108 之后失败会真的抛出来）
+        TableInfoHelper.initTableInfo(assistant, Job.class);
     }
 
     private final DataSourceMapper dataSourceMapper = mock(DataSourceMapper.class);
@@ -474,6 +476,8 @@ class MessageHistoryExecutionTest {
     }
 
     private void bindInMemory() {
+        // 重投前的源动作判定要查动作表（LambdaQueryWrapper）——不桩就 NPE，且只有"重投真的抛错"时才暴露
+        when(actionMapper.selectList(any())).thenReturn(List.of());
         when(jobRunMapper.insert(any(JobRun.class))).thenAnswer(inv -> {
             JobRun run = inv.getArgument(0);
             run.setId(runSeq++);

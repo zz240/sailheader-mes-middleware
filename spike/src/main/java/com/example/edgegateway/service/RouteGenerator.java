@@ -50,6 +50,10 @@ public class RouteGenerator {
 
     private static final String CONTEXT = "edge.context";
     private static final String SKIP_FLAG = "edge.skipFragment";
+    /** 某个步骤已失败了几次（#109）：onExceptionOccurred 自计数，写 {@code message_step.attempt} 时读它。 */
+    private static final String FAILED_ATTEMPTS = "edge.failedAttempts";
+    /** {@link #FAILED_ATTEMPTS} 是哪个步骤的失败次数——读的时候要对上号，否则会串到别的步骤头上。 */
+    private static final String FAILED_ATTEMPTS_STEP = "edge.failedAttemptsStep";
     /** 当前批次下界（epoch 毫秒 / 自增值），每批处理后更新；持久化用 {@link WatermarkStore}。 */
     private static final String WATERMARK = "edge.readWatermark";
     /** 是否还有下一批（keyset 分页未扫完）。 */
@@ -401,8 +405,34 @@ public class RouteGenerator {
         builder.onException(Exception.class)
                 .maximumRedeliveries(retries)
                 .redeliveryDelay(backoff)
+                // 每次投递失败都 +1（含最后一次）：计数写在自己的 exchange property 上。
+                // 不读 Camel 的 CamelRedeliveryCounter——它写在 message header 上，每次重投会被
+                // remove/decrement，读它恒为 null + 1（#109）。
+                .onExceptionOccurred(this::countAttempt)
                 .process(ex -> recordFailure(ex))
                 .handled(handled);
+    }
+
+    /**
+     * 记一次失败尝试（#109）：异常回调在每次投递失败时都会走一次，末次（重试耗尽）也在其中。
+     * 计数按**步骤**归零——同一条消息里前面步骤的重投次数不能算到当前步骤头上
+     * （入口链 `handled=true` 失败后链还会往下走，后一个步骤成功时极易串味）。
+     */
+    private void countAttempt(Exchange exchange) {
+        Integer current = actionIndex(exchange);
+        int occurred = failedAttempts(exchange, current);
+        exchange.setProperty(FAILED_ATTEMPTS_STEP, current);
+        exchange.setProperty(FAILED_ATTEMPTS, occurred + 1);
+    }
+
+    /** 这个步骤（动作序号）已失败几次；计数属于别的步骤（或还没计过）时为 0。 */
+    private int failedAttempts(Exchange exchange, Integer step) {
+        Integer counted = exchange.getProperty(FAILED_ATTEMPTS_STEP, Integer.class);
+        if (step == null || !step.equals(counted)) {
+            return 0;
+        }
+        Integer occurred = exchange.getProperty(FAILED_ATTEMPTS, Integer.class);
+        return occurred == null ? 0 : occurred;
     }
 
     private void beginRun(Exchange ex, Job job) {
@@ -428,7 +458,7 @@ public class RouteGenerator {
         }
         messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
                 input, ex.getMessage().getBody(),
-                ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attempt(ex));
+                ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attemptsOnSuccess(ex));
     }
 
     private void recordFailure(Exchange ex) {
@@ -448,7 +478,7 @@ public class RouteGenerator {
                     rootMessage(ex),
                     ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class),
                     ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class),
-                    attempt(ex));
+                    attemptsOnFailure(ex));
         }
     }
 
@@ -464,9 +494,23 @@ public class RouteGenerator {
         return resumeFrom != null && index < resumeFrom;
     }
 
-    private int attempt(Exchange exchange) {
-        Integer counter = exchange.getProperty(Exchange.REDELIVERY_COUNTER, Integer.class);
-        return (counter == null ? 0 : counter) + 1;
+    /**
+     * 失败步的**总尝试次数**（#109）= 该步失败次数（这个步骤每次投递都失败，最后一次也进了异常回调）。
+     * 原实现读 exchange property {@code CamelRedeliveryCounter}，但 Camel 4 把它写进 message header，
+     * 该表达式恒为 {@code null + 1}——历史页「尝试次数」因此永远显示 1。
+     */
+    private int attemptsOnFailure(Exchange exchange) {
+        int failed = failedAttempts(exchange, actionIndex(exchange));
+        return Math.max(failed, 1);
+    }
+
+    /** 成功步的总尝试次数（#109）= 该步之前失败几次 + 这次成功（成功不经过异常回调）。 */
+    private int attemptsOnSuccess(Exchange exchange) {
+        return failedAttempts(exchange, actionIndex(exchange)) + 1;
+    }
+
+    private Integer actionIndex(Exchange exchange) {
+        return exchange.getProperty(MessageHistoryService.ACTION_INDEX, Integer.class);
     }
 
     private String rootMessage(Exchange exchange) {

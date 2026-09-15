@@ -67,7 +67,7 @@
                         <el-tag :type="tagType(row.status)" size="small">{{ row.status }}</el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="attempt" label="尝试" width="70" />
+                    <el-table-column prop="attempt" label="尝试次数" width="90" />
                     <el-table-column prop="createdAt" label="时间" min-width="160" />
                     <el-table-column label="错误" min-width="180" show-overflow-tooltip>
                       <template #default="{ row }">{{ row.error }}</template>

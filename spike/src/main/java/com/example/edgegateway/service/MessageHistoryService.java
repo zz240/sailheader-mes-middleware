@@ -238,7 +238,7 @@ public class MessageHistoryService {
         Object input = parseJson(step.getInputSnapshot());
         Map<Integer, Object> resumeContext = upstreamContext(step);
         try (ProducerTemplate producer = camelContext.createProducerTemplate()) {
-            producer.request("direct:job-" + job.getId() + "-resume", ex -> {
+            Exchange result = producer.request("direct:job-" + job.getId() + "-resume", ex -> {
                 ex.getMessage().setBody(input);
                 ex.setProperty(RESUME_FROM, step.getStep());
                 // #90：被跳过的上游步骤输出随重投回填 context，引用上游输出的 FIELD_MAP 也能续跑（缺快照则不注入）
@@ -246,12 +246,39 @@ public class MessageHistoryService {
                 // 断点续跑沿用原业务键，重投后的消息步仍按同一业务实体分组/检索
                 ex.setProperty(BUSINESS_KEY, step.getBusinessKey());
             });
+            failIfExchangeFailed(result);
         } catch (Exception e) {
             throw new IllegalStateException("重投失败: " + rootMessage(e), e);
         }
         step.setStatus(REDELIVERED);
         messageStepMapper.updateById(step);
         return step;
+    }
+
+    /**
+     * 重投"真的成功了"才算成功（#108）：{@code ProducerTemplate.request(uri, processor)} 把异常留在
+     * exchange 上、**不重抛**，于是失败的重投会安静地返回；这里补上那道检查，把失败交给调用方
+     * ——否则接口返回 OK、原步被标 {@code REDELIVERED}，而目标端根本没拿到数据（运维据此收工）。
+     * 取不到 exchange（mock/桩）时按成功处理，与旧行为一致。
+     *
+     * <p>只抛根因，不加"重投失败:"前缀——前缀由 {@link #redeliver} 的 catch 统一加**一次**，
+     * 否则调用方看到的是"重投失败: 重投失败: &lt;根因&gt;"。</p>
+     */
+    private void failIfExchangeFailed(Exchange exchange) {
+        if (exchange == null) {
+            return;
+        }
+        Exception failure = exchange.getException();
+        if (failure == null) {
+            failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
+        }
+        if (failure != null) {
+            throw new IllegalStateException(rootMessage(failure), failure);
+        }
+        if (exchange.isFailed()) {
+            // 失败但没有异常对象：只说得出"失败了"，别编原因
+            throw new IllegalStateException("续跑路由未成功结束");
+        }
     }
 
     /**
