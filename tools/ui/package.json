@@ -1,0 +1,20 @@
+{
+  "name": "edge-gateway-ui-checks",
+  "private": true,
+  "version": "0.1.0",
+  "description": "字段映射编辑器的真机 UI 验收脚本（Playwright）：一个脚本一个功能点，跑在真的前端 + 后端上",
+  "type": "commonjs",
+  "scripts": {
+    "check:part-transform": "node part-transform-112.cjs",
+    "check:date-format-input": "node date-format-input-111.cjs",
+    "check:keyboard-narrow-screen": "node keyboard-narrow-screen-106.cjs",
+    "check:draft-validation": "node draft-validation-103.cjs",
+    "check:fast-config": "node fast-config-105.cjs",
+    "check:manual-rows": "node manual-rows-102.cjs",
+    "check:array-mapping": "node array-mapping-101.cjs",
+    "check:remove-old-editor": "node remove-old-editor-107.cjs"
+  },
+  "devDependencies": {
+    "playwright": "~1.59.1"
+  }
+}
