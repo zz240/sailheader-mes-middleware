@@ -1,9 +1,11 @@
 /**
  * 字段映射编辑器的共享状态（#117）：行、选中、参数面板、收起集合、来源与目标清单，只有这一处。
  *
- * 为什么要有它：左边来源清单、行列表与问题面板拆成子组件之后，`rows` / `selectedId` / `panel` /
- * `collapsedIds` 这几样是它们与工作台那一段键盘共用的。靠一层层 props / emit 传下去，接缝会长在每个
- * 组件上（改一处要顺着链子改三处）；这里把「状态 + 行上的操作」放成一处，组件只读它、调它。
+ * 为什么要有它：左边来源清单、行列表、问题面板与工作台那一段键盘共用同一份编辑状态
+ * （`rows` / `selectedId` / `panel` / `collapsedIds` / `clearedRows` …）。靠一层层 props / emit 传下去，
+ * 接缝会长在每个组件上（改一处要顺着链子改三处）；这里把「状态 + 挂在状态上的那些操作」放成一处
+ * （选中、展开收起集合、参数面板与它的键盘走位、清除 / 撤销、新增行、自动匹配、点一下来源、跳行），
+ * 组件只读它、调它。**只在一个组件里用的取词与文案不放这里**（那些跟着组件走）。
  *
  * 它不碰后端：不发请求，也不判对错（#98 D1）。`load()` 拿回来的东西由工作台填进来，对错仍然只在
  * 「校验配置」那个只读接口里判——这个模块里连 `api` 都没引。
@@ -13,18 +15,17 @@
 import { computed, inject, nextTick, provide, ref, type ComputedRef, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  appendArrayRow, appendLeafRow, flattenRows, nextEmptyRow, rowReferenceFullLabel, rowReferenceLabel,
-  targetCandidatesFor, type FlatRow, type SourceField, type TargetField,
+  appendArrayRow, appendLeafRow, flattenRows, nextEmptyRow, targetCandidatesFor,
+  type FlatRow, type SourceField, type TargetField,
 } from './editor-model.ts'
-import { autoMatchSameName, nextMatchRowId, targetRowsView, type TargetRowsView } from './fast-config.ts'
+import { autoMatchSameName, targetRowsView, type TargetRowsView } from './fast-config.ts'
 import { clearRowMapping, hasMapping, markHumanEdited, restoreRowMapping, type MapRow, type RowMapping } from './rows.ts'
-import { fieldReferenceLabel } from './labels.ts'
 import {
   applyTransform, datePatternFor, transformOptions, DATE_PRESETS, type TransformOption,
 } from './transforms.ts'
 import {
   appendChildRow, appendIndexChildRow, ancestorRowIds, emptyPickResult, fillRowFromPick,
-  toggledRowIds, visibleRows, type PickableItem,
+  visibleRows, type PickableItem,
 } from './source-picker.ts'
 import type { DraftValidation } from './draft.ts'
 import { stepIndex, type PanelKey } from './keyboard.ts'
@@ -39,32 +40,12 @@ export interface DisplayRow extends FlatRow {
   arrayHeader: boolean
 }
 
-/** 转换下拉里每一项的一句说明（行号那条的说明由后端校验规则来）。 */
-const TRANSFORM_HINTS: Record<string, string> = {
-  STRING: '原值直接搬过去',
-  INT: '转成数字，非数字会失败',
-  DATE: '按模式输出日期字符串',
-  ENUM: '来源值 → 目标值的查表替换',
-  CONSTANT: '不取来源，写死一个值',
-  CONCAT: '常量与来源字段按顺序拼接',
-  INDEX: '数组映射内每个元素的行号',
-}
-
 /** 有参数要填的转换 → 它的面板；没有的（直接映射、数字转换、行号）不在这里。 */
 const PANEL_KEYS: Partial<Record<string, PanelKey>> = {
   DATE: 'date',
   CONSTANT: 'const',
   ENUM: 'enum',
   CONCAT: 'concat',
-}
-
-/** 面板标题（就地参数面板那一条）。 */
-const PANEL_TITLES: Record<PanelKey, string> = {
-  op: '这一行的值怎么取',
-  date: '日期格式化',
-  const: '常量',
-  enum: '枚举映射',
-  concat: '拼接',
 }
 
 export interface WorkbenchState {
@@ -98,22 +79,16 @@ export interface WorkbenchState {
   /** 这一行的目标字段输入框里用户是不是正在打字（决定补全要不要按查询词筛）。 */
   typingTargetRowId: Ref<number | null>
 
-  // ---------------------------------------------------------------- 派生
+  // ---------------------------------------------------------------- 派生（键盘那一段与不止一个组件要看）
   displayRows: ComputedRef<DisplayRow[]>
   rowView: ComputedRef<TargetRowsView>
   selectedEntry: ComputedRef<DisplayRow | null>
   panelEntry: ComputedRef<DisplayRow | null>
-  panelTitle: ComputedRef<string>
-  allCollapsed: ComputedRef<boolean>
 
   // ---------------------------------------------------------------- 行上的操作
   select(row: MapRow): void
-  isCollapsed(row: MapRow): boolean
-  toggleCollapse(row: MapRow): void
-  toggleAllArrays(): void
   closePanel(): void
   openPanel(entry: DisplayRow, kind: PanelKey): void
-  transformHint(kind: string): string
   chooseTransform(entry: DisplayRow, option: TransformOption): void
   chooseDatePattern(row: MapRow, pattern: string): void
   walkPanelOption(delta: -1 | 1): void
@@ -123,7 +98,6 @@ export interface WorkbenchState {
   canUndo(row: MapRow): boolean
   clearHint(entry: FlatRow): string
   jumpToRowId(rowId: number | null): void
-  jumpToNextMatch(): void
   focusRow(row: MapRow): void
   addLeafRow(): void
   addArrayRow(): void
@@ -131,9 +105,6 @@ export interface WorkbenchState {
   addIndexChild(row: MapRow): void
   autoMatch(): void
   pick(item: PickableItem): void
-  rowLabel(entry: FlatRow, isChild: boolean): string
-  rowFullLabel(entry: FlatRow): string
-  fieldLabelOf(entry: FlatRow, path: string): string
 }
 
 /** 建一份工作台共享状态；同一棵组件树上只建一次（工作台 provide，子组件 inject）。 */
@@ -211,33 +182,12 @@ export function createWorkbenchState(): WorkbenchState {
   const panelEntry = computed<DisplayRow | null>(() =>
     displayRows.value.find(e => e.row.id === panelRowId.value) ?? null)
 
-  const panelTitle = computed(() => (panel.value ? PANEL_TITLES[panel.value] : ''))
-
-  // ---------------------------------------------------------------- 选中 / 收起 / 展开
+  // ---------------------------------------------------------------- 选中
 
   function select(row: MapRow) {
     selectedId.value = row.id
     // 换行就把上一行的参数面板收起来，免得面板留在别的行下面看着像它的。
     if (panelRowId.value !== null && panelRowId.value !== row.id) closePanel()
-  }
-
-  function isCollapsed(row: MapRow): boolean {
-    return collapsedIds.value.has(row.id)
-  }
-
-  /** 收起 / 展开一个数组行；「展开全部 / 收起全部」一次处理所有数组行。 */
-  function toggleCollapse(row: MapRow) {
-    collapsedIds.value = toggledRowIds(rows.value, collapsedIds.value, row.id)
-  }
-
-  /** 所有带子行的数组行都收起了吗（决定按钮上写「展开全部」还是「收起全部」）。 */
-  const allCollapsed = computed(() => {
-    const arrays = flattenRows(rows.value).filter(entry => entry.row.children.length)
-    return arrays.length > 0 && arrays.every(entry => collapsedIds.value.has(entry.row.id))
-  })
-
-  function toggleAllArrays() {
-    collapsedIds.value = allCollapsed.value ? new Set() : toggledRowIds(rows.value, new Set())
   }
 
   // ---------------------------------------------------------------- 手工新增行（#102）
@@ -371,11 +321,6 @@ export function createWorkbenchState(): WorkbenchState {
     panelRowId.value = null
   }
 
-  /** 转换下拉里每一项的一句说明。 */
-  function transformHint(kind: string): string {
-    return TRANSFORM_HINTS[kind] ?? ''
-  }
-
   /** 选一个转换：参数跟着换；有参数可填的转换顺手把它的面板打开。 */
   function chooseTransform(entry: DisplayRow, option: TransformOption) {
     if (option.disabled) return
@@ -473,43 +418,15 @@ export function createWorkbenchState(): WorkbenchState {
     })
   }
 
-  /** 目标字段搜索框回车：跳到下一个命中的行（一路回车就是在命中项之间走一圈）。 */
-  function jumpToNextMatch() {
-    const rowId = nextMatchRowId(rowView.value, selectedId.value)
-    if (rowId == null) {
-      ElMessage.warning(targetQuery.value.trim() ? '没有目标字段跟这个词对得上' : '先输一个要搜的目标字段')
-      return
-    }
-    jumpToRowId(rowId)
-  }
-
-  // ---------------------------------------------------------------- 行上那些人话（取词）
-
-  function rowLabel(entry: FlatRow, isChild: boolean) {
-    return rowReferenceLabel(entry.row, actionNames.value, isChild)
-  }
-
-  function rowFullLabel(entry: FlatRow) {
-    const inherited = entry.parent?.sourceStep ?? null
-    return rowReferenceFullLabel(entry.row, actionNames.value, inherited)
-  }
-
-  /** 把一个来源路径按这一行的上下文显示成人话（数组子行里就是相对路径本身）。 */
-  function fieldLabelOf(entry: FlatRow, path: string): string {
-    const step = entry.row.sourceStep ?? entry.parent?.sourceStep ?? defaultStep.value
-    return fieldReferenceLabel({ step, path }, actionNames.value)
-  }
-
   return {
     rows, targets, sourceFields, defaultStep, actionNames, validation,
     selectedId, collapsedIds, clearedRows, panel, panelRowId, optionIndex, targetQuery, typingTargetRowId,
-    displayRows, rowView, selectedEntry, panelEntry, panelTitle, allCollapsed,
-    select, isCollapsed, toggleCollapse, toggleAllArrays,
-    closePanel, openPanel, transformHint, chooseTransform, chooseDatePattern,
+    displayRows, rowView, selectedEntry, panelEntry,
+    select,
+    closePanel, openPanel, chooseTransform, chooseDatePattern,
     walkPanelOption, confirmPanelOption,
-    clearRow, undoClear, canUndo, clearHint, jumpToRowId, jumpToNextMatch,
+    clearRow, undoClear, canUndo, clearHint, jumpToRowId,
     focusRow, addLeafRow, addArrayRow, addChild, addIndexChild, autoMatch, pick,
-    rowLabel, rowFullLabel, fieldLabelOf,
   }
 }
 

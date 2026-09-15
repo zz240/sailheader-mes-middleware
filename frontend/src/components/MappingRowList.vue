@@ -1,41 +1,42 @@
 <script setup lang="ts">
 /**
- * 行列表（#117 从 `FieldMappingWorkbench.vue` 拆出来）：行头、校验结果、四列行渲染、就地参数面板。
+ * 行列表（#117 从 `FieldMappingWorkbench.vue` 拆出来）：行头、四列行渲染、就地参数面板。
  *
  * 「每个目标字段一行、一行一个转换」是这次改版的形态（ADR-0011）：行头加行与搜索，行里
  * 目标字段 / 取值方式 / 问题 / 行操作四列，参数就地展开在行下面（不开弹窗）。
  *
- * 行自己不带编辑状态：行树、选中、参数面板、收起集合都在 `workbench-state.ts` 那一处（#117），
- * 这里只把状态画出来、把点击接到那些操作上。所以它**不长在 props 链上**，也不发请求——
- * 「重新探测目标字段」是个例外（那是后端的事），发一条 `reload-targets` 出去交给工作台。
+ * 行自己不带编辑状态：行树、选中、参数面板、收起集合都在 `useWorkbenchState()` 那一处（#117），
+ * 这里只把状态画出来、把点击接到那些操作上。**行列表专属的取词与文案留在这一份里**（怎么把一行读成
+ * 人话、面板标题、三档状态的落点），不往共享状态里塞。它也不发请求——「重新探测目标字段」是个例外
+ * （那是后端的事），发一条 `reload-targets` 出去交给工作台。
  */
 import { computed } from 'vue'
-import { flattenRows, targetCandidatesFor, type FlatRow, type SourceField } from '../mapping/editor-model.ts'
-import { hasMapping, markHumanEdited, type ConcatPart, type MapRow } from '../mapping/rows.ts'
-import { emptyRowLabel } from '../mapping/labels.ts'
+import { ElMessage } from 'element-plus'
 import {
-  datePatternFor, normalizeDatePattern, transformLabelFor, transformLabelOf, transformName, transformOptions,
+  flattenRows, rowReferenceFullLabel, rowReferenceLabel, targetCandidatesFor,
+  type FlatRow, type SourceField,
+} from '../mapping/editor-model.ts'
+import { nextMatchRowId } from '../mapping/fast-config.ts'
+import { hasMapping, markHumanEdited, type ConcatPart, type MapRow } from '../mapping/rows.ts'
+import { emptyRowLabel, fieldReferenceLabel } from '../mapping/labels.ts'
+import {
+  datePatternFor, normalizeDatePattern, transformLabelFor, transformLabelOf, transformName,
+  transformOptions, TRANSFORM_HINTS,
 } from '../mapping/transforms.ts'
-import { ELEMENT_GROUP_TITLE } from '../mapping/source-picker.ts'
+import { ELEMENT_GROUP_TITLE, toggledRowIds } from '../mapping/source-picker.ts'
 import { applyPartKind, canUsePartKind, partEmpty, partKindLabel, partKindOf, partLabelSpec, PART_KINDS } from '../mapping/parts.ts'
-import type { LocatedIssue } from '../mapping/draft.ts'
-import { useWorkbenchState } from '../mapping/workbench-state.ts'
+import { rowIssueState, type LocatedIssue } from '../mapping/draft.ts'
+import type { PanelKey } from '../mapping/keyboard.ts'
+import { useWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import MappingDateParams from './MappingDateParams.vue'
 import MappingEnumParams from './MappingEnumParams.vue'
 import MappingIndexParams from './MappingIndexParams.vue'
-import MappingIssuesPanel from './MappingIssuesPanel.vue'
 
 const props = defineProps<{
   /** 这一批目标是哪个动作的（写目标那一句说明）。 */
   targetTip: string
-  /** 跑过一次校验没有（没跑过就不显示行右侧的状态与问题面板）。 */
+  /** 跑过一次校验没有（没跑过就不显示行右侧的状态）。 */
   hasValidation: boolean
-  /** 这次校验里有错误吗（问题面板上那句统计用它标红）。 */
-  hasErrors: boolean
-  /** 「没有发现问题」或者「N 个错误 · M 个警告」。 */
-  summary: string
-  /** 问题列表（每条带着它落在哪一行）。 */
-  issues: LocatedIssue[]
   /** 每一行的问题（键是行 id）：行右侧那三种状态用它算。 */
   rowIssues: Map<number, LocatedIssue[]>
 }>()
@@ -46,13 +47,73 @@ const emit = defineEmits<{
 }>()
 
 const {
-  rows, targets, sourceFields, selectedId, panel, panelRowId, optionIndex,
-  targetQuery, typingTargetRowId, displayRows, rowView, panelEntry, panelTitle, allCollapsed,
-  select, isCollapsed, toggleCollapse, toggleAllArrays, closePanel, openPanel, transformHint,
-  chooseTransform, chooseDatePattern, clearRow, undoClear, canUndo, clearHint, jumpToNextMatch,
-  jumpToRowId, addLeafRow, addArrayRow, addChild, addIndexChild, autoMatch, rowLabel, rowFullLabel,
-  fieldLabelOf,
+  rows, targets, sourceFields, defaultStep, actionNames, selectedId, collapsedIds, panel, panelRowId,
+  optionIndex, targetQuery, typingTargetRowId, displayRows, rowView, panelEntry,
+  select, closePanel, openPanel, chooseTransform, chooseDatePattern,
+  clearRow, undoClear, canUndo, clearHint, jumpToRowId,
+  addLeafRow, addArrayRow, addChild, addIndexChild, autoMatch,
 } = useWorkbenchState()
+
+/** 面板标题（就地参数面板那一条）。 */
+const PANEL_TITLES: Record<PanelKey, string> = {
+  op: '这一行的值怎么取',
+  date: '日期格式化',
+  const: '常量',
+  enum: '枚举映射',
+  concat: '拼接',
+}
+
+const panelTitle = computed(() => (panel.value ? PANEL_TITLES[panel.value] : ''))
+
+/** 转换下拉里每一项的一句说明（与 `transforms.ts` 里那份共用一处定义）。 */
+function transformHint(kind: string): string {
+  return TRANSFORM_HINTS[kind] ?? ''
+}
+
+/** 行上那些人话：这一行的来源读成「动作 1 · 读 BOM · createdTime」这种。 */
+function rowLabel(entry: FlatRow, isChild: boolean): string {
+  return rowReferenceLabel(entry.row, actionNames.value, isChild)
+}
+
+/** 一行当前来源的完整说法（悬停提示）。子行自己不存 sourceStep，用组节点那个。 */
+function rowFullLabel(entry: FlatRow): string {
+  return rowReferenceFullLabel(entry.row, actionNames.value, entry.parent?.sourceStep ?? null)
+}
+
+/** 把一个来源路径按这一行的上下文显示成人话（数组子行里就是相对路径本身）。 */
+function fieldLabelOf(entry: FlatRow, path: string): string {
+  const step = entry.row.sourceStep ?? entry.parent?.sourceStep ?? defaultStep.value
+  return fieldReferenceLabel({ step, path }, actionNames.value)
+}
+
+/** 收起 / 展开一个数组行；「展开全部 / 收起全部」一次处理所有数组行。 */
+function toggleCollapse(row: MapRow) {
+  collapsedIds.value = toggledRowIds(rows.value, collapsedIds.value, row.id)
+}
+
+function isCollapsed(row: MapRow): boolean {
+  return collapsedIds.value.has(row.id)
+}
+
+/** 所有带子行的数组行都收起了吗（决定按钮上写「展开全部」还是「收起全部」）。 */
+const allCollapsed = computed(() => {
+  const arrays = flattenRows(rows.value).filter(entry => entry.row.children.length)
+  return arrays.length > 0 && arrays.every(entry => collapsedIds.value.has(entry.row.id))
+})
+
+function toggleAllArrays() {
+  collapsedIds.value = allCollapsed.value ? new Set() : toggledRowIds(rows.value, new Set())
+}
+
+/** 搜索框回车：跳到下一个命中的行（一路回车就是在命中项之间走一圈）。 */
+function jumpToNextMatch() {
+  const rowId = nextMatchRowId(rowView.value, selectedId.value)
+  if (rowId == null) {
+    ElMessage.warning(targetQuery.value.trim() ? '没有目标字段跟这个词对得上' : '先输一个要搜的目标字段')
+    return
+  }
+  jumpToRowId(rowId)
+}
 
 /** 「有错 / 有警告 / 没问题」——#103 要求界面上分得开这三种。 */
 const STATE_LABELS: Record<'error' | 'warning' | 'ok', string> = {
@@ -174,9 +235,8 @@ function issueText(rowId: number): string {
 }
 
 function rowStateOf(rowId: number): 'error' | 'warning' | 'ok' {
-  const issues = props.rowIssues.get(rowId)
-  if (!issues?.length) return 'ok'
-  return issues.some(issue => issue.severity === 'error') ? 'error' : 'warning'
+  // 「有错 / 有警告 / 没问题」这条判据只有 `draft.ts` 一处（这里不复制第二份）
+  return rowIssueState(props.rowIssues.get(rowId))
 }
 
 function stateLabel(rowId: number): string {
@@ -185,7 +245,7 @@ function stateLabel(rowId: number): string {
 
 // ---------------------------------------------------------------- 参数面板里那几个 handler
 //
-// 面板本身（种类、第几个选项、开着的是哪一行）在 `workbench-state.ts`：键盘那一段也要用它。
+// 面板本身（种类、第几个选项、开着的是哪一行）在 `useWorkbenchState.ts`：键盘那一段也要用它。
 // 这里只剩「用户在这一格里改了什么」——改的永远是行上的那一份，组件自己不存副本。
 
 /**
@@ -327,14 +387,9 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
       <el-button size="small" text type="primary" @click="emit('reload-targets')">重新探测目标字段</el-button>
     </div>
 
-    <!-- 校验结果（#103）：点「校验配置」才有；每条问题点一下就跳到对应的行 -->
-    <MappingIssuesPanel
-      v-if="props.hasValidation"
-      :issues="props.issues"
-      :summary="props.summary"
-      :has-errors="props.hasErrors"
-      @jump="jumpToRowId"
-    />
+    <!-- 校验结果（#103）：点「校验配置」才有；每条问题点一下就跳到对应的行。
+         那一块由工作台通过这个插槽放进来——它读的是草稿那层的结果，行列表不替它转手 -->
+    <slot name="issues" />
 
     <div v-if="!rows.length" class="wb-empty">
       还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。清单不全也没关系：
@@ -750,5 +805,7 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
 
 @media (max-width: 640px) {
   .wb-rows { padding: 8px; }
+  /* 窄到这一步搜索框铺满一行（#106 的口径；它旁边那排按钮跟着换行） */
+  .wb-target-search { width: 100%; }
 }
 </style>

@@ -87,16 +87,24 @@
           @pick="pick"
         />
 
-        <!-- 行列表（#117 拆出去）：行头、四列行渲染与就地参数面板；共享状态由 workbench-state 提供 -->
+        <!-- 行列表（#117 拆出去）：行头、四列行渲染与就地参数面板；共享状态由 useWorkbenchState 提供。
+             校验结果那一块走插槽放进去——它读的是草稿那层的结果，行列表不替它转手 -->
         <MappingRowList
           :target-tip="targetTip"
           :has-validation="validation != null"
-          :has-errors="(validation?.errors.length ?? 0) > 0"
-          :summary="issueSummary"
-          :issues="locatedIssues"
           :row-issues="rowIssues"
           @reload-targets="reloadTargets"
-        />
+        >
+          <template #issues>
+            <MappingIssuesPanel
+              v-if="validation"
+              :issues="locatedIssues"
+              :summary="issueSummary"
+              :has-errors="validation.errors.length > 0"
+              @jump="jumpToRowId"
+            />
+          </template>
+        </MappingRowList>
       </div>
 
       <!-- 手写 JSONata 这一边（#106）：整段表达式就是这次映射要执行的东西（与后端 mode=EXPRESSION 一致）。
@@ -142,9 +150,10 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
-import { createWorkbenchState, provideWorkbenchState } from '../mapping/workbench-state.ts'
+import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
+import MappingIssuesPanel from './MappingIssuesPanel.vue'
 import MappingRowList from './MappingRowList.vue'
 import MappingSourcePanel from './MappingSourcePanel.vue'
 
@@ -173,7 +182,7 @@ const artifactTab = ref('jsonata')
  *
  * 左边来源清单、行列表、问题面板拆出去之后（#117），这几样是它们与键盘那一段共用的：一处状态源比
  * 一层层 props / emit 传下去短得多，也不会出现两个副本各自记着「选中的是哪一行」。
- * 状态的来龙去脉与「行上的操作」都在 `mapping/workbench-state.ts`。
+ * 状态的来龙去脉与「行上的操作」都在 `mapping/useWorkbenchState.ts`。
  */
 const state = createWorkbenchState()
 provideWorkbenchState(state)
@@ -181,7 +190,7 @@ const {
   rows, targets, sourceFields, selectedId, defaultStep, clearedRows, actionNames, validation,
   displayRows, selectedEntry,
   panel, closePanel, openPanel, walkPanelOption, confirmPanelOption,
-  clearRow, pick,
+  clearRow, jumpToRowId, pick,
 } = state
 
 /** 左边来源清单那一块（「走清单」那一段的状态归它，这里只按键盘的意图调它）。 */
@@ -206,7 +215,12 @@ const rowsMode = computed(() => editorMode.value === 'rows')
 const storedExpression = computed(() => hasExpression(expressionOf(props.config)))
 const expressionReplaced = () => expressionReplacedNotice()
 
-/** 链上更早的动作都能当默认来源；任务输入（0）永远在选项里。 */
+/**
+ * 链上更早的动作都能当默认来源；任务输入（0）永远在选项里。
+ *
+ * 「更早」只有这一处口径（`a.index < 这个动作的序号`）：`previousActionIndex` 与校验请求里的
+ * `earlierActionIndexes` 都从这份选项派生，不再各写一遍那个判据。
+ */
 const stepOptions = computed(() => {
   const options: { step: number | null; label: string }[] = [{ step: 0, label: '任务输入' }]
   for (const a of context.value?.actions ?? []) {
@@ -216,6 +230,10 @@ const stepOptions = computed(() => {
   }
   return options
 })
+
+/** 链上更早的动作序号（顶部那个下拉去掉「任务输入」）：sourceStep 只能指向这些。 */
+const earlierActionIndexes = computed(() =>
+  stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
 
 const sourceTip = computed(() => {
   const sample = context.value?.source
@@ -237,7 +255,7 @@ const targetTip = computed(() => {
 const progress = computed(() => progressOf(rows.value, targets.value))
 const progressPercent = computed(() => (progress.value.total ? Math.round(progress.value.configured / progress.value.total * 100) : 0))
 
-// 行的铺开、展开/收起、选中、新增行、清除/撤销、参数面板那一套都在 `mapping/workbench-state.ts`（#117）。
+// 行的铺开、展开/收起、选中、新增行、清除/撤销、参数面板那一套都在 `mapping/useWorkbenchState.ts`（#117）。
 
 // ---------------------------------------------------------------- 加载（上下文、目标清单、来源清单）
 
@@ -251,7 +269,7 @@ async function load() {
     context.value = ctx
     actionNames.value = actionNamesOf(ctx)
     sourceFields.value = ctx.source?.fields ?? []
-    defaultStep.value = ctx.source?.step ?? previousActionIndex(ctx)
+    defaultStep.value = ctx.source?.step ?? previousActionIndex()
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
     rows.value = saved.length ? mergeRowsWithTargets(saved, targets.value, defaultStep.value) : rowsFromTargetFields(targets.value, defaultStep.value)
@@ -267,12 +285,13 @@ async function load() {
   rootEl.value?.focus()
 }
 
-/** 默认来源步骤：链上更早的那个动作；没有更早的动作就是任务输入（0）。 */
-function previousActionIndex(ctx: FieldMappingEditorContext): number {
-  const earlier = (ctx.actions ?? [])
-    .map(a => a.index)
-    .filter((i): i is number => i != null)
-    .filter(i => props.actionIndex == null || i < props.actionIndex)
+/**
+ * 默认来源步骤：链上更早的那个动作；没有更早的动作就是任务输入（0）。
+ *
+ * 「更早」的判据在 `stepOptions` 那一处（它已经按这个动作的序号筛过），这里只取最大的那一个。
+ */
+function previousActionIndex(): number {
+  const earlier = earlierActionIndexes.value
   return earlier.length ? Math.max(...earlier) : 0
 }
 
@@ -341,10 +360,6 @@ async function reloadTargets() {
 }
 
 // ---------------------------------------------------------------- 校验配置与保存（#103）
-
-/** 链上执行顺序更早的动作序号（顶部那个下拉去掉「任务输入」）：sourceStep 只能指向这些。 */
-const earlierActionIndexes = computed(() =>
-  stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
 
 /**
  * 校验与保存那一段（草稿怎么装、回来的问题怎么落到行上、保存前拦哪几道）在 `mapping/useMappingDraft.ts`。

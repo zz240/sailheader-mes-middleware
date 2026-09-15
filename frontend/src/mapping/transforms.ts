@@ -98,10 +98,19 @@ function paramHint(kind: string, row: MapRow, filledParts: ConcatPart[]): string
   }
 }
 
-/** 转换下拉里每一项的一句说明（没有参数要填的那几个）。 */
-const TRANSFORM_HINTS: Record<string, string> = {
+/**
+ * 转换下拉里每一项的一句说明（没有参数要填的那几个，与面板上「换转换」那一排说的是同一份）。
+ *
+ * 只有一处定义：`paramHint` 的默认分支与行列表那份 `transformHint` 读的都是它——两处各写一遍的话，
+ * 改了一处的措辞、界面上另一处还是老的。
+ */
+export const TRANSFORM_HINTS: Record<string, string> = {
   STRING: '原值直接搬过去',
   INT: '转成数字，非数字会失败',
+  DATE: '按模式输出日期字符串',
+  ENUM: '来源值 → 目标值的查表替换',
+  CONSTANT: '不取来源，写死一个值',
+  CONCAT: '常量与来源字段按顺序拼接',
   INDEX: '数组映射内每个元素的行号',
 }
 

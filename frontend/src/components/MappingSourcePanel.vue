@@ -19,7 +19,7 @@ import {
 import { flattenRows } from '../mapping/editor-model.ts'
 import { sourcePickerFor, type PickableItem } from '../mapping/source-picker.ts'
 import { stepIndex } from '../mapping/keyboard.ts'
-import { useWorkbenchState } from '../mapping/workbench-state.ts'
+import { useWorkbenchState } from '../mapping/useWorkbenchState.ts'
 
 const props = defineProps<{
   /** 这份清单取自哪儿（哪一步、哪一次运行）——工作台从编辑器上下文里算好传进来。 */

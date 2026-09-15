@@ -6,7 +6,8 @@
  * `MappingExpressionEditor.vue`（只列原文，点不动）。两处都在工作台这棵树上，而 scoped 样式到不了
  * 兄弟组件内部的元素，所以基元放在这里，谁都不用复制一份（与 `workbench-panel.css` 同一个理由）。
  *
- * 只放**两处都用**的那几条：`.wb-issues*`（那个带边框的盒子）与行右侧的状态块归各自组件。
+ * 只放**两处都用**的那几条。那个带边框的盒子（`.wb-issues*`）在 `MappingIssuesPanel.vue` 自己的
+ * scoped 样式里，行右侧那三种状态（`.wb-state*`）在 `MappingRowList.vue` 里——它们各自只有一个主人。
  * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
  */
 .wb-issue-summary { font-size: 12px; color: #6b7280; }

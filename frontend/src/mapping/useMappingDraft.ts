@@ -22,7 +22,7 @@ import {
   type DraftValidation,
 } from './draft.ts'
 import { expressionConfig, expressionReplacedNotice, hasExpression, type EditorMode } from './expression.ts'
-import type { WorkbenchState } from './workbench-state.ts'
+import type { WorkbenchState } from './useWorkbenchState.ts'
 
 /** 手写那一边的问题：没有「哪一行」可言，只有错误 / 警告两档。 */
 export interface ExpressionIssue {
@@ -232,8 +232,8 @@ export function useMappingDraft(options: MappingDraftOptions) {
   }
 
   return {
-    validating, saving, rowsMode,
-    mergedValidation, expressionIssues, locatedIssues, rowIssues, issueSummary,
-    validateConfig, save, getConfig, configuredCount, untouchedCount, autoFilledCount,
+    validating, saving,
+    expressionIssues, locatedIssues, rowIssues, issueSummary,
+    validateConfig, save, getConfig,
   }
 }
