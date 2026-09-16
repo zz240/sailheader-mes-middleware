@@ -57,6 +57,8 @@ node part-transform-112.cjs        # 在哪个目录跑都行：截图落在 too
 后端那些用例（同样是这些断言，只是不走浏览器）：
 
 - 草稿校验 fixture：`spike/src/test/java/com/example/edgegateway/service/MappingDraftValidationServiceTest.java`
+- 试算 fixture（整份跑通 / 逐行归因 / 手写表达式 / 不改任何东西）：`spike/src/test/java/com/example/edgegateway/service/MappingTrialServiceTest.java`
+- 求值上限（超时与递归深度、不误伤大数组）：`spike/src/test/java/com/example/edgegateway/mapping/JsonataFieldMapperLimitsTest.java`
 - 规则 → 编译 → 执行往返：`spike/src/test/java/com/example/edgegateway/mapping/JsonataRuleCompilerTest.java`
 - 保存那道门：`spike/src/test/java/com/example/edgegateway/service/ActionServiceTest.java`
 - 编辑器端点契约：`spike/src/test/java/com/example/edgegateway/web/FieldMappingEditorControllerTest.java`

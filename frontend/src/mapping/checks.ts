@@ -26,6 +26,9 @@
  *      粘出来的那一行小字（#118）：必填推不出来、数组按第 1 条推；「这份是不是粘的」认后端那一格标记。
  *  12. 粘一次就留着（#119）：库里存过的那份写法与探测那条路分得清（「粘的（已存）」）、目标那一片
  *      同理，以及保存那一刻手里这两份该落到哪一格（带原文 = 存下来 / 不带 = 把库里那一格清掉）。
+ *  13. 试算（#116）：发出去的请求体（草稿 + 样例原文 + 这份样例算在哪一步，手写那一边也一样）、
+ *      没有样例时按不动、探测那份也带原文但**照样不落库**，以及回来那份结果在界面上的两句话、
+ *      标红那一行怎么写、目标报文怎么排成多行。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -70,6 +73,11 @@ import {
   attributeSample, isPastedSample, isStoredSample, provenanceOf, sampleNoteOf, sampleSavesFor,
   sourceTipOf, targetNoteOf, targetWhereOf, withRawText,
 } from './sample.ts'
+import {
+  TRIAL_ATTRIBUTION_NOTE, TRIAL_ATTRIBUTION_WHY, TRIAL_NO_ROW_NOTE, TRIAL_NO_ROW_NOTE_EXPRESSION,
+  trialCanRun, trialFailureLine, trialOutputText, trialRequest, trialSampleNote, trialSampleOf,
+  trialSampleText, trialStepNotice, trialSummary,
+} from './trial.ts'
 import type { EditorSourceSample } from '../types.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -1718,6 +1726,9 @@ eq('其余那些外部事实照旧带上（手写这条路后端也看得见目�
  */
 const PROBED_SAMPLE: EditorSourceSample = {
   step: 1, stepName: '读订单', sourceKey: 'sample', sampledFirstItem: false,
+  // 运行快照那条路也给原文（后端把同一份数据写成一段 JSON 带回来，#116 试算要拿它跑）；
+  // 它**仍然不落库**：「存不存」按来历判（见下面 `sampleSavesFor` 那几条），跟这一格在不在没关系
+  json: '{"order_no":"PO-1"}',
   fields: [{ name: 'order_no', type: 'STRING', nullable: true, samples: ['PO-1'] }],
 }
 const PASTED_SAMPLE: EditorSourceSample = {
@@ -1844,6 +1855,97 @@ eq('粘的那份没带原文时按「没有」算（不拿别的东西去冒充�
   { step: 1, json: null })
 eq('两边都没有要写要清的格子时一个请求都不发',
   sampleSavesFor(null, null, null), {})
+
+// ---------------------------------------------------------------- 13. 试算（#116）
+
+/**
+ * 试算发什么：草稿（与校验/保存同一份口径）+ **左边那份样例的原文** + 这份样例算在哪一步。
+ *
+ * 样例原文是这一票与校验请求唯一的区别：校验拿字段清单判静态问题，试算要拿**真数据**去跑表达式。
+ */
+const trialBody = trialRequest({ rows: [DRAFT_CONFIGURED, DRAFT_BLANK], source: PASTED_SAMPLE })
+eq('试算请求：草稿就是保存会写出去的那一份（没配好的行不进草稿）',
+  (trialBody.draft.rules ?? []).map((r: Record<string, any>) => r.target), ['bom.bomNo'])
+eq('试算请求：带上那份样例的原文', trialBody.sampleJson, PASTED_SAMPLE.json)
+eq('试算请求：带上这份样例算在哪一步', trialBody.sampleStep, 1)
+
+// 手写 JSONata 那条路同样能试算（#116 验收六）：草稿换成表达式那一份，样例照旧
+const trialExpression = trialRequest({
+  rows: [], source: PASTED_SAMPLE, draft: expressionConfig('$s_1.bomNo'),
+})
+eq('手写表达式那一边：发的是表达式那一份草稿',
+  trialExpression.draft, { mode: 'EXPRESSION', expression: '$s_1.bomNo', rules: [] })
+eq('手写表达式那一边：样例原文与步骤照旧带上',
+  [trialExpression.sampleJson, trialExpression.sampleStep], [PASTED_SAMPLE.json, 1])
+
+// 没有样例就没有可跑的数据：原文那一格是 null，界面上那个按钮按不动
+const trialNoSample = trialRequest({ rows: [DRAFT_CONFIGURED], source: null })
+eq('没有样例时那两格是空的', [trialNoSample.sampleJson, trialNoSample.sampleStep], [null, null])
+ok('没有样例时按不动', !trialCanRun(null))
+ok('有样例时能用', trialCanRun(PASTED_SAMPLE))
+eq('空白原文当没有（不把一段空文本发出去）', trialSampleOf({ ...PASTED_SAMPLE, json: '  ' }), null)
+
+// 运行快照那条路（探测）也带着原文，所以那批探得出来源的任务照样能试算
+ok('探测那条路的样例也有原文（试算拿它跑）', trialSampleOf(PROBED_SAMPLE) === PROBED_SAMPLE.json)
+// 但它**照样不落库**：手里这份算不算「粘的」按来历（sourceKey）判，与原文那一格在不在无关（#119）
+eq('探测那份照样不写回库里',
+  sampleSavesFor(PROBED_SAMPLE, null, 13).source, { step: 1, json: null })
+
+// 回来那份结果在界面上怎么说：两句话各说一种情况，还没有结果时什么都不说
+eq('整份跑通了那句话',
+  trialSummary({ ran: true, output: { bom: {} }, error: null, failures: [] }),
+  '整份跑通了：下面是这份草稿算出来的目标报文')
+ok('整份没跑通那句话带上传来的原因',
+  trialSummary({ ran: false, output: null, error: 'NumberFormatException', failures: [] })
+    .includes('NumberFormatException'))
+eq('还没跑过时没有那句话', trialSummary(null), '')
+
+// 数组映射在结果里显示成目标数组的多行：一个元素占自己的一行（右边那一栏是等宽 pre）
+const trialOutput = trialOutputText({ bom: { bomLines: [{ lineNo: 1 }, { lineNo: 2 }] } })
+eq('目标数组里两个元素各占一行',
+  trialOutput.split('\n').filter(line => line.includes('"lineNo"')).length, 2)
+ok('数组那一格看得出来是多行的', trialOutput.includes('[') && trialOutput.includes(']'), trialOutput)
+eq('没有输出时那一栏是空的', trialOutputText(null), 'null')
+
+// 没跑通时那两句说明：第一句是票里要求**逐字**写明的，第二句说清两段式的区别
+eq('界面写明「整份没跑通，标红的是单独跑这一行的结果」',
+  TRIAL_ATTRIBUTION_NOTE, '整份没跑通，标红的是单独跑这一行的结果')
+ok('还有一句说清「整份跑才是真话」', TRIAL_ATTRIBUTION_WHY.includes('整份跑'), TRIAL_ATTRIBUTION_WHY)
+ok('逐行也指不出来时不硬指一行', TRIAL_NO_ROW_NOTE.includes('没有哪一行单独跑也失败'), TRIAL_NO_ROW_NOTE)
+ok('手写那一边不拿逐行那套说法去说它',
+  TRIAL_NO_ROW_NOTE_EXPRESSION.includes('没有「行」'), TRIAL_NO_ROW_NOTE_EXPRESSION)
+// 标红的那一行写成「在哪一行」，与校验结果那份同一处口径（同一个 issueLocation）
+eq('数组子行的失败带上它所属的数组行',
+  trialFailureLine({ target: 'qty', parent: 'bom.bomLines', message: 'x' }), 'bom.bomLines · qty')
+eq('顶层行的失败就说目标字段',
+  trialFailureLine({ target: 'bom.bomNo', parent: null, message: 'x' }), 'bom.bomNo')
+
+// 左边那一栏：样例原文排成人看的样子；收不下的原文原样显示（至少看得见手里是什么）
+eq('左边那栏把样例原文排版出来', trialSampleText('{"a":1}'), '{\n  "a": 1\n}')
+eq('收不下的原文原样显示', trialSampleText('{oops'), '{oops')
+eq('没有样例时左边那栏是空的', trialSampleText(null), '')
+
+// 这一跑的两个前提：样例是数组时跑的是第 1 条；草稿里别的来源步骤那些行取不到数据
+ok('样例是数组时写明「字段清单与试算都按第 1 条算」',
+  trialSampleNote(PASTED_ARRAY).includes('第 1 条'), trialSampleNote(PASTED_ARRAY))
+eq('整份就是一个对象时不说这句', trialSampleNote(PASTED_SAMPLE), '')
+eq('没有样例时也不说', trialSampleNote(null), '')
+
+// 草稿里的行写的来源步骤跟样例那一步对不上：明说「这一跑它们取不到数据」，
+// 不然整份照样「跑通了」，把「跨步骤引用取不到值」盖成一片全绿（正是这一票要照亮的那类问题）
+const stepMixedRows = [leaf('order_no', 'order_no', 'STRING'), leaf('bomNo', 'bom.bomNo', 'STRING', { sourceStep: 3 })]
+eq('有行写的是别的来源步骤时说清是哪几步',
+  trialStepNotice(stepMixedRows, PASTED_SAMPLE),
+  '1 行的来源步骤不是这份样例算的那一步（动作 3）——这一跑它们取不到数据。')
+eq('对得上时不说这句话',
+  trialStepNotice([leaf('order_no', 'order_no', 'STRING')], PASTED_SAMPLE), '')
+eq('没配目标字段的行不算（它不进草稿，也就不参与这一跑）',
+  trialStepNotice([createRow(3, 'x', '', 'STRING')], PASTED_SAMPLE), '')
+eq('样例的步骤不明时无从比起，不说',
+  trialStepNotice(stepMixedRows, { ...PASTED_SAMPLE, step: null }), '')
+eq('没有样例时也不说', trialStepNotice(stepMixedRows, null), '')
+eq('任务输入那一步也对得上（没写 sourceStep 的行按 0 算）',
+  trialStepNotice([leaf('order_no', 'order_no', 'STRING', { sourceStep: 0 })], { ...PASTED_SAMPLE, step: 0 }), '')
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

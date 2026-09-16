@@ -3,6 +3,7 @@ package com.example.edgegateway.web;
 import com.example.edgegateway.mock.MockMesController;
 import com.example.edgegateway.service.FieldMappingEditorService;
 import com.example.edgegateway.service.MappingDraftValidationService;
+import com.example.edgegateway.service.MappingTrialService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -31,6 +32,10 @@ class ApiEnvelopeTest {
 
     @MockBean
     private FieldMappingEditorService editorService;
+
+    /** 同一个控制器上还挂着试算那个端点（#116），上下文里得有这么个 bean（这一层不验它的行为）。 */
+    @MockBean
+    private MappingTrialService trialService;
 
     @Test
     void successResponseIsWrapped() throws Exception {

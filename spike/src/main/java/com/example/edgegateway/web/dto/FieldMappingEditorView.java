@@ -36,8 +36,9 @@ public record FieldMappingEditorView(
      *
      * @param sourceKey `paste` = 这一次粘进来的；`stored` = 库里存过的那份（#119）；其余是探测那条路
      *                  （运行快照给 `sample`，连库那条路给 `db:<表名>`）——界面按它选说法
-     * @param json      粘的那份**原文**（#115 / #119）；探测那条路是 null。保存时原样写回库里（#119），
-     *                  所以存过的那份重开之后手里仍然握着原文（这也正是「存原文」的另一半理由）
+     * @param json      这份样例的**原文**：粘的那份一定有（保存时原样写回库里，#119），运行快照那条路也给
+     *                  （同一份数据的另一种写法，**不落库**）。试算（#116）拿它跑——左边清单说的与右边
+     *                  跑的必须是同一份数据；探测那份不落库这件事不受影响（保存时按 `sourceKey` 判来历）
      */
     public record SourceSample(Integer step, String stepName, String sourceKey,
                                boolean sampledFirstItem, List<SourceField> fields, String json) {

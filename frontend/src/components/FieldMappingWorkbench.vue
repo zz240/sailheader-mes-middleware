@@ -137,14 +137,29 @@
         @submit="submitPastedSample"
       />
 
-      <!-- 底部编译产物（#103）：两个标签页，JSONata 与规则 JSON -->
-      <div v-if="validation" class="wb-foot">
+      <!-- 底部：编译产物两个标签页（JSONata / 规则 JSON，#103）+ 第三个「试算」（#116）。
+           试算与那两个并列、不并进校验接口：它是真执行、要资源上限、点按钮才跑。
+           所以这一块**一直在**（还没校验过时前两页写明去点校验），试算不需要先校验。 -->
+      <div class="wb-foot">
         <el-tabs v-model="artifactTab" class="wb-artifacts">
           <el-tab-pane label="JSONata" name="jsonata">
-            <pre class="wb-artifact">{{ validation.compiled.jsonata || '这份草稿还没编译出表达式——先把错误改掉' }}</pre>
+            <pre class="wb-artifact">{{ validation?.compiled.jsonata || '这份草稿还没编译出表达式——点「校验配置」看，或者先把错误改掉' }}</pre>
           </el-tab-pane>
           <el-tab-pane label="规则 JSON" name="rules">
-            <pre class="wb-artifact">{{ validation.compiled.rulesJson || '（没有内容）' }}</pre>
+            <pre class="wb-artifact">{{ validation?.compiled.rulesJson || '（还没有内容——点「校验配置」看后端读到的这一份）' }}</pre>
+          </el-tab-pane>
+          <el-tab-pane label="试算" name="trial">
+            <MappingTrialPanel
+              :source="trialSource"
+              :sample-json="trialSampleJson"
+              :can-run="trialCanRun"
+              :result="trialResult"
+              :running="trialing"
+              :request-error="trialRequestError"
+              :rows-mode="rowsMode"
+              :rows="rows"
+              @run="runTrial"
+            />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -175,11 +190,13 @@ import {
 } from '../mapping/sample.ts'
 import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
+import { useMappingTrial } from '../mapping/useMappingTrial.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
 import MappingIssuesPanel from './MappingIssuesPanel.vue'
 import MappingPasteSampleDialog from './MappingPasteSampleDialog.vue'
 import MappingRowList from './MappingRowList.vue'
 import MappingSourcePanel from './MappingSourcePanel.vue'
+import MappingTrialPanel from './MappingTrialPanel.vue'
 
 const props = defineProps<{
   jobId: number
@@ -494,6 +511,18 @@ const {
   validateConfig, save, getConfig,
 } = draft
 
+/**
+ * 试算那一段（#116）：点按钮才跑，结果与「整份跑通没有」都留在它自己那一层。
+ *
+ * 与校验分开是刻意的（后端也是两个接口）：校验是静态查、保存前必跑；试算是真执行那份草稿，点一下
+ * 才算一次。换了一边（逐行 ↔ 手写）之后把上一次的结果作废——草稿已经不是那一份了。
+ */
+const trial = useMappingTrial({ state, context, editorMode, expressionText })
+const {
+  result: trialResult, running: trialing, requestError: trialRequestError,
+  source: trialSource, sampleJson: trialSampleJson, canRun: trialCanRun, run: runTrial, reset: resetTrial,
+} = trial
+
 function selectFirst() {
   const first = displayRows.value.find(e => e.row.target.trim())
   selectedId.value = first?.row.id ?? null
@@ -795,8 +824,9 @@ async function openExpression() {
   ).then(() => true).catch(() => false)
   if (!ok) return
   editorMode.value = 'expression'
-  // 上一次校验是逐行那边跑的：换了一边就不该再显示它的行状态与问题
+  // 上一次校验是逐行那边跑的：换了一边就不该再显示它的行状态与问题；试算结果同理
   validation.value = null
+  resetTrial()
   closePanel()
   sourcePanel.value?.endPick()
 }
@@ -811,6 +841,7 @@ async function switchBackToRows() {
   if (!ok) return
   editorMode.value = 'rows'
   validation.value = null
+  resetTrial()
 }
 
 function close() {

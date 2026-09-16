@@ -62,4 +62,16 @@ public record FieldMappingRule(
         }
         return TransformType.valueOf(value.toString());
     }
+
+    /**
+     * 把这一条组规则换成「只有这些子行」的那一份：来源数组、行号起始值、转换参数都不动。
+     *
+     * <p>试算逐行归因时用得上（#116）：数组子行写的是相对路径，单独编出来 {@code $g0} 根本没绑定，
+     * 得把它**放回外层组里**跑——也就是把外层组换成只装这一个子行的那一份。写在这么个地方而不是
+     * 在试算那一侧手抄十一个分量：记录加字段时不会漏，也不会把顺序抄错（错了编译器不会拦）。</p>
+     */
+    public FieldMappingRule withChildren(List<FieldMappingRule> children) {
+        return new FieldMappingRule(sourceStep, source, target, transform, constant, enumMap, datePattern,
+                iterate, List.copyOf(children), parts, startAt);
+    }
 }

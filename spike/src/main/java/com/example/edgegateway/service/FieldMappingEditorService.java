@@ -13,7 +13,6 @@ import com.example.edgegateway.model.MappingSampleKind;
 import com.example.edgegateway.model.MessageStep;
 import com.example.edgegateway.web.dto.FieldMappingEditorView;
 import com.example.edgegateway.web.dto.MappingSampleRequest;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
@@ -209,6 +208,11 @@ public class FieldMappingEditorService {
 
     /** 一份样例：解析并定好「推哪一条」之后的样子。 */
     private record ParsedSample(Object value, boolean sampledFirstItem, String raw) {
+
+        /** 共用的解析结果（{@link MappingSampleData.Parsed}）+ 编辑器手里那段原文。 */
+        static ParsedSample of(MappingSampleData.Parsed parsed, String raw) {
+            return new ParsedSample(parsed.value(), parsed.sampledFirstItem(), raw);
+        }
     }
 
     /**
@@ -231,37 +235,14 @@ public class FieldMappingEditorService {
     /**
      * 粘进来的那段文本 → 样例数据（#115 / #118，来源与目标两条粘贴路共用这一份）。
      *
-     * <p>收对象或数组；数组按第 1 条推（`sampledFirstItem` 把这件事告诉界面，界面上注明「按第 1 条推的」）。
-     * 推的是**那一条自己**的路径：整份数组不能直接交给样例展开——那样出来的路径会带一个没有名字的
-     * `[0].` 前缀（`[0].order_no`），编辑器认不出它属于哪个数组（`source-picker.ts` 的 `owningArrayOf`
-     * 会得到空串）。解析不了或用不上时给出能照着改的说法。</p>
+     * <p>解析口径（对象原样、数组按第 1 条、那几句说法）全在 {@link MappingSampleData#parse} 里：
+     * 字段清单是那份数据的纯函数，试算（#116）跑的也必须是那份数据，所以两处共用一份实现。</p>
      *
-     * <p>原文（`raw`）一起带着：涂到界面上、再点保存时要原样写回库里（#119「存什么 = 原文」）。</p>
+     * <p>原文（`raw`）一起带着：涂到界面上、再点保存时要原样写回库里（#119「存什么 = 原文」）；
+     * 试算也要把原文发回去跑（#116）。</p>
      */
     private ParsedSample parseSample(String json) {
-        if (json == null || json.isBlank()) {
-            throw new IllegalArgumentException("还没有粘 JSON");
-        }
-        Object sample;
-        try {
-            sample = objectMapper.readValue(json, Object.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("这段 JSON 解析不了: " + e.getOriginalMessage());
-        }
-        if (sample instanceof List<?> list) {
-            if (list.isEmpty()) {
-                throw new IllegalArgumentException("这个数组里一条数据都没有，推不出字段");
-            }
-            Object first = list.get(0);
-            if (!(first instanceof Map<?, ?>)) {
-                throw new IllegalArgumentException("数组里第 1 条不是一个对象，推不出字段");
-            }
-            return new ParsedSample(first, true, json);
-        }
-        if (!(sample instanceof Map<?, ?>)) {
-            throw new IllegalArgumentException("收对象或数组：粘一份 JSON，例如 {\"order_no\":\"PO-1\"}");
-        }
-        return new ParsedSample(sample, false, json);
+        return ParsedSample.of(MappingSampleData.parse(objectMapper, json), json);
     }
 
     /** 任务的动作链，按执行顺序（同序号按 id，保证顺序稳定）。 */
@@ -364,27 +345,30 @@ public class FieldMappingEditorService {
                         probeService.probeSample(sample.value()).fields(), sample.raw());
     }
 
-    /** 来源 = 链上更早那个动作最近一次成功运行的输出快照。 */
-    /** 某一步最近一次成功运行的数据快照 → 字段清单。 */
+    /** 某一步最近一次成功运行的数据快照 → 字段清单（连同那份快照的原文，试算要拿它跑）。 */
     private SourceOutput latestOutput(List<Action> chain, Long jobId, Integer step) {
         if (step == null) {
-            return new SourceOutput(null, null, null, List.of());
+            return new SourceOutput(null, null, null, null, List.of());
         }
         String actionName = stepNameOf(chain, step);
         Object snapshot = latestSnapshot(jobId, step);
         if (snapshot == null) {
-            return new SourceOutput(step, actionName, null, List.of());
+            return new SourceOutput(step, actionName, null, null, List.of());
         }
         SourceStructure structure = probeService.probeSample(snapshot);
-        return new SourceOutput(step, actionName, structure.key(), structure.fields());
+        return new SourceOutput(step, actionName, structure.key(),
+                MappingSampleData.write(objectMapper, snapshot), structure.fields());
     }
 
-    private record SourceOutput(Integer step, String stepName, String sourceKey, List<SourceField> fields) {
+    private record SourceOutput(Integer step, String stepName, String sourceKey, String json,
+                                List<SourceField> fields) {
         FieldMappingEditorView.SourceSample sample() {
             // 运行快照那条路不做「按第几条推」的说明（sampledFirstItem 为 false）：界面上那句话只说粘贴
-            // 那条路，这条路的行为与 #115 之前一模一样。也没有原文（json）：探测那份不落库（#119）。
+            // 那条路，这条路的行为与 #115 之前一模一样。
+            // 原文（json）跟着一起给：**探测那份仍然不落库**（#119），它只是编辑器手里那份数据的出处——
+            // 试算（#116）拿它跑，与左边清单说的是同一份东西。
             return step == null ? null
-                    : new FieldMappingEditorView.SourceSample(step, stepName, sourceKey, false, fields, null);
+                    : new FieldMappingEditorView.SourceSample(step, stepName, sourceKey, false, fields, json);
         }
     }
 

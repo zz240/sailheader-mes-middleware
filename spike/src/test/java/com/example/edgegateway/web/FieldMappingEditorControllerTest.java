@@ -3,7 +3,9 @@ package com.example.edgegateway.web;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.service.FieldMappingEditorService;
 import com.example.edgegateway.service.MappingDraftValidationService;
+import com.example.edgegateway.service.MappingTrialService;
 import com.example.edgegateway.web.dto.FieldMappingEditorView;
+import com.example.edgegateway.web.dto.MappingTrialResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -13,8 +15,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,6 +44,9 @@ class FieldMappingEditorControllerTest {
 
     @MockBean
     private FieldMappingEditorService editorService;
+
+    @MockBean
+    private MappingTrialService trialService;
 
     @Test
     void returnsProblemsAndCompiledArtifactsForADraft() throws Exception {
@@ -155,6 +162,57 @@ class FieldMappingEditorControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PARAM_INVALID"))
                 .andExpect(jsonPath("$.message").value(containsString("收对象或数组")));
+    }
+
+    /**
+     * 「试算」的 HTTP 契约（#116）：请求体三格（草稿 / 样例原文 / 这份样例算在哪一步）、
+     * 回来的是「整份跑通了没有 + 目标报文 + 没跑通时哪几行单独跑也失败」。
+     *
+     * <p>字段名是前端那一边认的东西，锁在这里；试算本身的行为在 {@code MappingTrialServiceTest} 里断言。</p>
+     */
+    @Test
+    void trialRunsTheDraftOnTheSampleItIsGiven() throws Exception {
+        when(trialService.trial(any())).thenReturn(new MappingTrialResult(true,
+                Map.of("bom", Map.of("bomNo", "BOM-PRD-1")), null, List.of()));
+
+        mockMvc.perform(post("/api/field-mapping-editor/trial")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"draft":{"rules":[{"sourceStep":1,"source":"productCode",
+                                  "target":"bom.bomNo","transform":"STRING"}]},
+                                 "sampleJson":"{\\"productCode\\":\\"PRD-1\\"}","sampleStep":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.ran").value(true))
+                .andExpect(jsonPath("$.data.error").doesNotExist())
+                .andExpect(jsonPath("$.data.failures").isEmpty())
+                .andExpect(jsonPath("$.data.output.bom.bomNo").value("BOM-PRD-1"));
+
+        verify(trialService).trial(argThat(request ->
+                request.sampleStep() == 1
+                        && request.sampleJson().equals("{\"productCode\":\"PRD-1\"}")
+                        && request.draft().get("rules") != null));
+    }
+
+    /** 整份没跑通时：那句话与「单独跑这一行也失败」的行一起回来（界面据此标红+写明那句话）。 */
+    @Test
+    void trialReportsWhichRowsFailWhenRunAlone() throws Exception {
+        when(trialService.trial(any())).thenReturn(new MappingTrialResult(false, null,
+                "NumberFormatException", List.of(new MappingTrialResult.Failure("qty", "bom.bomLines", "不是数字"))));
+
+        mockMvc.perform(post("/api/field-mapping-editor/trial")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"draft":{"rules":[]},"sampleJson":"{}","sampleStep":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ran").value(false))
+                .andExpect(jsonPath("$.data.output").doesNotExist())
+                .andExpect(jsonPath("$.data.error").value("NumberFormatException"))
+                .andExpect(jsonPath("$.data.failures[0].target").value("qty"))
+                .andExpect(jsonPath("$.data.failures[0].parent").value("bom.bomLines"))
+                .andExpect(jsonPath("$.data.failures[0].message").value("不是数字"));
     }
 
     /**

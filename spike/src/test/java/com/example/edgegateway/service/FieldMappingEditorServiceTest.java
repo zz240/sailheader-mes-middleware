@@ -234,10 +234,12 @@ class FieldMappingEditorServiceTest {
         // 运行快照那条路不做「按第几条推」的说明：那句话只说粘贴那一边
         assertThat(probed.sampledFirstItem()).isFalse();
         assertThat(pasted.sampledFirstItem()).isFalse();
-        // 粘的那份把**原文**一起带回来（#119）：保存时手里还握着它，才能原样写回库里；探测那份没有
+        // 粘的那份把**原文**一起带回来（#119）：保存时手里还握着它，才能原样写回库里
         assertThat(pasted.json()).isEqualTo(payload);
         assertThat(pastedArray.json()).isEqualTo("[" + payload + "]");
-        assertThat(probed.json()).isNull();
+        // 运行快照那条路也给原文（#116 试算要拿它跑）：同一份数据的另一种写法。**它仍然不落库**——
+        // 「存不存」由界面按 sourceKey 判来历（探测的不存），跟这一格在不在没关系
+        assertThat(probed.json()).isEqualTo(payload);
     }
 
     /**
@@ -472,7 +474,8 @@ class FieldMappingEditorServiceTest {
         FieldMappingEditorView view = service.context(1L, 12L, null);
 
         assertThat(view.source().sourceKey()).isEqualTo("sample");
-        assertThat(view.source().json()).isNull();
+        // 退回探测那条路之后手里那份照样带着原文（试算要拿它跑），它仍然不落库
+        assertThat(view.source().json()).isEqualTo("{\"order_no\":\"PO-1\"}");
     }
 
     /** 目标那一格同理（#119 验收一、二、六）：写目标动作存过 → 用存的那份，连库探测那条路不发。 */
