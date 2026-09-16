@@ -157,5 +157,20 @@ export interface FieldMappingEditorContext {
 
 export interface SourceStructure {
   sourceKey: string
+  /**
+   * 这份清单是一整个数组、只按第 1 条推的（粘的那条路会带上，连库探测没有这一项）——#118 目标那一边
+   * 也用它注明「按第 1 条推的」。
+   */
+  sampledFirstItem?: boolean
+  fields: ProbeField[]
+}
+
+/**
+ * 目标字段清单（#118）：连库探测给 `sourceKey`（界面拿它显示表名），粘的那条路不给——调用方自己就知道
+ * 那份清单是粘来的，所以两边共用这一个形状，`sourceKey` 是可选的。
+ */
+export interface TargetFieldsSample {
+  sourceKey?: string
+  sampledFirstItem?: boolean
   fields: ProbeField[]
 }

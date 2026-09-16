@@ -34,6 +34,18 @@ public record FieldMappingEditorView(
                                boolean sampledFirstItem, List<SourceField> fields) {
     }
 
+    /**
+     * 目标字段清单（编辑器那一侧）：来源是连库探测或粘进来的一份样例（#118）。
+     *
+     * <p>fields 形状与结构探测契约（{@code mapping.suggest.SourceStructure}）一致，编辑器那一侧两边走同一份
+     * 折算；多一个 `sampledFirstItem`：粘的是一整个数组时只按第 1 条推，界面据此注明。</p>
+     *
+     * <p>不带探测契约里的 `sourceKey`：那是「这份结构是连库还是样例来的」的指纹（连库那条路上界面拿它显示
+     * 表名），而粘的这条路调用方自己就知道——多一个没人读的字段只会让人以为它有用。</p>
+     */
+    public record TargetSample(boolean sampledFirstItem, List<SourceField> fields) {
+    }
+
     public record ActionLabel(Integer index, String name, String type) {
     }
 }

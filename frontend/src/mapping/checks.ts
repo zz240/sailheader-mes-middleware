@@ -22,7 +22,8 @@
  *      只有警告时不算有错 / 没有可跳的行，以及清掉一个必填字段的行给出的那条提醒（与后端逐字一致、
  *      只认用户亲手清过的行）。
  *  11. 来源样例的两条路（#115）：探测那条路的说法一个字不变，粘的那条路写明按哪一步的输出来算、
- *      是数组就注明「按第 1 条推的」，换来源步骤只换这份样例归到哪一步（字段清单不动）。
+ *      是数组就注明「按第 1 条推的」，换来源步骤只换这份样例归到哪一步（字段清单不动）；目标字段清单
+ *      粘出来的那一行小字（#118）：必填推不出来、数组按第 1 条推。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -63,7 +64,7 @@ import {
   partKindLabel, partKindOf, partLabelSpec, partRuleOf,
 } from './parts.ts'
 import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
-import { attributeSample, sampleNoteOf, sourceTipOf, type SampleOrigin } from './sample.ts'
+import { attributeSample, sampleNoteOf, sourceTipOf, targetNoteOf, type SampleOrigin } from './sample.ts'
 import type { EditorSourceSample } from '../types.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -1751,6 +1752,14 @@ eq('换来源步骤时「按第 1 条推」也不动',
   attributeSample(PASTED_ARRAY, 3, { 3: '洗数' }).sampledFirstItem, true)
 eq('换来源步骤时来源那条路不变（还是粘的这份）',
   attributeSample(PASTED_ARRAY, 3, { 3: '洗数' }).sourceKey, 'paste')
+
+// 目标字段清单那一侧（#118）：粘出来的那份要说清「必填推不出来」与「按第 1 条推」；探测那条路一个字不加
+eq('目标清单是连库探的：没有那一行小字', targetNoteOf(null), '')
+eq('目标清单是粘的：写明必填推不出来、一律当不必填',
+  targetNoteOf(PASTED_SAMPLE), '按粘的这份样例推的字段：必填推不出来，一律当不必填')
+ok('目标清单是粘的、又是数组时，「按第 1 条推的」也在那句话里',
+  targetNoteOf(PASTED_ARRAY).includes('必填推不出来') && targetNoteOf(PASTED_ARRAY).includes('按第 1 条推的'),
+  targetNoteOf(PASTED_ARRAY))
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

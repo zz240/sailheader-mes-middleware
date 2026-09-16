@@ -286,8 +286,8 @@ class FieldMappingEditorServiceTest {
     /**
      * 收不下的时候说清怎么改：解析不了 / 粘的不是对象也不是数组 / 空数组 / 空文本 / 没给来源。
      *
-     * <p>来源那一条是这一票特别点名的：来源为空会让基于样例的那几条检查静默全部不判，
-     * 所以宁可在这一步就拒掉。</p>
+     * <p>来源那一条是 #115 特别点名的：来源为空会让基于样例的那几条检查静默全部不判，
+     * 所以宁可在这一步就拒掉。这几条与目标那条粘贴路共用同一份实现（#118）。</p>
      */
     @Test
     void rejectsSamplesThatCannotBeUsed() {
@@ -315,5 +315,50 @@ class FieldMappingEditorServiceTest {
         assertThatThrownBy(() -> service.sourceFieldsFromSample(1L, null, "{\"order_no\":\"PO-1\"}"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("默认来源");
+    }
+
+    // ---------------------------------------------------------------- 目标字段清单也能粘（#118）
+
+    /**
+     * 目标那一侧走的也是同一份样例展开：粘一份目标数据推出来的字段，与拿同一份数据当运行快照探出来的
+     * **逐字一样**——编辑器那边两边都走 `targetFieldsFromPaths`，所以路径、类型、数组分组（`items[0].x`）
+     * 都能用。
+     */
+    @Test
+    void pastedSampleGivesTargetFieldsExactlyLikeTheProbedOne() {
+        String payload = "{\"order_no\":\"PO-1\",\"items\":[{\"materialCode\":\"M1\",\"qty\":3}]}";
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7))));
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run(100L)));
+        when(messageStepMapper.selectList(any())).thenReturn(List.of(step("SUCCESS", payload)));
+
+        FieldMappingEditorView.SourceSample probed = service.sourceFields(1L, 1);
+        FieldMappingEditorView.TargetSample pasted = service.targetFieldsFromSample(payload);
+
+        assertThat(pasted.fields()).isEqualTo(probed.fields());
+        assertThat(pasted.fields()).extracting(SourceField::name)
+                .containsExactly("order_no", "items[0].materialCode", "items[0].qty");
+        assertThat(pasted.sampledFirstItem()).isFalse();
+    }
+
+    /** 目标这一侧粘数组时同样只按第 1 条推，并把这件事告诉界面。 */
+    @Test
+    void pastedTargetArrayIsInferredFromTheFirstItem() {
+        FieldMappingEditorView.TargetSample sample = service.targetFieldsFromSample(
+                "[{\"order_no\":\"PO-1\"},{\"order_no\":\"PO-2\",\"remark\":\"第二条才有\"}]");
+
+        assertThat(sample.fields()).extracting(SourceField::name).containsExactly("order_no");
+        assertThat(sample.sampledFirstItem()).isTrue();
+    }
+
+    /**
+     * 必填推不出来（#118 验收四）：一份 JSON 里没有 NOT NULL 这个信息，所以推出来的字段 nullable 一律 true
+     * ——编辑器那一侧 `requiredOf` 据此把它们都当不必填，界面上写明这一点。连库探测那条路照旧按列给。
+     */
+    @Test
+    void pastedTargetFieldsAreAllNullableBecauseJsonCannotSayRequired() {
+        FieldMappingEditorView.TargetSample sample = service.targetFieldsFromSample("{\"order_no\":\"PO-1\"}");
+
+        assertThat(sample.fields()).allMatch(SourceField::nullable);
     }
 }

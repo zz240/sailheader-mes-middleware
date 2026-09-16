@@ -146,7 +146,7 @@
 
 ### 4.5 前端 UI 方案（复用 Element Plus，无新依赖）
 
-- 结构：来源样例/目标样例经现有 `/sample-fields` 生成双树；数组节点带 `[]` 徽标。
+- 结构：来源样例/目标样例经现有 `/sample-fields` 生成双树；数组节点带 `[]` 徽标。（这一条写的是当时的设想；`/sample-fields` 那个端点已随 #118 删掉——那个「样例 → 字段清单」的能力现在落在编辑器那两个「粘贴 JSON」入口上，见 `docs/features/field-mapping/README.md`）
 - 主交互：左侧来源树、右侧目标树，点来源字段 → 点目标字段 → 自动落一行到映射表；数组组行在目标树点选后展开为内层子表。
 - 组件落点：`el-table` expand 展开行（外层=层级 1 + 数组组行，展开行内嵌 `el-table`=层级 2）、`el-tree` 双树、`el-dialog` 做 ENUM 键值编辑与 CONCAT 片段编辑、`el-select`/`el-autocomplete` 做来源路径补全；推荐面板（已重做）沿用。
 

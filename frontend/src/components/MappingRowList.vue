@@ -7,8 +7,8 @@
  *
  * 行自己不带编辑状态：行树、选中、参数面板、收起集合都在 `useWorkbenchState()` 那一处（#117），
  * 这里只把状态画出来、把点击接到那些操作上。**行列表专属的取词与文案留在这一份里**（怎么把一行读成
- * 人话、面板标题、三档状态的落点），不往共享状态里塞。它也不发请求——「重新探测目标字段」是个例外
- * （那是后端的事），发一条 `reload-targets` 出去交给工作台。
+ * 人话、面板标题、三档状态的落点），不往共享状态里塞。它也不发请求——目标字段那两个入口
+ * （「重新探测目标字段」与「粘贴 JSON」，#118）是个例外（那都是后端的事），各发一条意图出去交给工作台。
  */
 import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -35,6 +35,8 @@ import MappingIndexParams from './MappingIndexParams.vue'
 const props = defineProps<{
   /** 这一批目标是哪个动作的（写目标那一句说明）。 */
   targetTip: string
+  /** 目标清单是粘出来的时候，那一行小字（必填推不出来 / 数组按第 1 条推）；探测那条路是空串。 */
+  targetNote: string
   /** 后端真跑过一次校验没有（那个三档状态标签只认它）。 */
   hasValidation: boolean
   /** 每一行的问题（键是行 id）：行右侧那三种状态用它算。 */
@@ -44,6 +46,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 点了「重新探测目标字段」：那是后端的事（工作台去发请求）。 */
   (e: 'reload-targets'): void
+  /** 点了「粘贴 JSON」：打开粘目标样例那个框（工作台去发请求），#118。 */
+  (e: 'paste-targets'): void
 }>()
 
 const {
@@ -359,6 +363,8 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
     <div class="wb-rows-head">
       <div class="wb-panel-title">目标字段</div>
       <div class="wb-panel-tip">{{ props.targetTip }}</div>
+      <!-- 目标清单是粘出来的时候那一行小字（必填推不出来 / 数组按第 1 条推），#118 -->
+      <div v-if="props.targetNote" class="wb-panel-tip wb-target-note">{{ props.targetNote }}</div>
       <span class="wb-spacer" />
       <!-- 按目标字段搜索并跳到那一行（#105）：回车在命中的行之间走一圈 -->
       <el-input
@@ -384,7 +390,13 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
         <el-button size="small" @click="autoMatch">自动匹配同名</el-button>
       </el-tooltip>
       <el-button size="small" text @click="toggleAllArrays">{{ allCollapsed ? '展开全部数组' : '收起全部数组' }}</el-button>
-      <el-button size="small" text type="primary" @click="emit('reload-targets')">重新探测目标字段</el-button>
+      <!-- 目标字段的两个入口并列（#118）：那个连库读列，这个用手上那份目标数据 -->
+      <el-tooltip content="连库探测写目标那张表的列" placement="top">
+        <el-button size="small" text type="primary" @click="emit('reload-targets')">重新探测目标字段</el-button>
+      </el-tooltip>
+      <el-tooltip content="粘一份目标数据的 JSON，用它推出目标字段清单" placement="top">
+        <el-button size="small" text type="primary" @click="emit('paste-targets')">粘贴 JSON</el-button>
+      </el-tooltip>
     </div>
 
     <!-- 校验结果（#103）：点「校验配置」才有；每条问题点一下就跳到对应的行。
@@ -392,7 +404,7 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
     <slot name="issues" />
 
     <div v-if="!rows.length" class="wb-empty">
-      还没有目标字段清单——选一个写目标动作，或者先点「重新探测目标字段」。清单不全也没关系：
+      还没有目标字段清单——选一个写目标动作，然后点「重新探测目标字段」或者「粘贴 JSON」。清单不全也没关系：
       用「+ 字段映射」「+ 数组映射」自己加行，目标字段直接手输。
     </div>
 
@@ -731,6 +743,8 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
 /* 行头在窄屏上换行，而不是把搜索框和按钮挤成一团（#106） */
 .wb-rows-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wb-rows-head .wb-panel-tip { margin: 0; }
+/* 目标清单是粘出来的时候那一行小字（#118）：与来源面板那一句同样用琥珀色，与上面那句说明分开 */
+.wb-target-note { color: #b45309; }
 .wb-row-list { overflow: auto; flex: 1; margin-top: 6px; }
 .wb-row {
   display: flex; align-items: center; gap: 10px;

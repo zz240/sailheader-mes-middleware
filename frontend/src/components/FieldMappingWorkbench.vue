@@ -95,9 +95,11 @@
              校验结果那一块走插槽放进去——它读的是草稿那层的结果，行列表不替它转手 -->
         <MappingRowList
           :target-tip="targetTip"
+          :target-note="targetNote"
           :has-validation="hasValidation"
           :row-issues="rowIssues"
           @reload-targets="reloadTargets"
+          @paste-targets="openPasteTargets"
         >
           <template #issues>
             <MappingIssuesPanel
@@ -123,12 +125,13 @@
         @switch-back="switchBackToRows"
       />
 
-      <!-- 粘贴 JSON（#115）：左边那条路的另一个入口。推断在后端（与探测那条路同一份样例展开），
-           这里只把这段文本发出去，并把后端那句话原样显示回框里 -->
+      <!-- 粘贴 JSON（#115 来源侧 / #118 目标侧）：两条粘贴路共用一个框，推到哪一边由 pasteFor 说。
+           推断都在后端（两条路共用同一份样例展开），这里只把这段文本发出去，并把后端那句话原样显示回框里 -->
       <MappingPasteSampleDialog
         v-model:visible="pasteVisible"
         v-model:text="pasteText"
-        :step-label="defaultStepLabel"
+        :hint="pasteCopy.hint"
+        :note="pasteCopy.note"
         :error="pasteError"
         :loading="pasting"
         @submit="submitPastedSample"
@@ -153,7 +156,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
-import type { EditorSourceSample, FieldMappingEditorContext, SourceStructure } from '../types'
+import type {
+  EditorSourceSample, FieldMappingEditorContext, SourceStructure, TargetFieldsSample,
+} from '../types'
 import {
   mergeRowsWithTargets, progressOf, rowsFromConfig, rowsFromTargetFields, targetFieldsFromPaths,
   type TargetField,
@@ -165,7 +170,7 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
-import { attributeSample, sampleNoteOf, sourceTipOf, type SampleOrigin } from '../mapping/sample.ts'
+import { attributeSample, sampleNoteOf, sourceTipOf, targetNoteOf, type SampleOrigin } from '../mapping/sample.ts'
 import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
@@ -265,21 +270,61 @@ const sourceTip = computed(() => sourceTipOf(context.value?.source ?? null, samp
 /** 粘的是一整个数组时「按第 1 条推的」那句；整份就是一个对象时是空串。 */
 const sampleNote = computed(() => sampleNoteOf(context.value?.source ?? null))
 
-/** 粘样例那个框：开着没有、粘的那段文本、后端说收不下时那句话、请求在跑。 */
-const pasteVisible = ref(false)
+/**
+ * 目标字段清单是怎么来的（#118）：`null` = 连库探测那条路；不是 null 就是**粘的那份样例**本身。
+ *
+ * 与来源那边的 `context.source` 同一个用意（存的是那份样例）：它决定目标那句说明怎么写、粘出来那一行
+ * 小字要不要铺、铺哪几句——所以不再另存「是粘的还是探的」与「是不是数组」两个标记。
+ */
+const targetSample = ref<TargetFieldsSample | null>(null)
+
+/** 粘样例那个框现在为哪一边开；没开时是 null（一个框两边共用，#115 / #118）。 */
+const pasteFor = ref<'source' | 'target' | null>(null)
 const pasteText = ref('')
 const pasteError = ref('')
 const pasting = ref(false)
 
+/** 那个框开着没有（对话框的 v-model）：关掉就把「为哪一边开」也清掉。 */
+const pasteVisible = computed({
+  get: () => pasteFor.value != null,
+  set: (visible: boolean) => {
+    if (!visible) pasteFor.value = null
+  },
+})
+
 /** 顶部那个来源步骤的人话（粘贴框里先说明白这份样例算在哪一步，不然粘完才知道）。 */
 const defaultStepLabel = computed(() => stepLabel(defaultStep.value, actionNames.value[defaultStep.value]))
+
+/** 粘贴框里那两句：来源侧与目标侧各说各的（收什么、与哪条路并列、这一次粘贴特有的那件事）。 */
+const pasteCopy = computed(() => {
+  // 两边都成立的那一句只写一处：收什么、数组怎么推
+  const rule = '收对象或数组；是数组就按第 1 条推，界面上会注明。'
+  return pasteFor.value === 'target'
+    ? {
+      hint: '粘一份目标数据的 JSON，用它推出目标字段清单——推出来的路径、类型、数组分组与「重新探测目标字段」那条路一模一样。',
+      note: `${rule}必填这一栏推不出来（那是连库才有的信息），推出来的都按不必填算。`,
+    }
+    : {
+      hint: '粘一份来源数据的 JSON，用它推出左边的来源字段清单——推出来的字段（名称、类型、可空、样例值、数组分组）与「从运行记录探测」那条路一模一样。',
+      note: `${rule}这份样例按「${defaultStepLabel.value}」的输出来算。`,
+    }
+})
 
 const targetTip = computed(() => {
   const target = context.value?.writeTarget
   if (!target) return '这个动作后面没有写库动作，目标字段要手工导入'
-  if (!targets.value.length) return `写目标：${target.actionName ?? `动作 ${target.actionIndex}`}（结构还没探测出来）`
-  return `目标：${target.actionName ?? `动作 ${target.actionIndex}`}${targetSourceKey.value ? ` · ${targetSourceKey.value}` : ''}`
+  const who = target.actionName ?? `动作 ${target.actionIndex}`
+  if (!targets.value.length) return `写目标：${who}（结构还没探测出来）`
+  // 粘出来的那份清单要说清它不是连库探的（`targetSourceKey` 那一格只有探测那条路才有意义）
+  const where = targetSample.value ? '按粘的样例推的' : targetSourceKey.value
+  return `目标：${who}${where ? ` · ${where}` : ''}`
 })
+
+/**
+ * 目标清单是粘出来的时候，那一行小字（必填推不出来 / 数组按第 1 条推）；探测那条路是空串。
+ * 那句话本身在 `mapping/sample.ts` 里（纯逻辑，`checks.ts` 按它断言）。
+ */
+const targetNote = computed(() => targetNoteOf(targetSample.value))
 
 /** 左边来源清单（搜索、三档过滤、已用高亮与计数、键盘「走清单」那一段）在 `MappingSourcePanel.vue`。
  *  行头与四列行渲染、就地参数面板在 `MappingRowList.vue`（#117）。 */
@@ -342,6 +387,8 @@ function actionNamesOf(ctx: FieldMappingEditorContext): Record<number, string> {
 async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[]> {
   const target = ctx.writeTarget
   targetSourceKey.value = ''
+  // 重新探一次 = 这一份清单又回到探测那条路（粘出来的那份只在这一次打开里存在）
+  targetSample.value = null
   if (!target?.actionId) return []
   if (!target.tableName) {
     // 没配表名就直接说清楚：探测接口自己不知道要探哪张表（#98 H3：HTTP/MQ 做目标时没结构可探）。
@@ -354,7 +401,7 @@ async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[
       body: JSON.stringify({ table: target.tableName, refresh: true }),
     })
     targetSourceKey.value = structure.sourceKey
-    return targetFieldsFromPaths(structure.fields.map(f => f.name), requiredOf(structure), typesOf(structure))
+    return targetFieldsOf(structure)
   } catch (e) {
     // 探测失败（连不上库 / 表名不合法）不阻塞编辑器，退化成手写目标字段。
     ElMessage.warning(`目标结构没探测出来：${(e as ApiError).message}`)
@@ -362,15 +409,26 @@ async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[
   }
 }
 
-/** 必填口径：库里 NOT NULL 的列当成必填。 */
-function requiredOf(structure: SourceStructure): Map<string, boolean> {
+/**
+ * 探测出来 / 粘进来的结构 → 编辑器要的目标字段清单（两边**同一份折算**）。
+ *
+ * `required`（是否必填）与 `types`（类型）都按结构里的原始路径给（带 `[0]` 的那种），
+ * `targetFieldsFromPaths` 折成编辑器的路径口径再去查——粘的那条路没有 required，所以一律是「不必填」。
+ */
+function targetFieldsOf(structure: TargetFieldsSample): TargetField[] {
+  return targetFieldsFromPaths(
+    (structure.fields ?? []).map(f => f.name), requiredOf(structure), typesOf(structure))
+}
+
+/** 必填口径：库里 NOT NULL 的列当成必填。粘的那条路一律 nullable，所以这里查不到「必填」。 */
+function requiredOf(structure: TargetFieldsSample): Map<string, boolean> {
   const required = new Map<string, boolean>()
   for (const f of structure.fields ?? []) required.set(f.name, f.nullable === false)
   return required
 }
 
-/** 类型口径：探测给什么带什么（清单上要显示它，下一张票的类型检查也要用它）。 */
-function typesOf(structure: SourceStructure): Map<string, string> {
+/** 类型口径：给什么带什么（清单上要显示它，类型检查也要用它）。 */
+function typesOf(structure: TargetFieldsSample): Map<string, string> {
   const types = new Map<string, string>()
   for (const f of structure.fields ?? []) {
     if (f.type) types.set(f.name, f.type)
@@ -460,21 +518,37 @@ async function probeSourceFields() {
   if (await loadSourceFields(defaultStep.value)) sampleOrigin.value = 'probe'
 }
 
-/** 「粘贴 JSON」（#115）：打开粘样例那个框（上次粘的文本留着，收不下时好照着改）。 */
+/** 「粘贴 JSON」（#115 来源侧）：打开粘样例那个框（上次粘的文本留着，收不下时好照着改）。 */
 function openPasteSample() {
   if (!context.value) return
   pasteError.value = ''
-  pasteVisible.value = true
+  pasteFor.value = 'source'
+}
+
+/** 「粘贴 JSON」（#118 目标侧）：同一个框，推到目标字段那一边（目标清单不依赖上下文，探不出目标也能粘）。 */
+function openPasteTargets() {
+  pasteError.value = ''
+  pasteFor.value = 'target'
 }
 
 /**
- * 「推出字段清单」：把这段文本交给后端，拿回字段清单（#115）。
+ * 「推出字段清单」：把这段文本交给后端，拿回那份清单（#115 来源 / #118 目标）。
  *
- * 推断**不在这里**：后端复用探测那条路那份样例展开，两条路推出来的形状才对得上。清单归到顶部那个
- * 来源步骤（请求里带 `step`）——后端校验时也拿这一步判「哪一步的来源路径」，空着会让基于样例的那几条
- * 检查静默全部不判。收不下时后端那句话显示在框里，粘的那段留着好照着改。
+ * 推断**不在这里**：后端两条路共用同一份样例展开，推出来的形状才对得上。收不下时后端那句话显示在框里，
+ * 粘的那段留着好照着改——所以这个框在失败时不关。
  */
 async function submitPastedSample(text: string) {
+  if (pasteFor.value === 'target') return submitTargetSample(text)
+  return submitSourceSample(text)
+}
+
+/**
+ * 粘一份样例 → 来源字段清单（#115）。
+ *
+ * 清单归到顶部那个来源步骤（请求里带 `step`）——后端校验时也拿这一步判「哪一步的来源路径」，空着会让
+ * 基于样例的那几条检查静默全部不判。
+ */
+async function submitSourceSample(text: string) {
   const ctx = context.value
   if (!ctx) return
   pasting.value = true
@@ -487,10 +561,38 @@ async function submitPastedSample(text: string) {
     sampleOrigin.value = 'paste'
     context.value = { ...ctx, source: sample }
     sourceFields.value = sample.fields ?? []
-    pasteVisible.value = false
+    pasteFor.value = null
     ElMessage.success(sample.fields.length
       ? `按这份样例推出 ${sample.fields.length} 个字段`
       : '这份样例里没有字段——换一份有内容的来源数据')
+  } catch (e) {
+    pasteError.value = (e as ApiError).message
+  } finally {
+    pasting.value = false
+  }
+}
+
+/**
+ * 粘一份样例 → 目标字段清单（#118）。
+ *
+ * 与「重新探测目标字段」同一套落法：折成目标字段清单，再按目标字段路径把已经配好的行沿用下来
+ * （`mergeRowsWithTargets`）——粘一次不该把用户配好的行冲掉。必填这一栏从 JSON 里推不出来，
+ * 所以推出来的一律当不必填，界面上那一行小字写明（验收四）。
+ */
+async function submitTargetSample(text: string) {
+  pasting.value = true
+  pasteError.value = ''
+  try {
+    const sample = await api<TargetFieldsSample>('/field-mapping-editor/target-fields', {
+      method: 'POST', body: JSON.stringify({ json: text }),
+    })
+    targets.value = targetFieldsOf(sample)
+    rows.value = mergeRowsWithTargets(rows.value, targets.value, defaultStep.value)
+    targetSample.value = sample
+    pasteFor.value = null
+    ElMessage.success(targets.value.length
+      ? `按这份样例推出 ${targets.value.length} 个目标字段`
+      : '这份样例里没有字段——换一份有内容的目标数据')
   } catch (e) {
     pasteError.value = (e as ApiError).message
   } finally {

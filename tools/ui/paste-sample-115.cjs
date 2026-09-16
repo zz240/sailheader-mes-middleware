@@ -221,9 +221,10 @@ async function submitPaste(page, text) {
   // ---- 3. 粘贴框：先写明这份样例算在哪一步
   const dialog = await openPasteDialog(page)
   const stepTip = (await dialog.locator('.wb-paste-tip').last().innerText()).trim()
-  check('粘贴框里先写明这份样例按哪一步的输出来算',
-    /^这份样例按「.+」的输出来算。$/.test(stepTip), stepTip)
-  const dialogStep = stepTip.replace(/^这份样例按「/, '').replace(/」的输出来算。$/, '')
+  // 框里那两句：#118 之后「这份样例按『动作 N · X』的输出来算」与「收对象或数组…」并成了一句
+  const stepInDialog = stepTip.match(/这份样例按「(.+?)」的输出来算/)
+  check('粘贴框里先写明这份样例按哪一步的输出来算', stepInDialog != null, stepTip)
+  const dialogStep = stepInDialog ? stepInDialog[1] : ''
   await page.screenshot({ path: `${shots}/paste-sample-dialog.png` })
 
   // ---- 4. 粘一个对象：拿到字段清单，上头写明算在哪一步

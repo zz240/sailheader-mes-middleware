@@ -1,33 +1,50 @@
 package com.example.edgegateway.web;
 
 import com.example.edgegateway.mock.MockMesController;
+import com.example.edgegateway.service.FieldMappingEditorService;
+import com.example.edgegateway.service.MappingDraftValidationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 业务码信封：成功包 {code,message,data}、mock 裸响应、非法 JSON → PARAM_INVALID 信封。 */
-@WebMvcTest({SampleController.class, MockMesController.class})
+/**
+ * 业务码信封：成功包 {code,message,data}、mock 裸响应、非法 JSON → PARAM_INVALID 信封。
+ *
+ * <p>拿「校验配置」那个只读端点当样本（它只要一个没有别的依赖的服务，且不碰数据库）——原来那个
+ * 「贴样例拿字段路径」的 {@code POST /api/sample-fields} 已经随 #118 收掉了（#107 删掉旧编辑器之后
+ * 再没有调用方），信封这一层与具体是哪个端点无关。</p>
+ */
+@WebMvcTest({FieldMappingEditorController.class, MockMesController.class})
+@Import(MappingDraftValidationService.class)
 class ApiEnvelopeTest {
 
     @Autowired
     private MockMvc mockMvc;
 
+    @MockBean
+    private FieldMappingEditorService editorService;
+
     @Test
     void successResponseIsWrapped() throws Exception {
-        mockMvc.perform(post("/api/sample-fields")
+        mockMvc.perform(post("/api/field-mapping-editor/validate")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sample\":{\"order_no\":\"PO-1\"}}"))
+                        .content("""
+                                {"draft":{"rules":[{"sourceStep":1,"source":"order_no",
+                                  "target":"order_no","transform":"STRING"}]},
+                                 "earlierActionIndexes":[1],"defaultSourceStep":1,"actionIndex":2}
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.message").value("ok"))
-                .andExpect(jsonPath("$.data[0]").value("order_no"));
+                .andExpect(jsonPath("$.data.valid").value(true));
     }
 
     @Test
@@ -42,7 +59,7 @@ class ApiEnvelopeTest {
 
     @Test
     void malformedJsonReturnsParamInvalidEnvelope() throws Exception {
-        mockMvc.perform(post("/api/sample-fields")
+        mockMvc.perform(post("/api/field-mapping-editor/validate")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not-json"))
                 .andExpect(status().isBadRequest())

@@ -105,32 +105,49 @@ public class FieldMappingEditorService {
      * 从运行记录里来还是从剪贴板里来，推出来的字段完全一样（名称、类型、可空、样例值、数组分组）。
      * 这里只多做两件事：认一下这段文本是不是收得下，以及这份样例归到哪一步。</p>
      *
-     * <p>收对象或数组；数组按第 1 条推（`sampledFirstItem` 把这件事告诉界面，界面上注明「按第 1 条推的」）。
-     * 推的是**那一条自己**的路径：整份数组不能直接交给样例展开——那样出来的路径会带一个没有名字的
-     * `[0].` 前缀（`[0].order_no`），编辑器认不出它属于哪个数组（`source-picker.ts` 的 `owningArrayOf`
-     * 会得到空串）。`step` 必填——来源为空会让基于样例的那几条检查静默全部不判。</p>
+     * <p>`step` 必填——来源为空会让基于样例的那几条检查静默全部不判。</p>
      */
     public FieldMappingEditorView.SourceSample sourceFieldsFromSample(Long jobId, Integer step, String json) {
         if (step == null) {
             throw new IllegalArgumentException("这份样例要归到某一个来源（顶部那个「默认来源」），不能空着");
         }
-        Object sample = parseSample(json);
-        boolean sampledFirstItem = sample instanceof List<?>;
-        if (sample instanceof List<?> list) {
-            sample = list.get(0);
-            if (!(sample instanceof Map<?, ?>)) {
-                throw new IllegalArgumentException("数组里第 1 条不是一个对象，推不出字段");
-            }
-        }
+        ParsedSample sample = parseSample(json);
         return new FieldMappingEditorView.SourceSample(
-                step, stepNameOf(chainOf(jobId), step), "paste", sampledFirstItem,
-                probeService.probeSample(sample).fields());
+                step, stepNameOf(chainOf(jobId), step), "paste", sample.sampledFirstItem(),
+                probeService.probeSample(sample.value()).fields());
+    }
+
+    /**
+     * 编辑器里粘进来的一份样例 JSON → **目标**字段清单（#118）。
+     *
+     * <p>与连库探测那条路并列（{@code POST /api/actions/{id}/probe-target} 连库读列，这个用请求体里那份
+     * 样例），推断是同一份（{@link #parseSample} + {@code probeSample}）——所以粘出来的字段形状与探出来的
+     * 一致，编辑器那一侧照样走 `targetFieldsFromPaths`，数组会折成一行数组映射加相对路径的子行。</p>
+     *
+     * <p>**必填推不出来**：NOT NULL 只有连库探测知道，一份 JSON 里看不出来（某条里是 null 只说明那一条里它
+     * 是空的），所以这里一律按不必填算，界面上写明这一点（#118 验收四）。</p>
+     */
+    public FieldMappingEditorView.TargetSample targetFieldsFromSample(String json) {
+        ParsedSample sample = parseSample(json);
+        return new FieldMappingEditorView.TargetSample(
+                sample.sampledFirstItem(), probeService.probeSample(sample.value()).fields());
     }
 
     // ---------- 内部 ----------
 
-    /** 粘进来的那段文本 → 样例数据；解析不了或用不上时给出能照着改的说法。 */
-    private Object parseSample(String json) {
+    /** 一份样例：解析并定好「推哪一条」之后的样子。 */
+    private record ParsedSample(Object value, boolean sampledFirstItem) {
+    }
+
+    /**
+     * 粘进来的那段文本 → 样例数据（#115 / #118，来源与目标两条粘贴路共用这一份）。
+     *
+     * <p>收对象或数组；数组按第 1 条推（`sampledFirstItem` 把这件事告诉界面，界面上注明「按第 1 条推的」）。
+     * 推的是**那一条自己**的路径：整份数组不能直接交给样例展开——那样出来的路径会带一个没有名字的
+     * `[0].` 前缀（`[0].order_no`），编辑器认不出它属于哪个数组（`source-picker.ts` 的 `owningArrayOf`
+     * 会得到空串）。解析不了或用不上时给出能照着改的说法。</p>
+     */
+    private ParsedSample parseSample(String json) {
         if (json == null || json.isBlank()) {
             throw new IllegalArgumentException("还没有粘 JSON");
         }
@@ -140,13 +157,20 @@ public class FieldMappingEditorService {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("这段 JSON 解析不了: " + e.getOriginalMessage());
         }
-        if (sample instanceof List<?> list && list.isEmpty()) {
-            throw new IllegalArgumentException("这个数组里一条数据都没有，推不出字段");
+        if (sample instanceof List<?> list) {
+            if (list.isEmpty()) {
+                throw new IllegalArgumentException("这个数组里一条数据都没有，推不出字段");
+            }
+            Object first = list.get(0);
+            if (!(first instanceof Map<?, ?>)) {
+                throw new IllegalArgumentException("数组里第 1 条不是一个对象，推不出字段");
+            }
+            return new ParsedSample(first, true);
         }
-        if (!(sample instanceof Map<?, ?>) && !(sample instanceof List<?>)) {
-            throw new IllegalArgumentException("收对象或数组：要一份来源数据的 JSON，例如 {\"order_no\":\"PO-1\"}");
+        if (!(sample instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("收对象或数组：粘一份 JSON，例如 {\"order_no\":\"PO-1\"}");
         }
-        return sample;
+        return new ParsedSample(sample, false);
     }
 
     /** 任务的动作链，按执行顺序（同序号按 id，保证顺序稳定）。 */

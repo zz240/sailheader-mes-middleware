@@ -7,6 +7,7 @@ import com.example.edgegateway.web.dto.FieldMappingEditorView;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
 import com.example.edgegateway.web.dto.MappingDraftValidation;
 import com.example.edgegateway.web.dto.SourceSampleRequest;
+import com.example.edgegateway.web.dto.TargetSampleRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,6 +72,18 @@ public class FieldMappingEditorController {
         String table = request.get("table") == null ? null : request.get("table").toString();
         boolean refresh = Boolean.TRUE.equals(request.get("refresh"));
         return editorService.probeTargetFields(id, table, refresh);
+    }
+
+    /**
+     * POST /api/field-mapping-editor/target-fields：「粘贴 JSON」拿目标字段清单那条路（#118）。
+     *
+     * <p>与连库探测（上面的 probe-target）并列，不是谁兜底谁：那个连库读列，这个用请求体里那份样例，
+     * 推断是同一份。它跟哪个任务、哪个动作都无关（HTTP / MQ 做目标时本来就没有表可探），所以路径上不带
+     * jobId——与 {@code POST /field-mapping-editor/validate} 同一个口径。样例只在编辑器里存在，不落库。</p>
+     */
+    @PostMapping("/field-mapping-editor/target-fields")
+    public FieldMappingEditorView.TargetSample targetFieldsFromSample(@RequestBody TargetSampleRequest request) {
+        return editorService.targetFieldsFromSample(request.json());
     }
 
     /**

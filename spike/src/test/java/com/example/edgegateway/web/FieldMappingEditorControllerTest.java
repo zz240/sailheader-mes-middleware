@@ -142,7 +142,7 @@ class FieldMappingEditorControllerTest {
     @Test
     void reportsAnUnusablePastedSampleAsAParameterProblem() throws Exception {
         when(editorService.sourceFieldsFromSample(eq(3L), eq(1), anyString()))
-                .thenThrow(new IllegalArgumentException("收对象或数组：要一份来源数据的 JSON"));
+                .thenThrow(new IllegalArgumentException("收对象或数组：粘一份 JSON"));
 
         mockMvc.perform(post("/api/jobs/3/field-mapping-editor/source-fields")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -150,5 +150,28 @@ class FieldMappingEditorControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PARAM_INVALID"))
                 .andExpect(jsonPath("$.message").value(containsString("收对象或数组")));
+    }
+
+    /**
+     * 「粘贴 JSON」拿**目标**字段清单那条路的 HTTP 契约（#118）：路径上不带 jobId（跟哪个任务、哪个动作
+     * 都无关——HTTP / MQ 做目标时没有表可探），请求体只有样例原文，回来的是与探测同一份 fields 形状。
+     */
+    @Test
+    void returnsTheTargetFieldListOfAPastedSample() throws Exception {
+        String json = "{\"order_no\":\"PO-1\"}";
+        when(editorService.targetFieldsFromSample(json)).thenReturn(
+                new FieldMappingEditorView.TargetSample(false,
+                        List.of(new SourceField("order_no", "STRING", true, List.of("PO-1")))));
+
+        mockMvc.perform(post("/api/field-mapping-editor/target-fields")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"json":"{\\"order_no\\":\\"PO-1\\"}"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.sampledFirstItem").value(false))
+                .andExpect(jsonPath("$.data.fields[0].name").value("order_no"))
+                .andExpect(jsonPath("$.data.fields[0].type").value("STRING"));
     }
 }
