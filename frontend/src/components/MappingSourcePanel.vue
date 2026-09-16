@@ -1,11 +1,15 @@
 <script setup lang="ts">
 /**
  * 左边的来源字段清单（#117 从 `FieldMappingWorkbench.vue` 拆出来）：搜索、三档过滤、已用高亮与计数、
- * 键盘「走清单」那一段（#105 / #106）。
+ * 键盘「走清单」那一段（#105 / #106），以及顶上那两个入口——从运行记录探测 / 粘贴 JSON（#115）。
  *
  * 它给什么字段由**当前选中的那一行**决定（数组行只给数组、子行给相对路径与外层，`source-picker.ts`），
  * 「哪些被用过了、用了几处」由行树算（`fast-config.ts`）——两者都是纯逻辑，这里只负责把它们画出来。
  * 过滤与搜索也只回答「这一项要不要显示」，**不判对错**：来源对不对仍然只在后端那个只读接口里判（#98 D1）。
+ *
+ * 顶上那两个入口是两条**并列**的路（#115）：点哪个只发一个意图出去，取清单与推断都不在这里
+ * （探测那条路要发请求、粘的那条路要发到后端推字段，两件事都归工作台）；入口下面那句
+ * 「数组按第 1 条推的」是工作台算好传进来的（`mapping/sample.ts` 的 `sampleNoteOf`）。
  *
  * 它在界面上是一整块面板（`aside`），所以「走清单」这一段的状态（走到第几项）也归它：
  * 回车进来（`beginPick`）、上下走（`movePick`）、回车填进去（`confirmPick`）、Esc 退出（`endPick`）
@@ -22,15 +26,21 @@ import { stepIndex } from '../mapping/keyboard.ts'
 import { useWorkbenchState } from '../mapping/useWorkbenchState.ts'
 
 const props = defineProps<{
-  /** 这份清单取自哪儿（哪一步、哪一次运行）——工作台从编辑器上下文里算好传进来。 */
+  /** 这份清单取自哪儿（哪一步的运行输出，或者粘进来的一份样例）——工作台从编辑器上下文里算好传进来。 */
   sourceTip: string
-  /** 正在换默认来源 / 重新取清单。 */
+  /** 数组样例按第几条推的（#115）；整份就是一个对象时是空串，这一行不铺。 */
+  sampleNote: string
+  /** 正在换默认来源 / 重新取清单 / 推粘进来的样例。 */
   loading: boolean
 }>()
 
 const emit = defineEmits<{
   /** 点了一项（或者键盘在清单里回车）：把这一项填进当前选中的那一行。 */
   (e: 'pick', item: PickableItem): void
+  /** 「从运行记录探测」：重新取这一步最近一次成功运行的输出（#115）。 */
+  (e: 'probe'): void
+  /** 「粘贴 JSON」：打开粘样例那个框（#115）。 */
+  (e: 'paste'): void
 }>()
 
 const { rows, targets, sourceFields, defaultStep, selectedEntry } = useWorkbenchState()
@@ -205,7 +215,16 @@ defineExpose({
 <template>
   <aside class="wb-source">
     <div class="wb-panel-title">来源字段</div>
+    <!-- 两条并列的路（#115）：谁都不兜底谁。探测那条路取这一步的运行输出，粘的那条路用手上那份来源数据 -->
+    <div class="wb-source-entries">
+      <el-button size="small" class="wb-source-entry" :loading="props.loading" @click="emit('probe')">
+        从运行记录探测
+      </el-button>
+      <el-button size="small" class="wb-source-entry" @click="emit('paste')">粘贴 JSON</el-button>
+    </div>
     <div class="wb-panel-tip">{{ props.sourceTip }}</div>
+    <!-- 数组只按第 1 条推的：这件事得写在清单上面，不然会以为后面几条的字段也进来了（#115） -->
+    <div v-if="props.sampleNote" class="wb-panel-tip wb-panel-note">{{ props.sampleNote }}</div>
     <div class="wb-panel-tip">{{ pickerTip }}</div>
     <el-input
       v-model="sourceQuery"
@@ -270,6 +289,10 @@ defineExpose({
   display: flex; flex-direction: column; padding: 10px; min-height: 0;
 }
 .wb-source-list { overflow: auto; flex: 1; outline: none; }
+/* 顶上那两个入口（#115）：一行放得下，窄屏也不会顶掉下面的清单 */
+.wb-source-entries { display: flex; gap: 6px; margin-bottom: 6px; }
+.wb-source-entry { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; }
+.wb-panel-note { color: #b45309; }
 .wb-source-group + .wb-source-group { margin-top: 10px; }
 .wb-source-group-title { font-size: 12px; color: #374151; font-weight: 600; margin-bottom: 4px; }
 .wb-source-group-tip { font-size: 11px; color: #b45309; margin-bottom: 4px; }
@@ -307,7 +330,8 @@ defineExpose({
     width: auto; max-height: 220px; border-right: 0;
     border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
   }
-  .wb-source-list { flex: none; max-height: 140px; }
+  /* 顶上多了两个入口（#115）：清单这一段让出同样的高度，整块仍然守着上面那个 max-height */
+  .wb-source-list { flex: none; max-height: 110px; }
 }
 
 @media (max-width: 640px) {

@@ -24,8 +24,14 @@ public record FieldMappingEditorView(
                               Long dataSourceId, String tableName) {
     }
 
-    /** 来源样例：探测出的字段清单，字段形状沿用结构探测契约（SourceField）。 */
-    public record SourceSample(Integer step, String stepName, String sourceKey, List<SourceField> fields) {
+    /**
+     * 来源样例：推出来的字段清单，字段形状沿用结构探测契约（SourceField）；来源是运行记录或粘进来的 JSON。
+     *
+     * <p>`sampledFirstItem` 说的是「这份样例是一整个数组，只按第 1 条推的」——界面据此注明
+     * 「按第 1 条推的」；整份就是一个对象（或运行记录那条路）时为 false。</p>
+     */
+    public record SourceSample(Integer step, String stepName, String sourceKey,
+                               boolean sampledFirstItem, List<SourceField> fields) {
     }
 
     public record ActionLabel(Integer index, String name, String type) {

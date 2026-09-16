@@ -79,12 +79,16 @@
         :description="expressionReplaced()"
       />
       <div v-if="rowsMode" class="wb-body">
-        <!-- 左边来源清单（#117 拆出去）：给哪些字段看当前选中的那一行，点一项就填进这一行 -->
+        <!-- 左边来源清单（#117 拆出去）：给哪些字段看当前选中的那一行，点一项就填进这一行。
+             顶上那两个入口（#115）也是它画的，取清单的两件事归工作台 -->
         <MappingSourcePanel
           ref="sourcePanel"
           :source-tip="sourceTip"
+          :sample-note="sampleNote"
           :loading="loading"
           @pick="pick"
+          @probe="probeSourceFields"
+          @paste="openPasteSample"
         />
 
         <!-- 行列表（#117 拆出去）：行头、四列行渲染与就地参数面板；共享状态由 useWorkbenchState 提供。
@@ -119,6 +123,17 @@
         @switch-back="switchBackToRows"
       />
 
+      <!-- 粘贴 JSON（#115）：左边那条路的另一个入口。推断在后端（与探测那条路同一份样例展开），
+           这里只把这段文本发出去，并把后端那句话原样显示回框里 -->
+      <MappingPasteSampleDialog
+        v-model:visible="pasteVisible"
+        v-model:text="pasteText"
+        :step-label="defaultStepLabel"
+        :error="pasteError"
+        :loading="pasting"
+        @submit="submitPastedSample"
+      />
+
       <!-- 底部编译产物（#103）：两个标签页，JSONata 与规则 JSON -->
       <div v-if="validation" class="wb-foot">
         <el-tabs v-model="artifactTab" class="wb-artifacts">
@@ -150,10 +165,12 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
+import { attributeSample, sampleNoteOf, sourceTipOf, type SampleOrigin } from '../mapping/sample.ts'
 import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
 import MappingIssuesPanel from './MappingIssuesPanel.vue'
+import MappingPasteSampleDialog from './MappingPasteSampleDialog.vue'
 import MappingRowList from './MappingRowList.vue'
 import MappingSourcePanel from './MappingSourcePanel.vue'
 
@@ -235,12 +252,27 @@ const stepOptions = computed(() => {
 const earlierActionIndexes = computed(() =>
   stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
 
-const sourceTip = computed(() => {
-  const sample = context.value?.source
-  if (!sample) return '链上还没有更早的动作'
-  if (!sample.fields.length) return `${stepLabel(sample.step, sample.stepName)} 还没有运行记录`
-  return `来自 ${stepLabel(sample.step, sample.stepName)} 最近一次成功运行`
-})
+/**
+ * 现在左边这份来源清单是怎么来的（#115）：从运行记录探测，还是粘进来的一份样例。
+ *
+ * 两条路是并列的，这个标记决定两件事：顶上那句说法（`sourceTipOf`），以及换来源步骤时是重新取
+ * 这一步的运行输出，还是只改这份样例归到哪一步（见 `onDefaultStepChange`）。
+ */
+const sampleOrigin = ref<SampleOrigin>('probe')
+
+const sourceTip = computed(() => sourceTipOf(context.value?.source ?? null, sampleOrigin.value))
+
+/** 粘的是一整个数组时「按第 1 条推的」那句；整份就是一个对象时是空串。 */
+const sampleNote = computed(() => sampleNoteOf(context.value?.source ?? null))
+
+/** 粘样例那个框：开着没有、粘的那段文本、后端说收不下时那句话、请求在跑。 */
+const pasteVisible = ref(false)
+const pasteText = ref('')
+const pasteError = ref('')
+const pasting = ref(false)
+
+/** 顶部那个来源步骤的人话（粘贴框里先说明白这份样例算在哪一步，不然粘完才知道）。 */
+const defaultStepLabel = computed(() => stepLabel(defaultStep.value, actionNames.value[defaultStep.value]))
 
 const targetTip = computed(() => {
   const target = context.value?.writeTarget
@@ -269,6 +301,8 @@ async function load() {
     context.value = ctx
     actionNames.value = actionNamesOf(ctx)
     sourceFields.value = ctx.source?.fields ?? []
+    // 重新加载之后左边这份清单是探测那条路给的（粘进来的那份本来也只在这次打开里存在）
+    sampleOrigin.value = 'probe'
     defaultStep.value = ctx.source?.step ?? previousActionIndex()
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
@@ -405,18 +439,76 @@ async function onDefaultStepChange(step: number) {
     }
   }
   walk(rows.value)
+  // 粘进来的那份样例是**给定的**：换来源步骤只换它归到哪一步，字段清单不动（#115）。
+  // 探测那条路反过来——清单就是这一步的运行输出，换了步骤必须重新取，否则会把 A 的字段配到 B 的步骤上。
+  const ctx = context.value
+  if (sampleOrigin.value === 'paste' && ctx?.source) {
+    context.value = { ...ctx, source: attributeSample(ctx.source, step, actionNames.value) }
+    return
+  }
+  // 探测这条路上取不回来时清单留在原地：这一条本来就没改那个标记，说法与清单仍然对得上
   await loadSourceFields(step)
 }
 
-/** 重新取某个动作的字段清单（换默认来源时必须换，否则会把 A 的字段配到 B 的步骤上）。 */
-async function loadSourceFields(step: number) {
+/**
+ * 「从运行记录探测」（#115）：回到探测那条路，重新取当前来源步骤的字段清单。
+ *
+ * 取回来了才改这个标记：取不回来时清单还是粘的那一份，说法也得还是粘的那一份——不能拿探测那句话
+ * 去说一份粘来的清单。
+ */
+async function probeSourceFields() {
+  if (await loadSourceFields(defaultStep.value)) sampleOrigin.value = 'probe'
+}
+
+/** 「粘贴 JSON」（#115）：打开粘样例那个框（上次粘的文本留着，收不下时好照着改）。 */
+function openPasteSample() {
+  if (!context.value) return
+  pasteError.value = ''
+  pasteVisible.value = true
+}
+
+/**
+ * 「推出字段清单」：把这段文本交给后端，拿回字段清单（#115）。
+ *
+ * 推断**不在这里**：后端复用探测那条路那份样例展开，两条路推出来的形状才对得上。清单归到顶部那个
+ * 来源步骤（请求里带 `step`）——后端校验时也拿这一步判「哪一步的来源路径」，空着会让基于样例的那几条
+ * 检查静默全部不判。收不下时后端那句话显示在框里，粘的那段留着好照着改。
+ */
+async function submitPastedSample(text: string) {
+  const ctx = context.value
+  if (!ctx) return
+  pasting.value = true
+  pasteError.value = ''
+  try {
+    const sample = await api<EditorSourceSample>(
+      `/jobs/${props.jobId}/field-mapping-editor/source-fields`,
+      { method: 'POST', body: JSON.stringify({ step: defaultStep.value, json: text }) },
+    )
+    sampleOrigin.value = 'paste'
+    context.value = { ...ctx, source: sample }
+    sourceFields.value = sample.fields ?? []
+    pasteVisible.value = false
+    ElMessage.success(sample.fields.length
+      ? `按这份样例推出 ${sample.fields.length} 个字段`
+      : '这份样例里没有字段——换一份有内容的来源数据')
+  } catch (e) {
+    pasteError.value = (e as ApiError).message
+  } finally {
+    pasting.value = false
+  }
+}
+
+/** 重新取某个动作的字段清单（换默认来源时必须换，否则会把 A 的字段配到 B 的步骤上）。取回来了返回 true。 */
+async function loadSourceFields(step: number): Promise<boolean> {
   loading.value = true
   try {
     const sample = await api<EditorSourceSample>(`/jobs/${props.jobId}/field-mapping-editor/source-fields?step=${step}`)
     if (context.value) context.value = { ...context.value, source: sample }
     sourceFields.value = sample.fields ?? []
+    return true
   } catch (e) {
     ElMessage.error((e as ApiError).message)
+    return false
   } finally {
     loading.value = false
   }
@@ -439,6 +531,8 @@ function onKeydown(e: KeyboardEvent) {
   if (editorMode.value === 'expression') return
   // 确认框开着时不接管：那一刻键盘归那个框（Enter 是「确定」，退格不该去清某一行）
   if (document.querySelector('.el-message-box')) return
+  // 粘样例那个框开着时同理：键盘归那个框里的文本域
+  if (pasteVisible.value) return
   const intent = keyIntent(e.key, {
     inTextEntry: inTextEntryFor(e.key, e.target),
     hasSelection: selectedId.value != null,
@@ -557,10 +651,14 @@ function inTextEntryFor(key: string, target: EventTarget | null): boolean {
  * 两个坑：① 补全是 teleport 到 body 的，每个输入框一个 popper，**只看 `querySelector` 拿到的第一个
  * 会认到别行那个关着的**——要看「有没有任何一个正铺着」；② 没有候选时 element-plus 自己就把
  * `visible` 关掉（`suggestionVisible = 候选数 > 0 && activated`），所以「铺着」就等于「有候选」。
+ *
+ * 第三个坑（#115 撞上的）：关掉时 popper 要播完那截退出动画才真的隐藏，动画期间 `offsetParent` 已经不是
+ * null 了、盒子高度却已经是 0——只看前者会把**已经看不见**的下拉当成开着的，于是这 300 毫秒里回车与
+ * 上下键全被它吃掉（界面上那一下就是键盘失灵）。所以「开着」还得看得见。
  */
 function hasOpenAutocomplete(): boolean {
   return [...document.querySelectorAll<HTMLElement>('.el-autocomplete-suggestion')]
-    .some(el => el.offsetParent !== null)
+    .some(el => el.offsetParent !== null && el.getBoundingClientRect().height > 0)
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown, { capture: true }))

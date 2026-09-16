@@ -140,6 +140,11 @@ export interface EditorSourceSample {
   step: number | null
   stepName: string | null
   sourceKey: string | null
+  /**
+   * 这份样例是一整个数组、只按第 1 条推的（界面据此注明「按第 1 条推的」）；
+   * 整份就是一个对象（或运行记录那条路）时没有这一项。
+   */
+  sampledFirstItem?: boolean
   fields: ProbeField[]
 }
 

@@ -6,6 +6,7 @@ import com.example.edgegateway.service.MappingDraftValidationService;
 import com.example.edgegateway.web.dto.FieldMappingEditorView;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
 import com.example.edgegateway.web.dto.MappingDraftValidation;
+import com.example.edgegateway.web.dto.SourceSampleRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +49,18 @@ public class FieldMappingEditorController {
     public FieldMappingEditorView.SourceSample sourceFields(@PathVariable Long jobId,
                                                             @RequestParam Integer step) {
         return editorService.sourceFields(jobId, step);
+    }
+
+    /**
+     * POST /api/jobs/{jobId}/field-mapping-editor/source-fields：「粘贴 JSON」那条路（#115）。
+     *
+     * <p>与同路径的 GET 并列，不是谁兜底谁：GET 从运行记录里取，这个用请求体里那份样例。
+     * 推断是同一份实现（样例展开），所以两边推出来的字段形状一致；样例只在编辑器里存在，不落库。</p>
+     */
+    @PostMapping("/jobs/{jobId}/field-mapping-editor/source-fields")
+    public FieldMappingEditorView.SourceSample sourceFieldsFromSample(@PathVariable Long jobId,
+                                                                      @RequestBody SourceSampleRequest request) {
+        return editorService.sourceFieldsFromSample(jobId, request.step(), request.json());
     }
 
     /** POST /api/actions/{id}/probe-target：连库探测写目标那张表的结构。 */
