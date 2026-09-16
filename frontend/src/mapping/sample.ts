@@ -2,8 +2,9 @@
  * 样例换来一份字段清单之后，编辑器这一侧的那几件纯逻辑（#115 来源 / #118 目标）。
  *
  * 字段清单**怎么推**不在这里——那是后端复用样例展开做的（来源与目标两条粘贴路共用同一份实现）。
- * 这里只管：这份清单该显示成什么（`sourceTipOf`）、换来源步骤时它归到哪一步（`attributeSample`）、
- * 是数组时那句「按第 1 条推的」（`sampleNoteOf`），以及目标那一片粘出来时的那行小字（`targetNoteOf`）。
+ * 这里只管四句界面上的话与一件事：清单取自哪儿（`sourceTipOf`）、换来源步骤时它归到哪一步
+ * （`attributeSample`）、是数组时那句「按第 1 条推的」（`sampleNoteOf`）、目标那一片粘出来时的那行小字
+ * （`targetNoteOf`），以及「这份是不是粘的」（`isPastedSample`，认后端给的标记）。
  *
  * 纯逻辑，不碰 DOM 也不发请求，所以可以用 `node --experimental-strip-types` 直接检查（见 `checks.ts`）。
  */
@@ -11,17 +12,22 @@ import type { EditorSourceSample } from '../types.ts'
 import { stepLabel } from './labels.ts'
 
 /**
- * 现在左边这份来源清单是怎么来的。
+ * 粘的那条路在样例上留下的记号。
  *
- * 两条路是**并列**的（#115），不是谁兜底谁：`probe` 拿的是「这一步最近一次成功运行的输出」，
- * `paste` 拿的是手上那份来源数据。它决定换来源步骤时干什么（见 `attributeSample`）与顶上那句话怎么说。
+ * 后端用 `sourceKey` 那一格说「这一份是哪个来源给的」：探测那条路给 `sample`（连库那条路给 `db:<表名>`），
+ * 粘的那条路给这个值。界面上那句说法、以及「换来源步骤时要不要重新取」都看它——所以**不再另存一个标记**。
  */
-export type SampleOrigin = 'probe' | 'paste'
+const PASTED_SAMPLE_KEY = 'paste'
+
+/** 这份样例是粘进来的那份吗（探测那条路给的都不是）。 */
+export function isPastedSample(source: { sourceKey?: string | null } | null): boolean {
+  return source?.sourceKey === PASTED_SAMPLE_KEY
+}
 
 /** 面板顶上那句：这份清单取自哪儿。 */
-export function sourceTipOf(source: EditorSourceSample | null, origin: SampleOrigin): string {
+export function sourceTipOf(source: EditorSourceSample | null): string {
   if (!source) return '链上还没有更早的动作'
-  if (origin === 'paste') return `这份样例按「${stepLabel(source.step, source.stepName)}」的输出来算`
+  if (isPastedSample(source)) return `这份样例按「${stepLabel(source.step, source.stepName)}」的输出来算`
   if (!source.fields.length) return `${stepLabel(source.step, source.stepName)} 还没有运行记录`
   return `来自 ${stepLabel(source.step, source.stepName)} 最近一次成功运行`
 }
@@ -36,8 +42,8 @@ export function sampleNoteOf(source: SampledFields | null): string {
   return source?.sampledFirstItem ? '这份样例是数组，按第 1 条推的字段' : ''
 }
 
-/** `sampleNoteOf` 认的那一件事：这份清单是「整份数组里第 1 条」推出来的。 */
-export interface SampledFields {
+/** `sampleNoteOf` 与 `targetNoteOf` 认的那一件事：这份清单是「整份数组里第 1 条」推出来的。 */
+interface SampledFields {
   sampledFirstItem?: boolean
 }
 

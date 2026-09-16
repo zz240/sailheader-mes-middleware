@@ -23,7 +23,7 @@
  *      只认用户亲手清过的行）。
  *  11. 来源样例的两条路（#115）：探测那条路的说法一个字不变，粘的那条路写明按哪一步的输出来算、
  *      是数组就注明「按第 1 条推的」，换来源步骤只换这份样例归到哪一步（字段清单不动）；目标字段清单
- *      粘出来的那一行小字（#118）：必填推不出来、数组按第 1 条推。
+ *      粘出来的那一行小字（#118）：必填推不出来、数组按第 1 条推；「这份是不是粘的」认后端那一格标记。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -64,7 +64,7 @@ import {
   partKindLabel, partKindOf, partLabelSpec, partRuleOf,
 } from './parts.ts'
 import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
-import { attributeSample, sampleNoteOf, sourceTipOf, targetNoteOf, type SampleOrigin } from './sample.ts'
+import { attributeSample, isPastedSample, sampleNoteOf, sourceTipOf, targetNoteOf } from './sample.ts'
 import type { EditorSourceSample } from '../types.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -1711,9 +1711,6 @@ eq('其余那些外部事实照旧带上（手写这条路后端也看得见目�
  * 来源是运行记录还是粘进来的 JSON，推字段那件事都在后端（同一份样例展开）；前端只有两处纯逻辑：
  * 顶上那句话怎么说、换来源步骤时这份样例归到哪一步。
  */
-const PROBED: SampleOrigin = 'probe'
-const PASTED: SampleOrigin = 'paste'
-
 const PROBED_SAMPLE: EditorSourceSample = {
   step: 1, stepName: '读订单', sourceKey: 'sample', sampledFirstItem: false,
   fields: [{ name: 'order_no', type: 'STRING', nullable: true, samples: ['PO-1'] }],
@@ -1722,18 +1719,24 @@ const PASTED_SAMPLE: EditorSourceSample = { ...PROBED_SAMPLE, sourceKey: 'paste'
 /** 粘的是一整个数组：后端按第 1 条推，并把这件事写在 sampledFirstItem 上。 */
 const PASTED_ARRAY: EditorSourceSample = { ...PASTED_SAMPLE, sampledFirstItem: true }
 
+// 「这份是不是粘的」认后端那一格标记（`sourceKey`），不另存一个标记——说法与「换步骤要不要重取」都看它
+ok('探测那条路给的样例不算粘的', !isPastedSample(PROBED_SAMPLE))
+ok('粘的那条路给的样例算粘的', isPastedSample(PASTED_SAMPLE))
+ok('没有样例时不算粘的', !isPastedSample(null))
+ok('连库探测那一边的 key（db:…）也不算粘的', !isPastedSample({ sourceKey: 'db:po_order' }))
+
 // 探测那条路的说法一个字都不变（这一票要求它的行为与之前完全一致）
 eq('探测那条路：取自这一步最近一次成功运行',
-  sourceTipOf(PROBED_SAMPLE, PROBED), '来自 动作 1 · 读订单 最近一次成功运行')
-eq('探测那条路：链上还没有更早的动作', sourceTipOf(null, PROBED), '链上还没有更早的动作')
+  sourceTipOf(PROBED_SAMPLE), '来自 动作 1 · 读订单 最近一次成功运行')
+eq('探测那条路：链上还没有更早的动作', sourceTipOf(null), '链上还没有更早的动作')
 eq('探测那条路：这一步还没有运行记录',
-  sourceTipOf({ ...PROBED_SAMPLE, fields: [] }, PROBED), '动作 1 · 读订单 还没有运行记录')
+  sourceTipOf({ ...PROBED_SAMPLE, fields: [] }), '动作 1 · 读订单 还没有运行记录')
 
 // 粘的那条路：写明这份样例按哪一步的输出来算（归到哪一步也看得见）
 eq('粘的那条路：写明按哪一步的输出来算',
-  sourceTipOf(PASTED_SAMPLE, PASTED), '这份样例按「动作 1 · 读订单」的输出来算')
+  sourceTipOf(PASTED_SAMPLE), '这份样例按「动作 1 · 读订单」的输出来算')
 eq('粘的那条路：任务输入那一步也写得出来',
-  sourceTipOf({ ...PASTED_SAMPLE, step: 0, stepName: null }, PASTED), '这份样例按「任务输入」的输出来算')
+  sourceTipOf({ ...PASTED_SAMPLE, step: 0, stepName: null }), '这份样例按「任务输入」的输出来算')
 
 // 是数组就注明「按第 1 条推的」——第 1 条里没有的字段不在清单上，这件事得写在清单上面
 eq('整份就是一个对象时没有「按第几条推」那句话', sampleNoteOf(PASTED_SAMPLE), '')

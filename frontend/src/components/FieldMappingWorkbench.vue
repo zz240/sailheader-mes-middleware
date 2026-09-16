@@ -170,7 +170,7 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
-import { attributeSample, sampleNoteOf, sourceTipOf, targetNoteOf, type SampleOrigin } from '../mapping/sample.ts'
+import { attributeSample, isPastedSample, sampleNoteOf, sourceTipOf, targetNoteOf } from '../mapping/sample.ts'
 import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
@@ -258,14 +258,11 @@ const earlierActionIndexes = computed(() =>
   stepOptions.value.map(o => o.step ?? 0).filter(step => step > 0))
 
 /**
- * 现在左边这份来源清单是怎么来的（#115）：从运行记录探测，还是粘进来的一份样例。
- *
- * 两条路是并列的，这个标记决定两件事：顶上那句说法（`sourceTipOf`），以及换来源步骤时是重新取
- * 这一步的运行输出，还是只改这份样例归到哪一步（见 `onDefaultStepChange`）。
+ * 左边这份清单现在是怎么来的，不另存标记：#115 之后**看样例自己**——粘的那份带着 `paste`，
+ * 探测那条路给的是 `sample`（`mapping/sample.ts` 的 `isPastedSample`）。这样「哪个来源给的」只有一处
+ * 事实（后端那句响应），不会和界面上的副本走岔。
  */
-const sampleOrigin = ref<SampleOrigin>('probe')
-
-const sourceTip = computed(() => sourceTipOf(context.value?.source ?? null, sampleOrigin.value))
+const sourceTip = computed(() => sourceTipOf(context.value?.source ?? null))
 
 /** 粘的是一整个数组时「按第 1 条推的」那句；整份就是一个对象时是空串。 */
 const sampleNote = computed(() => sampleNoteOf(context.value?.source ?? null))
@@ -346,8 +343,6 @@ async function load() {
     context.value = ctx
     actionNames.value = actionNamesOf(ctx)
     sourceFields.value = ctx.source?.fields ?? []
-    // 重新加载之后左边这份清单是探测那条路给的（粘进来的那份本来也只在这次打开里存在）
-    sampleOrigin.value = 'probe'
     defaultStep.value = ctx.source?.step ?? previousActionIndex()
     const saved = rowsFromConfig(props.config)
     targets.value = await loadTargets(ctx)
@@ -500,22 +495,17 @@ async function onDefaultStepChange(step: number) {
   // 粘进来的那份样例是**给定的**：换来源步骤只换它归到哪一步，字段清单不动（#115）。
   // 探测那条路反过来——清单就是这一步的运行输出，换了步骤必须重新取，否则会把 A 的字段配到 B 的步骤上。
   const ctx = context.value
-  if (sampleOrigin.value === 'paste' && ctx?.source) {
+  if (ctx?.source && isPastedSample(ctx.source)) {
     context.value = { ...ctx, source: attributeSample(ctx.source, step, actionNames.value) }
     return
   }
-  // 探测这条路上取不回来时清单留在原地：这一条本来就没改那个标记，说法与清单仍然对得上
+  // 探测这条路上取不回来时清单留在原地：说法与清单仍然对得上
   await loadSourceFields(step)
 }
 
-/**
- * 「从运行记录探测」（#115）：回到探测那条路，重新取当前来源步骤的字段清单。
- *
- * 取回来了才改这个标记：取不回来时清单还是粘的那一份，说法也得还是粘的那一份——不能拿探测那句话
- * 去说一份粘来的清单。
- */
+/** 「从运行记录探测」（#115）：回到探测那条路，重新取当前来源步骤的字段清单。 */
 async function probeSourceFields() {
-  if (await loadSourceFields(defaultStep.value)) sampleOrigin.value = 'probe'
+  await loadSourceFields(defaultStep.value)
 }
 
 /** 「粘贴 JSON」（#115 来源侧）：打开粘样例那个框（上次粘的文本留着，收不下时好照着改）。 */
@@ -532,14 +522,30 @@ function openPasteTargets() {
 }
 
 /**
- * 「推出字段清单」：把这段文本交给后端，拿回那份清单（#115 来源 / #118 目标）。
+ * 「推出字段清单」：把这段文本交给后端，拿回那份清单（#115 来源 / #118 目标），推到哪一边由 `pasteFor` 说。
  *
  * 推断**不在这里**：后端两条路共用同一份样例展开，推出来的形状才对得上。收不下时后端那句话显示在框里，
  * 粘的那段留着好照着改——所以这个框在失败时不关。
  */
-async function submitPastedSample(text: string) {
-  if (pasteFor.value === 'target') return submitTargetSample(text)
-  return submitSourceSample(text)
+function submitPastedSample(text: string) {
+  return pasteFor.value === 'target' ? submitTargetSample(text) : submitSourceSample(text)
+}
+
+/**
+ * 粘一次的共同架子：开跑、清掉上一次的错、成功才把框关掉、收尾。
+ * 两边不同的只有「请谁推、推完放哪、成功说什么」——那三件由 `body` 给。
+ */
+async function paste(body: () => Promise<string>) {
+  pasting.value = true
+  pasteError.value = ''
+  try {
+    ElMessage.success(await body())
+    pasteFor.value = null
+  } catch (e) {
+    pasteError.value = (e as ApiError).message
+  } finally {
+    pasting.value = false
+  }
 }
 
 /**
@@ -551,25 +557,17 @@ async function submitPastedSample(text: string) {
 async function submitSourceSample(text: string) {
   const ctx = context.value
   if (!ctx) return
-  pasting.value = true
-  pasteError.value = ''
-  try {
+  return paste(async () => {
     const sample = await api<EditorSourceSample>(
       `/jobs/${props.jobId}/field-mapping-editor/source-fields`,
       { method: 'POST', body: JSON.stringify({ step: defaultStep.value, json: text }) },
     )
-    sampleOrigin.value = 'paste'
     context.value = { ...ctx, source: sample }
     sourceFields.value = sample.fields ?? []
-    pasteFor.value = null
-    ElMessage.success(sample.fields.length
+    return sample.fields.length
       ? `按这份样例推出 ${sample.fields.length} 个字段`
-      : '这份样例里没有字段——换一份有内容的来源数据')
-  } catch (e) {
-    pasteError.value = (e as ApiError).message
-  } finally {
-    pasting.value = false
-  }
+      : '这份样例里没有字段——换一份有内容的来源数据'
+  })
 }
 
 /**
@@ -580,24 +578,17 @@ async function submitSourceSample(text: string) {
  * 所以推出来的一律当不必填，界面上那一行小字写明（验收四）。
  */
 async function submitTargetSample(text: string) {
-  pasting.value = true
-  pasteError.value = ''
-  try {
+  return paste(async () => {
     const sample = await api<TargetFieldsSample>('/field-mapping-editor/target-fields', {
       method: 'POST', body: JSON.stringify({ json: text }),
     })
     targets.value = targetFieldsOf(sample)
     rows.value = mergeRowsWithTargets(rows.value, targets.value, defaultStep.value)
     targetSample.value = sample
-    pasteFor.value = null
-    ElMessage.success(targets.value.length
+    return targets.value.length
       ? `按这份样例推出 ${targets.value.length} 个目标字段`
-      : '这份样例里没有字段——换一份有内容的目标数据')
-  } catch (e) {
-    pasteError.value = (e as ApiError).message
-  } finally {
-    pasting.value = false
-  }
+      : '这份样例里没有字段——换一份有内容的目标数据'
+  })
 }
 
 /** 重新取某个动作的字段清单（换默认来源时必须换，否则会把 A 的字段配到 B 的步骤上）。取回来了返回 true。 */
