@@ -212,6 +212,50 @@ class ActionServiceTest {
     }
 
     /**
+     * 编译期才发现的目标路径错（空的一段）**保存时也拦**（#114）。
+     *
+     * <p>编译器在 {@code insert} 里撞上 `a..b` 这种路径就编不出来，门以前只 return、不报：任务停用状态下
+     * 存得进去，启用重建路由时才炸。消息与编译器那条逐字一致（{@code JsonataRuleCompilerTest} 里钉着
+     * 两处不走散）。</p>
+     */
+    @Test
+    void saveRejectsAnIllegalTargetPath() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(Map.of(
+                        "sourceStep", 1, "source", "orderNo", "target", "sheet_no..qty",
+                        "transform", "STRING")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("目标字段路径不合法: sheet_no..qty");
+    }
+
+    /**
+     * 链问题照旧**全量**报、仍然用 `；` 连接（#114 验收三）：保存那道门刚从「只报第一条结构错」改成
+     * 「全列」，链这一条的口径不能跟着变样。
+     */
+    @Test
+    void saveErrorCarriesEveryChainProblem() {
+        jobExists();
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "orderNo", "target", "sheet_no",
+                                "transform", "STRING"),
+                        Map.of("sourceStep", 3, "source", "orderType", "target", "order_type",
+                                "transform", "STRING")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=1")
+                .hasMessageContaining("sourceStep=3")
+                .hasMessageContaining("；");
+    }
+
+    /**
      * 只有警告的草稿存得下去（#113 验收二），没有配好的必填字段也一样（验收四）。
      *
      * <p>编辑器保存前拦人的那一道是草稿校验的 `errors`（`useMappingDraft.save`，前端那半在 `checks.ts`

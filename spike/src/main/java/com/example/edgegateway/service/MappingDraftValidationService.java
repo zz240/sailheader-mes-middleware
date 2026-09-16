@@ -31,7 +31,7 @@ import java.util.Set;
  * <p>判断对错全部在这里，前端一条校验规则都不复制（#98 D1）。几条现成的实现直接复用，不各写一遍：</p>
  * <ul>
  *   <li>结构：{@link FieldMappingConfig#problems()}（{@code validate()} 抛的就是它，里面也含编译期才发现的
- *       目标字段重复 / 前缀冲突，见 #113）；</li>
+ *       目标字段重复 / 前缀冲突 / 目标字段路径不合法，见 #113、#114）；</li>
  *   <li>链：{@link ChainConsistencyValidator#checkRules}（sourceStep 得指向链上更早的动作）；</li>
  *   <li>编译产物：{@link JsonataRuleCompiler#compile}，草稿编不出来时补一条错误；</li>
  *   <li>依赖**目标字段清单与来源样例**的那几条：{@link MappingSampleChecks}，全是警告（#104 起，

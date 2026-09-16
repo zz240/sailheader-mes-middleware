@@ -567,6 +567,41 @@ class MappingDraftValidationServiceTest {
         assertThat(concatWarnings(rule)).isEmpty();
     }
 
+    /**
+     * 草稿里目标字段路径空了一段（`a..b`）：报一条，不是两条（#114）。
+     *
+     * <p>结构（{@code FieldMappingConfig.problems()}）与编译（{@code JsonataRuleCompiler}）在同一处各看见一次，
+     * 消息逐字相同，服务那边合成一条（{@code addOnce}）——一条错显示成两条会让人以为有两个问题要改。</p>
+     */
+    @Test
+    void anIllegalTargetPathIsReportedOnce() {
+        Map<String, Object> rule = leaf(1, "productCode", "bom..bomNo");
+
+        MappingDraftValidation result = service.validate(draftOnly(Map.of("rules", List.of(rule))));
+
+        assertThat(problems(result.errors())).containsExactly(
+                "bom..bomNo|null|目标字段路径不合法: bom..bomNo");
+        assertThat(result.compiled().jsonata()).isNull();
+    }
+
+    /**
+     * 目标字段整条空着（键都不写）：报一条，不是两条，更不是 500（#114）。
+     *
+     * <p>这条以前是**崩**的：结构那一边报「映射规则缺少目标字段 target」，编译器却在
+     * {@code rule.target().split(".")} 上抛 NPE（NPE 不是 {@code CompileException}，服务那边接不住，
+     * 接口直接 500）。现在编译器对同一种输入说同一句话，两条合成一条（{@code addOnce}）。</p>
+     */
+    @Test
+    void aMissingTargetIsReportedOnce() {
+        Map<String, Object> rule = Map.of("sourceStep", 1, "source", "productCode", "transform", "STRING");
+
+        MappingDraftValidation result = service.validate(draftOnly(Map.of("rules", List.of(rule))));
+
+        assertThat(problems(result.errors())).containsExactly(
+                "null|null|映射规则缺少目标字段 target");
+        assertThat(result.compiled().jsonata()).isNull();
+    }
+
     /** 数组子行里的拼接同理，报的话带上它所属的数组行。 */
     @Test
     void anEmptyConcatPartInsideAnArrayCarriesItsArrayRow() {

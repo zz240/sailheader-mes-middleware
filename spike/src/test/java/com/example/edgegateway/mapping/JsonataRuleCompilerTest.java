@@ -572,11 +572,14 @@ class JsonataRuleCompilerTest {
     }
 
     /**
-     * 保存那道门与编译器报的是**同一句话**（#113）。
+     * 保存那道门与编译器报的是**同一句话**（#113、#114）。
      *
      * <p>目标树那两种走法（`JsonataRuleCompiler.insert` 与 `FieldMappingConfig.insertTarget`）是两份实现
-     * ——写在一起的话编译器要反过来依赖 config 包。这份用例就是它们之间的约束：同一批冲突，两边报出来的
+     * ——写在一起的话编译器要反过来依赖 config 包。这份用例就是它们之间的约束：同一批问题，两边报出来的
      * 话必须逐字相同，动了其中一边而没动另一边，这里会红。</p>
+     *
+     * <p>#114 补上最后一条漏的：目标字段路径空了一段（`a..b` / `.a` / 整条都是点的 `.`）。编译器一直拒它，
+     * 门以前只 return、不报——停用状态下存得进去，启用重建路由时才炸。</p>
      */
     @Test
     void savingGateAndCompilerReportTheSameConflicts() {
@@ -607,6 +610,27 @@ class JsonataRuleCompilerTest {
                         leaf(null, "b", "qty", TransformType.STRING)), null, null);
         List<FieldMappingRule> inGroup = List.of(group);
         assertThat(configProblems(inGroup)).containsExactly(compileMessage(inGroup));
+
+        // 目标字段路径里空的一段（`a..b` / `.a` / 整条都是点的 `.`）：编译器一直拒它，门以前放它过去（#114）
+        for (String illegalTarget : List.of("sheet_no..qty", ".sheet_no", ".")) {
+            List<FieldMappingRule> badPath = List.of(leaf(1, "a", illegalTarget, TransformType.STRING));
+            assertThat(configProblems(badPath))
+                    .as("目标字段路径不合法：%s", illegalTarget)
+                    .containsExactly(compileMessage(badPath));
+        }
+
+        // 目标字段整条空着（键都不写 / 空串）：两边都拒，而且说**同一句话**——编译器以前在这里 NPE，
+        // 「校验配置」那条链路于是把一条草稿问题变成 500（#114）
+        for (FieldMappingRule blankTarget : List.of(
+                leaf(1, "a", null, TransformType.STRING), leaf(1, "a", "", TransformType.STRING))) {
+            List<FieldMappingRule> blanks = List.of(blankTarget);
+            assertThat(configProblems(blanks)).containsExactly(compileMessage(blanks));
+        }
+
+        // `a.` 不是错：split 会把结尾的空段丢掉，两边都当 `a`——钉住它，免得有人顺手把编译器收紧
+        List<FieldMappingRule> trailingDot = List.of(leaf(1, "a", "a.", TransformType.STRING));
+        assertThat(configProblems(trailingDot)).isEmpty();
+        assertThat(JsonataRuleCompiler.compile(trailingDot)).contains("\"a\"");
     }
 
     /** 保存那道门（`FieldMappingConfig.problems()`）对着同一批冲突报出来的话。 */

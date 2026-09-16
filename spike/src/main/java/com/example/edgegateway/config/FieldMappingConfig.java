@@ -106,7 +106,8 @@ public record FieldMappingConfig(
     }
 
     /**
-     * 编译期才发现的冲突：目标字段重复、目标字段前缀冲突。
+     * 编译期才发现的问题：目标字段重复、目标字段前缀冲突、目标字段路径不合法（空的一段，见
+     * {@link #insertTarget}）。
      *
      * <p>走法与 {@code JsonataRuleCompiler.insert} 一致（同一种目标树、同一套判据、同一种消息），因为
      * 这里报的必须是**编译器真会拒的那几条**：报多了会让合法的配置存不进去，报少了门和事实又不一致。
@@ -131,7 +132,17 @@ public record FieldMappingConfig(
         return conflicts;
     }
 
-    /** 往目标树里插一条规则，顺路报出它撞上的那些冲突（与编译器的走法一致，只是不抛、接着走）。 */
+    /**
+     * 往目标树里插一条规则，顺路报出它撞上的那些问题（与编译器的走法一致，只是不抛、接着走）。
+     *
+     * <p>报的还有**目标字段路径不合法**（`a..b`、`.a`、整条都是点的 `.`）：编译器在 {@code insert} 里撞上
+     * 空的一段就编不出来，所以它是编译期错。门以前在这里只 return、不报——任务停用状态下存得进去，启用重建
+     * 路由时才炸（#114）。消息与编译器那条逐字一致（{@code JsonataRuleCompilerTest} 里钉着两处不走散），
+     * 所以「校验配置」那边两条会合成一条（{@code MappingDraftValidationService.addOnce}）。</p>
+     *
+     * <p>{@code a.} 不算：{@code split} 会把结尾的空段丢掉，两边都当 `a` 处理。目标字段整条空着也不在这里报
+     * ——那是 {@link #collectProblems} 的「缺少目标字段 target」。</p>
+     */
     private void insertTarget(TargetTree node, FieldMappingRule rule, String parentTarget,
                               List<RuleProblem> problems) {
         String target = rule.target();
@@ -139,11 +150,15 @@ public record FieldMappingConfig(
             return;
         }
         String[] segments = target.split("\\.");
+        boolean illegalPath = segments.length == 0; // 整条都是点：split 把尾部的空段全丢了，一段都不剩
         for (String segment : segments) {
             if (segment.isBlank()) {
-                // 空的一段（`a..b`）编译器也编不出来——与「目标字段空着」一样，那是 collectProblems 报的事
-                return;
+                illegalPath = true;
             }
+        }
+        if (illegalPath) {
+            problems.add(new RuleProblem(target, parentTarget, "目标字段路径不合法: " + target));
+            return;
         }
         TargetTree current = node;
         for (int i = 0; i < segments.length; i++) {

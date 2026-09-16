@@ -48,7 +48,7 @@ public final class JsonataRuleCompiler {
     }
 
     /**
-     * 编译期发现的规则树问题：目标路径不合法 / 前缀冲突 / 重复映射 / 拼接没片段。
+     * 编译期发现的规则树问题：缺少目标字段 / 目标路径不合法 / 前缀冲突 / 重复映射 / 拼接没片段。
      *
      * <p>带上出错的那条规则的目标字段和它所属组节点的目标字段——「校验配置」那个只读接口（#103）
      * 据此把问题定位到界面上的一行（数组子行的目标写的是相对路径，光有它认不出是哪一行）。
@@ -84,6 +84,12 @@ public final class JsonataRuleCompiler {
      * @param parentTarget 这一条所属组节点的目标字段（顶层为 null），只用来报错时定位
      */
     private static void insert(TargetNode parent, FieldMappingRule rule, int step, int depth, String parentTarget) {
+        if (rule.target() == null || rule.target().isBlank()) {
+            // 目标字段整条空着：说成「缺少目标字段」，别让下面那句 split 抛 NPE——NPE 不是 CompileException，
+            // 「校验配置」那条链路接不住，一条草稿问题会变成 500。保存那道门（FieldMappingConfig.collectProblems）
+            // 对同一种输入说的也是这一句，两处一致，服务那边才能把同一条问题合成一条（#114）
+            throw new CompileException(rule.target(), parentTarget, "映射规则缺少目标字段 target");
+        }
         String[] segments = rule.target().split("\\.");
         if (segments.length == 0 || segments[0].isBlank()) {
             throw new CompileException(rule.target(), parentTarget, "目标字段路径不合法: " + rule.target());
