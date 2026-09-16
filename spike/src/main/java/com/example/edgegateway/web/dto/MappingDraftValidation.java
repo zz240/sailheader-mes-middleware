@@ -13,8 +13,8 @@ import java.util.List;
  * 校验的是编辑器里还没保存的草稿。两个端点各说各的定位方式，所以各留一份自己的问题形状。</p>
  *
  * @param valid    有没有错误（警告不算；和 {@code errors.isEmpty()} 一个意思，省得界面自己算）
- * @param errors   错误：这份草稿现在存下去后端会拒（或存进去跑不对）
- * @param warnings 警告：能存能跑，但结果大概不是你要的
+ * @param errors   错误：这份草稿现在存下去后端会拒——只有结构错与链问题（#113 / ADR-0012 决策 4）
+ * @param warnings 警告：能存能跑，但结果大概不是你要的（只在来源字段样例上成立的那几条都归这里）
  * @param compiled 编译产物文本；草稿还没法编译时两个字段都是 null
  */
 public record MappingDraftValidation(

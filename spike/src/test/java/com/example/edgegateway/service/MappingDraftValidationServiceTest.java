@@ -66,15 +66,21 @@ class MappingDraftValidationServiceTest {
      *
      * <p>界面上「还没选来源的空行不进草稿」（`configFromRows` 只留配好的行），所以这一条报的正是
      * 「清单里写着必填、用户却没配」——这类字段在运行时整个消失，也不报错（#98 问题陈述）。</p>
+     *
+     * <p><b>它是警告不是错误</b>（#113 / ADR-0012 决策 4）：它说的是目标清单的事实（这个必填字段现在是空的），
+     * 不是「这份配置后端会拒」——后端从来不拦这种。清除掉一个必填字段的行之后，保存也不再被它拦下；
+     * 后端仍然报得出它，是因为那一行不进草稿、清单里的必填字段照样没着落（#113 验收四、五）。</p>
      */
     @Test
-    void requiredTargetFieldWithoutAMappingIsReported() {
+    void requiredTargetFieldWithoutAMappingIsAWarning() {
         // 这份清单比 bomDraft() 多一个必填的 bom.vendorName：它就是这一组里「会触发」的那份草稿
         MappingDraftValidation result = service.validate(
                 request(bomDraft(), fullBomTargets(), List.of(1), 1, 2));
 
-        assertThat(problems(result.errors()))
-                .containsExactly("bom.vendorName|null|必填的目标字段没有配置来源: bom.vendorName");
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.valid()).isTrue();
+        assertThat(problems(result.warnings()))
+                .contains("bom.vendorName|null|必填的目标字段没有配置来源: bom.vendorName");
     }
 
     /** 对照：清单里的必填字段都配了，这一条就一条都不报（可选字段没配也不算）。 */
@@ -85,9 +91,15 @@ class MappingDraftValidationServiceTest {
                 request(bomDraft(), bomTargets(), List.of(1), 1, 2));
 
         assertThat(result.errors()).isEmpty();
+        assertThat(result.warnings()).isEmpty();
     }
 
-    /** 数组字段整行都没配时只报数组一行：它的元素字段一条也进不来，逐个报只会刷屏。 */
+    /**
+     * 数组字段整行都没配时只报数组一行：它的元素字段一条也进不来，逐个报只会刷屏（#113 验收六）。
+     *
+     * <p>断言收窄到「必填没配」那一类上、而且是 `containsExactly`：整份警告列表里还有日期那条提示之类的
+     * 噪声，但**元素字段一条都不许冒出来**正是这一条要钉住的事。</p>
+     */
     @Test
     void anUnconfiguredRequiredArrayIsReportedOnce() {
         Map<String, Object> draft = Map.of("rules", List.of(
@@ -97,11 +109,12 @@ class MappingDraftValidationServiceTest {
 
         MappingDraftValidation result = service.validate(request(draft, bomTargets(), List.of(1), 1, 2));
 
-        assertThat(problems(result.errors()))
+        assertThat(result.errors()).isEmpty();
+        assertThat(missingRequiredWarnings(result))
                 .containsExactly("bom.bomLines|null|必填的目标字段没有配置来源: bom.bomLines");
     }
 
-    /** 数组配了、只是某个必填子字段没配：逐条报子字段（带上它所属的数组行）。 */
+    /** 数组配了、只是某个必填子字段没配：逐条报子字段（带上它所属的数组行），别的元素字段不跟着报。 */
     @Test
     void anUnconfiguredRequiredArrayElementIsReportedOnItsOwnRow() {
         Map<String, Object> draft = Map.of("rules", List.of(
@@ -112,19 +125,59 @@ class MappingDraftValidationServiceTest {
 
         MappingDraftValidation result = service.validate(request(draft, bomTargets(), List.of(1), 1, 2));
 
-        assertThat(problems(result.errors())).containsExactly(
-                "materialName|bom.bomLines|必填的目标字段没有配置来源: materialName");
+        assertThat(result.errors()).isEmpty();
+        assertThat(missingRequiredWarnings(result))
+                .containsExactly("materialName|bom.bomLines|必填的目标字段没有配置来源: materialName");
     }
 
     /**
-     * 来源字段在样例里不存在：写错的路径运行时会让目标字段整个消失，所以是错误。
+     * 「必填没配来源」这条警告说的是**这条规则的目标字段**，子行写的是相对路径（#113 走查）。
+     *
+     * <p>界面上被清掉的那一行由编辑器自己给同一条提醒（`fast-config.ts` 的 `clearedRequiredNotices`），
+     * 措辞必须与这里**逐字一致**：两边挂的是同一行、说的是同一件事，一边写完整路径
+     * （`bom.bomLines.qty`）一边写相对路径（`qty`），点一次「校验配置」行上的话就变了。</p>
+     */
+    @Test
+    void theMissingRequiredWarningForAnArrayChildNamesTheRelativePath() {
+        List<MappingDraftRequest.TargetFieldSpec> targets = spec(arraySpec("bom.bomLines",
+                elementSpec("qty", "INT", true), elementSpec("materialCode", "VARCHAR", false)));
+
+        MappingDraftValidation result = service.validate(request(
+                Map.of("rules", List.of(groupWith(leaf(null, "materialCode", "materialCode")))), targets,
+                List.of(1), 1, 2));
+
+        assertThat(missingRequiredWarnings(result))
+                .containsExactly("qty|bom.bomLines|必填的目标字段没有配置来源: qty");
+    }
+
+    /**
+     * 只有警告的草稿**存得下去**（#113 验收二、四）。
+     *
+     * <p>端到端那一段（`ActionService.add` 收下它）在 {@code ActionServiceTest}；这里先钉住它的前提：
+     * 一份「必填字段一条都没配」的草稿，服务这边一条错误都不报。</p>
+     */
+    @Test
+    void aDraftWithOnlyWarningsHasNoErrors() {
+        MappingDraftValidation result = service.validate(
+                request(bomDraft(), fullBomTargets(), List.of(1), 1, 2));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.valid()).isTrue();
+        assertThat(result.warnings()).isNotEmpty();
+    }
+
+    /**
+     * 来源字段在样例里不存在：写错的路径运行时会让目标字段整个消失，所以要说出来。
+     *
+     * <p>但它是**警告**不是错误（#113 / ADR-0012 决策 4）：后端从来不拒这种配置，编辑器也不该替它拦——
+     * 样例只是最近一次成功运行的取样，陈旧时会误伤（#113 验收一）。</p>
      *
      * <p>三种来源写法的路径口径各不一样，各看一条：数组子行按**相对路径**判断（样例里是
      * `items[0].materialCode`）、外层引用去掉 `$root` 按绝对路径判断、跨步骤引用按绝对路径判断。
      * 报出来的话里带上「按样例算出来的那个路径」——相对路径与 `$root` 只看写的那一串认不出重合。</p>
      */
     @Test
-    void unknownSourcePathsAreReportedOnTheirRows() {
+    void unknownSourcePathsAreWarnedAboutOnTheirRows() {
         assertThat(sampleProblems(unknownSourceProblems(
                 Map.of("rules", List.of(leaf(1, "materialCodex", "bom.bomNo"))), spec(topSpec("bom.bomNo", "VARCHAR")))))
                 .containsExactly("bom.bomNo|null|来源字段不在样例里: materialCodex"
@@ -176,7 +229,7 @@ class MappingDraftValidationServiceTest {
      *
      * <p>请求里只带一份来源样例（编辑器当前选中的那个默认来源步骤的探测；顶部一换默认来源，
      * `onDefaultStepChange` 只挪还没配来源的行，已配的行留在原步骤）。拿这份样例去判别的步骤，会把配好
-     * 的行整片误报成「来源字段不在样例里」——而且是错误级，直接拦住保存。</p>
+     * 的行整片误报成「来源字段不在样例里」——这个提醒照旧只对「跟这份样例同一步骤」的规则说。</p>
      */
     @Test
     void sourcesFromAnotherStepAreNotJudgedAgainstThisSample() {
@@ -187,6 +240,7 @@ class MappingDraftValidationServiceTest {
                 1, List.of(1, 2), 1, 3));
 
         assertThat(ruleProblems(otherStep.errors())).isEmpty();
+        assertThat(sampleProblems(ruleProblems(otherStep.warnings()))).isEmpty();
 
         // 同一步里的错路径照常报（放宽的只是「别的步骤」，不是这条检查本身）
         assertThat(sampleProblems(unknownSourceProblems(
@@ -205,6 +259,7 @@ class MappingDraftValidationServiceTest {
                 null, List.of(1), 1, 2));
 
         assertThat(ruleProblems(result.errors())).isEmpty();
+        assertThat(sampleProblems(ruleProblems(result.warnings()))).isEmpty();
     }
 
     /**
@@ -270,7 +325,7 @@ class MappingDraftValidationServiceTest {
                 source("materialCode", "STRING"), source("materialName", "STRING"), source("productCode", "STRING"),
                 source("items[0].quantity", "NUMBER"), source("items[0].unit", "STRING")),
                 List.of(1), 1, 2));
-        return ruleProblems(result.errors()).stream()
+        return ruleProblems(result.warnings()).stream()
                 .filter(problem -> problem.message().startsWith("来源字段不在样例里"))
                 .toList();
     }
@@ -326,14 +381,21 @@ class MappingDraftValidationServiceTest {
                         + "（查不到键的来源值不会出现在目标报文里：这个字段整个消失）");
     }
 
-    /** 样例里没有这个来源字段时这条判不了（「来源不在样例里」那条已经在说这件事了）。 */
+    /**
+     * 样例里没有这个来源字段时枚举覆盖这条判不了。
+     *
+     * <p>这一行上照样有一条警告——「来源字段不在样例里」那条（#113 起它也是警告），不过那是另一条检查的
+     * 事；这里只看枚举这条不补话。</p>
+     */
     @Test
     void enumWithoutASourceSampleIsNotJudged() {
         MappingDraftValidation result = service.validate(request(
                 Map.of("rules", List.of(enumerated("noSuchField", "bom.bomNo", "PCS", "件"))),
                 spec(topSpec("bom.bomNo", "VARCHAR")), enumSample(), List.of(1), 1, 2));
 
-        assertThat(result.warnings()).isEmpty();
+        assertThat(problems(result.warnings()))
+                .containsExactly("bom.bomNo|null|来源字段不在样例里: noSuchField"
+                        + "（按样例算是 noSuchField，字段清单里没有它）");
     }
 
     /**
@@ -735,17 +797,20 @@ class MappingDraftValidationServiceTest {
     }
 
     /**
-     * 这一行的来源字段压根不在样例里时不补这条提示：「来源字段不在样例里」那条**错误**已经在说这件事，
+     * 这一行的来源字段压根不在样例里时不补这条提示：「来源字段不在样例里」那条已经在说这件事，
      * 同一行上报两条说的是同一件事。
+     *
+     * <p>那条**警告**本身是另一条检查的事（#113 起「来源不在样例里」也是警告）——这里只锁「日期这条不补话」，
+     * 所以对着整个警告列表断言。</p>
      */
     @Test
     void aDatePatternIsNotTriedWhenItsSourceFieldIsNotInTheSample() {
         MappingDraftValidation result = service.validate(new MappingDraftRequest(dateDraft("yyyyMMddHHmmss"),
                 dateTargets(), List.of(source("created_time", "STRING", "2026-08-21")), 1, List.of(1), 1, 2));
 
-        assertThat(problems(result.errors())).containsExactly(
+        assertThat(result.errors()).isEmpty();
+        assertThat(problems(result.warnings())).containsExactly(
                 "bom.createdDate|null|来源字段不在样例里: createdTime（按样例算是 createdTime，字段清单里没有它）");
-        assertThat(result.warnings()).isEmpty();
     }
 
     /** 只看日期格式串那两条（在样例上试没试过）的警告。 */
@@ -865,7 +930,8 @@ class MappingDraftValidationServiceTest {
      * 结构有错的草稿：每条问题都定位到出错的那一行（目标字段 + 它所属的数组行）。
      *
      * <p>四类错各一条：叶子缺来源、数组子行缺来源（父行是数组行）、顶层用行号、sourceStep 指到自己；
-     * 外加一条编译期才发现的（重复目标）——它说明编译产物那一份也参与了判断。</p>
+     * 外加一条编译期才发现的（重复目标）——它说明「结构错」这一档现在也含编译期冲突（#113：以前它只在
+     * 启用重建路由时炸），所以跟在同样来自 {@code problems()} 的那几条后面、排在链问题之前。</p>
      */
     @Test
     void structuralProblemsAreLocatedOnTheirRows() {
@@ -891,8 +957,8 @@ class MappingDraftValidationServiceTest {
                 "bom.productName|null|映射规则缺少来源字段 source",
                 "materialName|bom.bomLines|映射规则缺少来源字段 source",
                 "lineNo|null|INDEX 转换只能在数组组内使用: lineNo",
-                "bom.productCode|null|sourceStep=2 必须指向执行顺序更早的动作（当前序号 2）",
-                "bom.bomNo|null|目标字段重复映射: bom.bomNo");
+                "bom.bomNo|null|目标字段重复映射: bom.bomNo",
+                "bom.productCode|null|sourceStep=2 必须指向执行顺序更早的动作（当前序号 2）");
         assertThat(result.warnings()).isEmpty();
         assertThat(result.valid()).isFalse();
         assertThat(result.compiled().jsonata()).isNull();
@@ -1018,6 +1084,18 @@ class MappingDraftValidationServiceTest {
     private static List<String> problems(List<MappingDraftValidation.Problem> problems) {
         return problems.stream()
                 .map(problem -> problem.target() + "|" + problem.parent() + "|" + problem.message())
+                .toList();
+    }
+
+    /**
+     * 一份校验结果里「必填的目标字段没有配置来源」那几条（`目标字段|父行|说明`）。
+     *
+     * <p>只挑这一类：同一份草稿上还有日期格式串没试过之类的提示，混进来会让「数组字段整行报一条」
+     * 这条断言看不出真正要钉的东西（#113 验收六）。</p>
+     */
+    private static List<String> missingRequiredWarnings(MappingDraftValidation result) {
+        return problems(result.warnings()).stream()
+                .filter(problem -> problem.contains("必填的目标字段没有配置来源"))
                 .toList();
     }
 

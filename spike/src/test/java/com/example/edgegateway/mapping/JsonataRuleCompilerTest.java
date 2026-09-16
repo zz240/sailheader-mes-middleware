@@ -571,6 +571,62 @@ class JsonataRuleCompilerTest {
                 null, null, null, null);
     }
 
+    /**
+     * 保存那道门与编译器报的是**同一句话**（#113）。
+     *
+     * <p>目标树那两种走法（`JsonataRuleCompiler.insert` 与 `FieldMappingConfig.insertTarget`）是两份实现
+     * ——写在一起的话编译器要反过来依赖 config 包。这份用例就是它们之间的约束：同一批冲突，两边报出来的
+     * 话必须逐字相同，动了其中一边而没动另一边，这里会红。</p>
+     */
+    @Test
+    void savingGateAndCompilerReportTheSameConflicts() {
+        // 重复目标字段
+        assertThat(configProblems(List.of(
+                leaf(1, "a", "sheet_no", TransformType.STRING),
+                leaf(1, "b", "sheet_no", TransformType.STRING))))
+                .containsExactly(compileMessage(List.of(
+                        leaf(1, "a", "sheet_no", TransformType.STRING),
+                        leaf(1, "b", "sheet_no", TransformType.STRING))));
+
+        // 前缀冲突：先映射 sheet_no，再映射它的子路径
+        List<FieldMappingRule> parentThenChild = List.of(
+                leaf(1, "a", "sheet_no", TransformType.STRING),
+                leaf(1, "b", "sheet_no.qty", TransformType.STRING));
+        assertThat(configProblems(parentThenChild)).containsExactly(compileMessage(parentThenChild));
+
+        // 前缀冲突：先映射子路径，再映射它本身
+        List<FieldMappingRule> childThenParent = List.of(
+                leaf(1, "b", "sheet_no.qty", TransformType.STRING),
+                leaf(1, "a", "sheet_no", TransformType.STRING));
+        assertThat(configProblems(childThenParent)).containsExactly(compileMessage(childThenParent));
+
+        // 组内子规则重复：两条走法都要一路走进去
+        FieldMappingRule group = new FieldMappingRule(1, "items", "lines", TransformType.STRING,
+                null, Map.of(), null, "FOR_EACH", List.of(
+                        leaf(null, "a", "qty", TransformType.STRING),
+                        leaf(null, "b", "qty", TransformType.STRING)), null, null);
+        List<FieldMappingRule> inGroup = List.of(group);
+        assertThat(configProblems(inGroup)).containsExactly(compileMessage(inGroup));
+    }
+
+    /** 保存那道门（`FieldMappingConfig.problems()`）对着同一批冲突报出来的话。 */
+    private static List<String> configProblems(List<FieldMappingRule> rules) {
+        return new FieldMappingConfig(null, null, rules).problems().stream()
+                .map(FieldMappingConfig.RuleProblem::message)
+                .toList();
+    }
+
+    /** 编译器对着同一批冲突抛出来的那一句。 */
+    private static String compileMessage(List<FieldMappingRule> rules) {
+        try {
+            JsonataRuleCompiler.compile(rules);
+        } catch (JsonataRuleCompiler.CompileException e) {
+            return e.getMessage();
+        }
+        throw new AssertionError("这份规则本该编译不过：" + rules);
+    }
+
+
     private static Map<Integer, Object> context(int step, Object value) {
         Map<Integer, Object> context = new LinkedHashMap<>();
         context.put(step, value);

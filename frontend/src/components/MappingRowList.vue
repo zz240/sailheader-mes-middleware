@@ -35,7 +35,7 @@ import MappingIndexParams from './MappingIndexParams.vue'
 const props = defineProps<{
   /** 这一批目标是哪个动作的（写目标那一句说明）。 */
   targetTip: string
-  /** 跑过一次校验没有（没跑过就不显示行右侧的状态）。 */
+  /** 后端真跑过一次校验没有（那个三档状态标签只认它）。 */
   hasValidation: boolean
   /** 每一行的问题（键是行 id）：行右侧那三种状态用它算。 */
   rowIssues: Map<number, LocatedIssue[]>
@@ -225,13 +225,13 @@ function isChild(entry: FlatRow): boolean {
   return entry.depth > 0
 }
 
-/** 这一行第一条问题的原文（行里显示一条，剩下的挂在悬停提示上）。 */
-function firstMessageOf(rowId: number): string {
-  return props.rowIssues.get(rowId)?.[0]?.message ?? ''
+/** 这一行的问题原文，按顺序全部列出来（#113：不再只显示第一条、其余藏进悬停）。 */
+function issueMessagesOf(rowId: number): string[] {
+  return (props.rowIssues.get(rowId) ?? []).map(issue => issue.message)
 }
 
 function issueText(rowId: number): string {
-  return (props.rowIssues.get(rowId) ?? []).map(issue => issue.message).join('\n')
+  return issueMessagesOf(rowId).join('\n')
 }
 
 function rowStateOf(rowId: number): 'error' | 'warning' | 'ok' {
@@ -544,12 +544,23 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
           </div>
 
           <!-- 这一行有没有问题（#103）：自己的那一列，窄屏时排在「映射」下面（#106：依次排列）。
-               三种状态都由后端返回的问题算出来，前端不自己判对错。 -->
-          <div v-if="props.hasValidation" class="wb-col-issues" :title="issueText(entry.row.id)">
-            <span class="wb-state" :class="rowStateOf(entry.row.id)">{{ stateLabel(entry.row.id) }}</span>
-            <span v-if="firstMessageOf(entry.row.id)" class="wb-issue-inline">
-              {{ firstMessageOf(entry.row.id) }}
+               一行上的**全部**问题都列在这里（#113 验收三：不再只显示第一条、其余藏进悬停）。
+               那个「有错 / 有警告 / 没问题」的标签**只在后端真跑过一次校验之后**才给（`hasValidation`）：
+               清掉一行之后没点过校验时，这一行上也有一条提醒（清掉的行，编辑器自己说的），但那时候
+               谁都没判过这份草稿，不该给一个绿的「没问题」（#113 走查）。 -->
+          <div
+            v-if="props.hasValidation || issueMessagesOf(entry.row.id).length"
+            class="wb-col-issues"
+            :title="issueText(entry.row.id)"
+          >
+            <span v-if="props.hasValidation" class="wb-state" :class="rowStateOf(entry.row.id)">
+              {{ stateLabel(entry.row.id) }}
             </span>
+            <span
+              v-for="(message, i) in issueMessagesOf(entry.row.id)"
+              :key="i"
+              class="wb-issue-inline"
+            >{{ message }}</span>
           </div>
 
           <!-- 行操作：清除这一行的取值方式（清除后能撤销，见右边的「撤销」） -->
@@ -767,15 +778,14 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
 .wb-paren { font-size: 12px; color: #6b7280; }
 .wb-start-at { width: 96px; }
 
-/* 行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分 */
-.wb-col-issues { display: flex; align-items: center; gap: 6px; max-width: 280px; flex-shrink: 0; }
+/* 行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分。
+   一行上的**全部**问题都列在这一列里（#113），所以是竖着排、每条各自换行，不再截断成一句 */
+.wb-col-issues { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 280px; flex-shrink: 0; }
 .wb-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 5px; border: 1px solid #e5e7eb; color: #9ca3af; }
 .wb-state.error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
 .wb-state.warning { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 .wb-state.ok { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
-.wb-issue-inline {
-  font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+.wb-issue-inline { font-size: 11px; color: #6b7280; overflow-wrap: anywhere; }
 
 /* 就地参数面板：占这一行下面的一行 */
 .wb-panel {

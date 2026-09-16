@@ -46,8 +46,8 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 规则模型 | 结构化规则树（叶子 + 组节点） | `config/FieldMappingConfig.from` | `validate()` 递归校验（组内子规则禁 sourceStep、INDEX 仅组内、CONSTANT 需 constant 等） | JSON → 递归 record | 未知键/缺 target/前缀冲突→400；sourceStep 悬空/错位→400 且 `/validate` 报错（#89 `ChainConsistencyValidator`） |
-| 编译 | 规则树 → JSONata | 路由构建期 | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`） | `List<FieldMappingRule>` → 字符串表达式 | 目标前缀/重复冲突→400 |
+| 规则模型 | 结构化规则树（叶子 + 组节点） | `config/FieldMappingConfig.from` | `validate()` 递归校验（组内子规则禁 sourceStep、INDEX 仅组内、CONSTANT 需 constant 等），并把全部问题用 `；` 拼成一条 | JSON → 递归 record | 未知键/缺 target→400；sourceStep 悬空/错位→400 且 `/validate` 报错（#89 `ChainConsistencyValidator`） |
+| 编译 | 规则树 → JSONata | 路由构建期 | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`） | `List<FieldMappingRule>` → 字符串表达式 | 目标前缀/重复冲突→400（#113 起保存时就报：同一套判据也在 `FieldMappingConfig.problems()` 里，不再等到启用重建路由） |
 | 求值 | 上下文绑定各步骤求值 | 消息到达 | `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`）；dashjoin jsonata 0.9.10，实例跨消息复用 | 上下文 `Map<Integer,Object>` → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
 | 建议器 | 结构探测 + 同名归一化 + 相似度 + 历史复用 + 转换推断 | `MappingSuggestionService.suggest`（`service/MappingSuggestionService.java:45`）→ `MappingSuggesterRouter.forSite`（`service/MappingSuggesterRouter.java:33`）→ `RuleMappingSuggester.suggest`（`mapping/suggest/RuleMappingSuggester.java:39`） | 探测字段对（`StructureProbeService.probeFromDb` :53）→ 候选 | 组建议 `MatchSource.ARRAY`；单值样例不再推 CONSTANT（DS-10.4） |
 | 编辑器 | 每个目标字段一行 + 常驻来源字段清单 + 校验交给后端只读接口 | `frontend/src/components/FieldMappingWorkbench.vue`（入口：动作表上的「编辑映射」） | 保存/回填递归 rules（`mapping/rows.ts` 那一层，格式与旧编辑器同一个） | — | 保存校验 `validate`、`mode:EXPRESSION` 逃生通道、点「校验配置」走 `POST /api/field-mapping-editor/validate` |

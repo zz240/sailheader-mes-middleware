@@ -57,19 +57,31 @@ public record FieldMappingConfig(
     public record RuleProblem(String target, String parent, String message) {
     }
 
+    /**
+     * 保存这道门：结构错（{@link #problems()}）**全部**报出来，用 `；` 连接（#113 / ADR-0012 决策 4）。
+     *
+     * <p>以前只抛头一条：用户改一条、点一次保存、再来一条，来回好几轮。连接符与链检查
+     * （{@code ChainConsistencyValidator.describeAll}）的口径一致——那一条也是多条问题拼成一条消息。</p>
+     */
     @Override
     public void validate() {
         List<RuleProblem> problems = problems();
         if (!problems.isEmpty()) {
-            throw new IllegalArgumentException(problems.get(0).message());
+            throw new IllegalArgumentException(String.join("；", problems.stream()
+                    .map(RuleProblem::message)
+                    .toList()));
         }
     }
 
     /**
      * 结构校验的**全部**问题（按规则树顺序，一条规则可以有多条）。
      *
-     * <p>{@link #validate()} 抛的就是这里的头一条；「校验配置」那个只读接口（#103）要一次把问题都列出来，
-     * 所以两边共用这一份实现，不各写一遍。</p>
+     * <p>{@link #validate()} 抛的就是这里拼起来的那一条；「校验配置」那个只读接口（#103）要一次把问题都
+     * 列出来，所以两边共用这一份实现，不各写一遍。</p>
+     *
+     * <p>除了逐条规则自己的结构错，这里还报**编译期才发现的冲突**（重复目标字段、前缀冲突，见
+     * {@link #targetConflicts}）——它们以前只在启用重建路由时炸，任务停用状态下能存进去，
+     * 门和事实不一致（#113 / ADR-0012 决策 4）。</p>
      */
     public List<RuleProblem> problems() {
         List<RuleProblem> problems = new ArrayList<>();
@@ -87,7 +99,94 @@ public record FieldMappingConfig(
             return problems;
         }
         collectProblems(rules, 0, null, problems);
+        for (RuleProblem conflict : targetConflicts(rules, null)) {
+            problems.add(conflict);
+        }
         return problems;
+    }
+
+    /**
+     * 编译期才发现的冲突：目标字段重复、目标字段前缀冲突。
+     *
+     * <p>走法与 {@code JsonataRuleCompiler.insert} 一致（同一种目标树、同一套判据、同一种消息），因为
+     * 这里报的必须是**编译器真会拒的那几条**：报多了会让合法的配置存不进去，报少了门和事实又不一致。
+     * 整条规则表一次走完，所以一次能报出全部冲突（编译器是撞上第一条就抛）。</p>
+     *
+     * <p><b>两处会走散</b>：这里是编译器那段的第二份实现（写在一起的话，编译器要反过来依赖 config 包）。
+     * 约束它们的是 {@code JsonataRuleCompilerTest.savingGateAndCompilerReportTheSameConflicts}——同一批
+     * 冲突两边报出来的话必须逐字相同；动了这里或那里，那条用例会红。</p>
+     *
+     * <p>拼接片段上的问题不在这里：{@link #concatPartProblems} 已经逐条报过了，两边共用同一份判据，
+     * 服务那边还会把逐字相同的两条合成一条（{@code MappingDraftValidationService.addOnce}）。</p>
+     *
+     * <p>只对**结构本身没毛病**的规则跑：目标字段空着、转换认不出这些上面的 {@link #collectProblems}
+     * 已经各报一条了，再补一条说的同一件事只会是噪声（编译器也不会走到那一步）。</p>
+     */
+    private List<RuleProblem> targetConflicts(List<FieldMappingRule> rules, String parentTarget) {
+        List<RuleProblem> conflicts = new ArrayList<>();
+        TargetTree tree = new TargetTree();
+        for (FieldMappingRule rule : rules) {
+            insertTarget(tree, rule, parentTarget, conflicts);
+        }
+        return conflicts;
+    }
+
+    /** 往目标树里插一条规则，顺路报出它撞上的那些冲突（与编译器的走法一致，只是不抛、接着走）。 */
+    private void insertTarget(TargetTree node, FieldMappingRule rule, String parentTarget,
+                              List<RuleProblem> problems) {
+        String target = rule.target();
+        if (target == null || target.isBlank()) {
+            return;
+        }
+        String[] segments = target.split("\\.");
+        for (String segment : segments) {
+            if (segment.isBlank()) {
+                // 空的一段（`a..b`）编译器也编不出来——与「目标字段空着」一样，那是 collectProblems 报的事
+                return;
+            }
+        }
+        TargetTree current = node;
+        for (int i = 0; i < segments.length; i++) {
+            TargetTree next = current.children.get(segments[i]);
+            if (i < segments.length - 1 && next != null && next.leaf && !next.group) {
+                // 中间节点已经有非组叶子：先映射 "a.b" 再映射 "a.b.c" 时 c 会被静默丢弃
+                problems.add(conflict(rule, parentTarget, "目标字段前缀冲突"));
+                return;
+            }
+            if (next == null) {
+                next = new TargetTree();
+                current.children.put(segments[i], next);
+            }
+            current = next;
+        }
+        boolean group = rule.children() != null && !rule.children().isEmpty();
+        if (current.leaf) {
+            problems.add(conflict(rule, parentTarget, "目标字段重复映射"));
+            return;
+        }
+        if (!current.children.isEmpty() && !group) {
+            problems.add(conflict(rule, parentTarget, "目标字段前缀冲突"));
+            return;
+        }
+        current.leaf = true;
+        current.group = group;
+        if (group) {
+            for (FieldMappingRule child : rule.children()) {
+                insertTarget(current, child, target, problems);
+            }
+        }
+    }
+
+    /** 一条冲突：消息形状与 {@code JsonataRuleCompiler} 那几条逐字一致（服务那边据此合成一条）。 */
+    private static RuleProblem conflict(FieldMappingRule rule, String parentTarget, String message) {
+        return new RuleProblem(rule.target(), parentTarget, message + ": " + rule.target());
+    }
+
+    /** 目标树的一个节点（只看冲突，不看叶子怎么编译）。 */
+    private static final class TargetTree {
+        private final Map<String, TargetTree> children = new LinkedHashMap<>();
+        private boolean leaf;
+        private boolean group;
     }
 
     /**

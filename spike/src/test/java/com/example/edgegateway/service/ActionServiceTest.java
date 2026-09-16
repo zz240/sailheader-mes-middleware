@@ -12,6 +12,9 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.web.dto.ActionRequest;
+import com.example.edgegateway.web.dto.MappingDraftRequest;
+import com.example.edgegateway.web.dto.MappingDraftValidation;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -141,6 +144,114 @@ class ActionServiceTest {
         assertThatThrownBy(() -> service.add(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("日期格式串不合法: ISO-8601");
+    }
+
+    /**
+     * 保存那道 400 带**全部**结构问题，而不是头一条（#113 验收 / ADR-0012 决策 4）。
+     *
+     * <p>以前一次只报一条：改一条、点一次保存、再来一条。问题之间用 `；` 连接，与链检查
+     * （{@code ChainConsistencyValidator.describeAll}）的口径一致。</p>
+     */
+    @Test
+    void saveErrorCarriesEveryStructuralProblem() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(
+                        Map.of("target", "sheet_no", "transform", "STRING"),          // 缺来源
+                        Map.of("source", "createdTime", "target", "createdDate",      // 非法格式串
+                                "transform", "DATE", "datePattern", "ISO-8601")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("映射规则缺少来源字段 source")
+                .hasMessageContaining("日期格式串不合法: ISO-8601")
+                .hasMessageContaining("；");
+    }
+
+    /**
+     * 编译期才发现的结构错（重复目标字段、前缀冲突）**保存时就拦下**（#113 验收 / ADR-0012 决策 4）。
+     *
+     * <p>以前这类错只在启用重建路由时炸：任务停用状态下能存进去，门和事实不一致。草稿校验那边一直由
+     * {@code JsonataRuleCompiler} 报它们，这里补的是保存那道门。</p>
+     */
+    @Test
+    void saveRejectsRulesThatOnlyFailAtCompileTime() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "orderNo", "target", "sheet_no",
+                                "transform", "STRING"),
+                        Map.of("sourceStep", 1, "source", "orderType", "target", "sheet_no",
+                                "transform", "STRING")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("目标字段重复映射: sheet_no");
+    }
+
+    /** 前缀冲突与重复目标同一档：保存这道门也拦（同一批冲突两条都验，别只验一条）。 */
+    @Test
+    void saveRejectsPrefixConflictsToo() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "orderNo", "target", "sheet_no",
+                                "transform", "STRING"),
+                        Map.of("sourceStep", 1, "source", "orderType", "target", "sheet_no.type",
+                                "transform", "STRING")))));
+
+        assertThatThrownBy(() -> service.add(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("目标字段前缀冲突: sheet_no.type");
+    }
+
+    /**
+     * 只有警告的草稿存得下去（#113 验收二），没有配好的必填字段也一样（验收四）。
+     *
+     * <p>编辑器保存前拦人的那一道是草稿校验的 `errors`（`useMappingDraft.save`，前端那半在 `checks.ts`
+     * 里断言）；后端这一半是**保存那道门**：它看的是结构错与链问题，样例类的那几条它一条都不报——
+     * 所以一份「清单里写着必填、用户没配」的草稿在这里必须存得进去（以前它被拦下）。</p>
+     *
+     * <p>这里同时走了一遍**编辑器保存那份草稿**（清掉的那一行不进规则）：判定用的是
+     * {@code MappingDraftValidationService}——就是编辑器点「校验配置」打的那个只读接口，所以答案是同一份。</p>
+     */
+    @Test
+    void saveAcceptsADraftWithWarningsOnly() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+
+        // 清单里有两个必填字段（其中 bom.vendorName 谁都没配），草稿只映射了 bom.bomNo
+        List<MappingDraftRequest.TargetFieldSpec> targets = List.of(
+                new MappingDraftRequest.TargetFieldSpec("bom.bomNo", "VARCHAR", true, List.of()),
+                new MappingDraftRequest.TargetFieldSpec("bom.vendorName", "VARCHAR", true, List.of()));
+        List<MappingDraftRequest.TargetFieldSpec> bomNoOnly = List.of(targets.get(0));
+
+        // 清掉一个必填字段的行 = 这一行不进草稿（前端 `configFromRows` 只留配好的行）
+        Map<String, Object> clearedDraft = Map.of("rules", List.of(
+                Map.of("sourceStep", 0, "source", "bomNo", "target", "bom.bomNo", "transform", "STRING")));
+
+        MappingDraftValidationService drafts = new MappingDraftValidationService(new ObjectMapper());
+        MappingDraftValidation cleared = drafts.validate(
+                new MappingDraftRequest(clearedDraft, targets, List.of(), 1, List.of(1), 1, 2));
+        assertThat(cleared.errors()).isEmpty();
+        assertThat(cleared.valid()).isTrue();
+        assertThat(cleared.warnings()).anyMatch(w -> w.message().contains("bom.vendorName"));
+
+        // 对照：清单里只有一个必填字段、而它配了 → 没有任何问题（上面那条警告是拿清单比出来的）
+        assertThat(drafts.validate(new MappingDraftRequest(clearedDraft, bomNoOnly, List.of(),
+                1, List.of(1), 1, 2)).warnings()).isEmpty();
+
+        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
+                FieldMappingConfig.from(clearedDraft));
+
+        assertThat(service.add(1L, request).getType()).isEqualTo(ActionKind.FIELD_MAP);
     }
 
     @Test

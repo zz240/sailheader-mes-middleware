@@ -656,3 +656,36 @@ export function autoSourceNotices(rows: MapRow[]): AutoSourceNotice[] {
   }
   return out
 }
+
+/**
+ * 被「清除」掉、而目标清单里标着必填的那些行：各给一条**提醒**（#113 验收五）。
+ *
+ * <p>为什么由前端出：后端报得出同一句话（那一行没进草稿，清单里的必填字段就没着落），但那要等点了
+ * 「校验配置」；而「我不管你这一行了、可这个字段还是空的」是清完那一刻就该看见的事。</p>
+ *
+ * <p>只认**用户亲手清过**的行（不是所有没配好的行）：故意留着的空行本来就一直在提醒「还没选来源」，
+ * 再挂一条说的是同一件事。清完又清一次、或者本来就没配过的行，清除快照不会更新，也就不用重复提醒。</p>
+ *
+ * <p>说出来的话与后端那条**逐字一致**（`MappingSampleChecks.missingRequiredTargets`）：它点的是**这条规则
+ * 的目标字段**，子行写的是相对路径（`qty`），不是带数组前缀的那条完整路径——两边挂的是同一行、
+ * 说的是同一件事，措辞不一样只会让人以为是两个问题。查清单用的仍然是完整路径
+ * （{@link fullTargetPath}，「必填」只认清单里那些路径）。</p>
+ */
+export function clearedRequiredNotices(
+  rows: MapRow[],
+  targets: TargetField[],
+  clearedRowIds: Set<number>,
+): AutoSourceNotice[] {
+  const required = requiredTargetPaths(targets)
+  if (!required.size) return []
+  const out: AutoSourceNotice[] = []
+  for (const entry of flattenRows(rows)) {
+    const row = entry.row
+    if (!clearedRowIds.has(row.id) || isRowConfigured(row)) continue
+    const target = row.target.trim()
+    if (!target || !required.has(fullTargetPath(entry))) continue
+    out.push({ target, parent: entry.parent?.target.trim() ?? null,
+      message: `必填的目标字段没有配置来源: ${target}` })
+  }
+  return out
+}

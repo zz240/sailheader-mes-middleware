@@ -33,9 +33,9 @@ import java.util.TreeSet;
  * 出来，都是拿这份样例里的实际取值（结构探测给的 samples）比对的，不试算任何一条表达式，也就不需要
  * 试算那套机制。</p>
  *
- * <p>定级（#104 验收）：必填没配、来源路径不在样例里是<b>错误</b>——这两条是「这份配置就是配错了」；
- * 枚举没覆盖样例值、文本写进数字字段、拼接里有空片段、日期格式串在样例值上跑不出来是<b>警告</b>——
- * 它们顺着样例数据和用户手输的片段走，样例陈旧或片段是故意留的时候会误伤，所以只提醒。</p>
+ * <p>定级（#104 验收，#113 改）：这里出去的问题**全是警告**——它们要么顺着样例数据与用户手输的片段走
+ * （样例陈旧、片段是故意留的时候会误伤），要么说的是目标清单的事实（必填字段现在是空的），而后端从来不
+ * 拒这几种。真正拦保存的只有结构错与链问题，那两条在 {@link MappingDraftValidationService} 里出。</p>
  *
  * <p>要看清单或样例的那几条，在那份输入空着时一条都不报：探不出结构不是配置的错。特别是「来源字段不在
  * 样例里」——取样例时挂了就整份字段清单都不在，那时候报出来的是探测的故障，不是草稿的问题。
@@ -64,7 +64,7 @@ final class MappingSampleChecks {
      *
      * <p>只判**来源步骤跟这份样例一样**的规则：请求里只带一份样例，别的步骤的字段根本不在这一份清单里，
      * 拿它去判必然报「来源字段不在样例里」——跨步骤引用、以及顶部默认来源一换之后留在原步骤的那些行，
-     * 会整片误报，而这是错误级、直接拦住保存。{@code sourceFieldsStep} 没给时这一条不判。</p>
+     * 会整片误报。{@code sourceFieldsStep} 没给时这一条不判。</p>
      */
     static List<RuleProblem> unknownSources(FieldMappingConfig config, MappingDraftRequest request) {
         Set<String> sample = sampleNames(request);
@@ -83,6 +83,10 @@ final class MappingSampleChecks {
      *
      * <p>数组字段整行报一条：没有数组映射那一行时，它的元素字段一条也进不来，逐个报只会刷屏；
      * 数组配了、只是某个必填子字段没配，才逐条报子字段。</p>
+     *
+     * <p>它说的是**目标清单的事实**（这个必填字段现在是空的），不是「这一行被校验了」：清除掉一个必填
+     * 字段的行之后，那一行不进草稿，清单里的必填字段照样没着落，这条照旧报得出来——而保存不再被它拦住
+     * （#113 验收四、五）。</p>
      */
     static List<RuleProblem> missingRequiredTargets(FieldMappingConfig config, MappingDraftRequest request) {
         List<TargetFieldSpec> targets = targets(request);

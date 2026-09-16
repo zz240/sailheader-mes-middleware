@@ -26,8 +26,8 @@
 - **手工新增行（T4 / #102）**：目标字段清单不全（HTTP / MQ 做目标时探不出结构，见 #98 H3）时也能把配置配完：「+ 字段映射」加一行空的字段映射、「+ 数组映射」加一行空的数组映射、「+ 行号」/「+ 子字段」在数组行下面加子行。目标字段**可以从清单里选，也可以直接手输一个清单里没有的路径**（补全清单按这一行的形状给：普通行给标量字段、数组行给数组字段、子行给数组元素内的相对路径；清单之外的路径标「手写」）。每一行能**清除**（清的是这一行「值怎么取」，目标字段与数组行的子行都留着），清除后行里出现「撤销」，把那一份配回来。
 - **校验配置（T5 / #103）**：编辑器顶部一个「校验配置」按钮，把草稿 POST 给后端只读接口 `POST /api/field-mapping-editor/validate`。请求带：草稿（`{mode? / expression? / rules[]}`，就是保存会写出去的那份）、目标字段清单、来源样例、**这份样例是哪个动作的探测结果**（`sourceFieldsStep`，见下）、链上更早的动作序号、默认来源步骤、草稿所在动作的序号；响应带 `errors[]` / `warnings[]` / 编译产物文本（`compiled.jsonata` 与 `compiled.rulesJson`）。**它不写数据库，也不改 `FieldMappingRule` 的格式。**
   - **判断对错全在这个接口里，前端一条校验规则都不复制**（#98 D1）：前端只装请求（草稿 = `configFromRows`，没配好的行本来就不进规则）和把回来的问题按「目标字段 + 它所属的数组行」挂到行上（`frontend/src/mapping/draft.ts`）。
-  - 后端复用三份现成实现，不重写一遍结构校验：`FieldMappingConfig.problems()`（`validate()` 抛的就是它的头一条）、`JsonataRuleCompiler.compile`（编译期才发现的重复目标 / 前缀冲突也由它报）、`ChainConsistencyValidator.checkRules`（链级校验与草稿校验共用同一条规则）。
-  - 每条问题带 `target`（出错那条规则的目标字段，数组子行写相对路径）与 `parent`（所属数组行的目标字段，顶层为 null）——界面据此定位到行：行右侧「有错 / 有警告 / 没问题」三种状态、问题列表点一下跳到那一行（收起的数组行会先展开）、保存时先校验一次（有错就拦下并跳到第一条错误）、底部两个标签页（JSONata / 规则 JSON）。
+  - 后端复用三份现成实现，不重写一遍结构校验：`FieldMappingConfig.problems()`（`validate()` 抛的就是它拼起来的那一条；编译期才发现的重复目标 / 前缀冲突现在也从这里出，见 #113）、`JsonataRuleCompiler.compile`（出编译产物）、`ChainConsistencyValidator.checkRules`（链级校验与草稿校验共用同一条规则）。
+  - 每条问题带 `target`（出错那条规则的目标字段，数组子行写相对路径）与 `parent`（所属数组行的目标字段，顶层为 null）——界面据此定位到行：行右侧「有错 / 有警告 / 没问题」三种状态、问题列表点一下跳到那一行（收起的数组行会先展开）、保存时先校验一次（**只有错误**拦下并跳到第一条错误）、底部两个标签页（JSONata / 规则 JSON）。
   - **顶层规则漏写 `sourceStep` 在这里是一条提示，不是错误**：后端把「没写」当成任务输入（0），查不出这是个错（#98 D10）。
   - 它替代不了 `POST /api/jobs/{id}/validate`：那个按 job id 校验**已经存进数据库**的配置，而编辑器里的还没保存。
   - 同一目标字段出现在两行时（用户加了一行重复的），问题挂到**后加**的那一行上——和后端编译器的口径一致（它在后出现的那条规则上报「重复映射」）。
@@ -35,8 +35,8 @@
 
   | 检查 | 级别 | 判据 |
   |---|---|---|
-  | 必填的目标字段没有配置来源 | 错误 | 请求里的目标清单比草稿：必填（`required`）的目标字段没有对应规则。数组字段整行报一条（元素字段一条也进不来，逐个报只会刷屏）；数组配了、只是某个必填子字段没配，才逐条报子字段 |
-  | 来源字段在样例里不存在 | 错误 | 数组子行的来源按**相对路径**补上组节点的来源数组再查（嵌套数组逐层补）；`$root.<路径>` 是组内引用外层表头字段，去掉前缀按绝对路径查；`$index` 不是来源路径，不查 |
+  | 必填的目标字段没有配置来源 | 警告（#113 起） | 请求里的目标清单比草稿：必填（`required`）的目标字段没有对应规则。数组字段整行报一条（元素字段一条也进不来，逐个报只会刷屏）；数组配了、只是某个必填子字段没配，才逐条报子字段。它说的是**目标清单的事实**（这个必填字段现在是空的），不是「这一行被校验了」——所以清除掉的行照样报它，但保存不再被它拦下（#113 验收四、五） |
+  | 来源字段在样例里不存在 | 警告（#113 起） | 数组子行的来源按**相对路径**补上组节点的来源数组再查（嵌套数组逐层补）；`$root.<路径>` 是组内引用外层表头字段，去掉前缀按绝对路径查；`$index` 不是来源路径，不查 |
   | 枚举表没有覆盖样例里出现过的值 | 警告 | 用来源字段**在这份样例里的实际值**（`SourceField.samples`，去重）比 `enumMap` 的键。查不到键时这个字段从目标报文里整个消失（不是变成 null）、不报错，只能在这里提醒 |
   | 文本值直接写进数字类型的字段（建议套一层数字转换） | 警告 | 目标清单里的列类型是数字类型（INT/DECIMAL/…）且来源字段在样例里是文本类型（STRING/VARCHAR/…）。数字转换（`INT`）、行号、常量不算——常量是不是数字由那一行的字面量说了算，不猜 |
   | 拼接里存在空片段 | 警告 | `parts` 里有空串常量片段，或路径片段没写 `path`（编译出来是空字符串）。**行号片段没有路径但有内容，不算空**（#112） |
@@ -44,9 +44,9 @@
   | 顶层规则漏写 `sourceStep` | 提示 | 见上一条（#103 就有的那条提示） |
 
   - **只查样例里的值，不执行表达式**（#98 D9）：不试算任何一条表达式，也就不需要「试算」那套机制。目标清单或来源样例空着时一条都不报——探不出结构不是配置的错；特别是「来源字段不在样例里」，取样例挂了就整份字段清单都不在，那时报出来的是探测的故障。**唯一的例外是日期格式串那条**：试不了的时候它反而要说话——「没在样例上试过」正是手上没有样例时该说的话（#111 验收四，只提示、不拦保存）。
-  - **前两条是错误**（拦保存），其余是警告 / 提示：它们顺着样例数据走，样例陈旧（那是最近一次成功运行的取样）时会误伤，所以只提醒。日期那条提示进的是 `warnings`，因为响应只有错误 / 警告两档（与顶层漏写 `sourceStep` 那条提示同一档）。
+  - **七条全是警告 / 提示，一条都不拦保存**（#113 / ADR-0012 决策 4）：它们顺着样例数据与用户手输的片段走，样例陈旧（那是最近一次成功运行的取样）时会误伤，而后端从来不拒这几种配置。真正拦保存的只有两类——结构错与链问题（见下一条）。日期那条提示进的是 `warnings`，因为响应只有错误 / 警告两档。
   - **路径口径**：样例给的是探测路径（`items[0].materialCode`），草稿里的数组子行写相对路径（`materialCode`），目标清单给的是编辑器路径（数组元素不带下标）。比对前两边折成同一种形状（去掉 `[0]`）；嵌套数组的前缀沿路累积（`items` → `items.parts` → `items.parts.code`）；组节点填的来源数组（`items`）**只在样例里有以它开头的元素字段**时才算存在——结构探测不会单独给出 `items` 这一条。
-  - **只判来源步骤跟这份样例一样的规则**：请求里只带一份样例（左边清单是哪一步的探测结果就带哪一份，报在 `sourceFieldsStep` 里）。跨步骤引用、以及顶部默认来源一换之后留在原步骤的那些行，字段根本不在这一份清单里——拿它去判会整片误报「来源字段不在样例里」，而那是错误级、直接拦住保存。`sourceFieldsStep` 没给（步骤不明）时这一条整个不判。
+  - **只判来源步骤跟这份样例一样的规则**：请求里只带一份样例（左边清单是哪一步的探测结果就带哪一份，报在 `sourceFieldsStep` 里）。跨步骤引用、以及顶部默认来源一换之后留在原步骤的那些行，字段根本不在这一份清单里——拿它去判会整片误报「来源字段不在样例里」，所以这一条整个不判。`sourceFieldsStep` 没给（步骤不明）时同理。
   - 界面这边**一条规则都没加**：新问题与 #103 那几条走同一条定位通路（`frontend/src/mapping/draft.ts` 按「目标字段 + 所属数组行」摆到行上），所以行右侧状态、问题列表、点一下跳行、保存前拦下都自动覆盖（`frontend/src/mapping/checks.ts` 第 8 组锁住这条路）。
 - **窄屏、键盘、手写 JSONata 入口（T8 / #106）**：
   - **窄屏**：两档退化——窗口 ≤1024px 时左边来源清单从并排改成铺在行列表上面（限高、自己滚）；≤820px 时每一行竖起来，**目标字段 → 映射 → 问题 → 行操作**从上到下依次排（窄之前是并排：目标字段 280px + 映射 + 问题 + 行操作）。行头与顶部动作条都改成换行而不是把内容挤掉。真机在 1440 / 1280 / 1100 / 1024 / 900 / 820 / 700 / 560 八个宽度上量过：页面没有横向溢出、行里四块互不重叠、窄的时候依次竖排、宽的时候并排（`tools/ui/keyboard-narrow-screen-106.cjs`）。
@@ -65,7 +65,13 @@
   - **编译产物仍然是一段人眼能读的 `&` 拼接串**（这条是验收里写明的）。行号那一段编译成 `($i0 + 1)`——**括号不能省**：这个引擎里 `&` 与 `+` 同级左结合（实测 `"a" & 1 + 2` 解析成 `("a" & 1) + 2`，一跑到就抛「+ 的左边要是数字」）。
   - **报错指到那一个片段**：结构校验与编译器的消息都带「拼接第 N 个片段：…」（序号从 1 数）。同一个片段上两处报的是**同一条**，服务那边合成一条（`MappingDraftValidationService.addOnce`）——界面上把一条错显示成两条会让人以为有两个问题要改。
   - **「空片段」只看值那一格有没有内容**：行号片段没有路径但不算空（`partEmpty`）；「自动匹配同名」也只往**等路径**的片段里填，而且只填路径那一格、片段上已配好的转换与参数留着（`partNeedsPath`）——#112 之前那两处判的是「`type === 'path'` 且值是空串」，会把行号片段误当成空片段、还会把它的转换冲掉。
-- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、DatePatterns、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`（**装配层**：抽屉、顶部工具条、加载/保存的接线、键盘那一段；#117 拆完之后不再是最大文件）、`frontend/src/components/MappingSourcePanel.vue`（左边来源清单：搜索、三档过滤、已用高亮与计数、键盘「走清单」）、`frontend/src/components/MappingRowList.vue`（行头 + 四列行渲染（目标字段 / 取值方式 / 问题状态 / 行操作）+ 就地参数面板；校验结果那一块由工作台通过插槽放进去）、`frontend/src/components/MappingIssuesPanel.vue`（校验结果列表 + 点一下跳到那一行）、`frontend/src/components/MappingExpressionEditor.vue`（手写 JSONata 那一边）、`frontend/src/components/MappingDateParams.vue`（日期参数，行级与片段级共用）、`frontend/src/components/MappingEnumParams.vue`（枚举表，同上）、`frontend/src/components/MappingIndexParams.vue`（起始值，同上）、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`parts.ts` = 片段模型与片段转换，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`fast-config.ts` = 搜索 / 过滤 / 已用计数 / 自动匹配同名，`draft.ts` = 校验请求与问题定位到行，`useWorkbenchState.ts` = 编辑器的**一处共享状态**（行、选中、参数面板、收起集合、清除快照 + 挂在上面的操作，工作台 provide、子组件 inject），`useMappingDraft.ts` = 校验与保存那一段，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）、`frontend/src/styles/workbench-panel.css`（跨组件的样式基元：面板 / 标题 / 小块 / 空态）、`frontend/src/styles/workbench-issues.css`（校验结果列表的基元，两处共用）。
+- **校验两档 + 按行全列 + 清掉的行不再拦保存（#113，第二轮）**：校验结果按**「后端会不会拒」**分两档——**错误**只有结构错与链问题（后端在保存或启用时真的会拒），**警告**是只在来源字段样例上成立的那几条（必填没配、来源不在样例里、枚举没覆盖、文本写进数字）加上两条软提示（顶层漏写 `sourceStep`、日期格式串没试过）。后端从来不拒警告，编辑器也不替它拦（ADR-0012 决策 4；这也消掉了第一轮规格里「问题只提示」与「保存被拦下」的自相矛盾）。
+  - **保存只被错误拦住**：只有警告时存得下去。保存前先跑一次「校验配置」，有错误才拦下并跳到第一条错误所在的行（`useMappingDraft.save`）。
+  - **一行上的全部问题都列在行上**（`MappingRowList.vue` 那一列竖着排、每条各自换行）：以前只显示第一条、其余藏进悬停——改一条、点一次、再来一条，来回好几轮。问题列表那一块（`MappingIssuesPanel`）照旧全量列。
+  - **清除掉的行不再拦保存，但仍然提醒「这个必填字段没有配置来源」**：清掉的那一行不进草稿（`configFromRows` 只留配好的行），所以保存那道门根本看不到它；而「清单里写着必填、现在是空的」是**目标清单的事实**，不是「这一行被校验了」——后端照样报得出来（它拿请求里的目标清单比草稿）。清完那一刻就该看见这句话，所以编辑器自己也出同一条提醒（`fast-config.ts` 的 `clearedRequiredNotices`），**措辞与后端那条逐字一致**（子行说的是这条规则的目标字段，即相对路径 `qty`，不是 `bom.bomLines.qty`；查清单用的才是完整路径）。点过校验之后以后端那份为准，同一行上不会出现两条一样的话。
+  - **还没校验过的时候不给状态标签**：行右侧那个「有错 / 有警告 / 没问题」只由**后端那一次结果**给（`useMappingDraft` 的 `hasValidation`）。清掉一行之后没点过校验时，这一行上也挂着一条提醒，但那一列只有提醒、没有绿标签，问题列表顶上说的是「N 条提醒（还没校验过这份草稿）」而不是「0 个错误 · N 个警告」——没跑过的草稿不该冒充跑过。
+  - **保存那道 400 带全部结构问题**（`；` 连接，与链检查 `ChainConsistencyValidator.describeAll` 的口径一致），**编译期错（重复目标字段、前缀冲突）也补进保存校验**：以前只抛头一条；而编译期错只在启用重建路由时炸，任务停用状态下能存进去、启用时才炸——门和事实不一致。现在它们在 `FieldMappingConfig.problems()` 里报（与编译器同一套判据、同一种消息），所以保存、「校验配置」、启用三处看到的是一件事。
+- **代码位置**：`mapping/`（JsonataRuleCompiler、JsonataFieldMapper、JsonataFunctions、JsonataInputs、DatePatterns、FieldMappingConfig）、`mapping/suggest/`、`web/SuggestionController.java`、`web/FieldMappingEditorController.java`、`service/FieldMappingEditorService.java`（编辑器上下文）、`service/MappingDraftValidationService.java`（校验草稿）、`service/MappingSampleChecks.java`（依赖目标清单与来源样例的那几条检查）、`frontend/src/views/JobsView.vue`（唯一的入口：动作表上的「编辑映射」）、`frontend/src/components/FieldMappingWorkbench.vue`（**装配层**：抽屉、顶部工具条、加载/保存的接线、键盘那一段；#117 拆完之后不再是最大文件）、`frontend/src/components/MappingSourcePanel.vue`（左边来源清单：搜索、三档过滤、已用高亮与计数、键盘「走清单」）、`frontend/src/components/MappingRowList.vue`（行头 + 四列行渲染（目标字段 / 取值方式 / 问题状态 / 行操作）+ 就地参数面板；校验结果那一块由工作台通过插槽放进去）、`frontend/src/components/MappingIssuesPanel.vue`（校验结果列表 + 点一下跳到那一行）、`frontend/src/components/MappingExpressionEditor.vue`（手写 JSONata 那一边）、`frontend/src/components/MappingDateParams.vue`（日期参数，行级与片段级共用）、`frontend/src/components/MappingEnumParams.vue`（枚举表，同上）、`frontend/src/components/MappingIndexParams.vue`（起始值，同上）、`frontend/src/mapping/`（`rows.ts` = 行模型与清除/撤销快照，`parts.ts` = 片段模型与片段转换，`editor-model.ts` = 目标清单 ↔ 行、目标字段补全与「+ 字段映射 / + 数组映射」，`source-picker.ts` = 来源清单与「点一下填行」（含数组行的「+ 子字段 / + 行号」），`fast-config.ts` = 搜索 / 过滤 / 已用计数 / 自动匹配同名 / 清掉的行那条提醒，`draft.ts` = 校验请求与问题定位到行，`useWorkbenchState.ts` = 编辑器的**一处共享状态**（行、选中、参数面板、收起集合、清除快照 + 挂在上面的操作，工作台 provide、子组件 inject），`useMappingDraft.ts` = 校验与保存那一段，`expression.ts` = 手写 JSONata 那一边的模式判定与保存形状，`keyboard.ts` = 键位 → 意图）、`frontend/src/styles/workbench-panel.css`（跨组件的样式基元：面板 / 标题 / 小块 / 空态）、`frontend/src/styles/workbench-issues.css`（校验结果列表的基元，两处共用）。
   - `frontend/src/mapping/` 里 `checks.ts` 与上面那些一样是**纯模块**（不碰 DOM / 不发请求，可以用 `node --experimental-strip-types` 直接跑）；`useWorkbenchState.ts` 与 `useMappingDraft.ts` 是 #117 进来的两个 Vue 组合式函数——它们要 Vue 运行时（后者还要那个只读接口与消息提示），跑不进 `checks.ts` 那条纯检查。
 
 ## 决策时间线
@@ -91,6 +97,7 @@
 | 09-15 | 日期格式手输 + 格式串合法性校验（配置期错误 + 按样例的警告） | 非法格式串运行时必炸而三层都不查；只加输入框等于把一个必炸的口子装到界面上 | — | #111 / DatePatterns、JsonataFunctions.canFormat、MappingSampleChecks.datePatternWarnings |
 | 09-15 | **片段转换：拼接的每段能挂一个转换，存储形状第一次变化** | 客户要的复合值（`BOM-20260821-0001`、`A-启用`）要先加工再拼；做不到就整行走手写 JSONata——而那条路是给深层重排准备的 | — | #112 / ADR-0012 决策 1 / parts.ts、MappingDateParams、MappingEnumParams |
 | 09-16 | **拆开 2187 行的 `FieldMappingWorkbench.vue`（五个缝，行为零变化）** | 一张票只要动编辑器里一块，实施的人就得把整份读进来，而这份读取常驻在这之后每一次模型调用的上下文里（#111/#112 实测约 35k token） | — | #117 / MappingSourcePanel、MappingRowList、MappingIssuesPanel、MappingExpressionEditor、useWorkbenchState.ts、useMappingDraft.ts |
+| 09-16 | **校验两档落地：只有结构错与链问题拦保存，一行上的全部问题都列在行上，保存 400 带全部并把编译期错前移** | 一行的全部问题要一次看全（改一条点一次来回好几轮）；清掉的行不该再拦保存；重复目标/前缀冲突在停用状态下能存进去、启用时才炸——门和事实不一致 | — | #113 / ADR-0012 决策 4 / FieldMappingConfig、MappingDraftValidationService、MappingSampleChecks、MappingRowList.vue、fast-config.ts |
 
 ## 待办 / 已知限制
 
@@ -103,7 +110,7 @@
 - 校验只做结构判断与**样例值的比对**，**不做值的试算**（#98：需要在受控边界里真的执行表达式，是另一件事）。
 - **`Esc` 不关编辑器**（#106 起）：它归「收起参数面板 / 退出选来源」这一段；关编辑器用「取消」。原因是 `Esc` 一下就把没保存的草稿一起关掉太容易误触。
 - **日期格式串的合法性只在后端判**（#111）：前端不复制那条规则（#98 D1），手输框也不做即时红框——点了「校验配置」才有结论。手输框里按住不放的中间状态（比如只打了半个格式串）不会被拦，也不会被改。
-- **「没在样例上试过」只对管得到这一行的样例说话**：样例是别的步骤的、或这一行的来源字段不在这份样例里时，前者给提示、后者不补（「来源字段不在样例里」那条错误已经在说同一件事）。
+- **「没在样例上试过」只对管得到这一行的样例说话**：样例是别的步骤的、或这一行的来源字段不在这份样例里时，前者给提示、后者不补（「来源字段不在样例里」那条警告已经在说同一件事）。
 - **建议器给出的 `datePattern` 还没跟着改**（`transform-flow.md` 建议表 F1 的建议 A 仍待）：`TransformInferrer` 里那个候选名至今还是 `ISO-8601`——它不是合法格式串，所以**现在采用了也存不下去**（保存被 #111 那条校验拒掉；比原来「存下去、跑起来炸」好）。建议器接回界面之前要把它改成合法 pattern。
 - **片段里那两个参数不做样例检查**（#112 的取舍）：行级那两条（日期格式串在样例值上跑不跑得出来、枚举表覆没覆盖样例值）只覆盖行级转换——片段上的日期/枚举参数配错了，「校验配置」不会按样例提醒（结构错照报：非法格式串、空枚举表都拦）。原因是问题的定位只有「目标字段 + 所属数组行」，没有片段序号。
 - **拼接片段里的来源路径不进「来源字段在不在样例里」那条检查**（#104 起就如此）：那条查的是规则自己的 `source`，拼接行的片段写在 `parts` 里。片段里写错路径运行时会让那一段变成空串，目前只能靠「空片段」那条警告间接看见。

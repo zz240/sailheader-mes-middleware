@@ -18,6 +18,9 @@
  *      样例值 / 文本写进数字字段 / 拼接有空片段）同样落在正确的行右侧、进得了问题列表、跳得过去；
  *   9. 配得快一点（#105）：来源清单按路径与样例值搜、「已用」的计数与高亮、三档过滤（全部 / 只看未配置 /
  *      只看必填）、目标字段搜索并跳行、以及「自动匹配同名」只填空行不覆盖、且这条通路上没有网络调用。
+ *  10. 校验两档与清掉的行（#113）：必需那几条问题落到正确的行上、一行上的全部问题一条不少（错误在前）、
+ *      只有警告时不算有错 / 没有可跳的行，以及清掉一个必填字段的行给出的那条提醒（与后端逐字一致、
+ *      只认用户亲手清过的行）。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -29,9 +32,9 @@ import {
   type SourceField, type TargetField,
 } from './editor-model.ts'
 import {
-  autoMatchSameName, autoSourceNotices, filterSourceGroups, nameSegment, nextMatchRowId,
-  requiredSourceKey, requiredSourceKeys, sourceItemMatches, sourceRefKeyId, sourceUsageOf, targetRowsView,
-  usedCountOf, usedRowIdsOf,
+  autoMatchSameName, autoSourceNotices, clearedRequiredNotices, filterSourceGroups, nameSegment,
+  nextMatchRowId, requiredSourceKey, requiredSourceKeys, sourceItemMatches, sourceRefKeyId, sourceUsageOf,
+  targetRowsView, usedCountOf, usedRowIdsOf,
 } from './fast-config.ts'
 import {
   fieldReferenceLabel, fieldReferenceFullLabel, stepLabel, emptyRowLabel, transformLabel, TRANSFORM_KINDS,
@@ -1058,11 +1061,11 @@ eq('顶层行没有祖先', ancestorRowIds(ISSUE_ROWS, MATERIAL_TOP.id), [])
 // 这里锁的是那条通路：新问题必须落在正确的行右侧、进得了问题列表、点得着跳得过去。
 const SAMPLE_ISSUES: DraftValidation = {
   valid: true,
-  errors: [
+  errors: [],
+  warnings: [
+    // #113：必填没配、来源不在样例里这两条由错误降成警告——后端不再拦保存，行上也就只是提醒
     { target: 'bom.remark', parent: null, message: '必填的目标字段没有配置来源: bom.remark' },
     { target: 'materialCode', parent: 'bom.bomLines', message: '来源字段不在样例里: materialCodex' },
-  ],
-  warnings: [
     { target: 'bom.bomNo', parent: null, message: '枚举表没有覆盖样例里出现过的值: SET' },
     { target: 'qty', parent: 'bom.bomLines', message: '目标字段 bom.bomLines.qty 是数字类型（INT）' },
     { target: 'materialName', parent: 'bom.bomLines', message: '拼接里有 1 个空片段' },
@@ -1082,22 +1085,23 @@ SAMPLE_ARRAY.children = [
 const SAMPLE_ROWS: MapRow[] = [leaf('bomNo', 'bom.bomNo', 'STRING'), UNCONFIGURED_REQUIRED, SAMPLE_ARRAY]
 const sampleLocated = locateIssues(flattenRows(SAMPLE_ROWS), SAMPLE_ISSUES)
 
-eq('样例检查的错误也按行定位（必填没配的那一行）', sampleLocated[0].rowId, UNCONFIGURED_REQUIRED.id)
-eq('样例检查的错误也按行定位（数组元素里的来源不在样例）', sampleLocated[1].rowId, SAMPLE_ARRAY.children[0].id)
+eq('「必填没配」的警告落在那一行上', sampleLocated[0].rowId, UNCONFIGURED_REQUIRED.id)
+eq('「来源不在样例」的警告落在数组元素那一行上', sampleLocated[1].rowId, SAMPLE_ARRAY.children[0].id)
 eq('样例检查的警告按行定位（枚举没覆盖）', sampleLocated[2].rowId, SAMPLE_ROWS[0].id)
 eq('样例检查的警告按行定位（数字类型）', sampleLocated[3].rowId, SAMPLE_ARRAY.children[1].id)
 eq('样例检查的警告按行定位（拼接空片段）', sampleLocated[4].rowId, SAMPLE_ARRAY.children[2].id)
 
 // 行右侧那三个状态照样由问题的级别算：错误压过警告
 const sampleByRow = issuesByRow(sampleLocated)
-eq('必填没配的行右侧显示「有错」', rowIssueState(sampleByRow.get(UNCONFIGURED_REQUIRED.id)), 'error')
+eq('必填没配的行右侧显示「有警告」（#113：这一档不再拦保存）',
+  rowIssueState(sampleByRow.get(UNCONFIGURED_REQUIRED.id)), 'warning')
 eq('有警告没错误的行右侧显示「有警告」', rowIssueState(sampleByRow.get(SAMPLE_ROWS[0].id)), 'warning')
 const warnOnly = { ...SAMPLE_ISSUES, errors: [], valid: true }
 eq('只有警告时 valid 仍是真（保存不被拦）', warnOnly.valid, true)
 eq('一条都没报的行仍是「没问题」', rowIssueState(sampleByRow.get(SAMPLE_ARRAY.id)), 'ok')
 
-// 保存被拦时跳第一条**定位得到**的错误：新问题一样跳得动
-eq('跳到第一条错误（必填没配那一行）', firstErrorRowId(sampleLocated), UNCONFIGURED_REQUIRED.id)
+// 保存被拦时跳第一条**定位得到**的错误：只有错误才算数（警告跳不过去，也不该拦）
+eq('没有错误时没有可跳的行', firstErrorRowId(sampleLocated), null)
 
 // 问题列表里那一列的说法：数组元素里的问题带上它所属的数组行，才认得出是哪一行
 eq('数组元素里的必填没配：说法带上数组行',
@@ -1106,6 +1110,99 @@ eq('数组元素里的必填没配：说法带上数组行',
 
 // 界面文案里不出现 $：这几条新问题的原文都是后端给的整句中文
 SAMPLE_ISSUES.errors.concat(SAMPLE_ISSUES.warnings).forEach(issue => assertNoDollar(issue.message))
+
+// ---------------------------------------------------------------- 校验两档 + 清掉的行（#113）
+
+// 一、一行上的**全部**问题都留在这一行上（不再只显示第一条、其余藏进悬停）。
+// 后端那边「结构错与链问题 = 错误，样例类 = 警告」的分法由 mapping 那套 fixture 断言（前端一条规则都不复制）；
+// 这里锁的是界面上那条通路：同一行上的多条问题一条都不少，错误在前、警告在后。
+const MANY_ISSUES: DraftValidation = {
+  valid: false,
+  errors: [{ target: 'qty', parent: 'bom.bomLines', message: '目标字段重复映射: qty' }],
+  warnings: [
+    { target: 'qty', parent: 'bom.bomLines', message: '必填的目标字段没有配置来源: qty' },
+    { target: 'qty', parent: 'bom.bomLines', message: '目标字段 bom.bomLines.qty 是数字类型（INT）' },
+  ],
+  compiled: { jsonata: null, rulesJson: '{}' },
+}
+const MANY_ROWS: MapRow[] = [leaf('bomNo', 'bom.bomNo', 'STRING')]
+const MANY_ARRAY = createGroupRow(1, 'items', 'bom.bomLines')
+MANY_ARRAY.children = [createRow(null, 'quantity', 'qty', 'INT')]
+MANY_ROWS.push(MANY_ARRAY)
+const manyLocated = locateIssues(flattenRows(MANY_ROWS), MANY_ISSUES)
+eq('同一行上的三条问题一条都不少', manyLocated.length, 3)
+eq('三条都落在那一行上',
+  manyLocated.every(issue => issue.rowId === MANY_ARRAY.children[0].id), true)
+eq('错误排在警告前面', manyLocated.map(i => i.severity), ['error', 'warning', 'warning'])
+const manyByRow = issuesByRow(manyLocated)
+eq('行右侧那三种状态照样算得出来（错误压过警告）',
+  rowIssueState(manyByRow.get(MANY_ARRAY.children[0].id)), 'error')
+eq('一行上的多条问题都留给这一行', manyByRow.get(MANY_ARRAY.children[0].id)?.length, 3)
+
+// 只有警告时保存不该被拦：跳第一条错误跳不动（没有错误可跳）
+eq('只有警告时 firstErrorRowId 返回 null',
+  firstErrorRowId(locateIssues(flattenRows(MANY_ROWS), { ...MANY_ISSUES, errors: [] })), null)
+
+// 二、清掉的行：保存不再被拦，但那一行仍然提醒「这个必填字段没有配置来源」。
+// 后端报得出同一句话（那一行没进草稿，清单里的必填字段就没着落），但那要等人点一次「校验配置」；
+// 清完那一刻就该看见，所以这句提醒由编辑器自己出，措辞与后端那条逐字一致。
+const REQUIRED_FOR_CLEAR: TargetField[] = [
+  { path: 'sheet_no', type: 'VARCHAR', required: true },
+  { path: 'remark', type: 'VARCHAR', required: false },
+  {
+    path: 'bom.bomLines', type: 'ARRAY', required: true, element: [
+      { path: 'qty', type: 'INT', required: true },
+    ],
+  },
+]
+
+const CLEARED_REQUIRED = leaf('orderNo', 'sheet_no', 'STRING')
+const clearedRequiredSnapshot = clearRowMapping(CLEARED_REQUIRED)
+eq('清掉一个必填目标字段的行：这一行不再算配好（也就进不了草稿）',
+  [clearedRequiredSnapshot !== null, isRowConfigured(CLEARED_REQUIRED)], [true, false])
+const clearedNotices = clearedRequiredNotices(
+  [CLEARED_REQUIRED], REQUIRED_FOR_CLEAR, new Set([CLEARED_REQUIRED.id]))
+eq('清掉的那一行得到一条「必填没有配置来源」的提醒',
+  clearedNotices.map(n => [n.target, n.parent, n.message]),
+  [['sheet_no', null, '必填的目标字段没有配置来源: sheet_no']])
+
+// 后端也会报同一句话——两边挂的是同一行、说的是同一件事，定位口径一致
+const clearedLocated = locateIssues(flattenRows([CLEARED_REQUIRED]), {
+  valid: true,
+  errors: [],
+  warnings: clearedNotices.map(n => ({ ...n })),
+  compiled: { jsonata: null, rulesJson: null },
+})
+eq('这条提醒落在被清掉的那一行上', clearedLocated[0].rowId, CLEARED_REQUIRED.id)
+eq('只有这条提醒时行右侧是「有警告」，不是「有错」',
+  rowIssueState(issuesByRow(clearedLocated).get(CLEARED_REQUIRED.id)), 'warning')
+
+// 三种不该提醒的情况：不是必填、清除后又配回来了、不是用户清掉的行
+const CLEARED_OPTIONAL = leaf('orderNo', 'remark', 'STRING')
+clearRowMapping(CLEARED_OPTIONAL)
+eq('清掉的是非必填字段：不提醒',
+  clearedRequiredNotices([CLEARED_OPTIONAL], REQUIRED_FOR_CLEAR, new Set([CLEARED_OPTIONAL.id])).length, 0)
+
+const RESTORED = leaf('orderNo', 'sheet_no', 'STRING')
+const restoredSnapshot = clearRowMapping(RESTORED)
+restoreRowMapping(RESTORED, restoredSnapshot!)
+eq('清掉之后又撤销回来：不提醒',
+  clearedRequiredNotices([RESTORED], REQUIRED_FOR_CLEAR, new Set([RESTORED.id])).length, 0)
+
+const NEVER_CLEARED = createRow(1, '', 'sheet_no', 'STRING')
+eq('本来就没配过的空行不靠这条提醒（它一直显示「还没选来源」）',
+  clearedRequiredNotices([NEVER_CLEARED], REQUIRED_FOR_CLEAR, new Set()).length, 0)
+
+// 数组元素里的必填子字段被清掉：提醒挂在子行上，话里点的是**这条规则的目标字段**（相对路径）
+// ——后端 `MappingSampleChecks.missingRequiredTargets` 报的就是它（子规则的 target 是相对路径），
+// 一边写 bom.bomLines.qty 一边写 qty，点一次「校验配置」行上的话就变了。
+const CLEARED_ARRAY = createGroupRow(1, 'items', 'bom.bomLines')
+CLEARED_ARRAY.children = [rowFromRule({ source: 'qty', target: 'qty', transform: 'INT' })]
+clearRowMapping(CLEARED_ARRAY.children[0])
+eq('数组子行被清掉：提醒挂在子行上、说法带上数组行，话里用相对路径（与后端逐字一致）',
+  clearedRequiredNotices([CLEARED_ARRAY], REQUIRED_FOR_CLEAR, new Set([CLEARED_ARRAY.children[0].id]))
+    .map(n => [n.target, n.parent, n.message]),
+  [['qty', 'bom.bomLines', '必填的目标字段没有配置来源: qty']])
 
 // ---------------------------------------------------------------- 配得快一点（#105）
 

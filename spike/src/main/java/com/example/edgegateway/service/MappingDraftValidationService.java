@@ -30,10 +30,12 @@ import java.util.Set;
  *
  * <p>判断对错全部在这里，前端一条校验规则都不复制（#98 D1）。几条现成的实现直接复用，不各写一遍：</p>
  * <ul>
- *   <li>结构：{@link FieldMappingConfig#problems()}（{@code validate()} 抛的就是它的头一条）；</li>
+ *   <li>结构：{@link FieldMappingConfig#problems()}（{@code validate()} 抛的就是它，里面也含编译期才发现的
+ *       目标字段重复 / 前缀冲突，见 #113）；</li>
  *   <li>链：{@link ChainConsistencyValidator#checkRules}（sourceStep 得指向链上更早的动作）；</li>
- *   <li>编译产物：{@link JsonataRuleCompiler#compile}，编译期才发现的问题（重复目标、前缀冲突）也由它报；</li>
- *   <li>依赖**目标字段清单与来源样例**的那几条：#104 起在 {@link MappingSampleChecks} 里，这里只往外交接。</li>
+ *   <li>编译产物：{@link JsonataRuleCompiler#compile}，草稿编不出来时补一条错误；</li>
+ *   <li>依赖**目标字段清单与来源样例**的那几条：{@link MappingSampleChecks}，全是警告（#104 起，
+ *       #113 把「必填没配来源」「来源字段不在样例里」两条从错误降下来）。</li>
  * </ul>
  */
 @Service
@@ -70,15 +72,16 @@ public class MappingDraftValidationService {
                     new Compiled(null, prettyJson(request.draft())));
         }
 
-        // 三处来的问题用同一个形状装（都定位到某条规则）：结构来自 FieldMappingConfig，sourceStep 链一致性
-        // 来自 ChainConsistencyValidator，依赖目标清单与来源样例的那两条来自 MappingSampleChecks（#104）
-        // ——各自都是现成的实现，这里只往外交接
+        // 错误只有两类（#113 / ADR-0012 决策 4），分法是「后端会不会拒」：结构错（FieldMappingConfig，
+        // 其中编译期才发现的目标字段重复/前缀冲突现在也由它报）与链问题（ChainConsistencyValidator）
+        // ——各自的实现都是现成的，这里只往外交接
         List<RuleProblem> problems = new ArrayList<>(config.problems());
         problems.addAll(chainProblems(config, request));
-        problems.addAll(sampleProblems(config, request));
         for (RuleProblem problem : problems) {
             addOnce(errors, new Problem(problem.target(), problem.parent(), problem.message()));
         }
+        // 警告是「只在来源字段样例上成立」的那几条 + 两条软提示（顶层漏写 sourceStep、日期格式串没试过）：
+        // 后端从来不拒它们，编辑器也不该替它拦——样例只是最近一次成功运行的取样，陈旧时会误伤
         warnings.addAll(missingSourceStepHints(config, request));
         for (RuleProblem warning : sampleWarnings(config, request)) {
             addOnce(warnings, new Problem(warning.target(), warning.parent(), warning.message()));
@@ -102,33 +105,24 @@ public class MappingDraftValidationService {
     }
 
     /**
-     * 要靠**目标字段清单和来源样例**才判得出来的错误（#104）：必填没配来源、来源路径不在样例里。
+     * 要靠**目标字段清单和来源样例**才判得出来的**警告**（#104 起，#111 补上日期格式串那条，
+     * #113 把「必填没配来源」「来源字段不在样例里」两条从错误降到这里）。
      *
-     * <p>手写表达式（mode=EXPRESSION）没有规则树，这两条查不了；清单和样例空着时 {@link MappingSampleChecks}
-     * 自己一条都不报。</p>
-     */
-    private List<RuleProblem> sampleProblems(FieldMappingConfig config, MappingDraftRequest request) {
-        if (!isRules(config)) {
-            return List.of();
-        }
-        List<RuleProblem> problems = new ArrayList<>(MappingSampleChecks.missingRequiredTargets(config, request));
-        problems.addAll(MappingSampleChecks.unknownSources(config, request));
-        return problems;
-    }
-
-    /**
-     * 靠样例才判得出来的**警告**（#104 起，#111 补上日期格式串那条）：枚举表没覆盖样例值、文本写进数字字段、
-     * 日期格式串在这份样例值上跑不出来。
+     * <p>定成警告而不是错误，是因为它们顺着样例与清单走：样例是最近一次成功运行的取样，陈旧的时候会
+     * 误伤，而这两件事后端从来不拒（真正拦保存的还是结构错与链问题，见 {@link #validate}）。特别是
+     * 「必填没配来源」——它说的是目标清单的事实（这个必填字段现在是空的），不是「这一份配置存不进去」：
+     * 清除掉一个必填字段的行之后保存不再被它拦下，但那一行仍然该提醒（#113 验收四、五）。</p>
      *
-     * <p>定成警告而不是错误，是因为它们顺着样例数据走：样例是最近一次成功运行的取样，陈旧的时候会误伤，
-     * 所以只提醒、不拦保存（真正拦保存的还是后端那几层：保存时 400、{@code /validate}、启用前链校验）。
-     * 除它们之外还有一句更软的提示：「这个日期格式串没在样例上试过」——手上没样例时给的，同样不拦保存。</p>
+     * <p>手写表达式（mode=EXPRESSION）没有规则树，这几条查不了；清单和样例空着时
+     * {@link MappingSampleChecks} 自己一条都不报。</p>
      */
     private List<RuleProblem> sampleWarnings(FieldMappingConfig config, MappingDraftRequest request) {
         if (!isRules(config)) {
             return List.of();
         }
-        List<RuleProblem> warnings = new ArrayList<>(MappingSampleChecks.uncoveredEnumValues(config, request));
+        List<RuleProblem> warnings = new ArrayList<>(MappingSampleChecks.missingRequiredTargets(config, request));
+        warnings.addAll(MappingSampleChecks.unknownSources(config, request));
+        warnings.addAll(MappingSampleChecks.uncoveredEnumValues(config, request));
         warnings.addAll(MappingSampleChecks.textIntoNumberTarget(config, request));
         warnings.addAll(MappingSampleChecks.emptyConcatParts(config));
         warnings.addAll(MappingSampleChecks.datePatternWarnings(config, request));

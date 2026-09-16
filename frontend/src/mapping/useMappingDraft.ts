@@ -6,7 +6,10 @@
  *
  * 1. 发出去的草稿 = 「按现在这样保存会写出去的那一份」（`draft.ts` 的 `draftRequest`）；
  * 2. 回来的每条问题落在哪一行（`draft.ts` 的 `locateIssues`，按「目标字段 + 所属数组行」对）；
- * 3. 保存前先跑一次校验，有错就拦下并跳到第一条错误所在的行。
+ * 3. 保存前先跑一次校验，**有错**就拦下并跳到第一条错误所在的行（警告不拦，#113）。
+ *
+ * 另有两句提醒是编辑器里的本地事实，后端那份草稿里没有也不该有（「自动匹配同名填上的行」#105、
+ * 「清掉的行但目标字段必填」#113），它们挂进同一个问题列表，但不改后端返回的内容。
  *
  * 它自己不发保存请求：`onSaved` 把那份配置交回工作台，由工作台（唯一的入口那一层）去 `emit`。
  */
@@ -15,7 +18,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
 import type { FieldMappingEditorContext } from '../types'
 import { configFromRows, flattenRows } from './editor-model.ts'
-import { autoSourceNotices } from './fast-config.ts'
+import { autoSourceNotices, clearedRequiredNotices } from './fast-config.ts'
 import { isRowConfigured } from './rows.ts'
 import {
   draftRequest, firstErrorRowId, issuesByRow, locateIssues,
@@ -54,7 +57,7 @@ export function useMappingDraft(options: MappingDraftOptions) {
   const {
     state, context, earlierActionIndexes, actionIndex, editorMode, expressionText, storedExpression, onSaved,
   } = options
-  const { rows, targets, sourceFields, defaultStep, validation, jumpToRowId } = state
+  const { rows, targets, sourceFields, defaultStep, clearedRows, validation, jumpToRowId } = state
 
   const validating = ref(false)
   const saving = ref(false)
@@ -105,17 +108,57 @@ export function useMappingDraft(options: MappingDraftOptions) {
    */
   const autoNotices = computed(() => autoSourceNotices(rows.value))
 
-  /** 后端的问题 + 前端那几条提醒：界面上一视同仁地列出来、按同一套口径定位到行。 */
+  /**
+   * 被清除掉、而目标清单里标着必填的那些行的提醒（#113 验收五）。
+   *
+   * 后端点「校验配置」时也会报同一句话（那一行没进草稿，清单里的必填字段就没着落），但那要等人点一次；
+   * 清完那一刻就该看见「这个必填字段是空的」——所以由前端出这条提醒，措辞与后端那条**逐字一致**。
+   *
+   * 每次重算都换一份新的对象：它要挂进合并后的问题列表，与后端返回的那些混在一起——共用同一份对象
+   * 会让两条通路悄悄互相影响（`checks.ts` 那组用例按值断言，也是同一个道理）。
+   */
+  const clearedNotices = computed(() =>
+    clearedRequiredNotices(rows.value, targets.value, new Set(clearedRows.value.keys()))
+      .map(notice => ({ ...notice })))
+
+  /**
+   * 后端的问题 + 前端那几条提醒：界面上一视同仁地列出来、按同一套口径定位到行。
+   *
+   * **点过校验之后，后端说的才算**：清单没配全的行后端同样报「必填的目标字段没有配置来源」，两边一起
+   * 挂上去只会让同一行上出现两条一样的话。校验之前没有后端那份结果，那几条提醒就是这一行唯一的说法。
+   */
   const mergedValidation = computed<DraftValidation | null>(() => {
     const result = validation.value
-    if (!result) return null
-    // 手写表达式那一边没有行，「自动匹配填上的行」那条提醒也不该跟过去
+    // 手写表达式那一边没有行，「自动匹配填上的行」「清除掉的行」那几条提醒也不该跟过去
     if (editorMode.value === 'expression') return result
+    if (!result) return null
     return {
       ...result,
       warnings: [...result.warnings, ...autoNotices.value],
     }
   })
+
+  /**
+   * 界面上要显示的问题：校验之前只有编辑器里那几条提醒（清掉的行），校验之后是后端那一份。
+   *
+   * 校验之前那份**不是一次校验结果**（`valid` 真不真、编译产物是什么，后端都还没说过），所以它只拿来
+   * 列那几条提醒，界面上不会因为它给出一行「没问题」——那个绿色标签仍然只由后端那次结果给。
+   */
+  const displayedValidation = computed<DraftValidation | null>(() => {
+    if (mergedValidation.value) return mergedValidation.value
+    if (editorMode.value === 'expression') return null
+    const notices = clearedNotices.value
+    if (!notices.length) return null
+    return {
+      valid: true,
+      errors: [],
+      warnings: notices,
+      compiled: { jsonata: null, rulesJson: null },
+    }
+  })
+
+  /** 后端真跑过一次校验没有（行右侧那个状态标签只认它）。 */
+  const hasValidation = computed(() => validation.value != null)
 
   /** 手写这一边的问题列表：没有「哪一行」可言，只按错误在前列原文。 */
   const expressionIssues = computed<ExpressionIssue[]>(() => {
@@ -128,16 +171,28 @@ export function useMappingDraft(options: MappingDraftOptions) {
   })
 
   /** 后端返回的问题 + 前端提醒 → 界面上的问题列表（每条带上它落在哪一行）。 */
-  const locatedIssues = computed(() => (mergedValidation.value
-    ? locateIssues(flattenRows(rows.value), mergedValidation.value)
+  const locatedIssues = computed(() => (displayedValidation.value
+    ? locateIssues(flattenRows(rows.value), displayedValidation.value)
     : []))
 
   /** 每一行的问题（键是行 id）：行右侧那三种状态由行列表那份取词算出来。 */
   const rowIssues = computed(() => issuesByRow(locatedIssues.value))
 
+  /**
+   * 问题列表顶上那句汇总。
+   *
+   * 后端真跑过时按它的结果报数；还没跑过、只是编辑器里那几条提醒（清掉的行）时**不说「0 个错误」**
+   * ——那会让人以为这份草稿已经被判过一遍了（#113 走查）。那几句提醒自己就说清了是什么。
+   *
+   * （「改了行而结果还是上一次那份」这条不在这里治：校验本来就是点一次跑一次的（#98 决定，README
+   * 待办里也写着）。这里只保证**没跑过**的时候不冒充跑过。）
+   */
   const issueSummary = computed(() => {
-    const result = mergedValidation.value
+    const result = displayedValidation.value
     if (!result) return ''
+    if (!hasValidation.value) {
+      return `${result.warnings.length} 条提醒（还没校验过这份草稿）`
+    }
     if (!result.errors.length && !result.warnings.length) return '没有发现问题'
     return `${result.errors.length} 个错误 · ${result.warnings.length} 个警告`
   })
@@ -232,7 +287,7 @@ export function useMappingDraft(options: MappingDraftOptions) {
   }
 
   return {
-    validating, saving,
+    validating, saving, hasValidation,
     expressionIssues, locatedIssues, rowIssues, issueSummary,
     validateConfig, save, getConfig,
   }

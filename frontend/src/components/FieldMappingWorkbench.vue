@@ -91,7 +91,7 @@
              校验结果那一块走插槽放进去——它读的是草稿那层的结果，行列表不替它转手 -->
         <MappingRowList
           :target-tip="targetTip"
-          :has-validation="validation != null"
+          :has-validation="hasValidation"
           :row-issues="rowIssues"
           @reload-targets="reloadTargets"
         >
@@ -112,7 +112,7 @@
       <MappingExpressionEditor
         v-else
         v-model="expressionText"
-        :has-validation="validation != null"
+        :has-validation="hasValidation"
         :has-errors="(validation?.errors.length ?? 0) > 0"
         :summary="issueSummary"
         :issues="expressionIssues"
@@ -381,7 +381,7 @@ const draft = useMappingDraft({
   },
 })
 const {
-  validating, saving, expressionIssues, locatedIssues, rowIssues, issueSummary,
+  validating, saving, hasValidation, expressionIssues, locatedIssues, rowIssues, issueSummary,
   validateConfig, save, getConfig,
 } = draft
 
