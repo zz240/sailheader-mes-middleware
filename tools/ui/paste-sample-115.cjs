@@ -11,7 +11,8 @@
  *   7. 换顶部来源步骤：**不再发探测请求**，只换这份样例归到哪一步（界面上看得见换了）；
  *   8. 探测取不回来时：清单还是粘的那份，说法也得还是粘的那份（不能拿探测那句话去说它）；
  *   9. 保存：拦下那个 PUT（不写库），断言粘进来的样例值一个字都没进这份配置；
- *  10. 关掉重开：清单回到探测那条路——这份样例只在编辑器里存在。
+ *  10. 关掉重开：清单回到探测那条路——这一次保存的样例被拦下了（#119 之后真存下去的话，
+ *      重开就是「粘的（已存）」那份，见 sample-stored-119.cjs）。
  *
  * 后端（8080）还是改动之前起的那一份时，POST 那条路还不存在（405）：脚本直接打一次接口问清楚，
  * 打印一行 SKIP，并用 page.route 顶一个同样形状的响应，把界面这一半照验（推断本身的断言在后端用例
@@ -137,6 +138,12 @@ async function submitPaste(page, text) {
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ code: 'OK', message: 'ok', data: null }),
     })
+  })
+  // #119 之后保存还会先把「手里那份样例」写进库里（PUT samples）：这个脚本一个字都不写库，也把它拦下
+  // （204 就是那个端点成功时的样子）。拦了它，「保存」才会照旧走到上面那个 PUT actions。
+  await page.route('**/field-mapping-editor/samples', async route => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    await route.fulfill({ status: 204, body: '' })
   })
 
   // ---- 后端有没有这一版（POST 那条路）
@@ -327,11 +334,12 @@ async function submitPaste(page, text) {
     check('配置里仍然是规则树', savedBody.includes('"rules"'), savedBody.slice(0, 120))
   }
 
-  // ---- 10. 关掉重开：清单回到探测那条路（样例只在编辑器里存在）
+  // ---- 10. 关掉重开：清单回到探测那条路（这一次保存的样例被脚本拦下了，库里什么都没留下；
+  //          #119 之后真存下去的话，重开就该是「粘的（已存）」那份——那条路在 sample-stored-119.cjs 里）
   await page.reload({ waitUntil: 'networkidle' })
   await openEditor(page, JOB_ID)
   const reopenedTip = await sourceTip(page)
-  check('重开编辑器：清单回到探测那条路（样例只在编辑器里存在）',
+  check('重开编辑器：清单回到探测那条路（这一次保存没有写库）',
     reopenedTip === probedTip, `${reopenedTip} / 之前是 ${probedTip}`)
   check('重开之后也没有「按第 1 条推」那句话', await page.locator('.wb-panel-note').count() === 0)
 

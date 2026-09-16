@@ -11,15 +11,19 @@
  * 另有两句提醒是编辑器里的本地事实，后端那份草稿里没有也不该有（「自动匹配同名填上的行」#105、
  * 「清掉的行但目标字段必填」#113），它们挂进同一个问题列表，但不改后端返回的内容。
  *
- * 它自己不发保存请求：`onSaved` 把那份配置交回工作台，由工作台（唯一的入口那一层）去 `emit`。
+ * 保存那一步还多一件事（#119）：手里这两份样例跟着一起落库——粘的存下来、探测来的把库里那一格清掉
+ * （`sampleSavesFor`）。它排在动作本身写库**之前**：配置没存成时那份粘的也不丢。
+ *
+ * 它自己不发动作的保存请求：`onSaved` 把那份配置交回工作台，由工作台（唯一的入口那一层）去 `emit`。
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
-import type { FieldMappingEditorContext } from '../types'
+import type { FieldMappingEditorContext, TargetFieldsSample } from '../types'
 import { configFromRows, flattenRows } from './editor-model.ts'
 import { autoSourceNotices, clearedRequiredNotices } from './fast-config.ts'
 import { isRowConfigured } from './rows.ts'
+import { sampleSavesFor } from './sample.ts'
 import {
   draftRequest, firstErrorRowId, issuesByRow, locateIssues,
   type DraftValidation,
@@ -42,10 +46,14 @@ export interface MappingDraftOptions {
   earlierActionIndexes: ComputedRef<number[]>
   /** 这个动作的序号（新建动作时是准备占用的那个）。 */
   actionIndex: () => number | null
+  /** 这个编辑器属于哪个任务（样例落库那条路要用，#119）。 */
+  jobId: () => number
   /** 现在在哪一边：逐行配置还是手写 JSONata（两条路的草稿不一样）。 */
   editorMode: Ref<EditorMode>
   /** 手写那一边的表达式正文。 */
   expressionText: Ref<string>
+  /** 目标字段清单**是粘的**时候的那一份（#118 / #119）；连库探测那条路是 null。 */
+  targetSample: Ref<TargetFieldsSample | null>
   /** 已存配置里本来就有一段手写表达式（从手写切回逐行后再保存，要再确认一次会替换）。 */
   storedExpression: ComputedRef<boolean>
   /** 校验通过、确认也过了：把保存会写出去的那一份交回工作台。 */
@@ -55,7 +63,8 @@ export interface MappingDraftOptions {
 /** 校验 + 保存这一层。 */
 export function useMappingDraft(options: MappingDraftOptions) {
   const {
-    state, context, earlierActionIndexes, actionIndex, editorMode, expressionText, storedExpression, onSaved,
+    state, context, earlierActionIndexes, actionIndex, jobId, editorMode, expressionText, targetSample,
+    storedExpression, onSaved,
   } = options
   const { rows, targets, sourceFields, defaultStep, clearedRows, validation, jumpToRowId } = state
 
@@ -211,13 +220,40 @@ export function useMappingDraft(options: MappingDraftOptions) {
 
   /** 配好的行数：没配好的行留在编辑器里继续填，但不进规则（进了后端会整份拒掉）。 */
   const configuredCount = computed(() => rows.value.filter(isRowConfigured).length)
-
   /** 有目标字段、但参数还差一口的行（常量没填值、枚举表空、拼接没片段、没选来源）。 */
   const untouchedCount = computed(() =>
     rows.value.filter(row => row.target.trim() !== '' && !isRowConfigured(row)).length)
 
   /** 「自动匹配同名」填上、还没被人碰过的行数（保存前要人确认一遍）。 */
   const autoFilledCount = computed(() => flattenRows(rows.value).filter(e => e.row.auto).length)
+
+  /**
+   * 保存时把手里那两份样例交给后端（#119 规则 2）：粘的存下来、探测来的把库里那一格清掉。
+   *
+   * <p>没有要写 / 要清的格子时一个请求都不发（来源侧压根没有样例、或没有写目标动作）。归属键与原文
+   * 都由 `sampleSavesFor` 从**保存这一刻**的状态算（换过默认来源就按换过之后的步骤落格）。</p>
+   *
+   * <p>失败时**不往下走**（这次就当没保存）：这一份粘的文本是用户手上唯一那份东西（响应回来之后浏览器里
+   * 就没别的副本了），它没存住就不该假装配置存好了——报一句、留在抽屉里让人重试（重试安全：这个端点是
+   * 幂等的）。反过来，样例存住而动作那一步失败时，库里那一格已经写下了：抽屉还开着，重试会覆盖它，
+   * 用户取消就走人——留下一格，比丢掉他手上唯一那份东西好。</p>
+   */
+  async function saveSamples(): Promise<boolean> {
+    const saves = sampleSavesFor(
+      context.value?.source ?? null, targetSample.value, context.value?.writeTarget?.actionId ?? null)
+    if (!saves.source && !saves.target) return true
+    try {
+      await api(`/jobs/${jobId()}/field-mapping-editor/samples`, {
+        method: 'PUT',
+        body: JSON.stringify(saves),
+      })
+      return true
+    } catch (e) {
+      ElMessage.error(`样例没存下来，这次没有保存：${(e as ApiError).message}`)
+      return false
+    }
+  }
+
 
   /**
    * 保存：手写那一边只说清「写了没有」，逐行这一边先把没配好的行 / 自动填上的行问一遍，
@@ -280,6 +316,9 @@ export function useMappingDraft(options: MappingDraftOptions) {
         ).then(() => true).catch(() => false)
         if (!ok) return
       }
+      // 样例跟着这次保存一起落库（#119 规则 2）。排在 onSaved 前面：动作写库那一步失败时（抽屉还开着）
+      // 这份粘的也已经存住了，重试不会把它弄丢。
+      if (!await saveSamples()) return
       onSaved(getConfig())
     } finally {
       saving.value = false

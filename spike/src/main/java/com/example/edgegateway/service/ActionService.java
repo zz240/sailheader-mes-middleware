@@ -33,6 +33,7 @@ public class ActionService {
     private final JobMapper jobMapper;
     private final DataSourceMapper dataSourceMapper;
     private final MappingHistoryService mappingHistoryService;
+    private final MappingSampleService mappingSampleService;
     private final RouteLifecycle routeLifecycle;
 
     public ActionService(
@@ -40,11 +41,13 @@ public class ActionService {
             JobMapper jobMapper,
             DataSourceMapper dataSourceMapper,
             MappingHistoryService mappingHistoryService,
+            MappingSampleService mappingSampleService,
             RouteLifecycle routeLifecycle) {
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.dataSourceMapper = dataSourceMapper;
         this.mappingHistoryService = mappingHistoryService;
+        this.mappingSampleService = mappingSampleService;
         this.routeLifecycle = routeLifecycle;
     }
 
@@ -85,6 +88,9 @@ public class ActionService {
     public void delete(Long id) {
         Action action = get(id);
         actionMapper.deleteById(id);
+        // 删动作时顺手把它的样例行带走（#119）：目标那格按动作 id，来源那格按这个动作的序号——
+        // 那一步没了，它当来源的样例也就没主了（不留孤儿行）
+        mappingSampleService.clearOfAction(action.getJobId(), action.getId(), action.getActionIndex());
         rebuildRoutesIfEnabled(action.getJobId());
     }
 

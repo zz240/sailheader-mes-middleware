@@ -10,8 +10,10 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.JobRun;
+import com.example.edgegateway.model.MappingSampleKind;
 import com.example.edgegateway.model.MessageStep;
 import com.example.edgegateway.web.dto.FieldMappingEditorView;
+import com.example.edgegateway.web.dto.MappingSampleRequest;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,12 +28,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
  * 新版编辑器（#99）的服务端支持：来源取「链上更早那个动作最近一次成功运行的输出」，
  * 目标取「本动作之后最近的 WRITE_UPSERT」。粘进来的一份 JSON（#115）复用同一份样例展开，
- * 推出来的字段与运行记录那条路一致。
+ * 推出来的字段与运行记录那条路一致；**存过的那份压过探测**、按「任务 + 用途 + 归属」取回（#119）。
  */
 class FieldMappingEditorServiceTest {
 
@@ -48,13 +52,15 @@ class FieldMappingEditorServiceTest {
     private final JobRunMapper jobRunMapper = mock(JobRunMapper.class);
     private final MessageStepMapper messageStepMapper = mock(MessageStepMapper.class);
     private final DataSourceService dataSourceService = mock(DataSourceService.class);
+    private final MappingSampleService sampleService = mock(MappingSampleService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final StructureProbeService probeService =
             new StructureProbeService(actionMapper, mock(DataSourceMapper.class));
 
     private final FieldMappingEditorService service = new FieldMappingEditorService(
-            actionMapper, jobRunMapper, messageStepMapper, probeService, dataSourceService, objectMapper);
+            actionMapper, jobRunMapper, messageStepMapper, probeService, dataSourceService, sampleService,
+            objectMapper);
 
     private static Action action(long id, int index, String name, ActionKind kind, Map<String, Object> addition) {
         Action action = new Action();
@@ -228,6 +234,10 @@ class FieldMappingEditorServiceTest {
         // 运行快照那条路不做「按第几条推」的说明：那句话只说粘贴那一边
         assertThat(probed.sampledFirstItem()).isFalse();
         assertThat(pasted.sampledFirstItem()).isFalse();
+        // 粘的那份把**原文**一起带回来（#119）：保存时手里还握着它，才能原样写回库里；探测那份没有
+        assertThat(pasted.json()).isEqualTo(payload);
+        assertThat(pastedArray.json()).isEqualTo("[" + payload + "]");
+        assertThat(probed.json()).isNull();
     }
 
     /**
@@ -339,6 +349,9 @@ class FieldMappingEditorServiceTest {
         assertThat(pasted.fields()).extracting(SourceField::name)
                 .containsExactly("order_no", "items[0].materialCode", "items[0].qty");
         assertThat(pasted.sampledFirstItem()).isFalse();
+        // 这一次粘的那份：记号是 `paste`（与库里存过的那份 `stored` 分开，#119）
+        assertThat(pasted.sourceKey()).isEqualTo("paste");
+        assertThat(pasted.json()).isEqualTo(payload);
     }
 
     /** 目标这一侧粘数组时同样只按第 1 条推，并把这件事告诉界面。 */
@@ -360,5 +373,217 @@ class FieldMappingEditorServiceTest {
         FieldMappingEditorView.TargetSample sample = service.targetFieldsFromSample("{\"order_no\":\"PO-1\"}");
 
         assertThat(sample.fields()).allMatch(SourceField::nullable);
+    }
+
+    // ---------------------------------------------------------------- 粘一次就留着（#119）
+
+    /**
+     * 打开时**存过的那份压过探测**（#119 验收一、二）：这一步存过一份粘的 → 用存的那份，原文一起回来
+     * （保存时还要原样写回去），运行快照那条路上有什么都不看。
+     */
+    @Test
+    void storedSampleWinsOverTheRunSnapshotWhenOpening() {
+        String stored = "{\"order_no\":\"PO-9\",\"kept\":true}";
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of())));
+        when(sampleService.stored(1L, MappingSampleKind.SOURCE, 1L)).thenReturn(stored);
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run(100L)));
+        when(messageStepMapper.selectList(any()))
+                .thenReturn(List.of(step("SUCCESS", "{\"from_run\":\"x\"}")));
+
+        FieldMappingEditorView view = service.context(1L, 12L, null);
+
+        assertThat(view.source().step()).isEqualTo(1);
+        assertThat(view.source().stepName()).isEqualTo("读订单");
+        // 界面上要写明的那个标记：这份是「粘的（已存）」，不是「来自 … 最近一次成功运行」
+        assertThat(view.source().sourceKey()).isEqualTo("stored");
+        assertThat(view.source().json()).isEqualTo(stored);
+        assertThat(view.source().fields()).extracting(SourceField::name).containsExactly("order_no", "kept");
+    }
+
+    /**
+     * 冷启动 / MQ 打头的任务：链上还没有更早的动作时，来源那一格算「任务输入（0）」——存过的那份照样
+     * 回得来（#119 验收一）。这正是 #115 / #118 存在的理由：那批任务一点都探不出来源清单。
+     */
+    @Test
+    void storedSampleForTaskInputComesBackEvenWithoutAnEarlierAction() {
+        String stored = "[{\"order_no\":\"PO-1\"},{\"order_no\":\"PO-2\",\"extra\":1}]";
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "字段映射", ActionKind.FIELD_MAP, Map.of())));
+        when(sampleService.stored(1L, MappingSampleKind.SOURCE, 0L)).thenReturn(stored);
+
+        FieldMappingEditorView view = service.context(1L, 11L, null);
+
+        assertThat(view.source()).isNotNull();
+        assertThat(view.source().step()).isZero();
+        assertThat(view.source().stepName()).isNull(); // 「任务输入」那一步没有动作
+        assertThat(view.source().sourceKey()).isEqualTo("stored");
+        assertThat(view.source().sampledFirstItem()).isTrue();
+        assertThat(view.source().fields()).extracting(SourceField::name).containsExactly("order_no");
+    }
+
+    /** 没存过的那些任务一个字不变：没有更早的动作、库里也没存 → 左边空着（与 #119 之前一样）。 */    @Test
+    void withoutAStoredSampleTheProbePathIsUnchanged() {
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "字段映射", ActionKind.FIELD_MAP, Map.of())));
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+
+        FieldMappingEditorView view = service.context(1L, 11L, null);
+
+        assertThat(view.source()).isNull();
+        verify(sampleService).stored(1L, MappingSampleKind.SOURCE, 0L);
+    }
+
+    /**
+     * 归属键是（任务 + 步骤），不是「哪个动作」：读同一步的两个编辑器看到的是**同一份**（#119 验收六）。
+     *
+     * <p>下面是同一格（任务 1 · 步骤 2）的两种读法——编辑已有的那个动作，与给一个准备占用同样序号的新动作
+     * 打开编辑器。落在同一格上，而不是各粘各的。</p>
+     */
+    @Test
+    void bothMappingsReadingTheSameStepSeeTheSameStoredSample() {
+        String stored = "{\"order_no\":\"PO-9\"}";
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "上游映射", ActionKind.FIELD_MAP, Map.of()),
+                action(14L, 3, "字段映射乙", ActionKind.FIELD_MAP, Map.of())));
+        when(sampleService.stored(1L, MappingSampleKind.SOURCE, 2L)).thenReturn(stored);
+
+        FieldMappingEditorView existing = service.context(1L, 14L, null);
+        FieldMappingEditorView draft = service.context(1L, null, 3);
+
+        assertThat(existing.source().step()).isEqualTo(2);
+        assertThat(draft.source().step()).isEqualTo(2);
+        assertThat(existing.source().json()).isEqualTo(stored);
+        assertThat(draft.source().json()).isEqualTo(stored);
+    }
+
+    /** 库里那一行坏了（不是 JSON / 推不出字段）不该让编辑器打不开：退回探测那条路，与没存过一样。 */    @Test
+    void brokenStoredSampleFallsBackToTheProbe() {
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of())));
+        when(sampleService.stored(1L, MappingSampleKind.SOURCE, 1L)).thenReturn("order_no=PO-1");
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run(100L)));
+        when(messageStepMapper.selectList(any()))
+                .thenReturn(List.of(step("SUCCESS", "{\"order_no\":\"PO-1\"}")));
+
+        FieldMappingEditorView view = service.context(1L, 12L, null);
+
+        assertThat(view.source().sourceKey()).isEqualTo("sample");
+        assertThat(view.source().json()).isNull();
+    }
+
+    /** 目标那一格同理（#119 验收一、二、六）：写目标动作存过 → 用存的那份，连库探测那条路不发。 */
+    @Test
+    void storedTargetSampleComesBackWithTheContext() {
+        String stored = "{\"order_no\":\"PO-1\",\"items\":[{\"materialCode\":\"M1\"}]}";
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of()),
+                action(13L, 3, "写订单", ActionKind.WRITE_UPSERT,
+                        Map.of("dataSourceId", 9, "tableName", "po_order"))));
+        when(sampleService.stored(1L, MappingSampleKind.TARGET, 13L)).thenReturn(stored);
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+        when(messageStepMapper.selectList(any())).thenReturn(List.of());
+
+        FieldMappingEditorView view = service.context(1L, 12L, null);
+
+        assertThat(view.writeTarget().actionId()).isEqualTo(13L);
+        assertThat(view.targetSample().sourceKey()).isEqualTo("stored");
+        assertThat(view.targetSample().json()).isEqualTo(stored);
+        assertThat(view.targetSample().fields()).extracting(SourceField::name)
+                .containsExactly("order_no", "items[0].materialCode");
+    }
+
+    /** 没存过的（或没有写目标的）任务：这一格是 null，编辑器那一侧照旧去连库探测。 */
+    @Test
+    void withoutAStoredTargetSampleTheTargetStaysProbeOnly() {
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of()),
+                action(13L, 3, "写订单", ActionKind.WRITE_UPSERT,
+                        Map.of("dataSourceId", 9, "tableName", "po_order"))));
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+        when(messageStepMapper.selectList(any())).thenReturn(List.of());
+
+        FieldMappingEditorView view = service.context(1L, 12L, null);
+
+        assertThat(view.targetSample()).isNull();
+        verify(sampleService).stored(1L, MappingSampleKind.TARGET, 13L);
+    }
+
+    /** 目标那份粘出来的原文也一起带回来（#119：保存时写回库里的就是它）。 */
+    @Test
+    void pastedTargetSampleCarriesItsRawText() {
+        String payload = "{\"order_no\":\"PO-1\"}";
+
+        assertThat(service.targetFieldsFromSample(payload).json()).isEqualTo(payload);
+    }
+
+    /**
+     * 点保存那一次（#119 规则 2）：带原文 = 手里是粘的 → 存下来；不带原文 = 手里是探测来的 → 把这一格
+     * 删掉。归属由请求给（来源 = 步骤、目标 = 写目标动作 id）。
+     */
+    @Test
+    void savingWritesThePastedCellAndClearsTheProbedOne() {
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7)),
+                action(12L, 2, "字段映射", ActionKind.FIELD_MAP, Map.of()),
+                action(13L, 3, "写订单", ActionKind.WRITE_UPSERT, Map.of("dataSourceId", 9))));
+        when(actionMapper.selectById(13L)).thenReturn(
+                action(13L, 3, "写订单", ActionKind.WRITE_UPSERT, Map.of("dataSourceId", 9)));
+
+        service.saveSamples(1L, new MappingSampleRequest(
+                new MappingSampleRequest.SourceSampleSave(1, "{\"order_no\":\"PO-1\"}"),
+                new MappingSampleRequest.TargetSampleSave(13L, null)));
+
+        verify(sampleService).save(1L, MappingSampleKind.SOURCE, 1L, "{\"order_no\":\"PO-1\"}");
+        verify(sampleService).save(1L, MappingSampleKind.TARGET, 13L, null);
+    }
+
+    /** 编辑器对某一边没话可说时（来源侧压根没有样例 / 没有写目标动作）库里那一格不动。 */
+    @Test
+    void savingLeavesASideAloneWhenTheEditorHasNothingToSayAboutIt() {
+        service.saveSamples(1L, new MappingSampleRequest(null, null));
+
+        verifyNoInteractions(sampleService);
+    }
+
+    /** 一格的身份缺一不可：来源缺步骤、目标缺动作 id 都是参数问题（400），不能静默存。 */
+    @Test
+    void savingRejectsASampleWithoutItsOwnership() {
+        assertThatThrownBy(() -> service.saveSamples(1L, new MappingSampleRequest(
+                new MappingSampleRequest.SourceSampleSave(null, "{\"order_no\":\"PO-1\"}"), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("默认来源");
+        assertThatThrownBy(() -> service.saveSamples(1L, new MappingSampleRequest(null,
+                new MappingSampleRequest.TargetSampleSave(null, "{\"order_no\":\"PO-1\"}"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("写目标动作");
+    }
+
+    /**
+     * 归属还得**落在请求里那个任务之内**（#119 验收六「归属对得上」）：链上没有那一步、或那个动作不是
+     * 这个任务的，都是参数问题——不然会写下一行谁都不会去读的样例（甚至清掉别的动作那一格）。
+     */
+    @Test
+    void savingRejectsASampleThatDoesNotBelongToTheJob() {
+        when(actionMapper.selectList(any())).thenReturn(List.of(
+                action(11L, 1, "读订单", ActionKind.READ_SQL, Map.of("dataSourceId", 7))));
+        Action foreign = action(99L, 3, "别人的写动作", ActionKind.WRITE_UPSERT, Map.of());
+        foreign.setJobId(2L);
+        when(actionMapper.selectById(99L)).thenReturn(foreign);
+
+        assertThatThrownBy(() -> service.saveSamples(1L, new MappingSampleRequest(
+                new MappingSampleRequest.SourceSampleSave(9, "{\"order_no\":\"PO-1\"}"), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("没有序号 9 的动作");
+        assertThatThrownBy(() -> service.saveSamples(1L, new MappingSampleRequest(null,
+                new MappingSampleRequest.TargetSampleSave(99L, "{\"order_no\":\"PO-1\"}"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("找不到");
+        verifyNoInteractions(sampleService);
     }
 }

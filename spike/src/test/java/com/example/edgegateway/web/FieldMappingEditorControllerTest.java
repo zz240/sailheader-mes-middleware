@@ -16,9 +16,12 @@ import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -121,7 +124,7 @@ class FieldMappingEditorControllerTest {
         String json = "{\"order_no\":\"PO-1\"}";
         when(editorService.sourceFieldsFromSample(3L, 1, json)).thenReturn(
                 new FieldMappingEditorView.SourceSample(1, "读订单", "paste", false,
-                        List.of(new SourceField("order_no", "STRING", true, List.of("PO-1")))));
+                        List.of(new SourceField("order_no", "STRING", true, List.of("PO-1"))), json));
 
         mockMvc.perform(post("/api/jobs/3/field-mapping-editor/source-fields")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -133,6 +136,8 @@ class FieldMappingEditorControllerTest {
                 .andExpect(jsonPath("$.data.step").value(1))
                 .andExpect(jsonPath("$.data.stepName").value("读订单"))
                 .andExpect(jsonPath("$.data.sampledFirstItem").value(false))
+                // 原文跟着回来（#119）：保存那一刻手里要还握着它
+                .andExpect(jsonPath("$.data.json").value(json))
                 .andExpect(jsonPath("$.data.fields[0].name").value("order_no"))
                 .andExpect(jsonPath("$.data.fields[0].type").value("STRING"))
                 .andExpect(jsonPath("$.data.fields[0].nullable").value(true));
@@ -160,8 +165,8 @@ class FieldMappingEditorControllerTest {
     void returnsTheTargetFieldListOfAPastedSample() throws Exception {
         String json = "{\"order_no\":\"PO-1\"}";
         when(editorService.targetFieldsFromSample(json)).thenReturn(
-                new FieldMappingEditorView.TargetSample(false,
-                        List.of(new SourceField("order_no", "STRING", true, List.of("PO-1")))));
+                new FieldMappingEditorView.TargetSample("paste", false,
+                        List.of(new SourceField("order_no", "STRING", true, List.of("PO-1"))), json));
 
         mockMvc.perform(post("/api/field-mapping-editor/target-fields")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -171,7 +176,29 @@ class FieldMappingEditorControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.sampledFirstItem").value(false))
+                .andExpect(jsonPath("$.data.json").value(json))
                 .andExpect(jsonPath("$.data.fields[0].name").value("order_no"))
                 .andExpect(jsonPath("$.data.fields[0].type").value("STRING"));
+    }
+
+    /**
+     * 「点保存」时样例落库那条路的 HTTP 契约（#119）：请求体那三格（两边的归属 + 手里那份原文）就是
+     * 服务那一侧的入参，回来 204（没有要回给界面的东西——打开时读回来那一份在上下文那个 GET 里）。
+     */
+    @Test
+    void savesTheSamplesTheEditorHolds() throws Exception {
+        mockMvc.perform(put("/api/jobs/3/field-mapping-editor/samples")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":{"step":1,"json":"{\\"order_no\\":\\"PO-1\\"}"},
+                                 "target":{"actionId":13,"json":null}}
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(editorService).saveSamples(eq(3L), argThat(request ->
+                request.source().step() == 1
+                        && request.source().json().equals("{\"order_no\":\"PO-1\"}")
+                        && request.target().actionId() == 13L
+                        && request.target().json() == null));
     }
 }

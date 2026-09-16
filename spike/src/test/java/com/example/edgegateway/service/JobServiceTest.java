@@ -19,13 +19,15 @@ class JobServiceTest {
 
     private JobMapper mapper;
     private JobService service;
+    private MappingSampleService mappingSampleService;
     private RouteLifecycle routeLifecycle;
 
     @BeforeEach
     void setUp() {
         mapper = mock(JobMapper.class);
+        mappingSampleService = mock(MappingSampleService.class);
         routeLifecycle = mock(RouteLifecycle.class);
-        service = new JobService(mapper, routeLifecycle);
+        service = new JobService(mapper, mappingSampleService, routeLifecycle);
     }
 
     private JobRequest request(String name) {
@@ -156,5 +158,17 @@ class JobServiceTest {
         Job updated = service.setStatus(1L, 1);
 
         assertThat(updated.getStatus()).isEqualTo(1);
+    }
+
+    /** 任务没了，它下面每一格的样例也跟着走（#119：不留孤儿行）。 */
+    @Test
+    void clearsStoredSamplesOfADeletedJob() {
+        Job job = new Job();
+        job.setId(1L);
+        when(mapper.selectById(1L)).thenReturn(job);
+
+        service.delete(1L);
+
+        verify(mappingSampleService).clearOfJob(1L);
     }
 }

@@ -36,6 +36,7 @@ class ActionServiceTest {
     private JobMapper jobMapper;
     private DataSourceMapper dataSourceMapper;
     private MappingHistoryService mappingHistoryService;
+    private MappingSampleService mappingSampleService;
     private RouteLifecycle routeLifecycle;
     private ActionService service;
 
@@ -45,8 +46,10 @@ class ActionServiceTest {
         jobMapper = mock(JobMapper.class);
         dataSourceMapper = mock(DataSourceMapper.class);
         mappingHistoryService = mock(MappingHistoryService.class);
+        mappingSampleService = mock(MappingSampleService.class);
         routeLifecycle = mock(RouteLifecycle.class);
-        service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService, routeLifecycle);
+        service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService,
+                mappingSampleService, routeLifecycle);
         when(actionMapper.selectList(any())).thenReturn(List.of());
     }
 
@@ -560,6 +563,20 @@ class ActionServiceTest {
         service.delete(5L);
 
         verify(routeLifecycle).rebuildIfEnabled(1L);
+    }
+
+    /** 删动作时顺手把它的样例行带走（#119）：目标那格按动作 id，来源那格按这个动作的序号。 */
+    @Test
+    void clearsStoredSamplesOfADeletedAction() {
+        Action existing = new Action();
+        existing.setId(5L);
+        existing.setJobId(1L);
+        existing.setActionIndex(4);
+        when(actionMapper.selectById(5L)).thenReturn(existing);
+
+        service.delete(5L);
+
+        verify(mappingSampleService).clearOfAction(1L, 5L, 4);
     }
 
     @Test

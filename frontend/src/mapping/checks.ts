@@ -24,6 +24,8 @@
  *  11. 来源样例的两条路（#115）：探测那条路的说法一个字不变，粘的那条路写明按哪一步的输出来算、
  *      是数组就注明「按第 1 条推的」，换来源步骤只换这份样例归到哪一步（字段清单不动）；目标字段清单
  *      粘出来的那一行小字（#118）：必填推不出来、数组按第 1 条推；「这份是不是粘的」认后端那一格标记。
+ *  12. 粘一次就留着（#119）：库里存过的那份写法与探测那条路分得清（「粘的（已存）」）、目标那一片
+ *      同理，以及保存那一刻手里这两份该落到哪一格（带原文 = 存下来 / 不带 = 把库里那一格清掉）。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -64,7 +66,10 @@ import {
   partKindLabel, partKindOf, partLabelSpec, partRuleOf,
 } from './parts.ts'
 import { isPanelChoice, keyIntent, rowStepIndex, stepIndex, type KeyContext } from './keyboard.ts'
-import { attributeSample, isPastedSample, sampleNoteOf, sourceTipOf, targetNoteOf } from './sample.ts'
+import {
+  attributeSample, isPastedSample, isStoredSample, provenanceOf, sampleNoteOf, sampleSavesFor,
+  sourceTipOf, targetNoteOf, targetWhereOf, withRawText,
+} from './sample.ts'
 import type { EditorSourceSample } from '../types.ts'
 
 // 这个文件由 node 直接执行（不在浏览器里），只需要 process.exitCode 一处。
@@ -1715,9 +1720,13 @@ const PROBED_SAMPLE: EditorSourceSample = {
   step: 1, stepName: '读订单', sourceKey: 'sample', sampledFirstItem: false,
   fields: [{ name: 'order_no', type: 'STRING', nullable: true, samples: ['PO-1'] }],
 }
-const PASTED_SAMPLE: EditorSourceSample = { ...PROBED_SAMPLE, sourceKey: 'paste' }
+const PASTED_SAMPLE: EditorSourceSample = {
+  ...PROBED_SAMPLE, sourceKey: 'paste', json: '{"order_no":"PO-1"}',
+}
 /** 粘的是一整个数组：后端按第 1 条推，并把这件事写在 sampledFirstItem 上。 */
 const PASTED_ARRAY: EditorSourceSample = { ...PASTED_SAMPLE, sampledFirstItem: true }
+/** 库里存过的那份（#119）：同样算「粘的」，但界面要写明它是「已存」的那一份。 */
+const STORED_SAMPLE: EditorSourceSample = { ...PASTED_SAMPLE, sourceKey: 'stored' }
 
 // 「这份是不是粘的」认后端那一格标记（`sourceKey`），不另存一个标记——说法与「换步骤要不要重取」都看它
 ok('探测那条路给的样例不算粘的', !isPastedSample(PROBED_SAMPLE))
@@ -1763,6 +1772,78 @@ eq('目标清单是粘的：写明必填推不出来、一律当不必填',
 ok('目标清单是粘的、又是数组时，「按第 1 条推的」也在那句话里',
   targetNoteOf(PASTED_ARRAY).includes('必填推不出来') && targetNoteOf(PASTED_ARRAY).includes('按第 1 条推的'),
   targetNoteOf(PASTED_ARRAY))
+
+// ---------------------------------------------------------------- 12. 粘一次就留着（#119）
+
+/**
+ * 「粘的（已存）」与「这一次刚粘的」是两个记号（后端 `sourceKey`：`stored` / `paste`），而**保存那一刻
+ * 两者都算「手里是粘的」**——认「粘不粘」的那一处（`isPastedSample`）两个都认。
+ */
+ok('库里存过的那份算粘的（保存时照样要原样写回去）', isPastedSample(STORED_SAMPLE))
+ok('这一次粘的那份不算「已存」', !isStoredSample(PASTED_SAMPLE))
+ok('库里存过的那份认得出来', isStoredSample(STORED_SAMPLE))
+ok('探测那条路两个都不算', !isPastedSample(PROBED_SAMPLE) && !isStoredSample(PROBED_SAMPLE))
+
+// 三种来历只认一处（`provenanceOf`）：界面上的说法与「保存时算不算粘的」都从它分流
+eq('来历：库里存过的那份', provenanceOf(STORED_SAMPLE), 'stored')
+eq('来历：这一次粘的那份', provenanceOf(PASTED_SAMPLE), 'pasted')
+eq('来历：探测那条路', provenanceOf(PROBED_SAMPLE), 'probed')
+eq('来历：没有样例时也没有来历可言', provenanceOf(null), 'probed')
+
+// 粘完补齐手里的原文：后端给了就用后端的，没给（后端起得早）就用刚发出去的那段
+const PASTED_WITH_JSON: EditorSourceSample = { ...PASTED_SAMPLE, json: '{"a":1}' }
+const PASTED_WITHOUT_JSON: EditorSourceSample = { ...PASTED_SAMPLE, json: null }
+eq('后端把原文带回来了：用它', withRawText(PASTED_WITH_JSON, '{"a":2}').json, '{"a":1}')
+eq('后端没带原文（改动之前那一份）：用刚发出去的那段',
+  withRawText(PASTED_WITHOUT_JSON, '{"a":2}').json, '{"a":2}')
+
+// 重开编辑器时手上就是库里的那份：界面必须写明它是粘的、而且已经存下来了（#119 验收一）
+eq('存过的那份写法与探测那条路分得清',
+  sourceTipOf(STORED_SAMPLE), '粘的（已存）：按「动作 1 · 读订单」的输出来算')
+ok('存过的那份不说成「最近一次成功运行」',
+  !sourceTipOf(STORED_SAMPLE).includes('最近一次成功运行'), sourceTipOf(STORED_SAMPLE))
+eq('任务输入那一步存过的那份也写得出来',
+  sourceTipOf({ ...STORED_SAMPLE, step: 0, stepName: null }), '粘的（已存）：按「任务输入」的输出来算')
+eq('这一次刚粘的那份说法没变（#115 那条不动）',
+  sourceTipOf(PASTED_SAMPLE), '这份样例按「动作 1 · 读订单」的输出来算')
+
+// 换来源步骤：存过的那份同样是「给定的」，只换归属（原文与记号都不动）
+eq('换来源步骤时存过的那份还是它自己',
+  attributeSample(STORED_SAMPLE, 3, { 3: '洗数' }),
+  { ...STORED_SAMPLE, step: 3, stepName: '洗数' })
+
+// 目标那一片顶上那句话里「清单取自哪儿」那一段：粘的两种分开说，探测那条路照旧是表名
+eq('目标清单是库里存过的那份：写明「粘的（已存）」', targetWhereOf(STORED_SAMPLE), '粘的（已存）')
+eq('目标清单是这一次粘的：照旧「按粘的样例推的」', targetWhereOf(PASTED_SAMPLE), '按粘的样例推的')
+eq('目标清单是连库探的：把表名摆出来', targetWhereOf({ sourceKey: 'db:po_order' }), 'db:po_order')
+eq('没有目标样例时那一段是空的', targetWhereOf(null), '')
+
+// 保存那一刻：手里这两份该落到哪一格（#119 规则 2）。带原文 = 存下来；不带 = 把库里那一格清掉
+const TARGET_PASTED = { sourceKey: 'paste', sampledFirstItem: false, json: '{"order_no":"PO-1"}', fields: [] }
+const TARGET_PROBED = { sourceKey: 'db:po_order', fields: [] }
+eq('手里是粘的：两边都带上原文与归属',
+  sampleSavesFor(PASTED_SAMPLE, TARGET_PASTED, 13),
+  { source: { step: 1, json: '{"order_no":"PO-1"}' }, target: { actionId: 13, json: '{"order_no":"PO-1"}' } })
+eq('手里是探测来的：两边都只报归属（后端据此把那一格删掉）',
+  sampleSavesFor(PROBED_SAMPLE, TARGET_PROBED, 13),
+  { source: { step: 1, json: null }, target: { actionId: 13, json: null } })
+eq('重开时手里是库里那份：再存一次还是它（原文照旧带着）',
+  sampleSavesFor(STORED_SAMPLE, { ...TARGET_PASTED, sourceKey: 'stored' }, 13),
+  { source: { step: 1, json: '{"order_no":"PO-1"}' }, target: { actionId: 13, json: '{"order_no":"PO-1"}' } })
+eq('换过来源步骤再保存：按「保存那一刻归到哪一步」落那一格',
+  sampleSavesFor(attributeSample(STORED_SAMPLE, 4, { 4: '洗数' }), null, 13).source,
+  { step: 4, json: '{"order_no":"PO-1"}' })
+eq('链上没有更早的动作、库里也没存过：来源那一边不发说明（库里不动）',
+  sampleSavesFor(null, TARGET_PROBED, 13),
+  { target: { actionId: 13, json: null } })
+eq('没有写目标动作：目标那一边不发说明',
+  sampleSavesFor(PASTED_SAMPLE, null, null),
+  { source: { step: 1, json: '{"order_no":"PO-1"}' } })
+eq('粘的那份没带原文时按「没有」算（不拿别的东西去冒充原文）',
+  sampleSavesFor({ ...PASTED_SAMPLE, json: undefined }, null, 13).source,
+  { step: 1, json: null })
+eq('两边都没有要写要清的格子时一个请求都不发',
+  sampleSavesFor(null, null, null), {})
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

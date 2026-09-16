@@ -20,10 +20,12 @@ import java.util.NoSuchElementException;
 public class JobService {
 
     private final JobMapper jobMapper;
+    private final MappingSampleService mappingSampleService;
     private final RouteLifecycle routeLifecycle;
 
-    public JobService(JobMapper jobMapper, RouteLifecycle routeLifecycle) {
+    public JobService(JobMapper jobMapper, MappingSampleService mappingSampleService, RouteLifecycle routeLifecycle) {
         this.jobMapper = jobMapper;
+        this.mappingSampleService = mappingSampleService;
         this.routeLifecycle = routeLifecycle;
     }
 
@@ -53,6 +55,8 @@ public class JobService {
     public void delete(Long id) {
         get(id);
         jobMapper.deleteById(id);
+        // 任务没了，它下面每一格的样例也跟着走（#119：不留孤儿行）
+        mappingSampleService.clearOfJob(id);
     }
 
     public Job get(Long id) {

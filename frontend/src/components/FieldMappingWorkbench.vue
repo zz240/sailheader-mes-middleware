@@ -170,7 +170,9 @@ import {
   hasExpression, type EditorMode,
 } from '../mapping/expression.ts'
 import { keyIntent, rowStepIndex } from '../mapping/keyboard.ts'
-import { attributeSample, isPastedSample, sampleNoteOf, sourceTipOf, targetNoteOf } from '../mapping/sample.ts'
+import {
+  attributeSample, isPastedSample, sampleNoteOf, sourceTipOf, targetNoteOf, targetWhereOf, withRawText,
+} from '../mapping/sample.ts'
 import { createWorkbenchState, provideWorkbenchState } from '../mapping/useWorkbenchState.ts'
 import { useMappingDraft } from '../mapping/useMappingDraft.ts'
 import MappingExpressionEditor from './MappingExpressionEditor.vue'
@@ -312,8 +314,9 @@ const targetTip = computed(() => {
   if (!target) return '这个动作后面没有写库动作，目标字段要手工导入'
   const who = target.actionName ?? `动作 ${target.actionIndex}`
   if (!targets.value.length) return `写目标：${who}（结构还没探测出来）`
-  // 粘出来的那份清单要说清它不是连库探的（`targetSourceKey` 那一格只有探测那条路才有意义）
-  const where = targetSample.value ? '按粘的样例推的' : targetSourceKey.value
+  // 粘出来的那份清单要说清它不是连库探的（`targetSourceKey` 那一格只有探测那条路才有意义）；
+  // 「这一次粘的」与「库里存过的那份」（#119）分开说，都走 `targetWhereOf` 那一处口径
+  const where = targetSample.value ? targetWhereOf(targetSample.value) : targetSourceKey.value
   return `目标：${who}${where ? ` · ${where}` : ''}`
 })
 
@@ -378,11 +381,27 @@ function actionNamesOf(ctx: FieldMappingEditorContext): Record<number, string> {
   return map
 }
 
-/** 目标字段清单：连库探测写目标那张表；探不出来就空着，编辑器退化成手写目标字段。 */
+/**
+ * 打开时的目标字段清单（#119 规则 1）：库里给这个写目标**存过**粘的那份 → 用存的那份；没存过 →
+ * 连库探测，与今天一字不差。
+ *
+ * 与来源那侧同一个口径（`context.source` 存过就用存的那份）：解析只在打开时做一次，之后按 #118 的
+ * 行为走——「重新探测目标字段」永远只表示「给我探测那份」（`probeTargets`），不会悄悄返回库里粘的。
+ */
 async function loadTargets(ctx: FieldMappingEditorContext): Promise<TargetField[]> {
+  targetSample.value = ctx.targetSample ?? null
+  if (targetSample.value) {
+    targetSourceKey.value = ''
+    return targetFieldsOf(targetSample.value)
+  }
+  return probeTargets(ctx)
+}
+
+/** 「重新探测目标字段」那条路：连库探测写目标那张表；探不出来就空着，编辑器退化成手写目标字段。 */
+async function probeTargets(ctx: FieldMappingEditorContext): Promise<TargetField[]> {
   const target = ctx.writeTarget
   targetSourceKey.value = ''
-  // 重新探一次 = 这一份清单又回到探测那条路（粘出来的那份只在这一次打开里存在）
+  // 重新探一次 = 这一份清单又回到探测那条路（粘出来的那份只在这一次打开里存在，点保存才落库）
   targetSample.value = null
   if (!target?.actionId) return []
   if (!target.tableName) {
@@ -436,7 +455,7 @@ async function reloadTargets() {
   if (!ctx) return
   loading.value = true
   try {
-    targets.value = await loadTargets(ctx)
+    targets.value = await probeTargets(ctx)
     rows.value = mergeRowsWithTargets(rows.value, targets.value, defaultStep.value)
     // 已配的行按目标字段沿用同一个行对象（含 id），所以撤销快照能留就留着；重铺掉的那些行
     // 换了 id，快照按 id 找不到就自然不显示，不用特意清。
@@ -459,8 +478,11 @@ const draft = useMappingDraft({
   context,
   earlierActionIndexes,
   actionIndex: () => props.actionIndex ?? null,
+  jobId: () => props.jobId,
   editorMode,
   expressionText,
+  // 目标那份是粘的时候（#118 / #119）保存要把它写进库里；连库探测那条路是 null
+  targetSample,
   storedExpression,
   onSaved: (config) => {
     emit('saved', config)
@@ -562,7 +584,8 @@ async function submitSourceSample(text: string) {
       `/jobs/${props.jobId}/field-mapping-editor/source-fields`,
       { method: 'POST', body: JSON.stringify({ step: defaultStep.value, json: text }) },
     )
-    context.value = { ...ctx, source: sample }
+    // 手里这份的**原文**：后端会把它一起带回来（#119）；万一没有（后端起得早），用刚发出去的那段顶上
+    context.value = { ...ctx, source: withRawText(sample, text) }
     sourceFields.value = sample.fields ?? []
     return sample.fields.length
       ? `按这份样例推出 ${sample.fields.length} 个字段`
@@ -584,7 +607,8 @@ async function submitTargetSample(text: string) {
     })
     targets.value = targetFieldsOf(sample)
     rows.value = mergeRowsWithTargets(rows.value, targets.value, defaultStep.value)
-    targetSample.value = sample
+    // 原文一并拿着（#119）：后端会带回来，万一没有就用刚发出去的那段（见 submitSourceSample）
+    targetSample.value = withRawText(sample, text)
     return targets.value.length
       ? `按这份样例推出 ${targets.value.length} 个目标字段`
       : '这份样例里没有字段——换一份有内容的目标数据'
