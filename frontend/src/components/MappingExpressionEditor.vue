@@ -95,9 +95,9 @@ function onInput(value: string) {
 .wb-expression-head .wb-panel-tip { margin: 0; }
 .wb-expression-input { flex: 1; min-height: 260px; margin-top: 6px; }
 .wb-expression-input :deep(textarea) {
-  height: 100%; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
+  height: 100%; font-family: var(--font-mono); font-size: var(--fs-body); line-height: 1.6;
 }
-.wb-expression-note { font-size: 11px; color: #b45309; margin-top: 6px; }
+.wb-expression-note { font-size: var(--fs-meta); color: var(--warn-ink); margin-top: 6px; }
 .wb-expression-issues { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* 这一边的问题只是列出来，点不动（`.wb-issue` 的落点在共享的那份样式里，两处用量同一份） */
 .wb-expression-issues .wb-issue { width: auto; cursor: default; }

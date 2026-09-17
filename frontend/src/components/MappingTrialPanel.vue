@@ -223,110 +223,110 @@ function rowTitle(row: TrialEvidenceRow): string {
 <style scoped>
 .trial { display: flex; flex-direction: column; gap: 6px; }
 .trial-bar { display: flex; align-items: center; gap: 8px; }
-.trial-where { font-size: 12px; color: #6b7280; }
-.trial-premise { margin: 0; font-size: 12px; color: #b45309; }
+.trial-where { font-size: var(--fs-body); color: var(--muted); }
+.trial-premise { margin: 0; font-size: var(--fs-body); color: var(--warn-ink); }
 .trial-run { margin-left: auto; }
 
 /* 过期冻结那条横幅：报告是上一次的快照，得在结论之前就说清 */
 .trial-stale {
   display: flex; align-items: center; gap: 8px; padding: 4px 8px;
-  border: 1px solid #fde68a; background: #fffbeb; border-radius: 4px;
+  border: 1px solid color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); border-radius: var(--radius);
 }
-.trial-stale-text { font-size: 12px; color: #b45309; }
+.trial-stale-text { font-size: var(--fs-body); color: var(--warn-ink); }
 .trial-stale-run { margin-left: auto; }
 
 .trial-cols { display: flex; gap: 12px; align-items: flex-start; }
 .trial-col {
   flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px;
 }
-.trial-col-head { font-size: 12px; font-weight: 600; color: #374151; }
+.trial-col-head { font-size: var(--fs-body); font-weight: 600; color: var(--fg); }
 
 .trial-text {
   margin: 0; max-height: 200px; overflow: auto;
-  font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;
-  background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px;
-  white-space: pre; color: #111827;
+  font-family: var(--font-mono); font-size: var(--fs-body); line-height: 1.5;
+  background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+  white-space: pre; color: var(--fg);
 }
-.trial-empty { margin: 0; font-size: 12px; color: #9ca3af; }
+.trial-empty { margin: 0; font-size: var(--fs-body); color: var(--muted); }
 
 /* 1. 结论条：绿点 / 红点一眼分得出，右边那半句是这一跑的口径 */
 .trial-verdict {
   display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
-  padding: 4px 8px; border-radius: 4px; border: 1px solid;
+  padding: 4px 8px; border-radius: var(--radius); border: 1px solid;
 }
-.trial-verdict.ok { border-color: #bbf7d0; background: #f0fdf4; }
-.trial-verdict.bad { border-color: #fecaca; background: #fef2f2; }
+.trial-verdict.ok { border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: var(--success-soft); }
+.trial-verdict.bad { border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft); }
 .trial-verdict-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center;
 }
-.trial-verdict.ok .trial-verdict-dot { background: #16a34a; }
-.trial-verdict.bad .trial-verdict-dot { background: #dc2626; }
-.trial-verdict-text { font-size: 12px; font-weight: 600; }
-.trial-verdict.ok .trial-verdict-text { color: #15803d; }
-.trial-verdict.bad .trial-verdict-text { color: #b91c1c; }
-.trial-verdict-scope { margin-left: auto; font-size: 11px; color: #6b7280; }
+.trial-verdict.ok .trial-verdict-dot { background: var(--success); }
+.trial-verdict.bad .trial-verdict-dot { background: var(--danger); }
+.trial-verdict-text { font-size: var(--fs-body); font-weight: 600; }
+.trial-verdict.ok .trial-verdict-text { color: var(--success-ink); }
+.trial-verdict.bad .trial-verdict-text { color: var(--danger-ink); }
+.trial-verdict-scope { margin-left: auto; font-size: var(--fs-meta); color: var(--muted); }
 
 /* 2. 计量条 */
 .trial-metrics { display: flex; flex-wrap: wrap; gap: 4px; }
 .trial-metric {
   display: flex; align-items: baseline; gap: 4px; padding: 1px 6px;
-  border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
 }
-.trial-metric-label { font-size: 11px; color: #6b7280; }
-.trial-metric-value { font-size: 12px; font-weight: 600; color: #111827; }
+.trial-metric-label { font-size: var(--fs-meta); color: var(--muted); }
+.trial-metric-value { font-size: var(--fs-body); font-weight: 600; color: var(--fg); }
 
 /* 3. 证据表：三列（输出路径 / 试算值 / 产出它的规则），一行一个目标字段 */
-.trial-evidence { border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; }
+.trial-evidence { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .trial-evidence-head,
 .trial-evidence-row {
   display: grid; grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr) minmax(140px, 1.2fr);
   gap: 8px; align-items: baseline;
 }
 .trial-evidence-head {
-  font-size: 11px; color: #6b7280; background: #f3f4f6; padding: 3px 8px;
+  font-size: var(--fs-meta); color: var(--muted); background: var(--fg-soft); padding: 3px 8px;
 }
 .trial-evidence-body { max-height: 260px; overflow: auto; }
 .trial-evidence-row {
-  width: 100%; text-align: left; font: inherit; font-size: 12px;
-  background: none; border: 0; border-top: 1px solid #f3f4f6;
+  width: 100%; text-align: left; font: inherit; font-size: var(--fs-body);
+  background: none; border: 0; border-top: 1px solid var(--fg-soft);
   padding: 3px 8px; cursor: pointer;
 }
-.trial-evidence-row:hover { background: #f3f4f6; }
-.trial-evidence-path { font-family: Consolas, monospace; color: #374151; overflow-wrap: anywhere; }
+.trial-evidence-row:hover { background: var(--fg-soft); }
+.trial-evidence-path { font-family: var(--font-mono); color: var(--fg); overflow-wrap: anywhere; }
 /* 数组行的子字段缩一排：看得出它是那个数组里的一个字段 */
 .trial-evidence-row.child .trial-evidence-path { padding-left: 14px; }
 .trial-evidence-value { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .trial-evidence-value-text {
-  font-family: Consolas, monospace; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.trial-evidence-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 4px; border: 1px solid; }
-.trial-evidence-rule { color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trial-evidence-state { flex-shrink: 0; font-size: var(--fs-meta); border-radius: var(--radius-sm); padding: 0 4px; border: 1px solid; }
+.trial-evidence-rule { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 值那一列的四档：VALUED 正常、NULL 黄、DROPPED 红、UNMAPPED 灰（#120 的核心区分） */
-.trial-evidence-row.valued .trial-evidence-state { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
-.trial-evidence-row.valued .trial-evidence-value-text { color: #111827; }
-.trial-evidence-row.null .trial-evidence-state { color: #b45309; border-color: #fde68a; background: #fffbeb; }
-.trial-evidence-row.null .trial-evidence-value-text { color: #b45309; }
-.trial-evidence-row.dropped .trial-evidence-state { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-.trial-evidence-row.dropped .trial-evidence-value-text { color: #b91c1c; }
-.trial-evidence-row.unmapped .trial-evidence-state { color: #6b7280; border-color: #e5e7eb; background: #f9fafb; }
-.trial-evidence-row.unmapped .trial-evidence-value-text { color: #9ca3af; }
+.trial-evidence-row.valued .trial-evidence-state { color: var(--success-ink); border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: var(--success-soft); }
+.trial-evidence-row.valued .trial-evidence-value-text { color: var(--fg); }
+.trial-evidence-row.null .trial-evidence-state { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); }
+.trial-evidence-row.null .trial-evidence-value-text { color: var(--warn-ink); }
+.trial-evidence-row.dropped .trial-evidence-state { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft); }
+.trial-evidence-row.dropped .trial-evidence-value-text { color: var(--danger-ink); }
+.trial-evidence-row.unmapped .trial-evidence-state { color: var(--muted); border-color: var(--border); background: var(--bg); }
+.trial-evidence-row.unmapped .trial-evidence-value-text { color: var(--muted); }
 /* 数组组行：它自己不是值，是「下面那几个子字段属于这个数组」 */
 .trial-evidence-row.group .trial-evidence-path { font-weight: 600; }
-.trial-evidence-none { margin: 0; font-size: 12px; color: #9ca3af; }
+.trial-evidence-none { margin: 0; font-size: var(--fs-body); color: var(--muted); }
 
-.trial-bad { margin: 0; font-size: 12px; color: #b91c1c; }
-.trial-attribution { margin: 0; font-size: 12px; color: #b91c1c; }
-.trial-attribution-why { margin: 0; font-size: 12px; color: #9ca3af; }
+.trial-bad { margin: 0; font-size: var(--fs-body); color: var(--danger-ink); }
+.trial-attribution { margin: 0; font-size: var(--fs-body); color: var(--danger-ink); }
+.trial-attribution-why { margin: 0; font-size: var(--fs-body); color: var(--muted); }
 
 /* 5. 原始 JSON：默认收着，展开就是跑出来那份原文 */
-.trial-raw-head { font-size: 12px; color: #6b7280; cursor: pointer; padding: 2px 0; }
+.trial-raw-head { font-size: var(--fs-body); color: var(--muted); cursor: pointer; padding: 2px 0; }
 .trial-raw[open] .trial-raw-head { margin-bottom: 4px; }
 
 .trial-failures { margin: 0; padding-left: 16px; max-height: 120px; overflow: auto; }
-.trial-failure { font-size: 12px; color: #b91c1c; }
+.trial-failure { font-size: var(--fs-body); color: var(--danger-ink); }
 .trial-failure-row { font-weight: 600; margin-right: 6px; }
-.trial-failure-why { color: #7f1d1d; }
+.trial-failure-why { color: var(--danger-ink); }
 
 /* 窄屏：两栏竖起来（与工作台其它几档同一个断点） */
 @media (max-width: 1024px) {

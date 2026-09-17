@@ -10,16 +10,16 @@
  * scoped 样式里，行右侧那三种状态（`.wb-state*`）在 `MappingRowList.vue` 里——它们各自只有一个主人。
  * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
  */
-.wb-issue-summary { font-size: 12px; color: #6b7280; }
-.wb-issue-summary.bad { color: #b91c1c; font-weight: 600; }
+.wb-issue-summary { font-size: var(--fs-body); color: var(--muted); }
+.wb-issue-summary.bad { color: var(--danger-ink); font-weight: 600; }
 .wb-issue-list { max-height: 132px; overflow: auto; margin-top: 4px; }
 .wb-issue {
   display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
-  font: inherit; font-size: 12px; background: none; border: 0; border-radius: 4px;
+  font: inherit; font-size: var(--fs-body); background: none; border: 0; border-radius: var(--radius);
   padding: 3px 4px; cursor: pointer;
 }
-.wb-issue:hover { background: #f3f4f6; }
-.wb-issue-tag { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 4px; border: 1px solid; }
-.wb-issue.error .wb-issue-tag { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-.wb-issue.warning .wb-issue-tag { color: #b45309; border-color: #fde68a; background: #fffbeb; }
-.wb-issue-message { color: #6b7280; }
+.wb-issue:hover { background: var(--fg-soft); }
+.wb-issue-tag { flex-shrink: 0; font-size: var(--fs-meta); border-radius: var(--radius-sm); padding: 0 4px; border: 1px solid; }
+.wb-issue.error .wb-issue-tag { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft); }
+.wb-issue.warning .wb-issue-tag { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); }
+.wb-issue-message { color: var(--muted); }

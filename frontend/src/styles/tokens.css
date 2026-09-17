@@ -39,9 +39,12 @@
  *     同理（颜色/圆角跟着变、字号看各自的元素级声明）。
  *     **别把变量挂到某个局部容器上**——那样这几个全局件会漏掉。
  *
- * 范围：第 1 期只动令牌，**不碰任何组件**。编辑器那 384 行自绘样式里手写的 12 处 `#409eff`
- * （`workbench-panel.css` 5、`MappingSourcePanel.vue` 4、`MappingRowList.vue` 3）与 53 处字号
- * 仍是旧值，属于**预期的过渡期**（ADR-0013「结果」），第 2 期统一换名。
+ * 范围：第 1 期只动令牌，**不碰任何组件**；第 2 期（#122）做了换名——编辑器那棵树的 384 行自绘
+ * 样式里手写的 hex / 字号 / 圆角 / 等宽字体族（实测 199 + 61 + 19 + 13 处；票上的 158/53/14 是评估
+ * 那天的数，差额是 #120 试算那三段新加的样式）已全部改成引用这里的令牌，另按那一期的口径补了
+ * `--success` 一支与 `--radius-sm` 一档（见「一」里各自的注释）。令牌本身的口径没有变，
+ * 第 1 期「已知改不到」的两条（EP 元素级字面字号、teleport 出去的下拉弹层）**仍然是已知的**
+ * ——第 2 期换的是编辑器自己的样式，不是组件库的。
  */
 :root {
   /* ── 一、原型的自有令牌（来源：03-studio.html 的 :root，逐字照搬） ── */
@@ -66,6 +69,15 @@
   --warn-ink: color-mix(in oklch, var(--warn) 66%, black);
   --danger-ink: color-mix(in oklch, var(--danger) 82%, black);
 
+  /* 第 2 期补（#122）：原型只有 `--warn` / `--danger` 两支状态信号色，成功态只在 `.tflag` 那一处
+     用字面值 `oklch(52% 0.14 152)` 出现（第 1 期已按它填了 `--el-color-success`，见「三」）。
+     编辑器那棵树里有三处成功态（问题面板的「没问题」、行右侧的 `.wb-state.ok`、试算的结论条
+     与证据表），各自手写了 tailwind 的 green-700 / green-50 / green-200 与 green-600 四个字面值。
+     按 warn / danger 同一套派生化成一支自有令牌，组件里不再写那几个字面值。 */
+  --success: oklch(52% 0.14 152);
+  --success-soft: color-mix(in oklch, var(--success) 12%, transparent);
+  --success-ink: color-mix(in oklch, var(--success) 66%, black);
+
   /* 原型那份字体栈只有西文 + 'Microsoft YaHei'；生产侧补上 PingFang / Hiragino 与通用族，
      不补的话这台机器上中文会回落（实测过一次整页 Times New Roman）。
      （契约里还有一个 `--font-display`，与原型的 `--font-body` 是同一份栈；本期没有任何地方会用到它，
@@ -77,6 +89,9 @@
   --fs-body: 13.5px;
   --fs-meta: 11.5px;
   --radius: 8px;
+  /* 小圆角那一档（第 2 期补，#122）：标签 / 状态标这类小元素，原型里对应 4px–6px 的那几处。
+     之前编辑器里是散着的 3px / 4px / 6px 三个值，现在收成 8 / 6 / 12(容器) 三档。 */
+  --radius-sm: 6px;
   --radius-lg: 12px;
 
   /* ── 二、桥：把上面那套灌进 Element Plus 的变量名 ── */
@@ -92,7 +107,7 @@
 
   /* 圆角 */
   --el-border-radius-base: var(--radius);
-  --el-border-radius-small: 6px;
+  --el-border-radius-small: var(--radius-sm);
   --el-border-radius-round: 20px;
 
   /* 字号（只能改到 68 处 var(--el-font-size-*) 引用；170 处字面 px 不在第 1 期范围） */
@@ -145,7 +160,7 @@
      浅档/深档同样是**字面值**（约束 1 对状态色一样成立）：不补的话 `.el-tag` 的浅底、
      `.el-alert` 四型的底色、`type="success"` 这类按钮的 hover 仍停在 Element Plus 的旧配色上
      ——那正是「主色换了、浅底没换」的观感回归。按主色同一套比例（70/50/30/20/10、86% + black）派生。 */
-  --el-color-success: oklch(52% 0.14 152);
+  --el-color-success: var(--success);
   --el-color-success-light-3: color-mix(in oklch, var(--el-color-success) 70%, white);
   --el-color-success-light-5: color-mix(in oklch, var(--el-color-success) 50%, white);
   --el-color-success-light-7: color-mix(in oklch, var(--el-color-success) 30%, white);

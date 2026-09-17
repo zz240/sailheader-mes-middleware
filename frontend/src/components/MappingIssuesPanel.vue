@@ -58,9 +58,9 @@ function where(issue: LocatedIssue): string {
 <style scoped>
 /* 那个带边框的盒子（问题的落点、条目、标签与统计在 `styles/workbench-issues.css`：
    手写那一边的结果列表也要用同一份） */
-.wb-issues { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #fafafa; }
+.wb-issues { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 8px; margin-top: 6px; background: var(--bg); }
 .wb-issues-head { display: flex; align-items: center; gap: 10px; }
-.wb-issues-note { font-size: 11px; color: #9ca3af; }
-.wb-issues-ok { font-size: 12px; color: #15803d; padding: 4px 0; }
-.wb-issue-where { flex-shrink: 0; font-family: Consolas, monospace; color: #374151; }
+.wb-issues-note { font-size: var(--fs-meta); color: var(--muted); }
+.wb-issues-ok { font-size: var(--fs-body); color: var(--success-ink); padding: 4px 0; }
+.wb-issue-where { flex-shrink: 0; font-family: var(--font-mono); color: var(--fg); }
 </style>

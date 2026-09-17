@@ -744,70 +744,75 @@ function onEnumMapChange(row: MapRow, map: Record<string, any>) {
 .wb-rows-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wb-rows-head .wb-panel-tip { margin: 0; }
 /* 目标清单是粘出来的时候那一行小字（#118）：与来源面板那一句同样用琥珀色，与上面那句说明分开 */
-.wb-target-note { color: #b45309; }
+.wb-target-note { color: var(--warn-ink); }
 .wb-row-list { overflow: auto; flex: 1; margin-top: 6px; }
 .wb-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 5px 8px; border-radius: 4px; border: 1px solid transparent;
+  padding: 5px 8px; border-radius: var(--radius); border: 1px solid transparent;
 }
-.wb-row:hover { background: #f9fafb; }
-.wb-row.selected { border-color: #409eff; background: #ecf5ff; }
-.wb-row.child { margin-left: 24px; background: #fcfcfd; }
-.wb-row.child.selected { background: #ecf5ff; }
+.wb-row:hover { background: var(--bg); }
+/* 子行（`#101` 的数组元素行）平时就是 `--bg`，与上面那条悬停同色——照票里那张表换完之后
+   「悬停」与「子行底色」会塌成同一个值，鼠标扫过去这一行没有任何反馈。所以子行的悬停另给一档
+   （5% 前景色，与 `.wb-issue` / `.wb-source-item` 的悬停同一个落点）。这是本期唯一一条表外的派生，
+   口径是：**颜色可以按表收口，状态不能塌进它的底色**。 */
+.wb-row.child:hover { background: var(--fg-soft); }
+.wb-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.wb-row.child { margin-left: 24px; background: var(--bg); }
+.wb-row.child.selected { background: var(--accent-soft); }
 .wb-col-target { width: 280px; flex-shrink: 0; }
 .wb-target-input { width: 100%; }
 .wb-col-value { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .wb-target-search { width: 200px; flex-shrink: 0; }
-.wb-match-note { font-size: 11px; color: #6b7280; white-space: nowrap; }
-.wb-child-hint { font-size: 11px; color: #9ca3af; }
+.wb-match-note { font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; }
+.wb-child-hint { font-size: var(--fs-meta); color: var(--muted); }
 
 /* 数组行的「数组元素内」分组标题：展开 / 收起子行就在这里 */
 .wb-group { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px 24px; }
-.wb-group-title { font-size: 11px; color: #6b7280; font-weight: 600; }
-.wb-group-note { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
+.wb-group-title { font-size: var(--fs-meta); color: var(--muted); font-weight: 600; }
+.wb-group-note { font-size: var(--fs-meta); color: var(--muted); font-family: var(--font-mono); }
 
 /* 一行里能点的那些小块：基元（`.wb-chip` 与它的悬停）在 styles/workbench-panel.css，
    来源清单也要用同一份；这里只留这一行里那几种小块。 */
-.wb-chip.chip-src { font-family: Consolas, monospace; }
-.wb-chip.chip-src.empty { color: #9ca3af; border-style: dashed; }
+.wb-chip.chip-src { font-family: var(--font-mono); }
+.wb-chip.chip-src.empty { color: var(--muted); border-style: dashed; }
 /* 「还没选来源」这类空块至少要占住一块地方：塌成一小撮时，后面的「+ 子字段」会挪到行的正中间，
    用户点行（想选中它）就会点到加子行上——真机实测踩到过。 */
 .wb-col-value > .wb-chip.chip-src { min-width: 120px; text-align: left; }
-.wb-chip.chip-op { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
+.wb-chip.chip-op { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
 .wb-chip.chip-op-empty {
-  border-style: dashed; color: #9ca3af; font-size: 11px; padding: 0 5px;
+  border-style: dashed; color: var(--muted); font-size: var(--fs-meta); padding: 0 5px;
 }
-.wb-chip.chip-op-empty:hover { color: #409eff; border-color: #409eff; }
-.wb-chip.chip-const { border-color: #fde68a; background: #fffbeb; color: #92400e; font-family: Consolas, monospace; }
-.wb-chip.chip-toggle { font-size: 11px; padding: 0 5px; color: #4b5563; }
+.wb-chip.chip-op-empty:hover { color: var(--accent); border-color: var(--accent); }
+.wb-chip.chip-const { border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); color: var(--warn-ink); font-family: var(--font-mono); }
+.wb-chip.chip-toggle { font-size: var(--fs-meta); padding: 0 5px; color: var(--muted); }
 /* 行上那个「自动」标（#105）：来源是自动匹配同名填上的 */
-.wb-chip.chip-auto { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+.wb-chip.chip-auto { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); }
 /* 行操作：清除 / 撤销（#102）。行里往后排，所以给它一个固定的位置 */
 .wb-col-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.wb-chip.chip-clear { color: #b91c1c; border-color: #fecaca; background: #fff; }
-.wb-chip.chip-clear:hover:not(:disabled) { border-color: #ef4444; color: #b91c1c; }
-.wb-chip.chip-clear:disabled { color: #d1d5db; border-color: #e5e7eb; cursor: not-allowed; }
-.wb-chip.chip-undo { color: #b45309; border-color: #fde68a; background: #fffbeb; font-weight: 600; }
-.wb-chip.chip-undo:hover { border-color: #d97706; color: #92400e; }
-.wb-paren { font-size: 12px; color: #6b7280; }
+.wb-chip.chip-clear { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--surface); }
+.wb-chip.chip-clear:hover:not(:disabled) { border-color: var(--danger); color: var(--danger-ink); }
+.wb-chip.chip-clear:disabled { color: var(--border); border-color: var(--border); cursor: not-allowed; }
+.wb-chip.chip-undo { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); font-weight: 600; }
+.wb-chip.chip-undo:hover { border-color: var(--warn); color: var(--warn-ink); }
+.wb-paren { font-size: var(--fs-body); color: var(--muted); }
 .wb-start-at { width: 96px; }
 
 /* 行右侧那三种状态（#103）：颜色只在「有错 / 有警告 / 没问题」之间分。
    一行上的**全部**问题都列在这一列里（#113），所以是竖着排、每条各自换行，不再截断成一句 */
 .wb-col-issues { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 280px; flex-shrink: 0; }
-.wb-state { flex-shrink: 0; font-size: 11px; border-radius: 3px; padding: 0 5px; border: 1px solid #e5e7eb; color: #9ca3af; }
-.wb-state.error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-.wb-state.warning { color: #b45309; border-color: #fde68a; background: #fffbeb; }
-.wb-state.ok { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
-.wb-issue-inline { font-size: 11px; color: #6b7280; overflow-wrap: anywhere; }
+.wb-state { flex-shrink: 0; font-size: var(--fs-meta); border-radius: var(--radius-sm); padding: 0 5px; border: 1px solid var(--border); color: var(--muted); }
+.wb-state.error { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft); }
+.wb-state.warning { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--warn-soft); }
+.wb-state.ok { color: var(--success-ink); border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: var(--success-soft); }
+.wb-issue-inline { font-size: var(--fs-meta); color: var(--muted); overflow-wrap: anywhere; }
 
 /* 就地参数面板：占这一行下面的一行 */
 .wb-panel {
   margin: 2px 0 8px 8px; padding: 8px 10px;
-  border: 1px solid #dbeafe; border-radius: 6px; background: #f8fafc;
+  border: 1px solid var(--accent-line); border-radius: var(--radius-lg); background: var(--bg-sunken);
 }
 .wb-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.wb-panel-target { font-size: 11px; color: #9ca3af; font-family: Consolas, monospace; }
+.wb-panel-target { font-size: var(--fs-meta); color: var(--muted); font-family: var(--font-mono); }
 
 @media (max-width: 1100px) {
   .wb-target-search { width: 160px; }

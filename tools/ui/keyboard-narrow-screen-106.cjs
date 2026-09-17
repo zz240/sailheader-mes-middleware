@@ -206,7 +206,11 @@ async function selectedTransform(page) {
   /** 焦点不在输入框里（点空白处就是这个效果）。 */
   const blurActive = () => page.evaluate(() => document.activeElement?.blur?.())
 
-  await page.locator('.wb-row').first().click()
+  // 点「这一行本身」而不是它的几何中心：行里从左到右铺着来源块 / 「换转换」这类小块，
+  // 中心压在哪一块上会跟着字号走——#122 把字号收成两级令牌之后（12px → 13.5px）中心正好压在
+  // 「换转换」上，那一下会开转换面板，于是 ↓ 归面板、不走行。这里要验的是「选中一行之后键盘走行」，
+  // 点行的左内边距（x < 8px 那条）才是「选中这一行」的稳定落点。
+  await page.locator('.wb-row').first().click({ position: { x: 4, y: 12 } })
   await blurActive()
   const firstSelected = await selectedTarget(page)
   await page.keyboard.press('ArrowDown')

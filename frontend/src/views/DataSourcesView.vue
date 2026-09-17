@@ -270,7 +270,7 @@ onMounted(load)
 <style scoped>
 .header { display: flex; justify-content: space-between; align-items: center; }
 .probe-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.msg { margin-top: 8px; font-size: 12px; color: #2563eb; white-space: pre-wrap; }
-.hint { margin: 4px 0 8px; font-size: 12px; color: #909399; }
+.msg { margin-top: 8px; font-size: var(--fs-body); color: var(--accent); white-space: pre-wrap; }
+.hint { margin: 4px 0 8px; font-size: var(--fs-body); color: var(--muted); }
 .advanced { margin-top: 4px; }
 </style>

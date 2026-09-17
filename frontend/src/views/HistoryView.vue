@@ -329,15 +329,15 @@ onMounted(async () => {
 .header { display: flex; justify-content: space-between; align-items: center; }
 .filters { display: flex; gap: 8px; }
 .pager { margin-top: 12px; justify-content: flex-end; }
-.muted { color: #909399; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--font-mono); }
 .run-detail { padding: 8px 16px; }
-.msg-collapse { margin-bottom: 8px; border: 1px solid #e5e7eb; border-radius: 6px; }
+.msg-collapse { margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .msg-title { display: inline-flex; align-items: center; gap: 8px; }
 .bk { margin-left: 4px; }
 .step-table { margin: 8px 0 0; }
 .step-detail { padding: 8px 4px; }
 .kv { margin: 6px 0; }
-.k { font-weight: 600; color: #606266; margin-bottom: 4px; }
-.err { white-space: pre-wrap; word-break: break-all; margin: 0; color: #c0392b; }
+.k { font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.err { white-space: pre-wrap; word-break: break-all; margin: 0; color: var(--danger-ink); }
 </style>

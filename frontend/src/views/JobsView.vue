@@ -579,7 +579,7 @@ onMounted(() => { loadMeta(); load(); loadReceived() })
 
 <style scoped>
 .header { display: flex; justify-content: space-between; align-items: center; }
-.issue { margin-top: 6px; font-size: 13px; white-space: pre-wrap; }
-.issue.error { color: #dc2626; }
-.issue.warn { color: #b45309; }
+.issue { margin-top: 6px; font-size: var(--fs-body); white-space: pre-wrap; }
+.issue.error { color: var(--danger-ink); }
+.issue.warn { color: var(--warn-ink); }
 </style>

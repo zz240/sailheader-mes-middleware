@@ -18,6 +18,6 @@
 
 <style scoped>
 .layout { height: 100vh; }
-.aside { border-right: 1px solid #e5e7eb; }
-.logo { font-size: 15px; font-weight: 600; padding: 16px 12px; }
+.aside { border-right: 1px solid var(--border); }
+.logo { font-size: var(--fs-body); font-weight: 600; padding: 16px 12px; }
 </style>

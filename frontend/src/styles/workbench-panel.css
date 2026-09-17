@@ -12,42 +12,42 @@
  * 类名都带 `wb-` 前缀，只有字段映射编辑器这棵树上用。
  */
 /* 标题 / 说明 / 空态：面板、来源清单、行列表、问题面板都用 */
-.wb-panel-title { font-size: 13px; font-weight: 600; color: #111827; }
-.wb-panel-tip { font-size: 11px; color: #9ca3af; margin: 2px 0 8px; }
-.wb-empty { font-size: 12px; color: #9ca3af; padding: 10px 0; }
+.wb-panel-title { font-size: var(--fs-body); font-weight: 600; color: var(--fg); }
+.wb-panel-tip { font-size: var(--fs-meta); color: var(--muted); margin: 2px 0 8px; }
+.wb-empty { font-size: var(--fs-body); color: var(--muted); padding: 10px 0; }
 .wb-spacer { flex: 1; }
 /* 一行里能点的那些小块：点一下就就地改，不开弹窗（行列表与来源清单共用同一份落点） */
 .wb-chip {
-  font: inherit; font-size: 12px; line-height: 18px; padding: 1px 6px;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #111827;
+  font: inherit; font-size: var(--fs-body); line-height: 18px; padding: 1px 6px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--fg);
   cursor: pointer; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wb-chip:hover { border-color: #409eff; color: #409eff; }
+.wb-chip:hover { border-color: var(--accent); color: var(--accent); }
 .wb-panel-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.wb-panel-note { font-size: 11px; color: #9ca3af; }
+.wb-panel-note { font-size: var(--fs-meta); color: var(--muted); }
 .wb-grow { flex: 1; min-width: 200px; }
 .wb-part-kind { width: 132px; flex-shrink: 0; }
-.wb-part { border-top: 1px dashed #e5e7eb; padding-top: 6px; margin-bottom: 6px; }
+.wb-part { border-top: 1px dashed var(--border); padding-top: 6px; margin-bottom: 6px; }
 .wb-part:first-child { border-top: 0; padding-top: 0; }
 .wb-part-params { margin-left: 140px; }
 .wb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
 .wb-opbtn {
   font: inherit; text-align: left; min-width: 150px; padding: 4px 8px;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer;
   display: flex; flex-direction: column; gap: 1px;
 }
-.wb-opbtn small { font-size: 10px; color: #9ca3af; }
-.wb-opbtn:hover:not(.disabled) { border-color: #409eff; }
-.wb-opbtn.current { border-color: #409eff; background: #ecf5ff; }
-.wb-opbtn.disabled { cursor: not-allowed; background: #f3f4f6; color: #9ca3af; }
-.wb-opbtn.disabled small { color: #b45309; }
+.wb-opbtn small { font-size: var(--fs-meta); color: var(--muted); }
+.wb-opbtn:hover:not(.disabled) { border-color: var(--accent); }
+.wb-opbtn.current { border-color: var(--accent); background: var(--accent-soft); }
+.wb-opbtn.disabled { cursor: not-allowed; background: var(--fg-soft); color: var(--muted); }
+.wb-opbtn.disabled small { color: var(--warn-ink); }
 /* 键盘停在的那个选项（#106）：与「现在用的那一种」用不同的落点，两个都亮时也分得清 */
-.wb-opbtn.kb-current { outline: 2px solid #409eff; outline-offset: 1px; }
+.wb-opbtn.kb-current { outline: 2px solid var(--accent); outline-offset: 1px; }
 .wb-enum { border-collapse: collapse; width: 100%; max-width: 620px; }
-.wb-enum th { font-size: 11px; color: #6b7280; text-align: left; font-weight: 500; padding: 2px 4px; }
+.wb-enum th { font-size: var(--fs-meta); color: var(--muted); text-align: left; font-weight: 500; padding: 2px 4px; }
 .wb-enum td { padding: 2px 4px; }
-.wb-enum-arrow { color: #9ca3af; font-size: 12px; }
-.wb-enum-empty { font-size: 11px; color: #9ca3af; padding: 6px 4px; }
+.wb-enum-arrow { color: var(--muted); font-size: var(--fs-body); }
+.wb-enum-empty { font-size: var(--fs-meta); color: var(--muted); padding: 6px 4px; }
 
 /* 窄屏（#106 的两档退化）：面板里的按钮允许换行、输入框铺满——子组件里的元素也吃这几条 */
 @media (max-width: 820px) {

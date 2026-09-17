@@ -56,12 +56,12 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.wb-paste-tip { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
-.wb-paste-note { color: #374151; }
-.wb-paste-text :deep(textarea) { font-family: Consolas, monospace; font-size: 12px; }
+.wb-paste-tip { font-size: var(--fs-body); color: var(--muted); margin-bottom: 6px; }
+.wb-paste-note { color: var(--fg); }
+.wb-paste-text :deep(textarea) { font-family: var(--font-mono); font-size: var(--fs-body); }
 /* 后端说这段文本收不下：原样显示那句话，粘的那段留着好照着改 */
 .wb-paste-error {
-  margin-top: 6px; padding: 6px 8px; border-radius: 4px;
-  background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 12px;
+  margin-top: 6px; padding: 6px 8px; border-radius: var(--radius);
+  background: var(--danger-soft); border: 1px solid color-mix(in oklch, var(--danger) 34%, var(--border)); color: var(--danger-ink); font-size: var(--fs-body);
 }
 </style>

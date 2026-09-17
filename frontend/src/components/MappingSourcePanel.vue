@@ -285,50 +285,53 @@ defineExpose({
 
 <style scoped>
 .wb-source {
-  width: 280px; flex-shrink: 0; border-right: 1px solid #e5e7eb;
+  width: 280px; flex-shrink: 0; border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 10px; min-height: 0;
 }
 .wb-source-list { overflow: auto; flex: 1; outline: none; }
 /* 顶上那两个入口（#115）：一行放得下，窄屏也不会顶掉下面的清单 */
 .wb-source-entries { display: flex; gap: 6px; margin-bottom: 6px; }
 .wb-source-entry { flex: 1; min-width: 0; padding-left: 0; padding-right: 0; }
-.wb-panel-note { color: #b45309; }
+.wb-panel-note { color: var(--warn-ink); }
 .wb-source-group + .wb-source-group { margin-top: 10px; }
-.wb-source-group-title { font-size: 12px; color: #374151; font-weight: 600; margin-bottom: 4px; }
-.wb-source-group-tip { font-size: 11px; color: #b45309; margin-bottom: 4px; }
-.wb-source-item { padding: 5px 6px; border-radius: 4px; cursor: pointer; }
-.wb-source-item:hover { background: #f3f4f6; }
-.wb-source-item.array-field .wb-source-name { color: #7c3aed; }
+.wb-source-group-title { font-size: var(--fs-body); color: var(--fg); font-weight: 600; margin-bottom: 4px; }
+.wb-source-group-tip { font-size: var(--fs-meta); color: var(--warn-ink); margin-bottom: 4px; }
+.wb-source-item { padding: 5px 6px; border-radius: var(--radius); cursor: pointer; }
+.wb-source-item:hover { background: var(--fg-soft); }
+.wb-source-item.array-field .wb-source-name { color: var(--accent); }
 /* 键盘走到的那一项（#106）：与鼠标悬停同一个落点，用边框区分是键盘在走 */
 .wb-source-list.picking .wb-source-item.kb-current {
-  background: #ecf5ff; outline: 2px solid #409eff; outline-offset: -2px;
+  background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px;
 }
 /* 已经被用过的来源字段：整项高亮，右侧写清被引用了几处（#105） */
-.wb-source-item.used { background: #f0f9ff; }
-.wb-source-item.used:hover { background: #e0f2fe; }
-.wb-source-item.used .wb-source-name { color: #0369a1; }
+.wb-source-item.used { background: var(--accent-soft); }
+/* 悬停那一档不能也写 `--accent-soft`（票里那张表把原来的两个浅蓝都收进它）：那样悬停与 `.used`
+   会塌成同一个值，「已经用过」这一项鼠标扫过去就没有反馈了。同族再深一档，值就地写在这里
+   而不是新造令牌——票里明说「收口，不新增令牌」。 */
+.wb-source-item.used:hover { background: color-mix(in oklch, var(--accent) 20%, transparent); }
+.wb-source-item.used .wb-source-name { color: var(--accent-strong); }
 .wb-source-item-main { display: flex; align-items: center; gap: 6px; }
-.wb-source-name { font-family: Consolas, monospace; font-size: 12px; }
-.wb-source-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.wb-chip.used-badge { color: #0369a1; border-color: #bae6fd; background: #e0f2fe; }
+.wb-source-name { font-family: var(--font-mono); font-size: var(--fs-body); }
+.wb-source-meta { font-size: var(--fs-meta); color: var(--muted); margin-top: 2px; }
+.wb-chip.used-badge { color: var(--accent-strong); border-color: var(--accent-line); background: var(--accent-soft); }
 
 /* 来源清单的搜索与三档过滤（#105） */
 .wb-source-search { margin-bottom: 6px; }
 .wb-source-filters { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
 .wb-filterbtn {
-  font: inherit; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: pointer;
-  border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #374151;
+  font: inherit; font-size: var(--fs-meta); line-height: 18px; padding: 0 6px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--fg);
 }
-.wb-filterbtn:hover { border-color: #409eff; color: #409eff; }
-.wb-filterbtn.current { border-color: #409eff; background: #ecf5ff; color: #1d4ed8; }
-.wb-filterbtn small { color: #9ca3af; }
-.wb-filterbtn.current small { color: #1d4ed8; }
+.wb-filterbtn:hover { border-color: var(--accent); color: var(--accent); }
+.wb-filterbtn.current { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.wb-filterbtn small { color: var(--muted); }
+.wb-filterbtn.current small { color: var(--accent); }
 
 @media (max-width: 1024px) {
   /* 来源清单铺在上面：宽度不够时它和行列表并排，两边都读不成 */
   .wb-source {
     width: auto; max-height: 220px; border-right: 0;
-    border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   /* 顶上多了两个入口（#115）：清单这一段让出同样的高度，整块仍然守着上面那个 max-height */
   .wb-source-list { flex: none; max-height: 110px; }

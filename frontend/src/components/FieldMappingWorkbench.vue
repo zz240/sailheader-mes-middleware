@@ -876,15 +876,15 @@ load()
 .wb { display: flex; flex-direction: column; height: 100vh; outline: none; }
 .wb-head {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 10px 16px; border-bottom: 1px solid #e5e7eb; background: #fff;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
 }
 .wb-title { display: flex; align-items: baseline; gap: 8px; }
-.wb-sub { font-size: 12px; color: #6b7280; }
+.wb-sub { font-size: var(--fs-body); color: var(--muted); }
 .wb-head-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.wb-label { font-size: 12px; color: #6b7280; }
+.wb-label { font-size: var(--fs-body); color: var(--muted); }
 .wb-step-select { width: 200px; }
 .wb-progress { width: 220px; display: flex; align-items: center; gap: 8px; }
-.wb-progress-text { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.wb-progress-text { font-size: var(--fs-body); color: var(--muted); white-space: nowrap; }
 
 .wb-body { display: flex; flex: 1; min-height: 0; }
 .wb-alert { margin: 8px 16px 0; }
@@ -892,18 +892,18 @@ load()
 /* 来源清单那一整块、行列表与就地参数面板、问题列表的样式都在各自组件里（#117 拆出去了）。 */
 
 /* 底部编译产物：两个标签页（JSONata / 规则 JSON） */
-.wb-foot { border-top: 1px solid #e5e7eb; padding: 0 16px; background: #fff; }
+.wb-foot { border-top: 1px solid var(--border); padding: 0 16px; background: var(--surface); }
 .wb-artifacts :deep(.el-tabs__header) { margin-bottom: 4px; }
 .wb-artifact {
   margin: 0 0 8px; max-height: 150px; overflow: auto;
-  font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;
-  background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px;
-  white-space: pre; color: #111827;
+  font-family: var(--font-mono); font-size: var(--fs-body); line-height: 1.5;
+  background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+  white-space: pre; color: var(--fg);
 }
 
 /* 头部那个「手写 JSONata」的当前模式标，与「高级」入口的样式（不显眼，但一直都在） */
-.wb-chip.chip-mode { color: #3730a3; border-color: #c7d2fe; background: #eef2ff; cursor: default; }
-.wb-advanced { color: #9ca3af; }
+.wb-chip.chip-mode { color: var(--accent-strong); border-color: var(--accent-line); background: var(--accent-soft); cursor: default; }
+.wb-advanced { color: var(--muted); }
 
 /* 窄屏（#106）：先把左边来源清单挪到上面（中等宽度），行里那四列再依次竖起来。
    清单与行自己那几档在各自的组件里（#117），这里只管顶部那一条与抽屉这一层。 */
