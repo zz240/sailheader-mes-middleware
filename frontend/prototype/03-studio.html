@@ -1,0 +1,2320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>字段映射 · 关系账本 — edge-gateway 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23252b30'/%3E%3Ctext x='8' y='11.5' font-size='8' font-family='monospace' fill='%233fae7a' text-anchor='middle'%3E%E2%86%92%3C/text%3E%3C/svg%3E" />
+<style>
+  /* ─── 令牌：沿用已锁定的技术工具向色板（深浅两级中性 + 单一信号色） ─── */
+  :root {
+    --bg:      oklch(98% 0.005 250);
+    --surface: oklch(100% 0 0);
+    --fg:      oklch(22% 0.02 240);
+    --muted:   oklch(50% 0.018 240);
+    --border:  oklch(90% 0.008 240);
+    --accent:  oklch(48% 0.15 150);
+
+    --accent-soft:   color-mix(in oklch, var(--accent) 12%, transparent);
+    --accent-line:   color-mix(in oklch, var(--accent) 52%, transparent);
+    --accent-strong: color-mix(in oklch, var(--accent) 86%, black);
+    --fg-soft:       color-mix(in oklch, var(--fg) 5%, transparent);
+    --fg-tint:       color-mix(in oklch, var(--fg) 9%, transparent);
+    --bg-sunken:     color-mix(in oklch, var(--bg) 62%, var(--surface));
+    --warn:   oklch(58% 0.14 70);
+    --danger: oklch(54% 0.18 27);
+    --warn-soft:   color-mix(in oklch, var(--warn) 14%, transparent);
+    --danger-soft: color-mix(in oklch, var(--danger) 11%, transparent);
+    /* 小字号下的告警/错误文字色：提到 4.5:1 以上，浅底上也能读 */
+    --warn-ink:   color-mix(in oklch, var(--warn) 66%, black);
+    --danger-ink: color-mix(in oklch, var(--danger) 82%, black);
+
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Microsoft YaHei', sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+    --fs-body: 13.5px;
+    --fs-meta: 11.5px;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--fs-body); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  input { font: inherit; color: inherit; }
+  p { margin: 0; }
+  code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  h1, h2 { font-family: var(--font-display); margin: 0; }
+  ::selection { background: var(--accent-soft); }
+
+  /* ─── 按钮 ─────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; min-height: 30px;
+    border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); color: var(--fg);
+    font-size: 12.5px; font-weight: 500; white-space: nowrap;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .btn:hover { background: var(--fg-soft); border-color: color-mix(in oklch, var(--fg) 32%, var(--border)); }
+  .btn:active { transform: translateY(.5px); }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+  .btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--surface); }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--fg-soft); color: var(--fg); }
+  .btn-sm { padding: 4px 9px; min-height: 26px; font-size: 11.5px; }
+  .ico { width: 14px; height: 14px; flex: 0 0 auto; }
+  .spacer { flex: 1 1 auto; }
+
+  /* ─── 应用条 / 页头 ───────────────────────────────────────────────── */
+  .appbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 16px;
+    padding: 9px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .brand { font-weight: 650; letter-spacing: -.01em; font-size: 14px; }
+  .brand span { font-family: var(--font-mono); font-weight: 500; color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  .crumbs { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .crumbs b { color: var(--fg); font-weight: 550; }
+  .crumbs .sep { color: color-mix(in oklch, var(--muted) 55%, transparent); }
+  .appbar .right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+  .kbd { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--bg); }
+  kbd.kbd { border-bottom-width: 2px; }
+
+  .pagehead { flex: 0 0 auto; padding: 13px 18px 0; }
+  .title-row { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+  h1 { font-size: 18px; font-weight: 620; letter-spacing: -.015em; }
+  .subline { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .subline code { color: var(--fg); font-size: 11.5px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+  .arrow { color: var(--muted); font-family: var(--font-mono); }
+  .meter { display: flex; align-items: center; gap: 8px; }
+  .meter-bar { width: 96px; height: 6px; border-radius: 3px; background: var(--fg-tint); overflow: hidden; }
+  .meter-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .2s ease; }
+  .meter-txt { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+  .meter-txt b { color: var(--fg); font-weight: 600; }
+  .title-row .right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+
+  /* ─── 工作区骨架 ─────────────────────────────────────────────────── */
+  .workspace { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 18px 14px; }
+  .stage { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .phead { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); min-height: 50px; }
+  .phead .pt { font-size: 12.5px; font-weight: 620; display: flex; align-items: center; gap: 7px; }
+  .phead .pt code { font-size: 11px; font-weight: 500; color: var(--muted); }
+  .phead .ps { font-size: 11px; color: var(--muted); }
+  .phead .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .scroll { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; }
+
+  /* ─── 来源字段货架 ───────────────────────────────────────────────── */
+  .shelf { flex: 0 0 286px; min-width: 0; }
+  .search { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 11.5px; }
+  .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .fsrc { font-family: var(--font-mono); font-size: 11.5px; padding: 7px 12px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--surface); display: flex; gap: 6px; flex-wrap: wrap; }
+  .fsrc code { color: var(--fg); }
+  .fhint { font-family: var(--font-body); font-size: 10.5px; color: var(--muted); flex: 1 0 100%; }
+  .tree { padding: 4px 0 10px; }
+  .tgroup > .trow { font-weight: 600; }
+  .trow {
+    display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 7px;
+    padding: 4px 12px 4px 10px; min-height: 30px; cursor: grab;
+    border-left: 2px solid transparent;
+  }
+  .trow:hover { background: var(--fg-soft); border-left-color: var(--accent); }
+  .trow.used { background: color-mix(in oklch, var(--accent) 5%, transparent); }
+  .trow.used .tpath { color: var(--fg); }
+  .trow .twist { width: 14px; height: 14px; display: grid; place-items: center; color: var(--muted); font-size: 9px; }
+  .trow .tmain { min-width: 0; }
+  .tpath { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trow:not(.used) .tpath { color: color-mix(in oklch, var(--fg) 74%, var(--muted)); }
+  .tsample { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+  .trow .tright { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+  .ttype { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .03em; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; text-transform: uppercase; }
+  .tcount { font-family: var(--font-mono); font-size: 9.5px; color: var(--fg); background: var(--fg-tint); border-radius: 999px; padding: 1px 5px; }
+  .tleaf { padding-left: 10px; }
+  .shelf-empty { padding: 18px 12px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  /* ─── 关系账本 ───────────────────────────────────────────────────── */
+  .ledger { flex: 1 1 auto; min-width: 0; }
+  .toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { padding: 5px 11px; min-height: 28px; font-size: 12px; color: var(--muted); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--fg-tint); color: var(--fg); font-weight: 600; }
+  .seg button:hover { background: var(--fg-soft); color: var(--fg); }
+  .hint { font-size: 11.5px; color: var(--muted); }
+  .hint code { color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+
+  .ledger-head {
+    display: grid; grid-template-columns: 190px minmax(0, 1fr) 190px 26px; gap: 10px;
+    padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--surface);
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+  }
+  .ledger-body { position: relative; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; padding-bottom: 8px; }
+
+  .mrow { border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent); }
+  .mline {
+    position: relative; display: grid; grid-template-columns: 190px minmax(0, 1fr) 190px 26px; gap: 10px;
+    align-items: center; padding: 6px 12px; min-height: 46px; cursor: default;
+  }
+  .mrow:hover > .mline { background: var(--bg-sunken); }
+  .mrow.sel > .mline::before { content: ''; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; background: var(--accent); border-radius: 0 2px 2px 0; }
+  .mline.drop { outline: 1.5px dashed var(--accent); outline-offset: -3px; background: var(--accent-soft); }
+  .mline.drop-bad { outline: 1.5px dashed var(--danger); outline-offset: -3px; background: var(--danger-soft); }
+  .mrow.unmapped > .mline { background: color-mix(in oklch, var(--warn) 5%, transparent); }
+
+  .mt { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .mt .tw { width: 15px; height: 15px; flex: 0 0 auto; color: var(--muted); font-size: 9px; display: grid; place-items: center; border-radius: 4px; }
+  .mt .tw:hover { background: var(--fg-tint); color: var(--fg); }
+  .mt .tpath { font-size: 12.5px; font-weight: 560; }
+  .mt .req { color: var(--danger); font-size: 11px; line-height: 1; }
+  .mt .ttype { flex: 0 0 auto; }
+
+  .me { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; min-height: 26px; border-radius: 6px; }
+  .me:hover { background: color-mix(in oklch, var(--fg) 3%, transparent); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--fg-soft);
+    font-family: var(--font-mono); font-size: 12px; color: var(--fg); white-space: nowrap; max-width: 100%;
+  }
+  .chip:hover { border-color: color-mix(in oklch, var(--fg) 34%, var(--border)); background: var(--fg-tint); }
+  .chip .ell { overflow: hidden; text-overflow: ellipsis; }
+  .chip.l { border-style: dashed; color: var(--muted); }
+  .chip.l:hover { color: var(--fg); }
+  .chip.op, .chip.lk, .chip.idx { background: var(--surface); font-weight: 600; }
+  .chip.lk { font-weight: 500; }
+  .chip.slot {
+    border-style: dashed; background: transparent; color: var(--muted);
+    font-family: var(--font-body); font-size: 11.5px; height: 26px; padding: 0 10px;
+  }
+  .chip.slot:hover { color: var(--fg); border-color: var(--fg); background: var(--surface); }
+  .chip.hot { border-color: var(--accent); background: var(--accent-soft); color: var(--fg); }
+  .chip.err { border-color: color-mix(in oklch, var(--danger) 55%, var(--border)); color: var(--danger); }
+  .chip.warn { border-color: color-mix(in oklch, var(--warn) 55%, var(--border)); }
+  .pn { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .amp { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding: 0 1px; }
+
+  .mv { display: flex; align-items: center; gap: 6px; min-width: 0; justify-content: flex-end; font-family: var(--font-mono); font-size: 12px; }
+  .mv .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+  .mv.ok .val { color: var(--fg); }
+  .mv.ok::before { content: '→'; color: var(--muted); flex: 0 0 auto; }
+  .mv.miss .val, .mv.err .val { color: var(--danger); }
+  .mv.miss::before, .mv.err::before { content: '→'; color: var(--muted); flex: 0 0 auto; }
+  .mv.arr .val { color: var(--fg); }
+  .mv .flag { font-family: var(--font-body); font-size: 10px; color: var(--warn); border: 1px solid var(--warn-soft); background: var(--warn-soft); border-radius: 4px; padding: 0 4px; flex: 0 0 auto; }
+  .mv .tick { color: var(--accent); flex: 0 0 auto; font-size: 11px; }
+  .mv .idle { color: var(--muted); font-family: var(--font-body); font-size: 11.5px; }
+  /* 试算值可点：跳到抽屉里的试算证据 */
+  button.mv { border: 0; background: transparent; padding: 3px 6px; margin: -3px -6px; border-radius: 6px; }
+  button.mv:hover { background: var(--fg-soft); }
+  button.mv:hover .val { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+  .tnode.hit, .tnode.hit:hover { background: var(--accent-soft); }
+  .mact { display: flex; justify-content: flex-end; }
+  .mact button { width: 22px; height: 22px; border-radius: 5px; color: var(--muted); opacity: 0; display: grid; place-items: center; font-size: 13px; }
+  .mrow:hover .mact button, .mact button:focus-visible { opacity: 1; }
+  .mact button:hover { background: var(--fg-tint); color: var(--fg); }
+
+  .mchildren { margin-left: 18px; border-left: 1px solid var(--border); }
+  .rail { padding: 5px 12px 5px 14px; font-size: 11px; color: var(--muted); background: var(--surface); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .rail code { color: var(--fg); }
+
+  .badge { font-family: var(--font-body); font-size: 9.5px; letter-spacing: .02em; border-radius: 4px; padding: 1px 5px; border: 1px solid var(--border); color: var(--muted); flex: 0 0 auto; }
+  .badge.auto { border-color: var(--accent-line); color: var(--accent); }
+  .badge.man { color: var(--muted); }
+
+  /* ─── 行内编辑面板 ───────────────────────────────────────────────── */
+  .mpanel { border-top: 1px dashed var(--border); background: var(--bg-sunken); padding: 10px 12px 12px; }
+  .mpanel .prow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .mpanel .plabel { font-size: 11.5px; color: var(--muted); }
+  .mpanel .plabel b { color: var(--fg); font-weight: 600; }
+  .pilist { position: relative; max-height: 246px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  .pitem { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; min-height: 40px; cursor: pointer; }
+  .pitem + .pitem { border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
+  .pitem:hover, .pitem.cursor { background: var(--accent-soft); }
+  .pitem .pn2 { min-width: 0; }
+  .pitem .pp { font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pitem .pv { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+  .pitem .pr { display: flex; align-items: center; gap: 6px; }
+  .phead2 { padding: 5px 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg-sunken); border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+  .oplist { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 6px; }
+  .opitem { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); text-align: left; min-height: 44px; }
+  .opitem:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .opitem[disabled] { opacity: .5; cursor: not-allowed; }
+  .opitem[disabled]:hover { border-color: var(--border); background: var(--surface); }
+  .opitem .on { font-family: var(--font-mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .opitem .od { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+  .kv { display: grid; grid-template-columns: minmax(0,1fr) 14px minmax(0,1fr) 26px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .kv .ka { color: var(--muted); text-align: center; font-family: var(--font-mono); }
+  .input { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 12px; font-family: var(--font-mono); width: 100%; }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .xbtn { width: 26px; height: 26px; border-radius: 5px; color: var(--muted); display: grid; place-items: center; }
+  .xbtn:hover { background: var(--fg-tint); color: var(--fg); }
+
+  /* ─── 状态条 ─────────────────────────────────────────────────────── */
+  .status { flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--surface); }
+  .status-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 11.5px; }
+  .status-head .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--accent); }
+  .status-head .dot.warn { background: var(--warn); }
+  .status-head .dot.err { background: var(--danger); }
+  .status-head .txt b { font-weight: 600; }
+  .status-list { max-height: 168px; overflow: auto; border-top: 1px dashed var(--border); padding: 4px 0 8px; }
+  .sitem { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; gap: 8px; align-items: baseline; padding: 5px 12px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; }
+  .sitem:hover { background: var(--fg-soft); }
+  .sitem .si { font-family: var(--font-mono); font-size: 11px; }
+  .sitem.err .si { color: var(--danger); }
+  .sitem.warn .si { color: var(--warn); }
+  .sitem.info .si { color: var(--muted); }
+  .sitem .sw { color: var(--muted); font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap; }
+  .sitem .sd { color: var(--muted); }
+
+  /* ─── 编译预览抽屉 ───────────────────────────────────────────────── */
+  .drawer { flex: 0 0 auto; }
+  .drawer.collapsed .drawer-body { display: none; }
+  .tabs { display: flex; gap: 2px; }
+  .tabs button { padding: 4px 10px; min-height: 26px; font-size: 11.5px; color: var(--muted); border-radius: 6px; }
+  .tabs button[aria-selected="true"] { background: var(--fg-tint); color: var(--fg); font-weight: 600; }
+  .tabs button:hover { color: var(--fg); }
+  .drawer-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--border); }
+  .drawer-body.single { grid-template-columns: 1fr; }
+  .code { margin: 0; min-width: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.62; overflow: auto; max-height: clamp(160px, 30vh, 300px); white-space: pre; color: var(--fg); background: var(--surface); }
+  .code + .code { border-left: 1px solid var(--border); }
+  .code .k { color: var(--fg); }
+  .code .s { color: var(--accent); }
+  .code .n { color: var(--fg); }
+  .code .u { color: var(--danger); }
+  .code pre { margin: 0; }
+  .cdim { color: var(--muted); }
+  .cnote { padding: 6px 12px; font-size: 11px; color: var(--muted); border-top: 1px dashed var(--border); display: flex; gap: 10px; flex-wrap: wrap; }
+  .cnote code { color: var(--fg); }
+
+  /* ─── 试算结果（对齐 #116：整份跑一次，抛错时逐行归因） ─────────── */
+  .trial { position: relative; max-height: clamp(160px, 30vh, 300px); overflow: auto; overscroll-behavior: contain; background: var(--surface); }
+  .trial[hidden] { display: none; }
+  .verdict { display: flex; align-items: center; gap: 9px; padding: 9px 12px; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+  .verdict .vdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
+  .verdict.ok { background: color-mix(in oklch, var(--accent) 6%, var(--surface)); }
+  .verdict.ok .vdot { background: var(--accent); }
+  .verdict.bad { background: var(--danger-soft); }
+  .verdict.bad .vdot { background: var(--danger); }
+  .verdict b { font-weight: 600; }
+  .verdict .vmsg { font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+  .verdict .vnote { color: var(--muted); font-size: 11.5px; }
+  .vspacer { flex: 1 1 auto; }
+  .metrics { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); background: var(--bg-sunken); }
+  .metrics span { padding: 6px 12px; font-size: 11.5px; color: var(--muted); border-right: 1px solid color-mix(in oklch, var(--border) 70%, transparent); }
+  .metrics b { font-family: var(--font-mono); color: var(--fg); font-weight: 600; }
+  .metrics b.bad { color: var(--danger-ink); }
+  .metrics b.warn { color: var(--warn-ink); }
+  .trial-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .trial-bar .thint { font-size: 11px; color: var(--muted); }
+  .trial-head, .tnode { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; align-items: baseline; }
+  .trial-head { position: sticky; top: 0; z-index: 1; padding: 5px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .tnode { width: 100%; text-align: left; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent); }
+  button.tnode:hover { background: var(--bg-sunken); }
+  .tnode .tpath2 { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+  .tnode .tval { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
+  .tnode.is-miss .tval { color: var(--muted); }
+  .tnode.is-err .tval { color: var(--danger-ink); }
+  .tnode .trule { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .tnode.ind1 { padding-left: 30px; background: var(--bg-sunken); }
+  .tflag { font-family: var(--font-body); font-size: 10px; border-radius: 4px; padding: 0 5px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .tflag.warn { border-color: color-mix(in oklch, var(--warn) 45%, var(--border)); background: var(--warn-soft); color: var(--warn-ink); }
+  .tflag.bad { border-color: color-mix(in oklch, var(--danger) 45%, var(--border)); background: var(--danger-soft); color: var(--danger-ink); }
+  .ev { display: inline-flex; align-items: baseline; gap: 4px; margin-right: 8px; }
+  .ev i { font-style: normal; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+  .trial-stale { display: flex; align-items: center; gap: 9px; padding: 7px 12px; background: var(--warn-soft); border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--warn-ink); }
+  .trial-stale .btn { border-color: color-mix(in oklch, var(--warn) 42%, var(--border)); background: var(--surface); color: var(--fg); }
+  .trial-stale .btn:hover { background: var(--surface); border-color: var(--warn-ink); }
+  .trial-fail { padding: 8px 12px 10px; border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--danger) 4%, var(--surface)); }
+  .trial-fail .fhead { font-size: 11.5px; color: var(--fg); margin-bottom: 7px; }
+  .trial-fail .fhead em { font-style: normal; color: var(--muted); }
+  .fitem { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center;
+    padding: 6px 9px; border: 1px solid color-mix(in oklch, var(--danger) 32%, var(--border)); border-radius: var(--radius); background: var(--surface); }
+  .fitem + .fitem { margin-top: 5px; }
+  .fitem .fp { font-family: var(--font-mono); font-size: 11.5px; }
+  .fitem .fparent { font-family: var(--font-body); font-size: 10px; color: var(--muted); }
+  .fitem .fm { font-family: var(--font-mono); font-size: 11.5px; color: var(--danger-ink); overflow-wrap: anywhere; margin-top: 2px; }
+  .trial-raw { max-height: none; }
+  .trial-empty { padding: 14px 12px; font-size: 12px; color: var(--muted); }
+
+  /* ─── 命令面板 ───────────────────────────────────────────────────── */
+  .scrim { position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 26%, transparent); display: grid; place-items: start center; padding-top: 12vh; z-index: 60; }
+  .scrim[hidden] { display: none; }
+  .palette { width: min(560px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 18px 44px color-mix(in oklch, var(--fg) 22%, transparent); overflow: hidden; }
+  .palette input { width: 100%; padding: 13px 15px; border: 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .palette input:focus { outline: none; }
+  .plist { max-height: 46vh; overflow: auto; padding: 5px; }
+  .prow2 { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 7px; min-height: 40px; }
+  .prow2 .pk { font-family: var(--font-mono); font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; flex: 0 0 auto; }
+  .prow2 .pt2 { font-size: 12.5px; }
+  .prow2 .pd2 { font-size: 10.5px; color: var(--muted); margin-top: 1px; font-family: var(--font-mono); }
+  .prow2:hover, .prow2.cursor { background: var(--accent-soft); }
+  .pempty { padding: 14px; text-align: center; color: var(--muted); font-size: 12px; }
+
+  /* ─── 提示 ───────────────────────────────────────────────────────── */
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 70; pointer-events: none; }
+  .toast {
+    background: var(--surface); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    border-radius: var(--radius); padding: 8px 12px; font-size: 12px; max-width: 340px;
+    box-shadow: 0 8px 22px color-mix(in oklch, var(--fg) 14%, transparent);
+    animation: tin .18s ease;
+  }
+  .toast.bad { border-left-color: var(--danger); }
+  .toast.warn { border-left-color: var(--warn); }
+  .toast b { font-weight: 600; }
+  .toast code { color: var(--fg); }
+  @keyframes tin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .narrow-note { display: none; padding: 6px 12px; font-size: 11px; color: var(--muted); background: var(--warn-soft); border-bottom: 1px solid var(--border); }
+
+  @media (max-width: 1180px) {
+    .stage { flex-direction: column; }
+    .shelf { flex: 0 0 auto; max-height: 212px; }
+    .ledger { flex: 1 1 auto; min-height: 320px; }
+    .drawer-body { grid-template-columns: 1fr; }
+    .code + .code { border-left: 0; border-top: 1px solid var(--border); }
+  }
+  @media (max-width: 900px) {
+    .narrow-note { display: block; }
+    .ledger-head { display: none; }
+    .mline { grid-template-columns: 1fr; gap: 5px; padding: 9px 12px; }
+    .mv { justify-content: flex-start; }
+    .mv.ok::before, .mv.miss::before, .mv.err::before { content: '→ 输出'; }
+    .mact { position: absolute; right: 8px; top: 8px; }
+    .mact button { opacity: 1; }
+    .toolbar .hint { display: none; }
+    .appbar .kbd, .crumbs { display: none; }
+    .trial-head { display: none; }
+    .tnode { grid-template-columns: 1fr; gap: 3px; }
+    .tnode.ind1 { padding-left: 18px; }
+    .verdict { align-items: flex-start; flex-wrap: wrap; }
+    .verdict .vspacer { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+</style>
+</head>
+<body>
+
+<header class="appbar" data-od-id="app-bar">
+  <div class="brand">edge-gateway<span>控制台</span></div>
+  <nav class="crumbs" aria-label="面包屑">
+    <span>任务</span><span class="sep">/</span>
+    <b>BOM 同步（北向）</b><span class="sep">/</span>
+    <span>动作 2 · 字段映射</span>
+  </nav>
+  <div class="right">
+    <button class="btn btn-sm" id="btnPalette" data-od-id="btn-palette">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.6-3.6"/></svg>
+      命令 <span class="kbd">⌘K</span>
+    </button>
+    <button class="btn btn-sm" data-od-id="btn-close">关闭</button>
+  </div>
+</header>
+
+<div class="pagehead">
+  <div class="title-row">
+    <h1>字段映射</h1>
+    <div class="subline">
+      <span>来源</span><code>READ_SQL · db:erp_bom</code><span class="arrow">→</span>
+      <span>目标</span><code>HTTP_CALL · mes.bom</code>
+    </div>
+    <div class="meter" title="已建立关系的目标字段数">
+      <span class="meter-bar"><i id="meterFill" style="width:0%"></i></span>
+      <span class="meter-txt" id="meterTxt"><b>0</b>/0</span>
+    </div>
+    <div class="right">
+      <button class="btn" id="btnValidate" data-od-id="btn-validate">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 6 9 17l-5-5"/></svg>
+        校验配置
+      </button>
+      <button class="btn btn-primary" id="btnSave" data-od-id="btn-save">保存映射</button>
+    </div>
+  </div>
+</div>
+
+<main class="workspace" data-od-id="mapping-workspace">
+  <div class="stage">
+
+    <aside class="panel shelf" data-od-id="pane-source">
+      <div class="phead">
+        <div>
+          <div class="pt">来源字段 <code id="srcVar">$s_1</code></div>
+          <div class="ps">READ_SQL 探测样例 · 拖到右侧表达式</div>
+        </div>
+        <div class="right"><span class="ttype" id="srcCount">0</span></div>
+      </div>
+      <div class="fsrc">
+        <input class="search" id="shelfSearch" placeholder="搜索字段路径 / 样例值" aria-label="搜索来源字段" />
+        <span class="fhint">选中右侧某行后，回车把这里的字段接上去</span>
+      </div>
+      <div class="scroll"><div class="tree" id="shelfTree"></div></div>
+    </aside>
+
+    <section class="panel ledger" data-od-id="mapping-ledger">
+      <div class="toolbar" data-od-id="ledger-toolbar">
+        <div class="seg" role="group" aria-label="按映射状态过滤">
+          <button data-filter="all" aria-pressed="true" data-od-id="filter-all">全部字段</button>
+          <button data-filter="unmapped" aria-pressed="false" data-od-id="filter-unmapped">只看未映射</button>
+        </div>
+        <button class="btn" id="btnAutomatch" data-od-id="btn-automatch">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          自动匹配
+        </button>
+        <button class="btn" id="btnExpand" data-od-id="btn-expand">展开全部</button>
+        <span class="spacer"></span>
+        <span class="hint">拖字段到表达式；点字段块换来源；<code>/</code> 换转换；<code>⌘⏎</code> 试算；<code>⌘K</code> 命令</span>
+      </div>
+      <div class="narrow-note">窄屏下每条关系按账本行阅读：目标字段、表达式、试算值依次排列。</div>
+      <div class="ledger-head" aria-hidden="true">
+        <span>目标字段</span><span>关系表达式（可编辑）</span><span>试算值</span><span></span>
+      </div>
+      <div class="ledger-body" id="ledgerBody"></div>
+      <div class="status" data-od-id="diagnostics">
+        <div class="status-head">
+          <span class="dot" id="diagDot"></span>
+          <span class="txt" id="diagText"></span>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-ghost" id="btnDiag" aria-expanded="false">明细</button>
+        </div>
+        <div class="status-list" id="diagList" hidden></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel drawer" id="drawer" data-od-id="preview-drawer">
+    <div class="phead">
+      <div class="pt">试算与产物</div>
+      <div class="tabs" id="drawerTabs" role="tablist">
+        <button role="tab" data-tab="trial" aria-selected="true">试算结果</button>
+        <button role="tab" data-tab="jsonata" aria-selected="false">JSONata</button>
+        <button role="tab" data-tab="rules" aria-selected="false">规则 JSON</button>
+      </div>
+      <div class="right">
+        <span class="ps" id="drawerSub"></span>
+        <button class="btn btn-sm" id="btnTrial" data-od-id="btn-trial">运行试算 <span class="kbd">⌘⏎</span></button>
+        <button class="btn btn-sm btn-ghost" id="btnDrawer" aria-expanded="true">收起</button>
+      </div>
+    </div>
+    <div class="drawer-body single" id="drawerBody">
+      <div class="trial" id="trialPane" role="region" aria-label="试算结果" data-od-id="trial-report"></div>
+      <pre class="code" id="drawerCode" hidden></pre>
+    </div>
+    <div class="cnote" id="drawerNote"></div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="命令面板" data-od-id="command-palette">
+    <input id="paletteInput" placeholder="输入命令或目标字段…" aria-label="命令输入" autocomplete="off" />
+    <div class="plist" id="paletteList"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ══════════════════════════════════════════════════════════════════════
+     真实数据与真实契约
+     来源样例：spike/src/test/resources/json/erp测试数据.json
+     目标结构：docs/research/mapping-framework.md §4.1（制品 → BOM）
+     规则形状：config/FieldMappingRule.java
+     编译形状：mapping/JsonataRuleCompiler.java（sourceExpr / leafExpr / groupExpr）
+     校验项：  FieldMappingConfig.validate + JsonataRuleCompiler.insert
+     ══════════════════════════════════════════════════════════════════════ */
+  var SAMPLE = {
+    erpBom: {
+      bomId: 'BOM-2026-0001', bomNo: 'ERP-BOM-20260821-001', bomVersion: 'V1.0', bomType: 'MBOM',
+      moldNo: 'MOULD-2026-0001', moldName: '汽车保险杠注塑模具',
+      productCode: 'PRD-BUMPER-001', productName: '前保险杠',
+      customerCode: 'CUS001', customerName: '某汽车零部件有限公司',
+      drawingNo: 'DRW-BUMPER-001', drawingVersion: 'B',
+      materialCode: 'MAT-718H', materialName: '718H模具钢', materialSpec: '200*300*400',
+      unit: 'PCS', quantity: 1, lossRate: 0.02, warehouseCode: 'WH-MOLD-01',
+      effectiveDate: '2026-08-21', obsoleteDate: '2026-12-31', status: 'ACTIVE',
+      createdBy: 'ERP_ADMIN', createdTime: '2026-08-21T10:00:00+08:00', lastModifiedTime: '2026-08-21T10:00:00+08:00',
+      items: [
+        { lineNo: 10, itemCode: 'PART-CAV-001', itemName: '型腔镶件', itemType: 'PART',
+          materialCode: 'MAT-718H', materialName: '718H模具钢', materialSpec: '100*100*50',
+          unit: 'PCS', quantity: 1, lossRate: 0.01, issueType: 'MANUAL', warehouseCode: 'WH-MOLD-01',
+          supplierCode: 'SUP001', supplierName: '某模具材料供应商', costPrice: 850, currency: 'CNY',
+          standardCost: 800, drawingNo: 'DRW-CAV-001', drawingVersion: 'A', remark: '型腔镶件' },
+        { lineNo: 20, itemCode: 'STD-EJG-001', itemName: '顶针', itemType: 'STANDARD_PART',
+          materialCode: 'MAT-SKD61', materialName: 'SKD61', materialSpec: 'φ4*200',
+          unit: 'PCS', quantity: 24, lossRate: 0, issueType: 'BACKFLUSH', warehouseCode: 'WH-STD-01',
+          supplierCode: 'SUP-STD-01', supplierName: '某标准件供应商', costPrice: 25, currency: 'CNY',
+          standardCost: 22, drawingNo: '', drawingVersion: '', remark: '标准件' }
+      ]
+    },
+    erpProcessRoute: {
+      routeId: 'RT-2026-0001', routeNo: 'ERP-RT-2026-0001', routeVersion: 'V1.0',
+      moldNo: 'MOULD-2026-0001', partCode: 'PART-CAV-001', partName: '型腔镶件',
+      drawingNo: 'DRW-CAV-001', drawingVersion: 'A', materialCode: 'MAT-718H', materialName: '718H模具钢',
+      batchQty: 1, unit: 'PCS', status: 'RELEASED', effectiveDate: '2026-08-21',
+      createdBy: 'ERP_ADMIN', createdTime: '2026-08-21T10:05:00+08:00',
+      operations: [
+        { operationSeq: 10, operationCode: 'OP-10', operationName: '粗铣', workCenterCode: 'WC-CNC-01',
+          workCenterName: 'CNC加工中心', standardTime: 1.5, setupTime: 0.5, laborTime: 1.5, machineTime: 1.2,
+          laborCode: 'LAB-01', laborName: 'CNC操作工', isOutsourced: false, remark: '粗加工' },
+        { operationSeq: 20, operationCode: 'OP-20', operationName: '热处理', workCenterCode: 'WC-HT-01',
+          workCenterName: '热处理车间', standardTime: 4, setupTime: 0.5, laborTime: 0.5, machineTime: 4,
+          laborCode: 'LAB-HT-01', laborName: '热处理工', isOutsourced: true,
+          outsourceSupplierCode: 'SUP-HT-001', outsourceSupplierName: '某热处理厂', remark: '真空淬火' },
+        { operationSeq: 30, operationCode: 'OP-30', operationName: '精铣', workCenterCode: 'WC-CNC-02',
+          workCenterName: '精密CNC', standardTime: 2.5, setupTime: 0.6, laborTime: 2.0, machineTime: 2.2,
+          laborCode: 'LAB-02', laborName: '高级CNC操作工', isOutsourced: false, remark: '精加工' }
+      ]
+    }
+  };
+
+  /* 目标结构 = mapping-framework.md §4.1 定稿的 BOM 契约 */
+  var TARGET = [
+    { path: 'bom.bomNo',       type: 'VARCHAR', required: true },
+    { path: 'bom.productCode', type: 'VARCHAR', required: true },
+    { path: 'bom.productName', type: 'VARCHAR', required: true },
+    { path: 'bom.bomLines',    type: 'ARRAY',   required: true, iterate: 'FOR_EACH', element: [
+      { path: 'lineNo',       type: 'INT',     required: true },
+      { path: 'materialCode', type: 'VARCHAR', required: true },
+      { path: 'materialName', type: 'VARCHAR', required: false },
+      { path: 'qty',          type: 'INT',     required: true },
+      { path: 'unit',         type: 'VARCHAR', required: true }
+    ] }
+  ];
+
+  var OPERATORS = [
+    { k: 'string', name: '直接映射', sig: 'x', desc: '原样传值，不加工（STRING）' },
+    { k: 'number', name: '数字转换', sig: '$number(x)', desc: '转成数字，非数字会编译期报错（INT）' },
+    { k: 'date',   name: '日期格式化', sig: '$dateFormat(x, 模式)', desc: '按 pattern 输出日期字符串（DATE）' },
+    { k: 'lookup', name: '枚举映射', sig: '$lookup({键:值}, x)', desc: '来源值 → 目标值的查表替换（ENUM）' },
+    { k: 'const',  name: '常量', sig: '"字面量"', desc: '不取来源，直接写死一个值（CONSTANT）' },
+    { k: 'concat', name: '拼接', sig: 'a & b & …', desc: '常量与来源字段按顺序拼接（CONCAT）' },
+    { k: 'index',  name: '行号', sig: '$index', desc: '数组组内的行号，可设起始值（INDEX）' }
+  ];
+  var ALIAS = { qty: 'quantity', quantity: 'qty', no: 'number', num: 'number', amt: 'amount',
+                amount: 'amt', vendor: 'supplier', supplier: 'vendor', seq: 'lineNo', index: 'lineNo' };
+  var INDEX_TARGETS = ['lineno', 'seq', 'index', 'sortno', 'rownum'];
+
+  var DATE_PATTERNS = ['yyyy-MM-dd', 'yyyy-MM-dd HH:mm:ss', 'yyyyMMdd', 'yyyy/MM/dd'];
+
+  /* ─── 状态 ───────────────────────────────────────────────────────── */
+  var state = {
+    rows: [],
+    sel: '0',           // 当前行 rowPath 字符串，如 "3.1"
+    panel: null,        // { row:'3.1', node:'0.1', mode:'field|op|lit|lookup|date', q:'', cursor:0 }
+    filter: 'all',
+    tab: 'trial',       // trial | jsonata | rules
+    trialView: 'tree',  // tree | raw
+    trial: null,        // 最近一次试算：{ ran, error, phase, failures, metrics, output, entries, key, at }
+    drawerOpen: true,
+    diagOpen: false
+  };
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function get(obj, path) {
+    if (!path) return obj;
+    return path.split('.').reduce(function (a, k) {
+      return (a === null || a === undefined) ? undefined : a[k];
+    }, obj);
+  }
+  function typeOf(v) {
+    if (Array.isArray(v)) return 'ARRAY[' + v.length + ']';
+    if (v === null) return 'NULL';
+    if (typeof v === 'number') return Number.isInteger(v) ? 'INT' : 'DECIMAL';
+    if (typeof v === 'boolean') return 'BOOL';
+    if (typeof v === 'object') return 'OBJECT';
+    return 'VARCHAR';
+  }
+  function short(v, n) {
+    var s = typeof v === 'string' ? v : JSON.stringify(v);
+    if (s === undefined) return '—';
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  /* ─── 来源字段树 ─────────────────────────────────────────────────── */
+  var FIELDS = [];   // {path, label, type, sample, scope, group, depth}
+  function buildFields(obj, prefix, depth, scope, group) {
+    Object.keys(obj).forEach(function (k) {
+      var path = prefix ? prefix + '.' + k : k;
+      var v = obj[k];
+      if (Array.isArray(v)) {
+        FIELDS.push({ path: path, label: k, type: typeOf(v), sample: v.length + ' 个元素',
+                      scope: 'array', depth: depth, root: scope, group: group });
+        if (v.length && typeof v[0] === 'object' && v[0] !== null) {
+          buildFields(v[0], path + '[]', depth + 1, scope, path);
+        }
+      } else if (v !== null && typeof v === 'object') {
+        FIELDS.push({ path: path, label: k, type: 'OBJECT', sample: '', scope: 'object',
+                      depth: depth, root: scope, group: group });
+        buildFields(v, path, depth + 1, scope, path);
+      } else {
+        FIELDS.push({ path: path, label: k, type: typeOf(v), sample: String(v),
+                      scope: 'leaf', depth: depth, root: scope, group: group });
+      }
+    });
+  }
+  buildFields(SAMPLE.erpBom, 'erpBom', 0, 'erpBom', null);
+  buildFields(SAMPLE.erpProcessRoute, 'erpProcessRoute', 0, 'erpProcessRoute', null);
+  var LEAF_FIELDS = FIELDS.filter(function (f) { return f.scope === 'leaf'; });
+  var FIELD_BY_PATH = {};
+  FIELDS.forEach(function (f) { FIELD_BY_PATH[f.path] = f; });
+
+  /* ─── 表达式节点 ─────────────────────────────────────────────────
+     field{p} / lit{v} / idx{startAt} / num{a} / date{a,pattern} / lookup{a,map} / concat{parts[]} */
+  function F(p) { return { k: 'field', p: p }; }
+  function L(v) { return { k: 'lit', v: v }; }
+  function N(a) { return { k: 'num', a: a }; }
+  function D(a, pattern) { return { k: 'date', a: a, pattern: pattern || 'yyyy-MM-dd' }; }
+  function K(a, map) { return { k: 'lookup', a: a, map: map || {} }; }
+  function C(parts) { return { k: 'concat', parts: parts }; }
+  function IX(startAt) { return { k: 'idx', startAt: startAt || 1 }; }
+
+  /* ─── 初始关系（示例起点：6/9 已建立，用于演示三条建立路径） ────── */
+  var uid = 0;
+  function row(target, type, required, expr, origin) {
+    return { id: ++uid, target: target, type: type, required: required, expr: expr || null,
+             origin: origin || 'manual', collapsed: false, children: [], iterate: null, srcPath: null };
+  }
+  function buildInitial() {
+    var top = TARGET.map(function (t) {
+      var r = row(t.path, t.type, t.required, null, 'manual');
+      if (t.iterate) { r.iterate = t.iterate; r.group = true; }
+      return r;
+    });
+    top[0].expr = C([L('BOM-'), F('erpBom.productCode')]);
+    top[1].expr = F('erpBom.productCode');
+    // top[2] productName 留空：演示「同名自动匹配」
+    var g = top[3];
+    g.srcPath = 'erpBom.items';
+    g.expr = F('erpBom.items');
+    TARGET[3].element.forEach(function (e) {
+      g.children.push(row(e.path, e.type, e.required, null, 'manual'));
+    });
+    g.children[1].expr = F('materialCode');
+    // children[2] materialName 留空：演示作用域内的同名匹配
+    g.children[3].expr = N(F('quantity'));           // qty ← $number(quantity)：别名推断
+    g.children[3].origin = 'infer';
+    g.children[4].expr = K(F('unit'), { PCS: '件', SET: '套' });
+    // children[0] lineNo 留空：演示只能靠「行号」算子补上
+    return top;
+  }
+  state.rows = buildInitial();
+
+  /* ─── 表达式工具：地址 / 取值 / 改写 ─────────────────────────────── */
+  function rowByPath(pathStr) {
+    var idx = String(pathStr).split('.').map(Number);
+    var list = state.rows, r = null;
+    for (var i = 0; i < idx.length; i++) { r = list[idx[i]]; if (!r) return null; list = r.children; }
+    return r;
+  }
+  /* 取某一行所属数组组的元素数组（顶层行为 null） */
+  function elemsOfRow(rowPath) {
+    if (depthOf(rowPath) === 0) return null;
+    var parent = rowByPath(String(rowPath).split('.').slice(0, -1).join('.'));
+    var arr = parent && parent.srcPath ? resolvePath(parent.srcPath, { depth: 0 }) : null;
+    return Array.isArray(arr) ? arr : [];
+  }
+  function depthOf(pathStr) { return String(pathStr).split('.').length - 1; }
+
+  function nodeAt(row, addr) {
+    var n = row.expr;
+    for (var i = 1; i < addr.length; i++) { n = step(n, addr[i]); }
+    return n;
+  }
+  function step(n, i) {
+    if (!n) return null;
+    if (n.k === 'concat') return n.parts[i];
+    if (n.k === 'num' || n.k === 'date' || n.k === 'lookup') return n.a;
+    return null;
+  }
+  function setSlot(row, addr, val) {
+    if (addr.length <= 1) { row.expr = val; return; }
+    var parent = nodeAt(row, addr.slice(0, -1));
+    if (!parent) return;
+    var i = addr[addr.length - 1];
+    if (parent.k === 'concat') {
+      if (val === null) parent.parts.splice(i, 1); else parent.parts[i] = val;
+    } else if (parent.k === 'num' || parent.k === 'date' || parent.k === 'lookup') {
+      parent.a = val;
+    }
+  }
+  function isInGroup(rowPath) { return depthOf(rowPath) > 0; }
+
+  /* ─── 求值（对齐 JsonataRuleCompiler 的语义） ───────────────────── */
+  function resolvePath(p, ctx) {
+    if (!p) return undefined;
+    if (p.indexOf('$root') === 0) return get(SAMPLE, p.slice(5).replace(/^\./, ''));
+    if (ctx.depth === 0) return get(SAMPLE, p);
+    return get(ctx.el, p);
+  }
+  function evalNode(n, ctx) {
+    if (!n) return undefined;
+    switch (n.k) {
+      case 'field': return resolvePath(n.p, ctx);
+      case 'lit': return n.v;
+      case 'idx': return ctx.idx + (n.startAt === undefined ? 1 : n.startAt);
+      case 'num': {
+        var v = evalNode(n.a, ctx);
+        if (v === undefined) return undefined;
+        var x = Number(v);
+        return isNaN(x) ? { __err: '无法转换为数字：' + JSON.stringify(v) } : x;
+      }
+      case 'date': return { __date: evalNode(n.a, ctx), pattern: n.pattern };
+      case 'lookup': {
+        var key = evalNode(n.a, ctx);
+        if (key === undefined) return undefined;
+        var m = n.map || {};
+        return Object.prototype.hasOwnProperty.call(m, String(key)) ? m[String(key)] : undefined;
+      }
+      case 'concat': {
+        var out = '';
+        for (var i = 0; i < n.parts.length; i++) {
+          var pv = evalNode(n.parts[i], ctx);
+          if (pv === undefined) return undefined;
+          if (pv && pv.__err) return pv;
+          if (pv && pv.__date) return { __err: '拼接片段不能是日期转换结果' };
+          out += String(pv);
+        }
+        return out;
+      }
+    }
+    return undefined;
+  }
+  function formatDate(iso, pattern) {
+    if (iso === undefined) return undefined;
+    var s = String(iso);
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2}))?/);
+    if (!m) return { __err: '来源不是可识别的日期：' + JSON.stringify(s) };
+    var d = { y: m[1], M: m[2], D: m[3], H: m[4] || '00', m: m[5] || '00', s: m[6] || '00' };
+    return pattern
+      .replace(/yyyy/g, d.y).replace(/MM/g, d.M).replace(/dd/g, d.D)
+      .replace(/HH/g, d.H).replace(/mm/g, d.m).replace(/ss/g, d.s);
+  }
+  function evalRow(r, ctx) {
+    if (!r.expr) return undefined;
+    var v = evalNode(r.expr, ctx);
+    if (v && v.__date) return formatDate(v.__date, v.pattern);
+    return v;
+  }
+
+  /* ─── 编译（对齐 JsonataRuleCompiler） ───────────────────────────── */
+  function sourceExpr(p, step, depth) {
+    if (!p) return 'null';
+    if (p.indexOf('$root') === 0) return '$s_' + step + p.slice(5);
+    var v = depth === 0 ? '$s_' + step : '$g' + (depth - 1);
+    return v + '.' + p;
+  }
+  function leafExpr(r, step, depth) {
+    var n = r.expr;
+    if (!n) return 'null';
+    switch (n.k) {
+      case 'lit': return JSON.stringify(n.v === undefined ? '' : n.v);
+      case 'field': return sourceExpr(n.p, step, depth);
+      case 'idx': return '$i' + (depth - 1) + ' + ' + (n.startAt === undefined ? 1 : n.startAt);
+      case 'num': return '$number(' + sourceExpr(n.a ? n.a.p : null, step, depth) + ')';
+      case 'date': return '$dateFormat(' + sourceExpr(n.a ? n.a.p : null, step, depth) + ', ' + JSON.stringify(n.pattern) + ')';
+      case 'lookup': return '$lookup(' + JSON.stringify(n.map || {}) + ', ' + sourceExpr(n.a ? n.a.p : null, step, depth) + ')';
+      case 'concat': return n.parts.map(function (p) {
+        return p.k === 'lit' ? JSON.stringify(p.v === undefined ? '' : p.v) : sourceExpr(p.p, step, depth);
+      }).join(' & ');
+    }
+    return 'null';
+  }
+  function compileRows(rows, step, depth, ind) {
+    var pad = new Array(ind + 1).join('  ');
+    var lines = rows.filter(function (r) { return r.expr; }).map(function (r) {
+      var seg = r.target.split('.').pop();
+      if (r.group) {
+        var inner = compileRows(r.children, step, depth + 1, ind + 2);
+        return pad + JSON.stringify(seg) + ': [ $map(' + sourceExpr(r.srcPath, step, depth) +
+          ', function($g' + depth + ', $i' + depth + ') { {\n' + inner +
+          '\n' + pad + '  } }) ]';
+      }
+      return pad + JSON.stringify(seg) + ': ' + leafExpr(r, step, depth);
+    });
+    return lines.join(',\n');
+  }
+  function compileAll() {
+    return '{\n' + compileRows(state.rows, 1, 0, 1) + '\n}';
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     试算（对齐 #116：MappingTrialRequest / MappingTrialResult / MappingTrialService）
+     ① 整份跑一次——与真实执行同一条路，跑通就是「真话那一次」，输出即目标报文；
+     ② 整份抛错时逐行单独跑做归因——哪一行单独跑也不成才报哪一行（定位手段）。
+     两段的区别必须写在界面上（ADR-0012 决策 6）。
+     ══════════════════════════════════════════════════════════════════════ */
+  function draftKey() { return rulesJson(); }
+
+  function sampleLabel() {
+    var it = Array.isArray(SAMPLE.erpBom.items) ? SAMPLE.erpBom.items.length : 0;
+    return '样例 erpBom · ' + Object.keys(SAMPLE.erpBom).length + ' 个字段 · items ' + it + ' 个元素';
+  }
+
+  function putPath(container, path, value) {
+    var segs = path.split('.');
+    var cur = container;
+    for (var i = 0; i < segs.length - 1; i++) {
+      if (!cur[segs[i]] || typeof cur[segs[i]] !== 'object') cur[segs[i]] = {};
+      cur = cur[segs[i]];
+    }
+    cur[segs[segs.length - 1]] = value;
+  }
+
+  /** 目标行展平：{ r, rp, depth, elems, parent }（组内行带着所属组的样例元素） */
+  function flatRows() {
+    var out = [];
+    (function walk(rows, prefix, depth, elems, parent) {
+      rows.forEach(function (r, i) {
+        var rp = prefix ? prefix + '.' + i : String(i);
+        out.push({ r: r, rp: rp, depth: depth, elems: elems, parent: parent });
+        if (r.group) {
+          var kids = resolvePath(r.srcPath, { depth: 0 });
+          walk(r.children, rp, depth + 1, Array.isArray(kids) ? kids : [], r.target);
+        }
+      });
+    })(state.rows, '', 0, null, null);
+    return out;
+  }
+  /**
+   * 试算报告里的一行——**跑的那一刻就定死**：草稿改了之后，过期结果里的「产出它的规则」
+   * 也必须还是当时那条，不能跟着账本一起变。
+   */
+  function rowDesc(r, rp) {
+    return {
+      rp: rp, target: r.target, group: !!r.group, mapped: !!r.expr,
+      rule: r.expr ? provenanceOf(r, rp) : '',
+      badge: r.origin === 'same' ? '同名' : (r.origin === 'infer' ? '推断' : '')
+    };
+  }
+  /** 顶层行跑一次用整份样例；组内行每个元素各跑一次 */
+  function ctxsOf(item) {
+    if (item.depth === 0) return [{ el: SAMPLE, idx: 0, depth: 0 }];
+    return (item.elems || []).map(function (el, i) { return { el: el, idx: i, depth: 1 }; });
+  }
+  function firstErr(r, ctxs) {
+    for (var i = 0; i < ctxs.length; i++) {
+      var v = evalRow(r, ctxs[i]);
+      if (v && v.__err) return v.__err;
+    }
+    return null;
+  }
+
+  /** 数组组：来源数组的每个元素 → 目标数组一行；逐元素保留取值便于横向对照 */
+  function evalGroup(r) {
+    var arr = resolvePath(r.srcPath, { depth: 0 });
+    if (!Array.isArray(arr)) return { err: '目标数组 ' + r.target + ' 的来源不是数组：' + (r.srcPath || '（未指定）') };
+    var childVals = {}, lines = [], omitted = 0;
+    r.children.forEach(function (c, j) { childVals[j] = []; });
+    for (var i = 0; i < arr.length; i++) {
+      var o = {}, any = false;
+      for (var j = 0; j < r.children.length; j++) {
+        var c = r.children[j];
+        if (!c.expr) { childVals[j].push(undefined); continue; }
+        var v = evalRow(c, { el: arr[i], idx: i, depth: 1 });
+        if (v && v.__err) return { err: v.__err + '（' + r.target + '.' + c.target + '）' };
+        childVals[j].push(v);
+        if (v !== undefined) { o[c.target] = v; any = true; }
+      }
+      if (any) lines.push(o);
+    }
+    r.children.forEach(function (c, j) {
+      if (c.expr && childVals[j].every(function (v) { return v === undefined; })) omitted++;
+    });
+    return { lines: lines, childVals: childVals, elems: arr.length, omitted: omitted };
+  }
+
+  /** 整份跑一次：编译不过就先停（试算也要先编译），抛错就只带回那句话 + 逐行归因 */
+  function evaluateTrial() {
+    var items = flatRows();
+    var leaves = items.filter(function (it) { return !it.r.group; });
+    var res = { ran: false, output: null, error: null, phase: null,
+                failures: [], items: items, entries: {}, groups: {}, produced: 0,
+                fields: leaves.length, omitted: 0,
+                unmapped: leaves.filter(function (it) { return !it.r.expr; }).length };
+
+    var cerr = diagnostics().filter(function (x) { return x.kind === 'compile'; })[0];
+    if (cerr) { res.error = cerr.text; res.phase = 'compile'; return res; }
+
+    var out = {}, arrRows = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.depth > 0 || !it.r.expr) continue;
+      var r = it.r;
+      if (r.group) {
+        var g = evalGroup(r);
+        if (g.err) { res.error = g.err; res.phase = 'runtime'; res.failures = attributeFailures(items); return res; }
+        res.groups[it.rp] = g;
+        res.omitted += g.omitted;
+        res.produced += r.children.filter(function (c, j) {
+          return c.expr && g.childVals[j].some(function (v) { return v !== undefined; });
+        }).length;
+        arrRows += g.lines.length;
+        if (g.lines.length) putPath(out, r.target, g.lines);
+        continue;
+      }
+      var ctxs = ctxsOf(it), vals = [], bad = null;
+      for (var k = 0; k < ctxs.length; k++) {
+        var v = evalRow(r, ctxs[k]);
+        if (v && v.__err) { bad = v.__err; break; }
+        vals.push(v);
+      }
+      if (bad) { res.error = bad + '（' + r.target + '）'; res.phase = 'runtime'; res.failures = attributeFailures(items); return res; }
+      res.entries[it.rp] = vals;
+      var kept = vals.filter(function (x) { return x !== undefined; });
+      if (kept.length) { res.produced++; putPath(out, r.target, kept.length > 1 ? kept : kept[0]); }
+      else res.omitted++;
+    }
+    res.ran = true;
+    res.output = out;
+    res.metrics = { fields: res.fields, produced: res.produced, arrRows: arrRows,
+                    unmapped: res.unmapped, omitted: res.omitted };
+    res.tree = items.filter(function (it) { return it.depth === 0; }).map(function (it) {
+      var d = rowDesc(it.r, it.rp);
+      if (it.r.group) d.children = it.r.children.map(function (c, j) { return rowDesc(c, it.rp + '.' + j); });
+      return d;
+    });
+    return res;
+  }
+
+  /**
+   * 逐行归因（对齐 MappingTrialService.attribute）：只从顶层行往下走，单独跑这一行，跑通了就跳过它
+   * ——错的不是它；组行单独跑也不成时，再报那些「单独放回这个组里跑也不成」的子行。
+   * 定位不到就不硬指一行：整份那句错才是真话（ADR-0012 决策 6）。
+   */
+  function attributeFailures(items) {
+    var out = [];
+    function visit(it) {
+      var r = it.r;
+      if (!r.expr) return;
+      if (r.group) {
+        var kids = resolvePath(r.srcPath, { depth: 0 });
+        var ctxs = (Array.isArray(kids) ? kids : []).map(function (el, i) { return { el: el, idx: i, depth: 1 }; });
+        if (!evalGroup(r).err) return;   // 这一组单独跑没问题：错的不是它
+        r.children.forEach(function (c, j) {
+          if (!c.expr) return;
+          var m = firstErr(c, ctxs);
+          if (m) out.push({ row: it.rp + '.' + j, target: c.target, parent: r.target, message: m });
+        });
+        return;
+      }
+      var msg = firstErr(r, ctxsOf(it));
+      if (msg) out.push({ row: it.rp, target: r.target, parent: it.parent, message: msg });
+    }
+    items.forEach(function (it) { if (it.depth === 0) visit(it); });
+    return out;
+  }
+
+  function runTrial(silent) {
+    var t = evaluateTrial();
+    t.key = draftKey();
+    t.at = Date.now();
+    state.trial = t;
+    state.tab = 'trial';
+    state.drawerOpen = true;
+    syncDrawerUI();
+    renderStatus();
+    if (silent) return;
+    if (t.ran) {
+      toast('试算跑通：<b>' + t.metrics.produced + '/' + t.metrics.fields + '</b> 个目标字段落值 · 目标数组 ' + t.metrics.arrRows + ' 行' +
+        (t.metrics.unmapped ? ' · 未映射 ' + t.metrics.unmapped + ' 个' : ''));
+    } else {
+      toast((t.phase === 'compile' ? '编译不过：' : '整份没跑通：') + esc(short(t.error, 84)), 'bad', 6200);
+    }
+  }
+
+  /* ─── 存储契约（对齐 FieldMappingConfig.toMap） ─────────────────── */
+  function ruleOf(r, step, depth) {
+    var o = {};
+    if (depth === 0) o.sourceStep = step;
+    if (r.group) {
+      o.source = r.srcPath; o.target = r.target; o.transform = 'STRING'; o.iterate = r.iterate || 'FOR_EACH';
+      o.children = r.children.filter(function (c) { return c.expr; }).map(function (c) { return ruleOf(c, step, depth + 1); });
+      return o;
+    }
+    var n = r.expr;
+    o.target = r.target;
+    if (n.k === 'lit') { o.transform = 'CONSTANT'; o.constant = n.v; }
+    else if (n.k === 'idx') { o.transform = 'INDEX'; o.source = '$index'; o.startAt = n.startAt === undefined ? 1 : n.startAt; }
+    else if (n.k === 'num') { o.transform = 'INT'; o.source = n.a ? n.a.p : ''; }
+    else if (n.k === 'date') { o.transform = 'DATE'; o.source = n.a ? n.a.p : ''; o.datePattern = n.pattern; }
+    else if (n.k === 'lookup') { o.transform = 'ENUM'; o.source = n.a ? n.a.p : ''; o.enumMap = n.map || {}; }
+    else if (n.k === 'concat') {
+      o.transform = 'CONCAT';
+      o.source = (n.parts.filter(function (p) { return p.k === 'field'; })[0] || {}).p || '';
+      o.parts = n.parts.map(function (p) { return p.k === 'lit' ? p.v : { path: p.p }; });
+    } else { o.transform = 'STRING'; o.source = n.p; }
+    return o;
+  }
+  function rulesJson() {
+    return JSON.stringify({ rules: state.rows.filter(function (r) { return r.expr; })
+      .map(function (r) { return ruleOf(r, 1, 0); }) }, null, 2);
+  }
+
+  /* ─── 诊断（对齐 validate + 编译期约束 + 样例存在性） ───────────── */
+  function diagnostics() {
+    var out = [];
+    function walk(rows, pathPrefix, depth, elems) {
+      rows.forEach(function (r, i) {
+        var rp = pathPrefix ? pathPrefix + '.' + i : String(i);
+        if (!r.expr) {
+          if (r.required) out.push({ level: 'err', row: rp, text: '必填字段未建立关系：' + r.target,
+            why: '目标字段 ' + r.target + ' 是必填项' });
+          else out.push({ level: 'info', row: rp, text: '可选字段未映射：' + r.target,
+            why: '留空则输出中省略该字段' });
+        } else {
+          var n = r.expr;
+          if (n.k === 'idx' && depth === 0) {
+            out.push({ level: 'err', kind: 'compile', row: rp, text: '行号算子只能用在数组组内：' + r.target,
+              why: 'FieldMappingConfig.validate：INDEX 转换只能在数组组内使用' });
+          }
+          if (n.k === 'lookup' && (!n.map || !Object.keys(n.map).length)) {
+            out.push({ level: 'err', kind: 'compile', row: rp, text: '枚举映射缺少映射表：' + r.target,
+              why: '枚举转换需要 enumMap' });
+          }
+          if (n.k === 'lit' && (n.v === undefined || String(n.v) === '')) {
+            out.push({ level: 'err', kind: 'compile', row: rp, text: '常量值为空：' + r.target, why: '常量转换需要 constant' });
+          }
+          if (n.k === 'concat') {
+            if (!n.parts.length) out.push({ level: 'err', kind: 'compile', row: rp, text: '拼接没有任何片段：' + r.target, why: 'CONCAT 转换需要 parts 片段' });
+            if (n.parts.filter(function (p) { return p.k === 'lit' && String(p.v) === ''; }).length) {
+              out.push({ level: 'warn', row: rp, text: '拼接中存在空字符串片段：' + r.target, why: '空片段不会报错，但通常是无意留下的' });
+            }
+          }
+          var paths = [];
+          (function collect(x) {
+            if (!x) return;
+            if (x.k === 'field') paths.push(x.p);
+            if (x.k === 'concat') x.parts.forEach(collect); else if (x.a) collect(x.a);
+          })(n);
+          paths.forEach(function (p) {
+            var inGroup = depth > 0 && p.indexOf('$root') !== 0 && !/^[a-zA-Z]+\./.test(p);
+            var ctx = inGroup ? { depth: 1, el: (elems && elems[0]) || {} } : { depth: 0, el: SAMPLE };
+            if (resolvePath(p, ctx) === undefined) {
+              out.push({ level: 'err', row: rp, text: '来源字段在样例中不存在：' + p,
+                why: '按' + (inGroup ? '数组元素相对路径' : '顶层绝对路径') + '在探测样例中找不到该字段，目标字段会静默为 null' });
+            }
+          });
+          if ((r.type === 'INT' || r.type === 'DECIMAL') && (n.k === 'field' || n.k === 'concat')) {
+            var risky = paths.some(function (p) {
+              return sampleValuesOf({ k: 'field', p: p }, depth, elems).some(function (v) {
+                return typeof v === 'string' && v.trim() !== '' && isNaN(Number(v));
+              });
+            });
+            if (risky) {
+              out.push({ level: 'warn', row: rp, text: '类型不匹配：文本值直接写入 ' + r.target + '（' + r.type + '）',
+                why: '样例值不是数字，建议套一层 $number()，否则下游按数字解析会失败' });
+            }
+          }
+          if (n.k === 'lookup') {
+            var vals = sampleValuesOf(n.a, depth, elems);
+            var miss = vals.filter(function (v) { return !Object.prototype.hasOwnProperty.call(n.map || {}, String(v)); });
+            if (miss.length) out.push({ level: 'warn', row: rp, text: '枚举表未覆盖样例值：' + miss.join('、'),
+              why: '$lookup 查不到键时返回 undefined，该字段会从输出中消失' });
+          }
+          if (r.origin !== 'manual') {
+            out.push({ level: 'info', row: rp, text: (r.origin === 'same' ? '同名自动匹配' : '按名称推断') + '：' + r.target,
+              why: '确认为人工后才会写入映射历史（ADR-0005）' });
+          }
+        }
+        if (r.group) {
+          if (!r.srcPath) out.push({ level: 'err', kind: 'compile', row: rp, text: '数组组缺少来源数组：' + r.target, why: '组节点缺少来源数组 source' });
+          var done = r.children.filter(function (c) { return c.expr; }).length;
+          out.push({ level: 'info', row: rp, text: '数组组 ' + r.target + ' 已映射 ' + done + '/' + r.children.length + ' 个元素字段',
+            why: '来源数组 ' + (r.srcPath || '—') + ' 的每个元素 → 目标数组的一行' });
+          var kids = resolvePath(r.srcPath, { depth: 0 });
+          walk(r.children, rp, depth + 1, Array.isArray(kids) ? kids : []);
+        }
+      });
+    }
+    walk(state.rows, '', 0, null);
+    // 同源复用提示
+    var uses = {};
+    (function scan(rows, rp) {
+      rows.forEach(function (r, i) {
+        var p = rp ? rp + '.' + i : String(i);
+        if (r.expr) {
+          (function collect(x) {
+            if (!x) return;
+            if (x.k === 'field') { (uses[x.p] = uses[x.p] || []).push(r.target); }
+            if (x.k === 'concat') x.parts.forEach(collect); else if (x.a) collect(x.a);
+          })(r.expr);
+        }
+        if (r.group) scan(r.children, p);
+      });
+    })(state.rows, '');
+    Object.keys(uses).forEach(function (p) {
+      if (uses[p].length > 1) out.push({ level: 'info', row: null, text: '来源 ' + p + ' 被 ' + uses[p].length + ' 处引用',
+        why: uses[p].join('、') });
+    });
+    var rank = { err: 0, warn: 1, info: 2 };
+    out.sort(function (a, b) { return rank[a.level] - rank[b.level]; });
+    return out;
+  }
+  function sampleValuesOf(a, depth, elems) {
+    if (!a || a.k !== 'field') return [];
+    if (a.p.indexOf('$root') === 0) {
+      var rv = resolvePath(a.p, { depth: 0 });
+      return rv === undefined ? [] : [rv];
+    }
+    if (depth > 0) {
+      return (elems || []).map(function (el) { return el[a.p]; }).filter(function (v) { return v !== undefined; });
+    }
+    var v = resolvePath(a.p, { depth: 0 });
+    return v === undefined ? [] : [v];
+  }
+
+  /* ─── 字段使用计数 ───────────────────────────────────────────────── */
+  function usage() {
+    var u = {};
+    (function scan(rows) {
+      rows.forEach(function (r) {
+        if (r.srcPath) u[r.srcPath] = (u[r.srcPath] || 0) + 1;
+        if (r.expr) {
+          (function collect(x) {
+            if (!x) return;
+            if (x.k === 'field') { u[x.p] = (u[x.p] || 0) + 1; }
+            if (x.k === 'concat') x.parts.forEach(collect); else if (x.a) collect(x.a);
+          })(r.expr);
+        }
+        if (r.group) scan(r.children);
+      });
+    })(state.rows);
+    return u;
+  }
+
+  /* ─── 渲染：来源货架 ─────────────────────────────────────────────── */
+  var collapsed = {};
+  function renderShelf() {
+    var q = ($('#shelfSearch').value || '').trim().toLowerCase();
+    var u = usage();
+    var html = '', shown = 0;
+    var roots = ['erpBom', 'erpProcessRoute'];
+    roots.forEach(function (root) {
+      var items = FIELDS.filter(function (f) { return f.root === root && f.depth <= (collapsed[root] ? 0 : 3); });
+      items = items.filter(function (f) {
+        if (!q) return true;
+        return f.path.toLowerCase().indexOf(q) >= 0 || String(f.sample).toLowerCase().indexOf(q) >= 0;
+      });
+      if (!items.length) return;
+      shown += items.length;
+      html += '<div class="tgroup">';
+      html += '<div class="trow" data-twist="' + root + '" draggable="false" style="cursor:pointer">' +
+        '<span class="twist">' + (collapsed[root] ? '▸' : '▾') + '</span>' +
+        '<div class="tmain"><div class="tpath">' + esc(root) + '</div>' +
+        '<div class="tsample">' + esc(Object.keys(SAMPLE[root]).length) + ' 个字段</div></div>' +
+        '<div class="tright"><span class="ttype">OBJECT</span></div></div>';
+      items.forEach(function (f) {
+        var n = u[f.path] || 0;
+        html += '<div class="trow tleaf' + (n ? ' used' : '') + '" draggable="' + (f.scope === 'array' ? 'true' : 'true') + '"' +
+          ' data-field="' + esc(f.path) + '" data-scope="' + f.scope + '" tabindex="0"' +
+          ' title="' + esc(f.path + ' · ' + f.type + (n ? ' · 已用于 ' + n + ' 处' : '')) + '">' +
+          '<span class="twist">' + (f.scope === 'array' ? '▦' : (f.scope === 'object' ? '▾' : '·')) + '</span>' +
+          '<div class="tmain"><div class="tpath">' + esc(f.label + (f.scope === 'array' ? '[]' : '')) + '</div>' +
+          '<div class="tsample">' + esc(String(f.sample)) + '</div></div>' +
+          '<div class="tright"><span class="ttype">' + esc(f.type) + '</span>' +
+          (n ? '<span class="tcount">' + n + '</span>' : '') + '</div></div>';
+      });
+      html += '</div>';
+    });
+    if (!shown) html = '<div class="shelf-empty">没有匹配 <code>' + esc(q) + '</code> 的字段</div>';
+    $('#shelfTree').innerHTML = html;
+    $('#srcCount').textContent = LEAF_FIELDS.length + ' 字段';
+  }
+
+  /* ─── 渲染：账本 ─────────────────────────────────────────────────── */
+  function displayPath(p, rowPath) {
+    return p;
+  }
+  function chips(n, addr, row, rowPath) {
+    var a = addr.join('.');
+    if (!n) {
+      return '<button class="chip slot" data-slot="' + a + '">＋ 拖入来源字段</button>';
+    }
+    switch (n.k) {
+      case 'field': {
+        var f = FIELD_BY_PATH[n.p];
+        return '<span class="chip f" data-node="' + a + '" draggable="true" tabindex="0" role="button"' +
+          ' title="' + esc(n.p + (f ? ' · ' + f.type + ' · 样例 ' + short(f.sample, 28) : ' · 样例中不存在')) + '">' +
+          '<span class="ell">' + esc(n.p) + '</span></span>';
+      }
+      case 'lit':
+        return '<span class="chip l" data-node="' + a + '" draggable="true" tabindex="0" role="button"' +
+          ' title="字面量，点击编辑">' + esc(JSON.stringify(n.v === undefined ? '' : n.v)) + '</span>';
+      case 'idx':
+        return '<span class="chip idx" data-node="' + a + '" tabindex="0" role="button" title="数组组内的行号：编译为 $i' + (depthOf(rowPath) - 1) + ' + ' + (n.startAt === undefined ? 1 : n.startAt) + '">' +
+          '$i' + (depthOf(rowPath) - 1) + ' + ' + (n.startAt === undefined ? 1 : n.startAt) + '</span>';
+      case 'num':
+        return '<span class="chip op" data-node="' + a + '" data-op="1" tabindex="0" role="button" title="点击更换转换算子">$number</span>' +
+          '<span class="pn">(</span>' + chips(n.a, addr.concat(0), row, rowPath) + '<span class="pn">)</span>';
+      case 'date':
+        return '<span class="chip op" data-node="' + a + '" data-op="1" tabindex="0" role="button" title="点击更换转换算子">$dateFormat</span>' +
+          '<span class="pn">(</span>' + chips(n.a, addr.concat(0), row, rowPath) + '<span class="pn">, </span>' +
+          '<span class="chip l" data-node="' + a + '" data-mode="date" tabindex="0" role="button" title="点击修改日期模式">' +
+          esc(JSON.stringify(n.pattern)) + '</span><span class="pn">)</span>';
+      case 'lookup':
+        return '<span class="chip op" data-node="' + a + '" data-op="1" tabindex="0" role="button" title="点击更换转换算子">$lookup</span>' +
+          '<span class="pn">(</span><span class="chip lk" data-node="' + a + '" data-mode="lookup" tabindex="0" role="button"' +
+          ' title="点击编辑枚举表">{' + esc(enumText(n.map)) + '}</span><span class="pn">, </span>' +
+          chips(n.a, addr.concat(0), row, rowPath) + '<span class="pn">)</span>';
+      case 'concat': {
+        var out = '';
+        for (var i = 0; i < n.parts.length; i++) {
+          if (i) out += '<span class="amp">&amp;</span>';
+          out += chips(n.parts[i], addr.concat(i), row, rowPath);
+        }
+        out += '<button class="chip slot" data-addpart="' + a + '" title="追加一个拼接片段">＋</button>';
+        return out;
+      }
+    }
+    return '';
+  }
+  function enumText(m) {
+    var ks = Object.keys(m || {});
+    if (!ks.length) return '空表';
+    return ks.slice(0, 2).map(function (k) { return k + '→' + m[k]; }).join(', ') + (ks.length > 2 ? ', …' : '');
+  }
+  function fmtOne(v) {
+    if (v && v.__date) {
+      var f = formatDate(v.__date, v.pattern);
+      return (f && f.__err) ? { t: f.__err, bad: 'err' } : { t: String(f) };
+    }
+    if (v && v.__err) return { t: v.__err, bad: 'err' };
+    if (v === undefined) return { t: '缺失', bad: 'miss' };
+    if (v === null) return { t: 'null' };
+    if (Array.isArray(v)) return { t: v.length + ' 行' };
+    if (typeof v === 'object') return { t: short(JSON.stringify(v), 22) };
+    return { t: String(v) };
+  }
+  function valueCell(r, rowPath, elems) {
+    if (r.group) {
+      var arr = resolvePath(r.srcPath, { depth: 0 });
+      var n = Array.isArray(arr) ? arr.length : 0;
+      var done = r.children.filter(function (c) { return c.expr; }).length;
+      return '<button type="button" class="mv arr" data-probe="' + rowPath + '" title="' +
+        (n ? '来源数组 ' + esc(r.srcPath) + ' 共 ' + n + ' 个元素 → 目标数组 ' + n + ' 行；' : '') +
+        '点开看这次试算里每个元素的取值">' +
+        '<span class="val">' + n + ' 行</span>' +
+        (done === r.children.length ? '<span class="tick">✓</span>' : '<span class="flag">' + done + '/' + r.children.length + '</span>') + '</button>';
+    }
+    if (!r.expr) return '<div class="mv"><span class="idle">未建立关系</span></div>';
+    var out = [];
+    if (elems && elems.length) {
+      elems.forEach(function (el, i) { out.push(fmtOne(evalNode(r.expr, { el: el, idx: i, depth: 1 }))); });
+    } else {
+      out.push(fmtOne(evalRow(r, { el: SAMPLE, idx: 0, depth: 0 })));
+    }
+    var bad = out.filter(function (o) { return o.bad; })[0];
+    if (bad) {
+      return '<button type="button" class="mv ' + bad.bad + '" data-probe="' + rowPath + '" title="' + esc(bad.t) +
+        ' · 点开看这次试算的逐行证据"><span class="val">' + esc(short(bad.t, 22)) + '</span>' +
+        '<span class="flag">' + (bad.bad === 'miss' ? 'JSONata 静默省略' : '求值失败') + '</span></button>';
+    }
+    var full = out.map(function (o) { return o.t; }).join(out.length > 1 ? ' · ' : '');
+    return '<button type="button" class="mv ok" data-probe="' + rowPath + '" title="' + esc(full) +
+      ' · 点开看这次试算的逐行证据"><span class="val">' + esc(short(out.map(function (o) { return o.t; }).join(', '), 24)) + '</span>' +
+      (out.length > 1 ? '<span class="flag">' + out.length + ' 元素</span>' : '') + '<span class="tick">✓</span></button>';
+  }
+  function rowEl(r, rowPath, depth, elems) {
+    var rp = rowPath.join('.');
+    var isSel = state.sel === rp;
+    var panelOpen = state.panel && state.panel.row === rp;
+    var visible = state.filter === 'all' || !r.expr || (r.group && r.children.some(function (c) { return !c.expr; }));
+    if (!visible) return '';
+
+    var badge = r.origin === 'same' ? '<span class="badge auto">同名</span>'
+      : r.origin === 'infer' ? '<span class="badge auto">推断</span>' : '<span class="badge man">人工</span>';
+
+    var html = '<div class="mrow' + (isSel ? ' sel' : '') + (!r.expr ? ' unmapped' : '') + '" data-row="' + rp + '">';
+    html += '<div class="mline" data-rowline="' + rp + '" data-drop="' + rp + '">';
+    html += '<div class="mt">' +
+      (r.group
+        ? '<button class="tw" data-collapse="' + rp + '" aria-label="折叠数组组">' + (r.collapsed ? '▸' : '▾') + '</button>'
+        : '<span class="tw"></span>') +
+      '<div style="min-width:0"><div class="tpath mono" title="' + esc(r.target) + '">' +
+      esc(r.target) + (r.required ? ' <span class="req">*</span>' : '') + '</div>' +
+      '<div class="tsample">' + (r.group ? '数组组 · ' + (r.iterate || 'FOR_EACH') : (r.expr ? badge : '待建立关系')) + '</div></div>' +
+      '</div>';
+
+    if (r.group) {
+      html += '<div class="me">' +
+        '<span class="chip op" title="数组组来源数组">$map</span><span class="pn">(</span>' +
+        (r.srcPath ? chips(F(r.srcPath), [0], r, rp) : '<button class="chip slot" data-groupsrc="' + rp + '">＋ 拖入来源数组字段</button>') +
+        '<span class="pn">, 每个元素 → 一行)</span></div>';
+    } else {
+      html += '<div class="me">' + chips(r.expr, [0], r, rp) +
+        (r.expr ? '<button class="chip slot" data-opmenu="' + rp + '" title="更换或追加转换">⌄</button>' : '') + '</div>';
+    }
+
+    html += valueCell(r, rp, elems);
+    html += '<div class="mact">' + (r.expr || r.srcPath
+      ? '<button data-clear="' + rp + '" aria-label="清除该关系" title="清除该关系">✕</button>' : '') + '</div>';
+    html += '</div>';
+
+    if (panelOpen) html += renderPanel(r, rp, elems);
+    if (r.group && !r.collapsed) {
+      var kids = resolvePath(r.srcPath, { depth: 0 });
+      html += '<div class="mchildren">';
+      html += '<div class="rail">来源数组 <code>' + esc(r.srcPath || '未指定') + '</code>' +
+        '<span>元素内用相对路径引用；引用外层头字段点货架上的顶层字段即可（自动写成 $root 前缀）</span></div>';
+      r.children.forEach(function (c, i) { html += rowEl(c, rowPath.concat(i), depth + 1, Array.isArray(kids) ? kids : []); });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderLedger() {
+    var html = '';
+    state.rows.forEach(function (r, i) { html += rowEl(r, [i], 0, null); });
+    if (!html) html = '<div class="shelf-empty">当前过滤下没有字段</div>';
+    $('#ledgerBody').innerHTML = html;
+  }
+
+  /* ─── 行内编辑面板 ───────────────────────────────────────────────── */
+  function renderPanel(r, rp, elems) {
+    var p = state.panel;
+    var head = '<div class="mpanel" data-panel="' + rp + '">';
+    if (p.mode === 'field') {
+      var addr = p.node;
+      head += '<div class="prow"><span class="plabel">为 <b>' + esc(r.target) + '</b> 选择来源字段' +
+        (p.replace ? '（替换 ' + esc(p.replace) + '）' : '') + '</span><span class="spacer"></span>' +
+        '<input class="search" id="panelSearch" style="width:200px" placeholder="搜索路径或样例值" value="' + esc(p.q || '') + '" />';
+      if (p.canMove) {
+        head += '<button class="btn btn-sm" data-move="-1">← 左移</button><button class="btn btn-sm" data-move="1">右移 →</button>';
+      }
+      if (p.node !== '0' || r.expr) head += '<button class="btn btn-sm" data-append="1">追加为拼接片段</button>';
+      head += '<button class="btn btn-sm btn-ghost" data-closepanel="1">取消</button></div>';
+      head += '<div class="pilist" id="panelList">' + fieldListHtml(r, rp, p) + '</div>';
+      return head + '</div>';
+    }
+    if (p.mode === 'op') {
+      head += '<div class="prow"><span class="plabel">为 <b>' + esc(r.target) + '</b> 选择转换算子' +
+        '<span style="color:var(--muted)"> · 算子决定编译出来的 JSONata</span></span>' +
+        '<span class="spacer"></span>' +
+        (r.expr ? '<button class="btn btn-sm btn-ghost" data-clear-transform="1">移除转换</button>' : '') +
+        '<button class="btn btn-sm btn-ghost" data-closepanel="1">取消</button></div>';
+      head += '<div class="oplist">';
+      OPERATORS.forEach(function (o) {
+        var disabled = (o.k === 'index' && depthOf(rp) === 0);
+        head += '<button class="opitem" data-applyop="' + o.k + '"' + (disabled ? ' disabled' : '') + '>' +
+          '<span style="min-width:0"><div class="on">' + esc(o.sig) + '</div><div class="od">' + esc(o.name + ' · ' + o.desc) + '</div></span></button>';
+      });
+      head += '</div>';
+      if (depthOf(rp) === 0) head += '<div style="margin-top:8px;font-size:11px;color:var(--muted)">行号算子只在数组组内可用（与后端 INDEX 校验一致）</div>';
+      return head + '</div>';
+    }
+    if (p.mode === 'lit') {
+      head += '<div class="prow"><span class="plabel">常量值</span>' +
+        '<input class="input" id="panelInput" style="width:260px" value="' + esc(p.value || '') + '" placeholder="如 BOM-" />' +
+        '<button class="btn btn-sm btn-primary" data-commitlit="1">确定</button>' +
+        '<button class="btn btn-sm btn-ghost" data-closepanel="1">取消</button></div>';
+      head += '<div style="font-size:11px;color:var(--muted)">编译为字符串字面量，不引用任何来源字段。</div>';
+      return head + '</div>';
+    }
+    if (p.mode === 'lookup') {
+      var n = nodeAt(r, p.node.split('.').map(Number));
+      var keys = Object.keys(n.map || {});
+      head += '<div class="prow"><span class="plabel">枚举映射表 <code>{来源值: 目标值}</code></span><span class="spacer"></span>' +
+        '<button class="btn btn-sm" data-fillsample="1">从样例补全</button>' +
+        '<button class="btn btn-sm" data-closepanel="1">完成</button></div>';
+      head += '<div style="max-width:560px">';
+      keys.forEach(function (k) {
+        head += '<div class="kv"><input class="input" data-enumkey="' + esc(k) + '" value="' + esc(k) + '" aria-label="来源值" />' +
+          '<span class="ka">→</span><input class="input" data-enumval="' + esc(k) + '" value="' + esc(n.map[k]) + '" aria-label="目标值" />' +
+          '<button class="xbtn" data-enumdel="' + esc(k) + '" aria-label="删除该行">✕</button></div>';
+      });
+      head += '<div class="kv"><input class="input" data-enumkey="" placeholder="来源值" aria-label="新来源值" />' +
+        '<span class="ka">→</span><input class="input" data-enumval="" placeholder="目标值" aria-label="新目标值" />' +
+        '<button class="xbtn" data-enumadd="1" aria-label="添加一行">＋</button></div>';
+      head += '</div>';
+      head += '<div style="font-size:11px;color:var(--muted)">$lookup 查不到键时返回 undefined，该字段会从输出中消失；样例中出现过的值：' +
+        esc(uniqueVals(sampleValuesOf(n.a, depthOf(rp), elems)).join('、') || '—') + '</div>';
+      return head + '</div>';
+    }
+    if (p.mode === 'date') {
+      head += '<div class="prow"><span class="plabel">日期模式</span><span class="spacer"></span>' +
+        '<button class="btn btn-sm btn-ghost" data-closepanel="1">完成</button></div>';
+      head += '<div class="oplist">';
+      DATE_PATTERNS.forEach(function (d) {
+        head += '<button class="opitem" data-setdate="' + esc(d) + '"><span><div class="on">' + esc(d) + '</div>' +
+          '<div class="od">$dateFormat(x, "' + esc(d) + '")</div></span></button>';
+      });
+      head += '</div>';
+      return head + '</div>';
+    }
+    return head + '</div>';
+  }
+  function uniqueVals(values) {
+    var seen = {}, out = [];
+    (values || []).forEach(function (v) { var k = String(v); if (!seen[k]) { seen[k] = 1; out.push(v); } });
+    return out;
+  }
+  function fieldListHtml(r, rp, p) {
+    var q = (p.q || '').toLowerCase();
+    var inGroup = depthOf(rp) > 0;
+    var u = usage();
+    // 组内可选项：元素内字段（相对路径） + 外层字段（$root 前缀）
+    var items = [];
+    if (inGroup) {
+      FIELDS.filter(function (f) { return f.group === 'erpBom.items' && f.scope === 'leaf'; }).forEach(function (f) {
+        items.push({ path: f.label, abs: f.path, type: f.type, sample: f.sample, sec: '数组元素内（相对路径）' });
+      });
+      FIELDS.filter(function (f) { return f.depth === 0 && f.scope === 'leaf'; }).forEach(function (f) {
+        items.push({ path: '$root.' + f.path, abs: f.path, type: f.type, sample: f.sample, sec: '$root · 外层头字段（跨层引用）' });
+      });
+      FIELDS.filter(function (f) { return f.root === 'erpProcessRoute' && f.scope === 'leaf'; }).forEach(function (f) {
+        items.push({ path: '$root.' + f.path, abs: f.path, type: f.type, sample: f.sample, sec: '$root · 外层头字段（跨层引用）' });
+      });
+    } else {
+      FIELDS.filter(function (f) { return f.scope === 'leaf'; }).forEach(function (f) {
+        items.push({ path: f.path, abs: f.path, type: f.type, sample: f.sample, sec: f.root === 'erpBom' ? '顶层 · erpBom' : '顶层 · erpProcessRoute' });
+      });
+    }
+    if (q) items = items.filter(function (i) { return (i.path + ' ' + i.sample).toLowerCase().indexOf(q) >= 0; });
+    if (!items.length) return '<div class="pempty">没有匹配的字段</div>';
+    var html = '', lastSec = '';
+    items.forEach(function (i, idx) {
+      if (i.sec !== lastSec) { html += '<div class="phead2">' + esc(i.sec) + '</div>'; lastSec = i.sec; }
+      var used = u[i.path] || u[i.abs] || 0;
+      html += '<div class="pitem' + (idx === p.cursor ? ' cursor' : '') + '" data-pick="' + esc(i.path) + '" role="button" tabindex="0">' +
+        '<div class="pn2"><div class="pp">' + esc(i.path) + '</div><div class="pv">样例 ' + esc(short(i.sample, 26)) + '</div></div>' +
+        '<div class="pr"><span class="ttype">' + esc(i.type) + '</span>' +
+        (used ? '<span class="tcount">' + used + '</span>' : '') + '</div></div>';
+    });
+    return html;
+  }
+
+  /* ─── 渲染：试算结果 ─────────────────────────────────────────────── */
+  var RULE_NAME = { STRING: '直接映射', INT: '数字转换', DATE: '日期格式化', ENUM: '枚举映射',
+                    CONSTANT: '常量', CONCAT: '拼接', INDEX: '行号' };
+
+  /** 这一行的值是怎么来的：转换名 + 来源（写成业务看得懂的一行，JSONata 原文在隔壁页签） */
+  function provenanceOf(r, rp) {
+    if (r.group) return '数组组 · $map(' + (r.srcPath || '未指定') + ') · 每个元素 → 一行';
+    var o = ruleOf(r, 1, depthOf(rp) > 0 ? 1 : 0);
+    var name = RULE_NAME[o.transform] || o.transform;
+    var src;
+    if (o.transform === 'CONSTANT') src = '常量 ' + JSON.stringify(o.constant);
+    else if (o.transform === 'INDEX') src = '起始 ' + o.startAt;
+    else if (o.transform === 'CONCAT') src = (o.parts || []).map(function (p) {
+      return typeof p === 'string' ? JSON.stringify(p) : p.path;
+    }).join(' & ');
+    else src = o.source || '—';
+    return name + ' · ' + src;
+  }
+  function originBadge(d) {
+    return d.badge ? ' <span class="badge auto">' + d.badge + '</span>' : '';
+  }
+  function fmtTrialVal(v) {
+    if (v === undefined) return { t: '—', miss: true };
+    if (v === null) return { t: 'null' };
+    if (Array.isArray(v)) return { t: v.length + ' 行' };
+    return { t: JSON.stringify(v) };
+  }
+  /** 数组组内一行：把每个元素的取值横向摆出来，一眼看出「是不是每个元素都算出了东西」 */
+  function evList(vals) {
+    if (!vals || !vals.length) return '—';
+    var shown = vals.slice(0, 3).map(function (v, i) {
+      return '<span class="ev" title="第 ' + (i + 1) + ' 个元素"><i>' + (i + 1) + '</i>' + esc(fmtTrialVal(v).t) + '</span>';
+    }).join('');
+    if (vals.length > 3) shown += '<span class="ev"><i>+' + (vals.length - 3) + '</i></span>';
+    return shown;
+  }
+  function trialTopHtml(d, t) {
+    var cls = 'tnode', val = '', flag = '', rule;
+    if (!d.mapped) {
+      cls += ' is-miss';
+      val = '<span class="tval">—</span>';
+      rule = '规则里没有这一行';
+      flag = '<span class="tflag warn">未映射 · 输出里不出现</span>';
+    } else if (d.group) {
+      var g = t.groups[d.rp] || { lines: [], elems: 0 };
+      val = '<span class="tval">' + g.lines.length + ' 行</span>';
+      rule = esc(d.rule);
+      flag = g.lines.length === g.elems
+        ? '<span class="tflag">' + g.elems + ' 个来源元素都落了行</span>'
+        : '<span class="tflag bad">来源 ' + g.elems + ' 个元素只落 ' + g.lines.length + ' 行</span>';
+    } else {
+      var vals = t.entries[d.rp] || [];
+      var kept = vals.filter(function (v) { return v !== undefined; });
+      rule = esc(d.rule) + originBadge(d);
+      if (!kept.length) {
+        cls += ' is-miss';
+        val = '<span class="tval">—</span>';
+        flag = '<span class="tflag bad">JSONata 静默省略</span>';
+      } else {
+        val = '<span class="tval">' + esc(fmtTrialVal(kept[0]).t) + '</span>';
+        if (kept[0] === null) flag = '<span class="tflag warn">空值</span>';
+      }
+    }
+    return '<button type="button" class="' + cls + '" data-ttarget="' + d.rp + '" title="跳到账本里的 ' + esc(d.target) + '">' +
+      '<span class="tpath2">' + esc(d.target) + '</span>' + val +
+      '<span class="trule">' + rule + (flag ? ' ' + flag : '') + '</span></button>';
+  }
+  function trialChildHtml(d, vals) {
+    var cls = 'tnode ind1', flag = '', rule;
+    if (!d.mapped) {
+      cls += ' is-miss';
+      rule = '规则里没有这一行';
+      flag = '<span class="tflag warn">未映射</span>';
+    } else {
+      var kept = (vals || []).filter(function (v) { return v !== undefined; });
+      rule = esc(d.rule) + originBadge(d);
+      if (!kept.length) { cls += ' is-miss'; flag = '<span class="tflag bad">JSONata 静默省略</span>'; }
+      else if (kept.every(function (v) { return v === null; })) flag = '<span class="tflag warn">空值</span>';
+    }
+    return '<button type="button" class="' + cls + '" data-ttarget="' + d.rp + '" title="跳到账本里的 ' + esc(d.target) + '">' +
+      '<span class="tpath2">' + esc(d.target) + '</span><span class="tval">' + evList(vals) + '</span>' +
+      '<span class="trule">' + rule + (flag ? ' ' + flag : '') + '</span></button>';
+  }
+  function trialVerdictHtml(t, stale) {
+    var h = '';
+    if (t.ran) {
+      h += '<div class="verdict ok"><span class="vdot"></span>' +
+        '<span><b>整份跑通</b> · 这就是真实执行会发出的目标报文</span>' +
+        '<span class="vspacer"></span><span class="vnote">' + esc(sampleLabel()) + '</span></div>';
+    } else {
+      h += '<div class="verdict bad"><span class="vdot"></span>' +
+        '<span><b>' + (t.phase === 'compile' ? '编译不过' : '整份没跑通') + '</b> · <span class="vmsg">' + esc(t.error) + '</span></span>' +
+        '<span class="vspacer"></span><span class="vnote">' +
+        (t.phase === 'compile' ? '还没跑到求值那一步' : '引擎原话，不做转述') + '</span></div>';
+    }
+    if (stale) {
+      h += '<div class="trial-stale"><span>草稿已改动 · 下面还是上一次试算的结果</span>' +
+        '<span class="spacer"></span><button class="btn btn-sm" data-rerun="1">重新试算</button></div>';
+    }
+    return h;
+  }
+  function trialMetricsHtml(t) {
+    var h = '<div class="metrics">';
+    if (t.ran) {
+      var m = t.metrics;
+      h += '<span title="有值的叶子目标字段 / 目标叶子字段总数">落值字段 <b>' + m.produced + ' / ' + m.fields + '</b></span>' +
+        '<span title="数组组里真正落到目标报文的行数">目标数组 <b>' + m.arrRows + '</b> 行</span>' +
+        '<span title="规则里没有这一行，输出里也不会出现">未映射 <b' + (m.unmapped ? ' class="warn"' : '') + '>' + m.unmapped + '</b></span>' +
+        '<span title="表达式取到 undefined，JSONata 会静默把这个字段从输出里去掉">静默省略 <b' + (m.omitted ? ' class="bad"' : '') + '>' + m.omitted + '</b></span>';
+    } else {
+      h += '<span>未映射 <b' + (t.unmapped ? ' class="warn"' : '') + '>' + t.unmapped + '</b></span>' +
+        (t.phase === 'compile'
+          ? '<span>逐行归因 <b>未进行</b>（编译不过，没跑）</span>'
+          : '<span>单独跑失败 <b' + (t.failures.length ? ' class="bad"' : '') + '>' + t.failures.length + '</b> 行</span>') +
+        '<span>本次没有目标报文</span>' +
+        '<span>草稿原样 · 未落库</span>';
+    }
+    return h + '</div>';
+  }
+  function trialFailHtml(t) {
+    var h = '<div class="trial-fail"><div class="fhead">';
+    if (t.phase === 'compile') {
+      h += '编译不过就谈不上逐行：先修掉编译期的错再跑一次。<em>校验是静态查、试算是真执行，两件事分开看。</em>';
+    } else if (!t.failures.length) {
+      h += '逐行单独跑没有指到任何一行：整份抛错的根不在某一条关系上。<em>定位不到就不硬指一行——整份那句错才是真话。</em>';
+    } else {
+      h += '标红的是<b>单独跑这一行</b>的结果——它是定位手段，不是真实执行会这样（ADR-0012 决策 6）。';
+    }
+    h += '</div>';
+    t.failures.forEach(function (f) {
+      h += '<div class="fitem"><div><div class="fp">' + esc(f.target) + '</div>' +
+        (f.parent ? '<div class="fparent">属于目标数组 ' + esc(f.parent) + '</div>' : '') +
+        '<div class="fm">' + esc(f.message) + '</div></div>' +
+        '<button class="btn btn-sm" data-ttarget="' + f.row + '">定位到这一行</button></div>';
+    });
+    return h + '</div>';
+  }
+  function renderTrial() {
+    var pane = $('#trialPane'), t = state.trial, h = '';
+    if (!t) {
+      pane.innerHTML = '<div class="trial-empty">还没有试算过。试算把当前草稿拿到来源样例上<b>真跑一遍</b>，' +
+        '给出目标报文或指出哪一行跑不通——它不改配置、不落库。按 <code>⌘⏎</code> 或右上角「运行试算」开跑。</div>';
+      return;
+    }
+    var stale = t.key !== draftKey();
+    h += trialVerdictHtml(t, stale);
+    h += trialMetricsHtml(t);
+    if (!t.ran) {
+      h += trialFailHtml(t);
+    } else {
+      h += '<div class="trial-bar"><div class="seg" role="group" aria-label="试算结果视图" data-od-id="trial-view-toggle">' +
+        '<button data-tview="tree" aria-pressed="' + (state.trialView !== 'raw') + '">结构化</button>' +
+        '<button data-tview="raw" aria-pressed="' + (state.trialView === 'raw') + '">原始 JSON</button>' +
+        '</div><span class="thint">点任意一行可跳回账本定位那条关系</span></div>';
+      if (state.trialView === 'raw') {
+        h += '<pre class="code trial-raw">' + highlight(JSON.stringify(t.output, null, 2)) + '</pre>';
+      } else {
+        h += '<div class="trial-head" aria-hidden="true"><span>输出路径</span><span>试算值</span><span>产出它的规则</span></div>';
+        (t.tree || []).forEach(function (d) {
+          h += trialTopHtml(d, t);
+          if (d.children && t.groups[d.rp]) {
+            var g = t.groups[d.rp];
+            d.children.forEach(function (c, j) { h += trialChildHtml(c, g.childVals[j]); });
+          }
+        });
+      }
+    }
+    var sc = pane.scrollTop;
+    pane.innerHTML = h;
+    pane.scrollTop = sc;
+  }
+  function highlightTrialRow(rp) {
+    var pane = $('#trialPane');
+    pane.querySelectorAll('.tnode.hit').forEach(function (b) { b.classList.remove('hit'); });
+    var el = pane.querySelector('[data-ttarget="' + rp + '"]');
+    if (!el) return;
+    el.classList.add('hit');
+    pane.scrollTop = Math.max(0, el.offsetTop - pane.clientHeight / 2 + el.offsetHeight / 2);
+  }
+  function trialGoto(rp) {
+    if (depthOf(rp) > 0) {
+      var p = rowByPath(String(rp).split('.').slice(0, -1).join('.'));
+      if (p) p.collapsed = false;
+    }
+    if (state.filter !== 'all') { state.filter = 'all'; syncFilter(); renderAll(); }
+    focusRow(rp);
+    highlightTrialRow(rp);
+  }
+
+  /* ─── 状态条 / 计量 ─────────────────────────────────────────────── */
+  function mappedCount() {
+    var top = 0, topTotal = state.rows.length, inner = 0, innerTotal = 0;
+    state.rows.forEach(function (r) {
+      if (r.expr) top++;
+      if (r.group) { innerTotal += r.children.length; inner += r.children.filter(function (c) { return c.expr; }).length; }
+    });
+    return { top: top, topTotal: topTotal, inner: inner, innerTotal: innerTotal,
+             done: top + inner, total: topTotal + innerTotal };
+  }
+  function renderStatus() {
+    var m = mappedCount();
+    var d = diagnostics();
+    var errs = d.filter(function (x) { return x.level === 'err'; }).length;
+    var warns = d.filter(function (x) { return x.level === 'warn'; }).length;
+    $('#meterFill').style.width = Math.round(m.done / m.total * 100) + '%';
+    $('#meterTxt').innerHTML = '<b>' + m.done + '</b>/' + m.total;
+    $('#meterTxt').title = '顶层 ' + m.top + '/' + m.topTotal + ' · 组内 ' + m.inner + '/' + m.innerTotal;
+    var dot = $('#diagDot'), txt = $('#diagText');
+    if (errs) { dot.className = 'dot err'; txt.innerHTML = '<b>' + errs + '</b> 个错误' + (warns ? ' · ' + warns + ' 条警告' : '') + ' · 编译会被后端拒绝'; }
+    else if (warns) { dot.className = 'dot warn'; txt.innerHTML = '校验通过 · <b>' + warns + '</b> 条警告'; }
+    else { dot.className = 'dot'; txt.innerHTML = '校验通过 · 顶层 ' + m.top + '/' + m.topTotal + ' + 组内 ' + m.inner + '/' + m.innerTotal + ' 条关系'; }
+    var list = $('#diagList');
+    if (state.diagOpen) {
+      list.innerHTML = d.map(function (x) {
+        var mark = x.level === 'err' ? '✕' : (x.level === 'warn' ? '!' : 'i');
+        return '<button class="sitem ' + x.level + '"' + (x.row ? ' data-goto="' + x.row + '"' : '') + '>' +
+          '<span class="si">' + mark + '</span>' +
+          '<span>' + esc(x.text) + '<br /><span class="sd">' + esc(x.why || '') + '</span></span>' +
+          '<span class="sw">' + (x.row ? '定位 →' : '') + '</span></button>';
+      }).join('') || '<div class="pempty">没有诊断项</div>';
+    } else { list.innerHTML = ''; }
+    list.hidden = !state.diagOpen;
+    $('#btnDiag').textContent = state.diagOpen ? '收起明细' : '明细';
+    $('#btnDiag').setAttribute('aria-expanded', String(state.diagOpen));
+
+    // 抽屉
+    var code = $('#drawerCode'), tPane = $('#trialPane');
+    var isTrial = state.tab === 'trial';
+    tPane.hidden = !isTrial;
+    code.hidden = isTrial;
+    if (isTrial) {
+      renderTrial();
+      $('#drawerSub').textContent = 'POST /api/field-mapping-editor/trial · 只读、不落库';
+      $('#drawerNote').innerHTML = '<span>整份跑通时它就是真实执行那一次；只有整份抛错才逐行归因做定位（ADR-0012 决策 6）</span>' +
+        '<span>试算不改配置、不写映射历史</span>' +
+        '<span>样例：spike/src/test/resources/json/erp测试数据.json</span>';
+    } else if (state.tab === 'jsonata') {
+      code.innerHTML = highlight(compileAll());
+      $('#drawerSub').textContent = '整棵规则树编译出的 JSONata（$s_1 = 来源动作输出）';
+      $('#drawerNote').innerHTML = '<span>数组构造器外再包一层 <code>[ … ]</code>：$map 单元素会被 JSONata 扁平化，包一层保证组输出恒为数组</span>';
+    } else {
+      code.innerHTML = highlight(rulesJson());
+      $('#drawerSub').textContent = '实际落库的配置（FieldMappingRule 的字段形状）';
+      $('#drawerNote').innerHTML = '<span>叶子：<code>sourceStep/source/target/transform</code> + 转换参数；组节点：<code>iterate=FOR_EACH</code> + <code>children</code> 相对路径</span>';
+    }
+  }
+  function highlight(s) {
+    return esc(s)
+      .replace(/(&quot;[^&\n]*?&quot;)(\s*:)/g, '<span class="k">$1</span>$2')
+      .replace(/:\s(&quot;[^&\n]*?&quot;)/g, ': <span class="s">$1</span>')
+      .replace(/:\s(-?\d+(?:\.\d+)?)(?=[,\n])/g, ': <span class="n">$1</span>')
+      .replace(/:\s(null)(?=[,\n])/g, ': <span class="u">$1</span>');
+  }
+
+  function renderAll() { renderShelf(); renderLedger(); renderStatus(); }
+
+  /* ─── 交互：面板打开 ─────────────────────────────────────────────── */
+  function openFieldPanel(rowPath, addr, replaceLabel, opts) {
+    state.sel = rowPath;
+    state.panel = { row: rowPath, node: addr, mode: 'field', q: '', cursor: 0,
+                    replace: replaceLabel || null, canMove: (opts && opts.canMove) || false };
+    renderAll();
+    var s = $('#panelSearch'); if (s) s.focus();
+  }
+  function openOpPanel(rowPath) { state.sel = rowPath; state.panel = { row: rowPath, node: '0', mode: 'op' }; renderAll(); }
+
+  function toast(msg, kind, ms, action) {
+    var el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.innerHTML = msg;
+    if (action) {
+      var b = document.createElement('button');
+      b.className = 'btn btn-sm';
+      b.style.marginTop = '7px';
+      b.textContent = action.label;
+      b.addEventListener('click', function () { el.remove(); action.run(); });
+      el.appendChild(b);
+    }
+    $('#toasts').appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.remove(); }, ms || 2600);
+  }
+
+  /* ─── 交互：建立 / 修改关系 ─────────────────────────────────────── */
+  /* 把货架上的字段路径翻译成当前作用域该用的写法：
+     组内 → 元素相对路径；组内引用外层 → $root. 前缀（编译为 $s_1.x）；顶层 → 绝对路径 */
+  function toLocalPath(rowPath, path) {
+    if (path.indexOf('$root') === 0) return { path: path };
+    var segs = path.split('[]');
+    if (depthOf(rowPath) > 0) {
+      if (segs.length > 1) return { path: segs[segs.length - 1].replace(/^\./, '') };
+      return { path: '$root.' + path, note: '跨层引用写成 <code>$root.' + path + '</code>，编译为 <code>$s_1.' + path + '</code>' };
+    }
+    if (segs.length > 1) {
+      return { error: '元素内字段只能用在数组组里：先把数组字段拖到数组组行建立作用域' };
+    }
+    return { path: path };
+  }
+  function pickSource(rowPath, path) {
+    var r = rowByPath(rowPath); if (!r) return;
+    var a = state.panel && state.panel.row === rowPath ? state.panel.node : '0';
+    var addr = a.split('.').map(Number);
+    var t = toLocalPath(rowPath, path);
+    if (t.error) { toast(t.error + '（<code>' + esc(path) + '</code>）', 'bad', 4600); return; }
+    setSlot(r, addr, F(t.path));
+    if (r.origin !== 'manual') r.origin = 'manual';
+    var f = FIELD_BY_PATH[path.replace(/^\$root\./, '')];
+    state.panel = null;
+    renderAll();
+    toast('已建立 <code>' + esc(t.path) + '</code> → <code>' + esc(r.target) + '</code>' +
+      (f ? ' · 样例 ' + esc(short(f.sample, 22)) : '') + (t.note ? ' · ' + t.note : ''));
+  }
+  function applyOperator(rowPath, kind) {
+    var r = rowByPath(rowPath); if (!r) return;
+    var cur = r.expr;
+    function inner() { return cur && cur.k === 'field' ? cur : null; }
+    switch (kind) {
+      case 'string': {
+        var wasWrapped = cur && cur.k !== 'field';
+        r.expr = inner();
+        if (!r.expr) { r.expr = cur; if (wasWrapped) toast('「直接映射」需要一个来源字段：先选字段，再决定要不要套转换', 'warn'); }
+        break;
+      }
+      case 'number': r.expr = N(inner()); break;
+      case 'date': r.expr = D(inner(), 'yyyy-MM-dd'); break;
+      case 'lookup': r.expr = K(inner(), {}); break;
+      case 'const': r.expr = L(''); state.panel = { row: rowPath, node: '0', mode: 'lit', value: '' }; break;
+      case 'concat': r.expr = C(cur ? [cur, L('')] : [null, L('')]); break;
+      case 'index': r.expr = IX(1); break;
+    }
+    if (kind !== 'const') state.panel = null;
+    if (r.origin !== 'manual') r.origin = 'manual';
+    renderAll();
+    if (kind === 'lookup') { toast('枚举表为空：点 <code>{空表}</code> 打开表格，或「从样例补全」', 'warn'); }
+    if (kind === 'number' || kind === 'date' || kind === 'lookup') {
+      var nn = r.expr;
+      if (!nn.a) { openFieldPanel(rowPath, '0.0', null); }
+    }
+  }
+  function clearRow(rowPath) {
+    var r = rowByPath(rowPath); if (!r) return;
+    var keep = { expr: r.expr, src: r.srcPath, origin: r.origin };
+    if (r.group) { r.expr = null; r.srcPath = null; } else r.expr = null;
+    state.panel = null;
+    renderAll();
+    toast('已清除 <code>' + esc(r.target) + '</code> 的关系', null, 6000, {
+      label: '撤销',
+      run: function () {
+        r.expr = keep.expr; r.srcPath = keep.src; r.origin = keep.origin;
+        renderAll();
+        toast('已恢复 <code>' + esc(r.target) + '</code> 的关系');
+      }
+    });
+  }
+
+  /* ─── 自动匹配 ─────────────────────────────────────────────────── */
+  function automatch() {
+    var n = 0;
+    function tryRow(r, inGroup) {
+      if (r.expr || r.group) return;
+      var name = r.target.split('.').pop();
+      var lower = name.toLowerCase();
+      var cands = inGroup
+        ? FIELDS.filter(function (f) { return f.group === 'erpBom.items' && f.scope === 'leaf'; })
+        : FIELDS.filter(function (f) { return f.depth === 0 && f.scope === 'leaf'; });
+      // 组内名为 lineNo / 序号 的目标字段优先按行号推断（对应 mapping-framework §4.2 的 startAt=1）
+      if (inGroup && (INDEX_TARGETS.indexOf(lower) >= 0 || r.type === 'INT' && INDEX_TARGETS.indexOf(lower) >= 0)) {
+        r.expr = IX(1); r.origin = 'infer'; n++; return;
+      }
+      var exact = cands.filter(function (f) { return f.label === name; })[0];
+      if (exact) { r.expr = F(inGroup ? exact.label : exact.path); r.origin = 'same'; n++; return; }
+      var al = ALIAS[lower];
+      var alias = al ? cands.filter(function (f) { return f.label.toLowerCase() === al; })[0] : null;
+      if (alias) {
+        var ap = F(inGroup ? alias.label : alias.path);
+        r.expr = (r.type === 'INT' || r.type === 'DECIMAL') ? N(ap) : ap;
+        r.origin = 'infer'; n++; return;
+      }
+      if (inGroup && INDEX_TARGETS.indexOf(lower) >= 0) { r.expr = IX(1); r.origin = 'infer'; n++; return; }
+    }    state.rows.forEach(function (r) {
+      tryRow(r, false);
+      if (r.group) r.children.forEach(function (c) { tryRow(c, true); });
+    });
+    renderAll();
+    if (n) {
+      toast('自动匹配补上 <b>' + n + '</b> 条关系（同名 / 别名推断 / 行号推断），确认后写回映射历史');
+      state.diagOpen = true; renderStatus();
+    } else toast('没有可自动补全的空关系', 'warn');
+  }
+
+  /* ─── 命令面板 ─────────────────────────────────────────────────── */
+  var paletteItems = [], paletteCursor = 0;
+  function buildPalette(q) {
+    var items = [
+      { k: '命令', t: '自动匹配空关系', d: '同名 → 别名 → 行号推断', run: automatch },
+      { k: '命令', t: '运行试算', d: '⌘⏎ · 把草稿拿到来源样例上真跑一遍（只读、不落库）', run: function () { runTrial(); } },
+      { k: '命令', t: '校验配置', d: '对齐后端 FieldMappingConfig.validate', run: function () { state.diagOpen = true; renderStatus(); toast('校验完成：' + $('#diagText').textContent); } },
+      { k: '命令', t: '保存映射', d: '写入任务配置', run: function () { toast('已保存 ' + mappedCount().done + ' 条关系'); } },
+      { k: '命令', t: '只看未映射 / 显示全部', d: '切换过滤', run: function () { state.filter = state.filter === 'all' ? 'unmapped' : 'all'; syncFilter(); renderAll(); } },
+      { k: '命令', t: '展开全部数组组', d: '递归展开', run: function () { setCollapse(false); } },
+      { k: '命令', t: '收起全部数组组', d: '递归收起', run: function () { setCollapse(true); } },
+      { k: '命令', t: '显示 / 收起试算与产物', d: '试算结果 · JSONata · 规则 JSON', run: function () { toggleDrawer(); } }
+    ];
+    state.rows.forEach(function (r, i) {
+      var rp = String(i);
+      items.push({ k: '目标', t: r.target, d: r.expr ? '已映射' : '未映射', run: function () { focusRow(rp); } });
+      if (r.group) r.children.forEach(function (c, j) {
+        var cp = rp + '.' + j;
+        items.push({ k: '目标', t: r.target + '.' + c.target, d: r.expr ? '组内 · ' + c.target : c.target, run: function () { focusRow(cp); } });
+      });
+    });
+    if (q) items = items.filter(function (i) { return (i.t + ' ' + i.d + ' ' + i.k).toLowerCase().indexOf(q) >= 0; });
+    return items.slice(0, 40);
+  }
+  function setCollapse(v) { state.rows.forEach(function (r) { if (r.group) r.collapsed = v; }); renderAll(); }
+  function openPalette() {
+    $('#scrim').hidden = false; paletteCursor = 0;
+    var inp = $('#paletteInput'); inp.value = ''; renderPalette('');
+    inp.focus();
+  }
+  function closePalette() { $('#scrim').hidden = true; }
+  function renderPalette(q) {
+    paletteItems = buildPalette((q || '').trim().toLowerCase());
+    paletteCursor = Math.min(paletteCursor, Math.max(0, paletteItems.length - 1));
+    $('#paletteList').innerHTML = paletteItems.length ? paletteItems.map(function (i, idx) {
+      return '<button class="prow2' + (idx === paletteCursor ? ' cursor' : '') + '" data-pidx="' + idx + '">' +
+        '<span class="pk">' + esc(i.k) + '</span><span style="min-width:0"><div class="pt2">' + esc(i.t) + '</div>' +
+        '<div class="pd2">' + esc(i.d) + '</div></span></button>';
+    }).join('') : '<div class="pempty">没有匹配的命令</div>';
+  }
+  function focusRow(rp) {
+    state.sel = rp;
+    renderAll();
+    var el = document.querySelector('[data-rowline="' + rp + '"]');
+    var scroller = $('#ledgerBody');
+    if (el && scroller) scroller.scrollTop = Math.max(0, el.offsetTop - scroller.clientHeight / 2 + el.offsetHeight / 2);
+    toast('已定位到 <code>' + esc(rowByPath(rp).target) + '</code>');
+  }
+  function syncDrawerUI() {
+    $('#drawer').classList.toggle('collapsed', !state.drawerOpen);
+    $('#btnDrawer').textContent = state.drawerOpen ? '收起' : '展开';
+    $('#btnDrawer').setAttribute('aria-expanded', String(state.drawerOpen));
+    document.querySelectorAll('[data-tab]').forEach(function (b) {
+      b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
+    });
+  }
+  function toggleDrawer() {
+    state.drawerOpen = !state.drawerOpen;
+    syncDrawerUI();
+  }
+  function syncFilter() {
+    document.querySelectorAll('[data-filter]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.filter === (state.filter === 'all' ? 'all' : 'unmapped')));
+    });
+  }
+
+  /* ─── 事件绑定（委托） ──────────────────────────────────────────── */
+  function commitEnum() {
+    if (!state.panel || state.panel.mode !== 'lookup') return;
+    var r = rowByPath(state.panel.row);
+    if (!r) return;
+    var n = nodeAt(r, state.panel.node.split('.').map(Number));
+    var map = {};
+    document.querySelectorAll('.mpanel .kv').forEach(function (kv) {
+      var k = kv.querySelector('[data-enumkey]'), v = kv.querySelector('[data-enumval]');
+      if (k && k.value.trim()) map[k.value.trim()] = v ? v.value : '';
+    });
+    var grew = Object.keys(map).length !== Object.keys(n.map || {}).length;
+    n.map = map;
+    if (grew) renderAll(); else renderStatus();
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var hit = function (sel) { return t.closest(sel); };
+
+    if (t.closest('#btnPalette')) { openPalette(); return; }
+    if (t.closest('#scrim') && !t.closest('.palette')) { closePalette(); return; }
+    var pidx = hit('[data-pidx]');
+    if (pidx) { var it = paletteItems[+pidx.dataset.pidx]; if (it) { closePalette(); it.run(); } return; }
+    if (t.closest('#btnSave')) { toast('已保存 ' + mappedCount().done + ' 条关系 · 编译为 JSONata 后写入动作 2'); return; }
+    if (t.closest('#btnValidate')) { state.diagOpen = true; renderStatus(); toast('校验完成：' + $('#diagText').textContent); return; }
+    if (t.closest('#btnAutomatch')) { automatch(); return; }
+    if (t.closest('#btnExpand')) {
+      var anyOpen = state.rows.some(function (r) { return r.group && !r.collapsed; });
+      setCollapse(anyOpen);
+      $('#btnExpand').textContent = anyOpen ? '展开全部' : '收起全部';
+      return;
+    }
+    if (t.closest('#btnDiag')) { state.diagOpen = !state.diagOpen; renderStatus(); return; }
+    if (t.closest('#btnDrawer')) { toggleDrawer(); return; }
+    if (t.closest('#btnTrial')) { runTrial(); return; }
+    var pb = hit('[data-probe]');
+    if (pb) { state.sel = pb.dataset.probe; state.tab = 'trial'; state.drawerOpen = true; syncDrawerUI(); renderAll(); trialGoto(pb.dataset.probe); return; }
+    var tv = hit('[data-tview]');
+    if (tv) { state.trialView = tv.dataset.tview; renderStatus(); return; }
+    if (t.closest('[data-rerun]')) { runTrial(); return; }
+    var tt = hit('[data-ttarget]');
+    if (tt) { trialGoto(tt.dataset.ttarget); return; }
+    var tab = hit('[data-tab]');
+    if (tab) {
+      state.tab = tab.dataset.tab;
+      syncDrawerUI();
+      renderStatus();
+      return;
+    }
+    var f = hit('[data-filter]');
+    if (f) { state.filter = f.dataset.filter; syncFilter(); renderAll(); return; }
+
+    // 折叠
+    var col = hit('[data-collapse]');
+    if (col) { var r0 = rowByPath(col.dataset.collapse); r0.collapsed = !r0.collapsed; renderAll(); return; }
+    var tw = hit('[data-twist]');
+    if (tw) { collapsed[tw.dataset.twist] = !collapsed[tw.dataset.twist]; renderShelf(); return; }
+
+    // 面板动作
+    if (t.closest('[data-closepanel]')) { commitEnum(); state.panel = null; renderAll(); return; }
+    var pick = hit('[data-pick]');
+    if (pick) { pickSource(state.panel.row, pick.dataset.pick); return; }
+    var mv = hit('[data-move]');
+    if (mv) {
+      var p = state.panel, addr = p.node.split('.').map(Number), r = rowByPath(p.row);
+      var parent = nodeAt(r, addr.slice(0, -1)), i = addr[addr.length - 1], j = i + (+mv.dataset.move);
+      if (parent && parent.k === 'concat' && j >= 0 && j < parent.parts.length) {
+        var tmp = parent.parts[i]; parent.parts[i] = parent.parts[j]; parent.parts[j] = tmp;
+        p.node = addr.slice(0, -1).concat(j).join('.');
+        renderAll(); $('#panelSearch').focus();
+      }
+      return;
+    }
+    if (t.closest('[data-append]')) {
+      var pp = state.panel, rr = rowByPath(pp.row), addr2 = pp.node.split('.').map(Number), cur = nodeAt(rr, addr2);
+      if (rr.expr && rr.expr.k === 'concat') rr.expr.parts.push(L(''));
+      else rr.expr = C([rr.expr, L('')]);
+      pp.node = (rr.expr.k === 'concat' ? String(rr.expr.parts.length - 1) : '1');
+      renderAll(); $('#panelSearch').focus();
+      return;
+    }
+    var op = hit('[data-applyop]');
+    if (op) { applyOperator(state.panel.row, op.dataset.applyop); return; }
+    if (t.closest('[data-clear-transform]')) {
+      var r3 = rowByPath(state.panel.row);
+      var n3 = r3.expr;
+      r3.expr = (n3 && n3.a) ? n3.a : (n3 && n3.k === 'concat' ? n3.parts.filter(function (x) { return x; })[0] : null);
+      state.panel = null; renderAll(); return;
+    }
+    var lit = hit('[data-commitlit]');
+    if (lit) {
+      var r4 = rowByPath(state.panel.row), v = $('#panelInput').value;
+      if (r4.expr && r4.expr.k === 'lit') r4.expr.v = v; else r4.expr = L(v);
+      state.panel = null; renderAll(); toast('常量已设为 <code>' + esc(JSON.stringify(v)) + '</code>'); return;
+    }
+    var en = hit('[data-enumadd]');
+    if (en) {
+      var kEl = document.querySelector('.mpanel [data-enumkey=""]');
+      var vEl = document.querySelector('.mpanel [data-enumval=""]');
+      var kk = kEl ? kEl.value.trim() : '', vv = vEl ? vEl.value : '';
+      commitEnum();
+      var r5 = rowByPath(state.panel.row), n5 = nodeAt(r5, state.panel.node.split('.').map(Number));
+      if (kk) n5.map[kk] = vv;
+      renderAll();
+      return;
+    }
+    var ed = hit('[data-enumdel]');
+    if (ed) {
+      var key = ed.dataset.enumdel;
+      commitEnum();
+      var r6 = rowByPath(state.panel.row), n6 = nodeAt(r6, state.panel.node.split('.').map(Number));
+      delete n6.map[key]; renderAll(); return;
+    }
+    if (t.closest('[data-fillsample]')) {
+      commitEnum();
+      var r7 = rowByPath(state.panel.row), n7 = nodeAt(r7, state.panel.node.split('.').map(Number));
+      var vals7 = uniqueVals(sampleValuesOf(n7.a, depthOf(state.panel.row), elemsOfRow(state.panel.row)));
+      var added = 0;
+      vals7.forEach(function (v) { if (!(String(v) in n7.map)) { n7.map[String(v)] = ''; added++; } });
+      renderAll();
+      toast(added ? '已补进 ' + added + ' 个样例中出现过的值，填上目标值即可' : '样例中出现过的值都已经在表里', added ? null : 'warn');
+      return;
+    }
+    var sd = hit('[data-setdate]');
+    if (sd) { var r8 = rowByPath(state.panel.row); r8.expr.pattern = sd.dataset.setdate; renderAll(); toast('日期模式改为 <code>' + esc(sd.dataset.setdate) + '</code>'); return; }
+    var clr = hit('[data-clear]');
+    if (clr) { clearRow(clr.dataset.clear); return; }
+    var gs = hit('[data-groupsrc]');
+    if (gs) { openFieldPanel(gs.dataset.groupsrc, '0', '数组组来源数组'); return; }
+    var om = hit('[data-opmenu]');
+    if (om) { openOpPanel(om.dataset.opmenu); return; }
+    var sl = hit('[data-slot]');
+    if (sl) {
+      var host = sl.closest('[data-row]');
+      openFieldPanel(state.panel ? state.panel.row : (host ? host.dataset.row : state.sel), sl.dataset.slot, null);
+      return;
+    }
+    var ap = hit('[data-addpart]');
+    if (ap) {
+      var host2 = ap.closest('[data-row]');
+      var rpA = host2 ? host2.dataset.row : state.sel;
+      var rA = rowByPath(rpA);
+      var nA = nodeAt(rA, ap.dataset.addpart.split('.').map(Number));
+      if (nA && nA.k === 'concat') {
+        nA.parts.push(L(''));
+        state.sel = rpA;
+        state.panel = { row: rpA, node: ap.dataset.addpart + '.' + (nA.parts.length - 1), mode: 'lit', value: '' };
+        renderAll();
+        var inpA = $('#panelInput'); if (inpA) { inpA.focus(); inpA.select(); }
+      }
+      return;
+    }
+    var nd = hit('[data-node]');
+    if (nd) {
+      var rowEl2 = nd.closest('[data-row]');
+      var rp2 = rowEl2.dataset.row;
+      var r9 = rowByPath(rp2);
+      var mode = nd.dataset.mode;
+      if (nd.dataset.op) { openOpPanel(rp2); return; }
+      if (mode === 'lookup') { state.sel = rp2; state.panel = { row: rp2, node: nd.dataset.node, mode: 'lookup' }; renderAll(); return; }
+      if (mode === 'date') { state.sel = rp2; state.panel = { row: rp2, node: nd.dataset.node, mode: 'date' }; renderAll(); return; }
+      var node = nodeAt(r9, nd.dataset.node.split('.').map(Number));
+      if (node && node.k === 'lit') {
+        state.sel = rp2; state.panel = { row: rp2, node: nd.dataset.node, mode: 'lit', value: node.v }; renderAll();
+        var inp = $('#panelInput'); if (inp) { inp.focus(); inp.select(); }
+        return;
+      }
+      var addr3 = nd.dataset.node.split('.').map(Number);
+      var parentIsConcat = addr3.length > 1 && (function () {
+        var pn = nodeAt(r9, addr3.slice(0, -1)); return pn && pn.k === 'concat';
+      })();
+      openFieldPanel(rp2, nd.dataset.node, node ? node.p : null, { canMove: parentIsConcat });
+      return;
+    }
+    var line = hit('[data-rowline]');
+    if (line) { state.sel = line.dataset.rowline; if (state.panel && state.panel.row !== state.sel) state.panel = null; renderAll(); return; }
+    var goto = hit('[data-goto]');
+    if (goto) { focusRow(goto.dataset.goto); return; }
+  });
+
+  // 输入
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t.id === 'shelfSearch') { renderShelf(); return; }
+    if (t.id === 'panelSearch') {
+      state.panel.q = t.value; state.panel.cursor = 0;
+      var list = $('#panelList');
+      if (list) list.innerHTML = fieldListHtml(rowByPath(state.panel.row), state.panel.row, state.panel);
+      return;
+    }
+    if (t.id === 'paletteInput') { paletteCursor = 0; renderPalette(t.value); return; }
+  });
+
+  /* 枚举表以失焦提交为准：避免「改键之后值还写回旧键」的幽灵条目 */
+  document.addEventListener('change', function (e) {
+    if (!state.panel || state.panel.mode !== 'lookup') return;
+    var d = e.target.dataset || {};
+    if (d.enumkey === undefined && d.enumval === undefined) return;
+    commitEnum();
+  });
+
+  /* 拖拽：字段 → 关系表达式；字段 → 表达式里的某个字段块 = 换掉那一块 */
+  document.addEventListener('dragstart', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-field],[data-node]') : null;
+    if (!t) { dragPayload = null; return; }
+    if (t.dataset.field) {
+      dragPayload = { type: 'field', path: t.dataset.field, scope: t.dataset.scope };
+      t.style.opacity = '.5';
+    } else {
+      dragPayload = { type: 'chip', from: t.dataset.node };
+    }
+    if (e.dataTransfer) { try { e.dataTransfer.setData('text/plain', dragPayload.path || 'chip'); e.dataTransfer.effectAllowed = 'copy'; } catch (x) {} }
+  });
+  document.addEventListener('dragend', function () {
+    document.querySelectorAll('.trow').forEach(function (x) { x.style.opacity = ''; });
+    document.querySelectorAll('.mline').forEach(function (x) { x.classList.remove('drop', 'drop-bad'); });
+    document.querySelectorAll('.chip.hot').forEach(function (x) { x.classList.remove('hot'); });
+    dragPayload = null;
+  });
+  document.addEventListener('dragover', function (e) {
+    if (!dragPayload) return;
+    var zone = e.target.closest ? e.target.closest('[data-drop]') : null;
+    document.querySelectorAll('.mline').forEach(function (x) { x.classList.remove('drop', 'drop-bad'); });
+    document.querySelectorAll('.chip.hot').forEach(function (x) { x.classList.remove('hot'); });
+    if (!zone) return;
+    e.preventDefault();
+    var rp = zone.dataset.drop, r = rowByPath(rp), bad = false;
+    if (dragPayload.type === 'field') {
+      var f = FIELD_BY_PATH[dragPayload.path];
+      var isArr = f && f.scope === 'array';
+      if (isArr && !r.group) bad = true;
+      else if (!isArr && r.group) bad = true;
+      else if (!r.group && toLocalPath(rp, dragPayload.path).error) bad = true;
+      var chip = e.target.closest ? e.target.closest('[data-node]') : null;
+      if (!bad && chip) chip.classList.add('hot');
+    }
+    zone.classList.add(bad ? 'drop-bad' : 'drop');
+  });
+  document.addEventListener('drop', function (e) {
+    var zone = e.target.closest ? e.target.closest('[data-drop]') : null;
+    if (!zone || !dragPayload) return;
+    e.preventDefault();
+    var rp = zone.dataset.drop, r = rowByPath(rp), payload = dragPayload;
+    dragPayload = null;
+
+    if (payload.type === 'chip') {
+      var chip = e.target.closest ? e.target.closest('[data-node]') : null;
+      if (chip && chip.dataset.node && chip.dataset.node !== payload.from) {
+        var srcAddr = payload.from.split('.').map(Number), dstAddr = chip.dataset.node.split('.').map(Number);
+        var moved = nodeAt(r, srcAddr), dst = nodeAt(r, dstAddr);
+        if (moved && dst && dst.k === 'field') { setSlot(r, dstAddr, moved); setSlot(r, srcAddr, dst); renderAll(); }
+      }
+      return;
+    }
+
+    var p = payload.path, f = FIELD_BY_PATH[p], isArr = f && f.scope === 'array';
+    if (isArr && !r.group) {
+      toast('数组字段 <code>' + esc(p) + '</code> 不能落到单个目标字段上；它应该落到数组组行 <code>' + esc(r.target) + '</code>', 'bad', 5000);
+      return;
+    }
+    if (!isArr && r.group) {
+      toast('数组组 <code>' + esc(r.target) + '</code> 的来源必须是数组字段（如 <code>erpBom.items</code>）', 'bad', 5000);
+      return;
+    }
+    if (r.group) {
+      r.srcPath = p; r.expr = F(p); r.origin = 'manual'; state.panel = null; renderAll();
+      toast('数组组来源设为 <code>' + esc(p) + '</code> · 每个元素 → 目标数组一行');
+      return;
+    }
+    var t = toLocalPath(rp, p);
+    if (t.error) { toast(t.error, 'bad', 5000); return; }
+    var chip2 = e.target.closest ? e.target.closest('[data-node]') : null;
+    var hitNode = chip2 ? nodeAt(r, chip2.dataset.node.split('.').map(Number)) : null;
+    if (hitNode && hitNode.k === 'field') {
+      setSlot(r, chip2.dataset.node.split('.').map(Number), F(t.path));
+      toast('把 <code>' + esc(hitNode.p) + '</code> 换成 <code>' + esc(t.path) + '</code> · 转换与参数保留');
+    } else if (r.expr && r.expr.k === 'concat') {
+      r.expr.parts.push(F(t.path));
+      toast('已追加为拼接片段：<code>' + esc(t.path) + '</code>');
+    } else {
+      r.expr = F(t.path);
+      toast('已建立 <code>' + esc(t.path) + '</code> → <code>' + esc(r.target) + '</code>' + (t.note ? ' · ' + t.note : ''));
+    }
+    if (r.origin !== 'manual') r.origin = 'manual';
+    state.panel = null;
+    renderAll();
+  });
+
+  // 键盘
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    var typing = tag === 'input' || tag === 'textarea';
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
+    if (!$('#scrim').hidden) {
+      if (e.key === 'Escape') { closePalette(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); paletteCursor = Math.min(paletteCursor + 1, paletteItems.length - 1); renderPalette($('#paletteInput').value); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); paletteCursor = Math.max(paletteCursor - 1, 0); renderPalette($('#paletteInput').value); return; }
+      if (e.key === 'Enter') { var it = paletteItems[paletteCursor]; if (it) { closePalette(); it.run(); } return; }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runTrial(); return; }
+    if (e.key === 'Escape') {
+      if (state.panel) { state.panel = null; renderAll(); }
+      else if (state.filter === 'unmapped') { state.filter = 'all'; syncFilter(); renderAll(); }
+      return;
+    }
+    if (typing) {
+      if (e.target.id === 'panelSearch') {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          var opts = document.querySelectorAll('#panelList [data-pick]');
+          if (!opts.length) return;
+          state.panel.cursor = Math.max(0, Math.min(opts.length - 1, (state.panel.cursor || 0) + (e.key === 'ArrowDown' ? 1 : -1)));
+          var list = $('#panelList');
+          list.innerHTML = fieldListHtml(rowByPath(state.panel.row), state.panel.row, state.panel);
+          var cur = list.querySelector('.pitem.cursor');
+          if (cur) list.scrollTop = Math.max(0, cur.offsetTop - list.clientHeight / 2);
+          return;
+        }
+        if (e.key === 'Enter') {
+          var pick = document.querySelector('#panelList .pitem.cursor') || document.querySelector('#panelList [data-pick]');
+          if (pick) pickSource(state.panel.row, pick.dataset.pick);
+          return;
+        }
+      }
+      if (e.key === 'Enter' && e.target.id === 'panelInput') { document.querySelector('[data-commitlit]').click(); return; }
+      return;
+    }
+    // 键盘等价于点击：表达式块 / 空槽 / ＋ / 货架字段都能用回车触发
+    if (e.key === 'Enter' || e.key === ' ') {
+      var ae = document.activeElement, d = (ae && ae.dataset) || {};
+      if (d.node || d.slot || d.opmenu || d.addpart) { e.preventDefault(); ae.click(); return; }
+      if (d.field && state.sel) {
+        e.preventDefault();
+        pickSource(state.sel, d.field);
+        return;
+      }
+    }
+    if (e.key === '/') { e.preventDefault(); openOpPanel(state.sel || '0'); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      var all = Array.prototype.slice.call(document.querySelectorAll('[data-rowline]')).map(function (x) { return x.dataset.rowline; });
+      if (!all.length) return;
+      e.preventDefault();
+      var i = all.indexOf(state.sel);
+      var j = e.key === 'ArrowDown' ? Math.min(i + 1, all.length - 1) : Math.max(i - 1, 0);
+      state.sel = all[j === -1 ? 0 : j]; state.panel = null; renderAll();
+      return;
+    }
+    if (e.key === 'Enter' && state.sel) { openFieldPanel(state.sel, '0', null); return; }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && state.sel) { clearRow(state.sel); return; }
+    if (e.key === '[') { e.preventDefault(); openFieldPanel(state.sel || '0', '0', null); return; }
+  });
+
+  // 启动
+  renderAll();
+  syncFilter();
+  syncDrawerUI();
+  runTrial(true);   // 首次进入先跑一遍，让试算面板有内容（真实入口是「运行试算」按钮 / ⌘⏎）
+  renderStatus();
+})();
+</script>
+</body>
+</html>
