@@ -1,0 +1,229 @@
+/*
+ * 设计令牌 · 全控制台 —— ADR-0013 第 1 期的落地产物。
+ *
+ * 上游契约：`frontend/prototype/03-studio.html` 的 `:root`（四支原型合计 0 处手写 hex）。
+ * 本文件是 `docs/design/tokens-draft.css` 的落地版：上半段是原型那套自有令牌（逐字照搬，
+ * 唯一的例外是 `--font-body` 按生产补了中文回退，见「一」里的注释），下半段是把它灌进
+ * Element Plus 的桥。按「缺哪个 `--el-*` 就补哪个」，落地时实测补了草案没有的四处：
+ * 状态色的浅档/深档（「三」）、两个只能落在组件选择器上的圆角（「四」）、
+ * 遮罩真正的落点 `--el-overlay-color-lighter`（「二」末尾）、
+ * 以及一条表单控件字体的基础规则（草案只写了 `body` 那条，见文件末尾）。
+ *
+ * 引入位置：`frontend/src/main.ts`，**必须排在 `element-plus/dist/index.css` 之后**——
+ * CSS 同特异性看先后，晚了才压得住组件库的默认值。
+ *
+ * 改这份文件前先读这五条（前三条是实测出来的约束）：
+ *  1. `--el-color-primary-light-3/5/7/8/9` 在 Element Plus 里是**字面值**，不是从主色算出来的，
+ *     必须和主色一起显式覆盖；漏一个就留下蓝色描边/浅底（`--el-button-hover-bg-color:
+ *     var(--el-color-primary-light-9)`、`.el-tabs__item.is-active{color:var(--el-color-primary)}`）。
+ *     状态色同理——`--el-tag-bg-color` / `--el-alert-bg-color` 直接引用 `--el-color-*-light-9`。
+ *  2. 只改 `:root` 的变量**改不动字体**：`--el-font-family` 在 357KB 的 `dist/index.css` 里
+ *     被 `var()` 引用 **0 次**，且改之前全仓没有任何别的全局 `font-family`（字体由浏览器默认决定）。
+ *     所以文件末尾那条 `body` 规则是**必须**的，不是冗余。
+ *  3. 只改变量也**改不完字号**：Element Plus 侧只有 **68 处** `var(--el-font-size-*)` 引用，
+ *     另有 **170 处**字面 `font-size:Npx`，那部分不在第 1 期范围（ADR-0013「决策 3」）。
+ *
+ * 已知改不到的两处（写给后来人，**别当 bug**）：
+ *  a. 那 170 处字面字号：`.el-tag{--el-tag-font-size:12px}`、`.el-alert{--el-alert-title-font-size:14px}`、
+ *     `.el-pagination{--el-pagination-font-size:14px}`、`.el-dialog__body` 的 14px……
+ *     它们是**元素级**声明（写在 `.el-tag{}` 里，不是 `:root` 里），本期的令牌够不着。
+ *     实测（第 1 期改完后，真浏览器计算值）：标签 12px、分页 14px、警告标题 14px、
+ *     `el-select` **触发框**里的文字 14px——都不齐，属已知。
+ *     不要用 `!important` 硬压——`frontend/src` 的生产样式里现在 0 处，保持它
+ *     （四支原型自己的自绘样式里有 9 处，那不在生产路径上，别照抄）。第 2 期或后续单独收。
+ *  b. `el-select` / `el-option` / `el-autocomplete` 下拉弹层：弹层默认 teleport 到 body，
+ *     颜色/圆角走 `:root` 所以**会**跟着变（实测：弹层 8px、选中态绿）；字号只**部分**跟得上——
+ *     选项文字 `.el-select-dropdown__item` 实测已跟着 `--el-font-size-base` 变 13.5px，
+ *     但 `el-select` **触发框**里的文字仍是 14px（`.el-select` 自己的元素级声明），
+ *     弹层里的图标与分组标题也各有各的字面值。`ElMessage` / `ElMessageBox` 渲染在 body 上，
+ *     同理（颜色/圆角跟着变、字号看各自的元素级声明）。
+ *     **别把变量挂到某个局部容器上**——那样这几个全局件会漏掉。
+ *
+ * 范围：第 1 期只动令牌，**不碰任何组件**。编辑器那 384 行自绘样式里手写的 12 处 `#409eff`
+ * （`workbench-panel.css` 5、`MappingSourcePanel.vue` 4、`MappingRowList.vue` 3）与 53 处字号
+ * 仍是旧值，属于**预期的过渡期**（ADR-0013「结果」），第 2 期统一换名。
+ */
+:root {
+  /* ── 一、原型的自有令牌（来源：03-studio.html 的 :root，逐字照搬） ── */
+  --bg: oklch(98% 0.005 250);
+  --surface: oklch(100% 0 0);
+  --fg: oklch(22% 0.02 240);
+  --muted: oklch(50% 0.018 240);
+  --border: oklch(90% 0.008 240);
+  --accent: oklch(48% 0.15 150);
+
+  --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in oklch, var(--accent) 52%, transparent);
+  --accent-strong: color-mix(in oklch, var(--accent) 86%, black);
+  --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+  --fg-tint: color-mix(in oklch, var(--fg) 9%, transparent);
+  --bg-sunken: color-mix(in oklch, var(--bg) 62%, var(--surface));
+  --warn: oklch(58% 0.14 70);
+  --danger: oklch(54% 0.18 27);
+  --warn-soft: color-mix(in oklch, var(--warn) 14%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 11%, transparent);
+  /* 小字号下的告警/错误文字色：提到 4.5:1 以上，浅底上也能读 */
+  --warn-ink: color-mix(in oklch, var(--warn) 66%, black);
+  --danger-ink: color-mix(in oklch, var(--danger) 82%, black);
+
+  /* 原型那份字体栈只有西文 + 'Microsoft YaHei'；生产侧补上 PingFang / Hiragino 与通用族，
+     不补的话这台机器上中文会回落（实测过一次整页 Times New Roman）。
+     （契约里还有一个 `--font-display`，与原型的 `--font-body` 是同一份栈；本期没有任何地方会用到它，
+     先不搬，第 2 期做排版时再补。） */
+  --font-body: BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', system-ui, -apple-system, Inter, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --fs-body: 13.5px;
+  --fs-meta: 11.5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* ── 二、桥：把上面那套灌进 Element Plus 的变量名 ── */
+
+  /* 主色（浅档是字面值，必须全列） */
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in oklch, var(--accent) 70%, white);
+  --el-color-primary-light-5: color-mix(in oklch, var(--accent) 50%, white);
+  --el-color-primary-light-7: color-mix(in oklch, var(--accent) 30%, white);
+  --el-color-primary-light-8: color-mix(in oklch, var(--accent) 20%, white);
+  --el-color-primary-light-9: color-mix(in oklch, var(--accent) 10%, white);
+  --el-color-primary-dark-2: var(--accent-strong);
+
+  /* 圆角 */
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 20px;
+
+  /* 字号（只能改到 68 处 var(--el-font-size-*) 引用；170 处字面 px 不在第 1 期范围） */
+  --el-font-size-base: var(--fs-body);
+  --el-font-size-small: var(--fs-meta);
+  --el-font-size-extra-small: var(--fs-meta);
+  --el-font-size-medium: var(--fs-body);
+  --el-font-size-large: 15px;
+  --el-font-size-extra-large: 18px;
+
+  /* 文字色 */
+  --el-text-color-primary: var(--fg);
+  --el-text-color-regular: color-mix(in oklch, var(--fg) 82%, var(--muted));
+  --el-text-color-secondary: var(--muted);
+  --el-text-color-placeholder: color-mix(in oklch, var(--muted) 62%, var(--surface));
+  --el-text-color-disabled: color-mix(in oklch, var(--muted) 62%, var(--surface));
+
+  /* 边框色 */
+  --el-border-color: color-mix(in oklch, var(--border) 88%, var(--fg));
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: color-mix(in oklch, var(--border) 70%, var(--surface));
+  --el-border-color-extra-light: color-mix(in oklch, var(--border) 45%, var(--surface));
+  --el-border-color-dark: color-mix(in oklch, var(--border) 92%, var(--fg));
+  --el-border-color-darker: color-mix(in oklch, var(--border) 80%, var(--fg));
+
+  /* 底色 / 填充 / 遮罩（原型只有 --bg / --surface 两级） */
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-fill-color: var(--fg-tint);
+  --el-fill-color-light: var(--fg-soft);
+  --el-fill-color-lighter: color-mix(in oklch, var(--fg) 3%, transparent);
+  --el-fill-color-extra-light: color-mix(in oklch, var(--fg) 2%, transparent);
+  --el-fill-color-blank: var(--surface);
+  --el-mask-color: color-mix(in oklch, var(--fg) 26%, transparent);
+  /* 遮罩的真正落点：`--el-mask-color` 只驱动 `v-loading` 的 `.el-loading-mask`（本仓库 0 处用到），
+     弹窗/确认框/抽屉的 `.el-overlay` 走的是这个（Element Plus 的字面值 `#00000080`）。
+     原型里对应的是 `.scrim`，值就是 `color-mix(in oklch, var(--fg) 26%, transparent)`（= --el-mask-color）。 */
+  --el-overlay-color-lighter: var(--el-mask-color);
+
+  /* 侧边栏菜单（App.vue 的 el-menu） */
+  --el-menu-active-color: var(--accent);
+  --el-menu-text-color: color-mix(in oklch, var(--fg) 82%, var(--muted));
+  --el-menu-hover-text-color: var(--fg);
+  --el-menu-bg-color: var(--surface);
+  --el-menu-hover-bg-color: var(--fg-soft);
+  --el-menu-border-color: var(--border);
+
+  /* ── 三、状态色：原型是「单一信号色 + 状态只做信号」，四组一起收 ──
+     浅档/深档同样是**字面值**（约束 1 对状态色一样成立）：不补的话 `.el-tag` 的浅底、
+     `.el-alert` 四型的底色、`type="success"` 这类按钮的 hover 仍停在 Element Plus 的旧配色上
+     ——那正是「主色换了、浅底没换」的观感回归。按主色同一套比例（70/50/30/20/10、86% + black）派生。 */
+  --el-color-success: oklch(52% 0.14 152);
+  --el-color-success-light-3: color-mix(in oklch, var(--el-color-success) 70%, white);
+  --el-color-success-light-5: color-mix(in oklch, var(--el-color-success) 50%, white);
+  --el-color-success-light-7: color-mix(in oklch, var(--el-color-success) 30%, white);
+  --el-color-success-light-8: color-mix(in oklch, var(--el-color-success) 20%, white);
+  --el-color-success-light-9: color-mix(in oklch, var(--el-color-success) 10%, white);
+  --el-color-success-dark-2: color-mix(in oklch, var(--el-color-success) 86%, black);
+
+  --el-color-warning: var(--warn);
+  --el-color-warning-light-3: color-mix(in oklch, var(--warn) 70%, white);
+  --el-color-warning-light-5: color-mix(in oklch, var(--warn) 50%, white);
+  --el-color-warning-light-7: color-mix(in oklch, var(--warn) 30%, white);
+  --el-color-warning-light-8: color-mix(in oklch, var(--warn) 20%, white);
+  --el-color-warning-light-9: color-mix(in oklch, var(--warn) 10%, white);
+  --el-color-warning-dark-2: color-mix(in oklch, var(--warn) 86%, black);
+
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: color-mix(in oklch, var(--danger) 70%, white);
+  --el-color-danger-light-5: color-mix(in oklch, var(--danger) 50%, white);
+  --el-color-danger-light-7: color-mix(in oklch, var(--danger) 30%, white);
+  --el-color-danger-light-8: color-mix(in oklch, var(--danger) 20%, white);
+  --el-color-danger-light-9: color-mix(in oklch, var(--danger) 10%, white);
+  --el-color-danger-dark-2: color-mix(in oklch, var(--danger) 86%, black);
+
+  --el-color-error: var(--danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+
+  --el-color-info: var(--muted);
+  --el-color-info-light-3: color-mix(in oklch, var(--muted) 70%, white);
+  --el-color-info-light-5: color-mix(in oklch, var(--muted) 50%, white);
+  --el-color-info-light-7: color-mix(in oklch, var(--muted) 30%, white);
+  --el-color-info-light-8: color-mix(in oklch, var(--muted) 20%, white);
+  --el-color-info-light-9: color-mix(in oklch, var(--muted) 10%, white);
+  --el-color-info-dark-2: color-mix(in oklch, var(--muted) 86%, black);
+}
+
+/*
+ * ── 四、只能落在组件选择器上的两个（实测：写在 `:root` 里无效） ──
+ *
+ * Element Plus 把这两个令牌**写死在组件自己的规则里**：
+ *   `.el-card{--el-card-border-radius:4px}`、`.el-message-box{--el-messagebox-border-radius:4px}`
+ * 元素自己的声明压过 `:root`，所以只改 `:root` 时按钮(8px)/输入框(8px)/弹窗(8px) 都对了，
+ * **卡片与确认框仍是 4px**——「圆角 8px：按钮、输入框、卡片、弹窗目视一致」这条验收就过不了。
+ *
+ * 于是把同一份令牌换个落点写（值仍然是 --radius）。这不是「改组件样式」：这里只声明令牌，
+ * 没有写任何一条具体属性，组件的外观依旧由 Element Plus 自己的规则决定。
+ * 其余同类（`.el-tag` 的 4px、`.el-pagination` 的 14px 字号…）第 1 期**不动**，见文件头「已知改不到」。
+ */
+.el-card {
+  --el-card-border-radius: var(--radius);
+}
+.el-message-box {
+  --el-messagebox-border-radius: var(--radius);
+}
+
+/*
+ * 必须写这一条（约束 2）：只改 `--el-font-family` 是零效果——Element Plus 没有任何一处
+ * 用 `var()` 引用它；而改之前全仓也没有别的全局 `font-family`，所以字体是由浏览器的默认字体决定的。
+ */
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/*
+ * 同理，只写 `body` 也够不着 `<button>`：浏览器给表单控件一族写了 UA 默认字体（这台机器上是 Arial），
+ * 而 Element Plus 没有给 `.el-button` 声明 `font-family: inherit`——实测「改完令牌按钮仍是 Arial」。
+ * 原型里对应的是 `button { font: inherit; … }`；这里只取字体那一条，颜色/边框/内边距仍是组件库的。
+ */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
