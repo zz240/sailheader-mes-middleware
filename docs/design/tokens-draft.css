@@ -1,0 +1,128 @@
+/*
+ * 设计令牌 —— 第 1 期（ADR-0013）落地用的草案，随票附上。
+ *
+ * 上游契约：`frontend/prototype/03-studio.html` 的 `:root`（十几个令牌 + 从它们派生的规则）。
+ * 上半段是原型的自有令牌（逐字照搬），下半段是把它灌进 Element Plus 的桥。
+ *
+ * 落地位置（第 1 期）：`frontend/src/styles/tokens.css`，在 `frontend/src/main.ts` 里
+ * **于 `element-plus/dist/index.css` 之后**引入（CSS 同特异性看先后，晚了才压得住）。
+ *
+ * 三条实测出来的约束，改这份文件前先读：
+ *  1. `--el-color-primary-light-3/5/7/8/9` 在 Element Plus 里是**字面值**，不是从主色算出来的；
+ *     必须和主色一起显式覆盖，漏一个就留下蓝色描边/浅底。下面已经全列了。
+ *  2. 只改 `:root` 的变量**改不动字体**：`--el-font-family` 在 357KB 的 `dist/index.css` 里
+ *     被 `var()` 引用 0 次，且全仓没有别的全局 `font-family`。所以最下面那条 `body` 规则是必须的。
+ *  3. 只改变量也**改不完字号**：Element Plus 侧只有 68 处 `var(--el-font-size-*)` 引用，
+ *     另有 170 处字面 `font-size:Npx`（`.el-tag` / `.el-alert` / `.el-dialog` 都是自己写死的）。
+ *     那部分不在第 1 期范围，见 ADR-0013「决策 3」。
+ */
+:root {
+  /* ── 一、原型的自有令牌（来源：03-studio.html 的 :root，逐字照搬） ── */
+  --bg: oklch(98% 0.005 250);
+  --surface: oklch(100% 0 0);
+  --fg: oklch(22% 0.02 240);
+  --muted: oklch(50% 0.018 240);
+  --border: oklch(90% 0.008 240);
+  --accent: oklch(48% 0.15 150);
+
+  --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in oklch, var(--accent) 52%, transparent);
+  --accent-strong: color-mix(in oklch, var(--accent) 86%, black);
+  --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+  --fg-tint: color-mix(in oklch, var(--fg) 9%, transparent);
+  --bg-sunken: color-mix(in oklch, var(--bg) 62%, var(--surface));
+  --warn: oklch(58% 0.14 70);
+  --danger: oklch(54% 0.18 27);
+  --warn-soft: color-mix(in oklch, var(--warn) 14%, transparent);
+  --danger-soft: color-mix(in oklch, var(--danger) 11%, transparent);
+  /* 小字号下的告警/错误文字色：提到 4.5:1 以上，浅底上也能读 */
+  --warn-ink: color-mix(in oklch, var(--warn) 66%, black);
+  --danger-ink: color-mix(in oklch, var(--danger) 82%, black);
+
+  /* 原型那份字体栈只有西文 + 'Microsoft YaHei'；生产侧补上 PingFang / Hiragino 与通用族，
+     不补的话这台机器上中文会回落（实测过一次整页 Times New Roman）。 */
+  --font-body: BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', system-ui, -apple-system, Inter, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --fs-body: 13.5px;
+  --fs-meta: 11.5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* ── 二、桥：把上面那套灌进 Element Plus 的变量名 ── */
+
+  /* 主色（浅档是字面值，必须全列） */
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in oklch, var(--accent) 70%, white);
+  --el-color-primary-light-5: color-mix(in oklch, var(--accent) 50%, white);
+  --el-color-primary-light-7: color-mix(in oklch, var(--accent) 30%, white);
+  --el-color-primary-light-8: color-mix(in oklch, var(--accent) 20%, white);
+  --el-color-primary-light-9: color-mix(in oklch, var(--accent) 10%, white);
+  --el-color-primary-dark-2: var(--accent-strong);
+
+  /* 状态色：原型是「单一信号色 + 状态只做信号」，四组一起收 */
+  --el-color-success: oklch(52% 0.14 152);
+  --el-color-warning: var(--warn);
+  --el-color-danger: var(--danger);
+  --el-color-error: var(--danger);
+  --el-color-info: var(--muted);
+
+  /* 圆角 */
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 20px;
+
+  /* 字号（只能改到 68 处 var(--el-font-size-*) 引用；170 处字面 px 不在第 1 期范围） */
+  --el-font-size-base: var(--fs-body);
+  --el-font-size-small: var(--fs-meta);
+  --el-font-size-extra-small: var(--fs-meta);
+  --el-font-size-medium: var(--fs-body);
+  --el-font-size-large: 15px;
+  --el-font-size-extra-large: 18px;
+
+  /* 文字色 */
+  --el-text-color-primary: var(--fg);
+  --el-text-color-regular: color-mix(in oklch, var(--fg) 82%, var(--muted));
+  --el-text-color-secondary: var(--muted);
+  --el-text-color-placeholder: color-mix(in oklch, var(--muted) 62%, var(--surface));
+  --el-text-color-disabled: color-mix(in oklch, var(--muted) 62%, var(--surface));
+
+  /* 边框色 */
+  --el-border-color: color-mix(in oklch, var(--border) 88%, var(--fg));
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: color-mix(in oklch, var(--border) 70%, var(--surface));
+  --el-border-color-extra-light: color-mix(in oklch, var(--border) 45%, var(--surface));
+  --el-border-color-dark: color-mix(in oklch, var(--border) 92%, var(--fg));
+  --el-border-color-darker: color-mix(in oklch, var(--border) 80%, var(--fg));
+
+  /* 底色 / 填充 / 遮罩（原型只有 --bg / --surface 两级） */
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-fill-color: var(--fg-tint);
+  --el-fill-color-light: var(--fg-soft);
+  --el-fill-color-lighter: color-mix(in oklch, var(--fg) 3%, transparent);
+  --el-fill-color-extra-light: color-mix(in oklch, var(--fg) 2%, transparent);
+  --el-fill-color-blank: var(--surface);
+  --el-mask-color: color-mix(in oklch, var(--fg) 26%, transparent);
+
+  /* 侧边栏菜单（App.vue 的 el-menu） */
+  --el-menu-active-color: var(--accent);
+  --el-menu-text-color: color-mix(in oklch, var(--fg) 82%, var(--muted));
+  --el-menu-hover-text-color: var(--fg);
+  --el-menu-bg-color: var(--surface);
+  --el-menu-hover-bg-color: var(--fg-soft);
+  --el-menu-border-color: var(--border);
+}
+
+/*
+ * 必须写这一条（约束 2）：只改 --el-font-family 是零效果——Element Plus 没有任何一处
+ * 用 var() 引用它；而改之前全仓也没有别的全局 font-family，所以字体是由浏览器的默认字体决定的。
+ */
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  background: var(--bg);
+  color: var(--fg);
+}
