@@ -29,6 +29,9 @@
  *  13. 试算（#116）：发出去的请求体（草稿 + 样例原文 + 这份样例算在哪一步，手写那一边也一样）、
  *      没有样例时按不动、探测那份也带原文但**照样不落库**，以及回来那份结果在界面上的两句话、
  *      标红那一行怎么写、目标报文怎么排成多行。
+ *  14. 逐字段状态（#120）：请求里那第四格目标字段清单、四档状态的人话（`NULL` 与 `DROPPED` 分开）、
+ *      计量条那四格的口径与算术闭合、证据表（路径 / 值 / 产出它的规则 / 跳哪一行）、以及过期冻结
+ *      用的草稿指纹。
  */
 import {
   clearRowMapping, createGroupRow, createRow, ENUM_PLACEHOLDER, hasMapping, isRowConfigured,
@@ -75,8 +78,9 @@ import {
 } from './sample.ts'
 import {
   TRIAL_ATTRIBUTION_NOTE, TRIAL_ATTRIBUTION_WHY, TRIAL_NO_ROW_NOTE, TRIAL_NO_ROW_NOTE_EXPRESSION,
-  trialCanRun, trialFailureLine, trialOutputText, trialRequest, trialSampleNote, trialSampleOf,
-  trialSampleText, trialStepNotice, trialSummary,
+  trialCanRun, trialEvidence, trialFailureLine, trialFieldStateLabel, trialFingerprint, trialMetricsCells,
+  trialOutputText, trialRequest, trialSampleNote, trialSampleOf, trialSampleText, trialStepNotice,
+  trialConclusion, type TrialFieldStatus, type TrialMetrics, type TrialResult,
 } from './trial.ts'
 import type { EditorSourceSample } from '../types.ts'
 
@@ -1891,14 +1895,19 @@ ok('探测那条路的样例也有原文（试算拿它跑）', trialSampleOf(PR
 eq('探测那份照样不写回库里',
   sampleSavesFor(PROBED_SAMPLE, null, 13).source, { step: 1, json: null })
 
-// 回来那份结果在界面上怎么说：两句话各说一种情况，还没有结果时什么都不说
-eq('整份跑通了那句话',
-  trialSummary({ ran: true, output: { bom: {} }, error: null, failures: [] }),
-  '整份跑通了：下面是这份草稿算出来的目标报文')
-ok('整份没跑通那句话带上传来的原因',
-  trialSummary({ ran: false, output: null, error: 'NumberFormatException', failures: [] })
+// 回来那份结果在界面上怎么说：结论条那句各说一种情况，还没有结果时什么都不说
+// （#120 之后结果里还多两段 `fields` / `metrics`：这两条只管结论那一句，所以给一份空的）
+const TRIAL_NO_FIELDS: Pick<TrialResult, 'fields' | 'metrics'> = {
+  fields: [],
+  metrics: { targets: 0, valued: 0, dropped: 0, unmapped: 0, arrayRows: 0 },
+}
+eq('整份跑通了那句结论（#120 起说的是「这就是真实执行会发出的目标报文」）',
+  trialConclusion({ ran: true, output: { bom: {} }, error: null, failures: [], ...TRIAL_NO_FIELDS }),
+  '整份跑通 · 这就是真实执行会发出的目标报文')
+ok('整份没跑通那句结论带上传来的原因',
+  trialConclusion({ ran: false, output: null, error: 'NumberFormatException', failures: [], ...TRIAL_NO_FIELDS })
     .includes('NumberFormatException'))
-eq('还没跑过时没有那句话', trialSummary(null), '')
+eq('还没跑过时没有那句结论', trialConclusion(null), '')
 
 // 数组映射在结果里显示成目标数组的多行：一个元素占自己的一行（右边那一栏是等宽 pre）
 const trialOutput = trialOutputText({ bom: { bomLines: [{ lineNo: 1 }, { lineNo: 2 }] } })
@@ -1946,6 +1955,163 @@ eq('样例的步骤不明时无从比起，不说',
 eq('没有样例时也不说', trialStepNotice(stepMixedRows, null), '')
 eq('任务输入那一步也对得上（没写 sourceStep 的行按 0 算）',
   trialStepNotice([leaf('order_no', 'order_no', 'STRING', { sourceStep: 0 })], { ...PASTED_SAMPLE, step: 0 }), '')
+
+// ---------------------------------------------------------------- 14. 逐字段状态（#120）
+
+/**
+ * 逐字段状态（#120）：请求里那第四格目标字段清单、四档状态的人话、计量条那四格算得对不对、
+ * 以及证据表（哪一行、什么值、哪条规则产出的、点一下跳到账本哪一行）。
+ *
+ * 这一票的核心是 `NULL` 与 `DROPPED` **分开**：键在结果里而值是 null，说明规则跑到了、就是没值；
+ * 键不在结果里，才是「配了但取不到值」。下面两条用例就是拿这两档对出来的。
+ */
+
+// 请求的第四格：编辑器里那份目标字段清单原样带上（后端拿它判「目标清单里有、草稿里没有规则」）
+const trialTargets: TargetField[] = [{ path: 'bom.bomNo', type: 'STRING', required: true, element: null }]
+eq('试算请求：带上目标字段清单（后端据此判「还没配」那一档）',
+  trialRequest({ rows: [DRAFT_CONFIGURED], source: PASTED_SAMPLE, targets: trialTargets }).targetFields,
+  trialTargets)
+eq('试算请求：没有清单时那一格是 null（后端就不判「还没配」）',
+  trialRequest({ rows: [DRAFT_CONFIGURED], source: PASTED_SAMPLE }).targetFields, null)
+// 不带这一格的老后果也要保住：老前端（以及没传 targets 的调用点）发出去的请求照样能用
+eq('前面那份请求体没传清单，那一格就是 null（老请求照旧）', trialBody.targetFields, null)
+
+// 四档状态的人话：界面上不出现英文状态名（与 #98 对照表同一条口径）
+eq('四档状态的人话',
+  (['VALUED', 'NULL', 'DROPPED', 'UNMAPPED'] as const).map(trialFieldStateLabel),
+  ['落值', '算出来是 null', '配了但取不到值', '还没配'])
+eq('四档人话里一个英文状态名都不出现',
+  (['VALUED', 'NULL', 'DROPPED', 'UNMAPPED'] as const).every(s => !trialFieldStateLabel(s).includes(s)), true)
+
+// 计量条那四格：顺序、数、以及每格说明口径的 title
+const trialMetrics: TrialMetrics = { targets: 8, valued: 5, dropped: 2, unmapped: 1, arrayRows: 3 }
+const trialCells = trialMetricsCells(trialMetrics)
+eq('计量条四格的顺序与标签',
+  trialCells.map(c => c.label), ['落值字段', '目标数组', '未映射', '静默省略'])
+eq('计量条四格取的是各自那一个数', trialCells.map(c => c.value), ['5 / 8', 3, 1, 2])
+// 算术闭合：valued + dropped + unmapped === targets（NULL 那一档计在 valued 里），四格照着它算
+eq('四格与「valued + dropped + unmapped === targets」这份口径对得上',
+  [trialMetrics.valued + trialMetrics.dropped + trialMetrics.unmapped, trialMetrics.targets], [8, 8])
+ok('「落值」那格的 title 写明含算出来是 null 的',
+  trialCells[0].title.includes('null') && trialCells[0].title.includes('结果里有这个键'), trialCells[0].title)
+ok('「落值」那格的 title 写清是几个里面几个',
+  trialCells[0].title.includes('5 / 8'), trialCells[0].title)
+// 那一格显示的也是「落值 N / M」：只有分子看不出「都落值了」还是「一共就这么几个字段」
+eq('「落值」那格显示的是「N / M」', trialCells[0].value, '5 / 8')
+ok('「目标数组」那格的 title 写明是所有数组合计多少行',
+  trialCells[1].title.includes('合计 3 行'), trialCells[1].title)
+ok('「未映射」那格说明是「清单里有、草稿里还没有规则」',
+  trialCells[2].title.includes('清单') && trialCells[2].title.includes('草稿'), trialCells[2].title)
+ok('「静默省略」那格说明是「配了规则、结果里没有这个键」',
+  trialCells[3].title.includes('配了规则') && trialCells[3].title.includes('没有这个键'), trialCells[3].title)
+
+// 没带目标字段清单时「未映射」那格不给 0：后端没东西可比，而 0 会被读成「一个都不缺」
+// （票里的待拍板项一：不加清单那一格只能空着）
+const trialCellsNoList = trialMetricsCells(trialMetrics, false)
+eq('没带清单时「未映射」那格是破折号，不是 0', trialCellsNoList[2].value, '—')
+ok('那一格的 title 写明这一档不判', trialCellsNoList[2].title.includes('不判'), trialCellsNoList[2].title)
+eq('没带清单时其余三格照常给数',
+  [trialCellsNoList[0].value, trialCellsNoList[1].value, trialCellsNoList[3].value], ['5 / 8', 3, 2])
+
+// 证据表：一份既有数组组行、又有 DROPPED 与 UNMAPPED 的报告（#120 的样例形状）
+const TRIAL_LINE_NO = createRow(null, '$index', 'lineNo', 'INDEX')
+const TRIAL_MATERIAL = createRow(null, '', 'materialCode', 'STRING')
+const TRIAL_ARRAY = createGroupRow(1, 'product.bomItems', 'bom.bomLines')
+TRIAL_ARRAY.children = [TRIAL_LINE_NO, TRIAL_MATERIAL]
+const TRIAL_ROWS: MapRow[] = [DRAFT_CONFIGURED, createRow(1, '', 'bom.productName', 'STRING'), TRIAL_ARRAY]
+
+const trialFields: TrialFieldStatus[] = [
+  { target: 'bom.bomNo', parent: null, value: 'BUMPER-001', status: 'VALUED', reason: null, arrayRows: null },
+  {
+    target: 'bom.productName', parent: null, value: null, status: 'DROPPED',
+    reason: '来源 productName 在这份样例里取不到值，字段被丢掉了', arrayRows: null,
+  },
+  { target: 'bom.vendorName', parent: null, value: null, status: 'UNMAPPED', reason: null, arrayRows: null },
+  { target: 'bom.bomLines', parent: null, value: null, status: 'VALUED', reason: null, arrayRows: 2 },
+  { target: 'lineNo', parent: 'bom.bomLines', value: [1, 2], status: 'VALUED', reason: null, arrayRows: null },
+  { target: 'materialCode', parent: 'bom.bomLines', value: [null, 'M-2'], status: 'VALUED', reason: null, arrayRows: null },
+]
+const trialReport: TrialResult = {
+  ran: true,
+  output: { bom: { bomNo: 'BUMPER-001', bomLines: [{ lineNo: 1 }, { lineNo: 2 }] } },
+  error: null,
+  failures: [],
+  fields: trialFields,
+  metrics: { targets: 4, valued: 3, dropped: 1, unmapped: 1, arrayRows: 2 },
+}
+const evidence = trialEvidence(trialReport, TRIAL_ROWS, { 1: '读 BOM' })
+
+eq('每个目标字段一行', evidence.length, trialFields.length)
+// path 与校验问题列表同一处口径：顶层写完整路径、数组元素写「数组行 · 元素字段」
+eq('顶层行的路径就是目标字段', evidence[0].path, 'bom.bomNo')
+eq('数组元素行的路径带上它所属的数组行',
+  evidence[4].path, 'bom.bomLines · lineNo')
+// rowId 与校验那份是**同一份定位代码**：靠「目标字段 + 所属数组行」对上账本那一行
+eq('顶层行对回账本那一行', evidence[0].rowId, DRAFT_CONFIGURED.id)
+eq('数组元素行对回它自己那一行', evidence[4].rowId, TRIAL_LINE_NO.id)
+eq('定位不到行的行 rowId 是 null（清单里有、草稿里没有规则）', evidence[2].rowId, null)
+
+// DROPPED 的行：值那一格说清「结果里没有这个键」，原因是后端给的那一句，规则文字是这一行现在配的那句
+eq('DROPPED 的人话', evidence[1].stateLabel, '配了但取不到值')
+eq('DROPPED 的值那一格写明结果里没有这个键', evidence[1].valueText, '(没有这个键)')
+eq('DROPPED 那档的颜色与其它三档分得开', evidence[1].stateTone, 'dropped')
+// 为什么被丢掉只有后端说得清（来源取不到值 / 枚举表没覆盖……），界面把它原样带着，别自己编一个
+eq('DROPPED 的行带着后端给的原因',
+  evidence[1].reason, '来源 productName 在这份样例里取不到值，字段被丢掉了')
+// 配了却没进结果的这一行规则在草稿里是找得到的：它照样指出是哪一条规则产出那个字段（点了跳得过去）
+eq('DROPPED 的行照样说得出是哪条规则产出的',
+  evidence[1].ruleText, emptyRowLabel())
+eq('DROPPED 的行定位得到账本那一行', evidence[1].rowId, TRIAL_ROWS[1].id)
+// 「产出它的规则」这一列取的是当下那一行配的人话（与行列表同一份说法），不是空话
+eq('定位得到行的行「产出它的规则」取当下那一行配的',
+  evidence[0].ruleText, 'bomNo')
+
+// NULL 与 DROPPED 是两档：一个键在、值是 null，一个键干脆不在——这是本票的核心区分
+const trialNullField: TrialFieldStatus =
+  { target: 'bom.bomNo', parent: null, value: null, status: 'NULL', reason: null, arrayRows: null }
+const trialNullRow = trialEvidence({ ...trialReport, fields: [trialNullField] }, TRIAL_ROWS)[0]
+eq('NULL 与 DROPPED 的人话不是同一句', trialNullRow.stateLabel, '算出来是 null')
+ok('NULL 那一档与 DROPPED 那档的颜色不同',
+  trialNullRow.stateTone !== evidence[1].stateTone, `${trialNullRow.stateTone} / ${evidence[1].stateTone}`)
+eq('NULL 的值那一格就是 null', trialNullRow.valueText, '(null)')
+
+// UNMAPPED 的行：草稿里没有这个字段的规则（点它也跳不过去）
+eq('UNMAPPED 的人话', evidence[2].stateLabel, '还没配')
+eq('UNMAPPED 的行写明草稿里没有这个字段的规则',
+  evidence[2].ruleText, '草稿里没有这个字段的规则')
+eq('UNMAPPED 的值那一格不给假值', evidence[2].valueText, '(没有值)')
+
+// 数组组行：它自己给行数、值那一格不是标量；它的元素行 parent 指向它
+eq('数组组行那行数写在数组那一段上', evidence[3].arrayRows, 2)
+eq('数组组行认得出是组', evidence[3].isGroup, true)
+ok('数组组行的值那一格说的是行数', evidence[3].valueText.includes('2 行'), evidence[3].valueText)
+eq('元素字段行不是组', evidence[4].isGroup, false)
+eq('元素字段行的 parent 指向它所属的数组行', evidence[4].parent, 'bom.bomLines')
+// 元素字段的值是按元素分开的取值数组：某个元素没有这个键时那一格是 null
+eq('元素字段的值按元素分开摆', evidence[5].valueText, '(null)、M-2')
+
+// 整份没跑通、或后端还没带这两段时：表是空的，界面上那一块整块不铺
+eq('没有 fields 时证据表是空的',
+  trialEvidence({ ...trialReport, fields: [] }, TRIAL_ROWS).length, 0)
+eq('还没跑过时也是空的', trialEvidence(null, TRIAL_ROWS).length, 0)
+
+// 证据表读的是**喂进来的那一份行**，不是「现在编辑器里的行」：试算那一层在跑成功那一刻算一次就定格，
+// 之后草稿怎么改，报告里那些规则文字都不跟着变（票里「报告里仍是旧字段路径与旧规则文字」那一条）。
+// 这一句把这条契约钉在纯函数这一层：换一份行进来，出来的就是那一份的说法。
+const laterRows = [DRAFT_CONFIGURED, leaf('productName', 'bom.productName', 'STRING')]
+ok('换一份行进来，「产出它的规则」就跟着那一份走',
+  trialEvidence(trialReport, laterRows)[1].ruleText !== evidence[1].ruleText,
+  `${trialEvidence(trialReport, laterRows)[1].ruleText} / ${evidence[1].ruleText}`)
+
+// 过期冻结用的指纹：同一份草稿同一个串，改了行就不一样
+eq('同一份草稿的指纹相同',
+  trialFingerprint(configFromRows([DRAFT_CONFIGURED])), trialFingerprint(configFromRows([DRAFT_CONFIGURED])))
+ok('改了行指纹就变了',
+  trialFingerprint(configFromRows([DRAFT_CONFIGURED])) !== trialFingerprint(configFromRows([leaf('order_no', 'bom.bomNo', 'STRING')])))
+eq('草稿的指纹按保存会写出去的那一份算（没配好的行不算，改它指纹不变）',
+  trialFingerprint(configFromRows([DRAFT_CONFIGURED, DRAFT_BLANK])), trialFingerprint(configFromRows([DRAFT_CONFIGURED])))
+ok('手写那一边的草稿也算得出指纹（与逐行那份分得开）',
+  trialFingerprint(expressionConfig('$s_1.bomNo')) !== trialFingerprint(configFromRows([DRAFT_CONFIGURED])))
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

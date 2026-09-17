@@ -110,11 +110,11 @@ export interface LocatedIssue extends DraftIssue {
  * `entries` 是编辑器当前的行树（`flattenRows`，含收起的子行——收起的行也要挂得上问题）。
  */
 export function locateIssues(entries: FlatRow[], result: DraftValidation): LocatedIssue[] {
-  const rowIdByKey = rowKeys(entries)
+  const rowIdByKey = rowIdByTargetKey(entries)
   const locate = (issue: DraftIssue, severity: 'error' | 'warning'): LocatedIssue => ({
     ...issue,
     severity,
-    rowId: rowIdByKey.get(issueKey(issue.target, issue.parent)) ?? null,
+    rowId: rowIdByKey.get(rowTargetKey(issue.target, issue.parent)) ?? null,
   })
   return [
     ...result.errors.map(issue => locate(issue, 'error')),
@@ -146,10 +146,20 @@ export function firstErrorRowId(located: LocatedIssue[]): number | null {
   return located.find(issue => issue.severity === 'error' && issue.rowId != null)?.rowId ?? null
 }
 
+/**
+ * 一条问题在问题列表里显示成「在哪一行」。
+ *
+ * 只认那两格定位用的字段（`target` / `parent`），不要求问题本身——试算那张逐字段证据表（#120）
+ * 也按同一处口径写「在哪一行」，两处不会各写一套拼法。
+ */
+export function issueWhere(target: string | null, parent: string | null): string {
+  if (!target) return '整份配置'
+  return parent ? `${parent} · ${target}` : target
+}
+
 /** 一条问题在问题列表里显示成「在哪一行」。 */
 export function issueLocation(issue: DraftIssue): string {
-  if (!issue.target) return '整份配置'
-  return issue.parent ? `${issue.parent} · ${issue.target}` : issue.target
+  return issueWhere(issue.target, issue.parent)
 }
 
 /**
@@ -161,17 +171,26 @@ export function issueLocation(issue: DraftIssue): string {
  * 两份行落到同一个键上时**后一行赢**：那就是「用户加了一行重复的目标字段」这种情况，
  * 而后端编译也是在后出现的那一条规则上报「目标字段重复映射」的（`JsonataRuleCompiler.insert`
  * 按规则顺序插入，撞上已经插进去的那一条时抛错）。
+ *
+ * 这一份定位口径**不止校验用**：试算那张逐字段证据表（#120）也拿它把「目标字段 + 所属数组行」
+ * 对回账本那一行——「点一下跳到账本那一行」两处必须是同一种对法，所以只有这一处实现。
  */
-function rowKeys(entries: FlatRow[]): Map<string, number> {
+export function rowIdByTargetKey(entries: FlatRow[]): Map<string, number> {
   const out = new Map<string, number>()
   for (const entry of entries) {
     const target = entry.row.target.trim()
     if (!target) continue
-    out.set(issueKey(target, entry.parent?.target.trim() ?? null), entry.row.id)
+    out.set(rowTargetKey(target, entry.parent?.target.trim() ?? null), entry.row.id)
   }
   return out
 }
 
-function issueKey(target: string | null, parent: string | null): string {
+/**
+ * 「目标字段 + 所属数组行」的索引键。
+ *
+ * 用 NUL 当分隔符：目标路径里不可能出现它，所以 `('bom.a', 'x')` 与 `('bom.b', 'a.x')`
+ * 这类拼串歧义不会撞在一起。
+ */
+export function rowTargetKey(target: string | null, parent: string | null): string {
   return `${parent ?? ''}\u0000${target ?? ''}`
 }

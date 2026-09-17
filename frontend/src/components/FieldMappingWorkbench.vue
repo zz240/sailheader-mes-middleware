@@ -158,7 +158,11 @@
               :request-error="trialRequestError"
               :rows-mode="rowsMode"
               :rows="rows"
+              :evidence="trialEvidenceRows"
+              :targets-known="targets.length > 0"
+              :stale="trialStale"
               @run="runTrial"
+              @jump="jumpFromTrial"
             />
           </el-tab-pane>
         </el-tabs>
@@ -231,7 +235,7 @@ const {
   rows, targets, sourceFields, selectedId, defaultStep, clearedRows, actionNames, validation,
   displayRows, selectedEntry,
   panel, closePanel, openPanel, walkPanelOption, confirmPanelOption,
-  clearRow, jumpToRowId, pick,
+  clearRow, jumpToRowId, pick, targetQuery,
 } = state
 
 /** 左边来源清单那一块（「走清单」那一段的状态归它，这里只按键盘的意图调它）。 */
@@ -519,9 +523,23 @@ const {
  */
 const trial = useMappingTrial({ state, context, editorMode, expressionText })
 const {
-  result: trialResult, running: trialing, requestError: trialRequestError,
+  result: trialResult, running: trialing, requestError: trialRequestError, stale: trialStale,
+  evidence: trialEvidenceRows,
   source: trialSource, sampleJson: trialSampleJson, canRun: trialCanRun, run: runTrial, reset: resetTrial,
 } = trial
+
+/**
+ * 从试算那张证据表跳到账本那一行（#120）。
+ *
+ * 先清搜索词：搜索挡着的时候那一行根本不铺出来，`jumpToRowId` 只会在一个没有它的列表上选中一行
+ * ——看起来就是「点了没反应」。清完再跳，剩下的事（展开上面收起的数组行、选中、滚到看得见）
+ * 全是 `jumpToRowId` 的。
+ */
+function jumpFromTrial(rowId: number | null) {
+  if (rowId == null) return
+  targetQuery.value = ''
+  jumpToRowId(rowId)
+}
 
 function selectFirst() {
   const first = displayRows.value.find(e => e.row.target.trim())

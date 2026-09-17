@@ -7,12 +7,18 @@
 import { createGroupRow, createRow, isRowConfigured, rowFromRule, ruleFromRow, type MapRow } from './rows.ts'
 import { fieldReferenceFullLabel, fieldReferenceLabel, INDEX_SOURCE } from './labels.ts'
 
-/** 目标字段清单里的一个字段；`element` 是数组元素里的字段（相对路径）。 */
+/**
+ * 目标字段清单里的一个字段；`element` 是数组元素里的字段（相对路径）。
+ *
+ * `element` 允许写得很明确是 null（而不是只省略这个键）：这份清单会**原样发给后端**（试算的
+ * `targetFields`），而对方读的是「这个字段是不是数组」——写上 `element: null` 比让键消失更不容易
+ * 被读错（后端返回的探清单里两边的写法都出现过）。
+ */
 export interface TargetField {
   path: string
   type?: string
   required?: boolean
-  element?: TargetField[]
+  element?: TargetField[] | null
 }
 
 /** 来源字段清单里的一个字段（由结构探测给出：路径 + 类型 + 样例值）。 */
@@ -161,7 +167,8 @@ export function targetFieldsFromPaths(
       }
       if (!last) {
         node.type = 'ARRAY'
-        node.element = node.element ?? []
+        // `element` 可能是 null（清单从后端来时键写的是 null），也可能还是刚建出来的那个空数组
+        if (!node.element) node.element = []
         level = node.element
       } else {
         // 中间段路过它的时候已经标成数组了，那就不改回去
@@ -272,8 +279,17 @@ export function referenceOf(row: MapRow): { step: number | null; path: string; r
   return { step: row.sourceStep, path: source, root: false, startAt: null }
 }
 
-/** 一行当前来源在界面上显示成什么（子行按相对路径显示）。 */
-export function rowReferenceLabel(row: MapRow, actionNames: Record<number, string> = {}, isChild = false): string {
+/**
+ * 一行当前来源在界面上显示成什么（子行按相对路径显示）。
+ *
+ * `isChild` 是组件按这一行在树里的层级给出来的（行列表传 `depth > 0`）——它随上下文而变，
+ * 所以不进 `MapRow`：试算的证据表（`trial.ts`）也读这一份，同一行两处不会读成两种说法。
+ */
+export function rowReferenceLabel(
+  row: MapRow,
+  actionNames: Record<number, string> = {},
+  isChild = false,
+): string {
   const ref = referenceOf(row)
   return fieldReferenceLabel({ ...ref, relative: isChild && !ref.root && ref.path !== INDEX_SOURCE }, actionNames)
 }

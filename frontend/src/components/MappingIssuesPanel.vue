@@ -7,7 +7,7 @@
  * 按行画的（`issuesByRow` 的结果传给它，判据仍然是 `draft.ts` 的 `rowIssueState`）。
  * 「跳行」自己也做不了（那是选中与收起集合的事），所以发一条 `jump` 出去。
  */
-import type { LocatedIssue } from '../mapping/draft.ts'
+import { issueWhere, type LocatedIssue } from '../mapping/draft.ts'
 
 defineProps<{
   /** 这一次校验的问题：错误在前、警告在后，每条都带着它落在哪一行（`rowId` 为 null = 定位不到）。 */
@@ -23,10 +23,9 @@ const emit = defineEmits<{
   (e: 'jump', rowId: number | null): void
 }>()
 
-/** 一条问题在列表里显示成「在哪一行」。 */
+/** 一条问题在列表里显示成「在哪一行」（与行列右侧那套定位同一处口径，只有这一份拼法）。 */
 function where(issue: LocatedIssue): string {
-  if (!issue.target) return '整份配置'
-  return issue.parent ? `${issue.parent} · ${issue.target}` : issue.target
+  return issueWhere(issue.target, issue.parent)
 }
 </script>
 

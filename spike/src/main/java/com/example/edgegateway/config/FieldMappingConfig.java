@@ -50,6 +50,16 @@ public record FieldMappingConfig(
     }
 
     /**
+     * 是不是手写表达式那一支（{@code mode=EXPRESSION}）。
+     *
+     * <p>「哪一支」这件事有几处要判（编译器入口、草稿校验、试算的整份跑与逐字段状态表），
+     * 各写一遍裸字符串迟早会漂。放一个口子在这里，判据只有这一份。</p>
+     */
+    public boolean isExpression() {
+        return "EXPRESSION".equals(mode);
+    }
+
+    /**
      * 一条结构问题：出错的那条规则（{@code target} 定位，{@code parent} 是它所属数组行的目标字段）+ 说明。
      *
      * <p>{@code target} 和 {@code parent} 都可能为空——整份配置级别的问题（没有规则、模式配错）定位不到某一行。</p>

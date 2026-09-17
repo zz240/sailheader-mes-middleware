@@ -165,41 +165,74 @@ class FieldMappingEditorControllerTest {
     }
 
     /**
-     * 「试算」的 HTTP 契约（#116）：请求体三格（草稿 / 样例原文 / 这份样例算在哪一步）、
-     * 回来的是「整份跑通了没有 + 目标报文 + 没跑通时哪几行单独跑也失败」。
+     * 「试算」的 HTTP 契约（#116 / #120）：请求体四格（草稿 / 样例原文 / 这份样例算在哪一步 / 目标清单）、
+     * 回来的是「整份跑通了没有 + 目标报文 + 没跑通时哪几行单独跑也失败 + 逐字段那几档状态与整合数」。
      *
      * <p>字段名是前端那一边认的东西，锁在这里；试算本身的行为在 {@code MappingTrialServiceTest} 里断言。</p>
      */
     @Test
     void trialRunsTheDraftOnTheSampleItIsGiven() throws Exception {
         when(trialService.trial(any())).thenReturn(new MappingTrialResult(true,
-                Map.of("bom", Map.of("bomNo", "BOM-PRD-1")), null, List.of()));
+                Map.of("bom", Map.of("bomNo", "BOM-PRD-1")), null, List.of(),
+                List.of(new MappingTrialResult.FieldStatus("bom.bomNo", null, "BOM-PRD-1",
+                                MappingTrialResult.FieldState.VALUED, null, null),
+                        new MappingTrialResult.FieldStatus("bom.vendorName", null, null,
+                                MappingTrialResult.FieldState.UNMAPPED, null, null)),
+                new MappingTrialResult.Metrics(2, 1, 0, 1, 0)));
 
         mockMvc.perform(post("/api/field-mapping-editor/trial")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"draft":{"rules":[{"sourceStep":1,"source":"productCode",
                                   "target":"bom.bomNo","transform":"STRING"}]},
-                                 "sampleJson":"{\\"productCode\\":\\"PRD-1\\"}","sampleStep":1}
+                                 "sampleJson":"{\\"productCode\\":\\"PRD-1\\"}","sampleStep":1,
+                                 "targetFields":[{"path":"bom.bomNo","type":"STRING","required":true},
+                                                 {"path":"bom.vendorName","type":"STRING","required":false}]}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.ran").value(true))
                 .andExpect(jsonPath("$.data.error").doesNotExist())
                 .andExpect(jsonPath("$.data.failures").isEmpty())
-                .andExpect(jsonPath("$.data.output.bom.bomNo").value("BOM-PRD-1"));
+                .andExpect(jsonPath("$.data.output.bom.bomNo").value("BOM-PRD-1"))
+                .andExpect(jsonPath("$.data.fields[0].target").value("bom.bomNo"))
+                .andExpect(jsonPath("$.data.fields[0].parent").doesNotExist())
+                .andExpect(jsonPath("$.data.fields[0].status").value("VALUED"))
+                .andExpect(jsonPath("$.data.fields[1].status").value("UNMAPPED"))
+                .andExpect(jsonPath("$.data.metrics.targets").value(2))
+                .andExpect(jsonPath("$.data.metrics.unmapped").value(1));
 
         verify(trialService).trial(argThat(request ->
                 request.sampleStep() == 1
                         && request.sampleJson().equals("{\"productCode\":\"PRD-1\"}")
-                        && request.draft().get("rules") != null));
+                        && request.draft().get("rules") != null
+                        && request.targetFields().size() == 2
+                        && "bom.vendorName".equals(request.targetFields().get(1).path())));
+    }
+
+    /** 不带目标清单时那一格是空的（`UNMAPPED` 就不判了，其余状态照常给）。 */
+    @Test
+    void trialAcceptsARequestWithoutATargetList() throws Exception {
+        when(trialService.trial(any())).thenReturn(new MappingTrialResult(true, Map.of(), null, List.of(),
+                List.of(), new MappingTrialResult.Metrics(0, 0, 0, 0, 0)));
+
+        mockMvc.perform(post("/api/field-mapping-editor/trial")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"draft":{"rules":[]},"sampleJson":"{}","sampleStep":0}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.metrics.targets").value(0));
+
+        verify(trialService).trial(argThat(request -> request.targetFields() == null));
     }
 
     /** 整份没跑通时：那句话与「单独跑这一行也失败」的行一起回来（界面据此标红+写明那句话）。 */
     @Test
     void trialReportsWhichRowsFailWhenRunAlone() throws Exception {
         when(trialService.trial(any())).thenReturn(new MappingTrialResult(false, null,
-                "NumberFormatException", List.of(new MappingTrialResult.Failure("qty", "bom.bomLines", "不是数字"))));
+                "NumberFormatException", List.of(new MappingTrialResult.Failure("qty", "bom.bomLines", "不是数字")),
+                List.of(), new MappingTrialResult.Metrics(0, 0, 0, 0, 0)));
 
         mockMvc.perform(post("/api/field-mapping-editor/trial")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -212,7 +245,10 @@ class FieldMappingEditorControllerTest {
                 .andExpect(jsonPath("$.data.error").value("NumberFormatException"))
                 .andExpect(jsonPath("$.data.failures[0].target").value("qty"))
                 .andExpect(jsonPath("$.data.failures[0].parent").value("bom.bomLines"))
-                .andExpect(jsonPath("$.data.failures[0].message").value("不是数字"));
+                .andExpect(jsonPath("$.data.failures[0].message").value("不是数字"))
+                // 没跑通就没有报文可对：这张表是空的，不拿一份不存在的报文编几档状态
+                .andExpect(jsonPath("$.data.fields").isEmpty())
+                .andExpect(jsonPath("$.data.metrics.targets").value(0));
     }
 
     /**
