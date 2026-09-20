@@ -1,0 +1,1425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>消息历史 · 运行与消息步 — edge-gateway 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23252b30'/%3E%3Ctext x='8' y='11.5' font-size='8' font-family='monospace' fill='%233fae7a' text-anchor='middle'%3E%E2%86%BB%3C/text%3E%3C/svg%3E" />
+<style>
+  /* ─── 令牌：沿用字段映射工作台已锁定的控制台色板（中性两级 + 单一信号色） ─── */
+  :root {
+    --bg:      oklch(98% 0.005 250);
+    --surface: oklch(100% 0 0);
+    --fg:      oklch(22% 0.02 240);
+    --muted:   oklch(50% 0.018 240);
+    --border:  oklch(90% 0.008 240);
+    --accent:  oklch(48% 0.15 150);
+
+    --accent-soft:   color-mix(in oklch, var(--accent) 12%, transparent);
+    --accent-line:   color-mix(in oklch, var(--accent) 52%, transparent);
+    --accent-strong: color-mix(in oklch, var(--accent) 86%, black);
+    --fg-soft:       color-mix(in oklch, var(--fg) 5%, transparent);
+    --fg-tint:       color-mix(in oklch, var(--fg) 9%, transparent);
+    --bg-sunken:     color-mix(in oklch, var(--bg) 62%, var(--surface));
+    --warn:   oklch(58% 0.14 70);
+    --danger: oklch(54% 0.18 27);
+    --warn-soft:   color-mix(in oklch, var(--warn) 14%, transparent);
+    --danger-soft: color-mix(in oklch, var(--danger) 11%, transparent);
+    --warn-ink:   color-mix(in oklch, var(--warn) 66%, black);
+    --danger-ink: color-mix(in oklch, var(--danger) 82%, black);
+    --ok-ink:     color-mix(in oklch, var(--accent) 78%, black);
+
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Microsoft YaHei', sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+    --fs-body: 13.5px;
+    --fs-meta: 11.5px;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--fs-body); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  input, select { font: inherit; color: inherit; }
+  p { margin: 0; }
+  code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  h1 { font-family: var(--font-display); margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -.015em; }
+  ::selection { background: var(--accent-soft); }
+
+  /* ─── 按钮 / 分段 ─────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; min-height: 30px;
+    border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); color: var(--fg);
+    font-size: 12.5px; font-weight: 500; white-space: nowrap;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .btn:hover { background: var(--fg-soft); border-color: color-mix(in oklch, var(--fg) 32%, var(--border)); }
+  .btn:active { transform: translateY(.5px); }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+  .btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--surface); }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--fg-soft); color: var(--fg); }
+  .btn-sm { padding: 3px 8px; min-height: 24px; font-size: 11.5px; }
+  .btn[aria-pressed="true"] { background: var(--fg-tint); border-color: color-mix(in oklch, var(--fg) 26%, var(--border)); color: var(--fg); font-weight: 600; }
+  .spacer { flex: 1 1 auto; }
+  .kbd { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--bg); }
+
+  .seg { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .seg button { padding: 4px 10px; min-height: 26px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--fg-soft); color: var(--fg); }
+  .seg button[aria-pressed="true"] { background: var(--fg-tint); color: var(--fg); font-weight: 600; }
+  .seg-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .seg-label { font-size: 11px; color: var(--muted); letter-spacing: .02em; white-space: nowrap; cursor: help; }
+
+  /* ─── 应用条 / 页头 ───────────────────────────────────────────────── */
+  .appbar { flex: 0 0 auto; display: flex; align-items: center; gap: 16px; padding: 9px 18px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .brand { font-weight: 650; letter-spacing: -.01em; font-size: 14px; }
+  .brand span { font-family: var(--font-mono); font-weight: 500; color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  .crumbs { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .crumbs b { color: var(--fg); font-weight: 550; }
+  .appbar .right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+
+  .pagehead { flex: 0 0 auto; padding: 13px 18px 0; }
+  .title-row { display: flex; align-items: flex-start; gap: 13px; flex-wrap: wrap; }
+  .subline { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .subline code { color: var(--fg); font-size: 11.5px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+  .counts { margin-left: auto; display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+  .counts b { color: var(--fg); font-weight: 600; }
+
+  /* ─── 筛选条 ─────────────────────────────────────────────────────── */
+  .filters { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 18px 12px; }
+  .ctl { display: flex; align-items: center; gap: 6px; }
+  .ctl > label { font-size: 11.5px; color: var(--muted); }
+  select.ctl-in, input.ctl-in {
+    border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+    padding: 5px 8px; min-height: 30px; font-size: 12px; color: var(--fg); max-width: 220px;
+  }
+  input.ctl-in { font-family: var(--font-mono); }
+  select.ctl-in:focus, input.ctl-in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .filter-note { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .filter-note b { color: var(--fg); font-weight: 600; }
+
+  /* ─── 工作区骨架 ─────────────────────────────────────────────────── */
+  .workspace { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; padding: 0 18px 14px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .phead { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); min-height: 44px; }
+  .phead .pt { font-size: 12.5px; font-weight: 620; display: flex; align-items: center; gap: 7px; }
+  .phead .ps { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+  .phead .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .scroll { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; }
+
+  .runs { flex: 0 0 322px; min-width: 0; }
+  .detail { flex: 1 1 auto; min-width: 0; }
+
+  /* ─── 运行 / 消息步 列表 ─────────────────────────────────────────── */
+  .rlist { padding: 6px 6px 10px; }
+  .ritem { position: relative; display: block; width: 100%; text-align: left; padding: 8px 10px 9px 12px; border-radius: 8px; border: 1px solid transparent; }
+  .ritem:hover { background: var(--fg-soft); }
+  .ritem[aria-pressed="true"] { background: var(--bg-sunken); border-color: var(--border); }
+  .ritem[aria-pressed="true"]::before { content: ''; position: absolute; left: 2px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--accent); }
+  .r-top { display: flex; align-items: center; gap: 7px; }
+  .r-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .r-job { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .r-top .st { margin-left: auto; }
+  .r-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .r-err { font-size: 11px; color: var(--danger-ink); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .r-biz { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg); background: var(--fg-soft); border-radius: 4px; padding: 0 5px; }
+  .r-sep { height: 1px; background: var(--border); margin: 6px 10px; }
+  .list-empty { padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12px; }
+
+  /* 状态芯片 */
+  .st { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .02em; background: var(--surface); color: var(--muted); white-space: nowrap; }
+  .st::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .st.ok { color: var(--ok-ink); border-color: color-mix(in oklch, var(--accent) 34%, var(--border)); background: var(--accent-soft); }
+  .st.bad { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 32%, var(--border)); background: var(--danger-soft); }
+  .st.warn { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 34%, var(--border)); background: var(--warn-soft); }
+  .st.run::before { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+  /* ─── 消息头 / 消息切换 ──────────────────────────────────────────── */
+  .dbody { padding: 12px 14px 16px; }
+  .dhead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .dhead h2 { font-family: var(--font-display); margin: 0; font-size: 14.5px; font-weight: 620; letter-spacing: -.01em; }
+  .dsub { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 9px; flex-wrap: wrap; }
+  .dsub b { color: var(--fg); font-weight: 600; }
+  .runerr { margin-top: 9px; display: flex; gap: 8px; align-items: flex-start; border: 1px solid color-mix(in oklch, var(--danger) 26%, var(--border)); background: var(--danger-soft); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--danger-ink); }
+  .runerr .mk { font-family: var(--font-mono); font-size: 10.5px; border: 1px solid color-mix(in oklch, var(--danger) 34%, transparent); border-radius: 4px; padding: 0 4px; flex: 0 0 auto; }
+
+  .msgs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .msgs .lbl { font-size: 11.5px; color: var(--muted); }
+  .mchip { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); text-align: left; }
+  .mchip:hover { background: var(--fg-soft); }
+  .mchip[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+  .mchip .mid { font-family: var(--font-mono); font-size: 11px; color: var(--fg); }
+  .mchip .mbk { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .mchip .st { height: 18px; }
+
+  /* ─── 步骤链 ─────────────────────────────────────────────────────── */
+  .chain-wrap { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-sunken); }
+  .chain-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .chain-head .ct { font-size: 12px; font-weight: 620; }
+  .chain-head .cs { font-size: 11px; color: var(--muted); }
+  .chain { display: flex; align-items: stretch; gap: 0; padding: 11px 12px; overflow-x: auto; }
+  .cnode { flex: 0 0 auto; display: flex; align-items: center; }
+  .cbtn { min-height: 58px; min-width: 124px; text-align: left; padding: 6px 11px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+  .cbtn:hover { border-color: color-mix(in oklch, var(--fg) 30%, var(--border)); }
+  .cbtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .cbtn.bad { border-color: color-mix(in oklch, var(--danger) 40%, var(--border)); background: color-mix(in oklch, var(--danger) 5%, var(--surface)); }
+  .cbtn .cn { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .cbtn .ca { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: -.01em; }
+  .cbtn .cl { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 142px; }
+  .cbtn .cm { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .cstat { font-family: var(--font-mono); font-size: 10px; }
+  .cstat.ok { color: var(--ok-ink); }
+  .cstat.bad { color: var(--danger-ink); }
+  .cstat.warn { color: var(--warn-ink); }
+  .cstat.run { color: var(--muted); }
+  .carrow { width: 22px; text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: 12px; flex: 0 0 auto; }
+  .cbtn.node0 { min-width: 108px; background: transparent; border-style: dashed; }
+  .cbtn.node0 .ca { font-weight: 500; color: var(--muted); }
+  .snapdots { display: inline-flex; gap: 3px; align-items: center; }
+  .sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-tint); }
+  .sdot.on { background: var(--accent); }
+  .sdot.none { background: transparent; border: 1px dashed color-mix(in oklch, var(--muted) 60%, transparent); }
+
+  /* ─── 步骤详情卡 ─────────────────────────────────────────────────── */
+  .card { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+  .sc-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .sc-head .sn { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .sc-head .sa { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; }
+  .sc-head .sl { font-size: 12.5px; }
+  .sc-head .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .fact { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11px; color: var(--muted); }
+  .fact b { font-family: var(--font-mono); font-weight: 600; color: var(--fg); }
+  .sc-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); }
+  .q { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 4px 8px; min-height: 28px; font-size: 11.5px; font-family: var(--font-mono); width: 178px; }
+  .q:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  .snaps { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; padding: 12px; }
+  .snap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-width: 0; display: flex; flex-direction: column; }
+  .snap-head { padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); }
+  .snap-head .shr { display: flex; align-items: center; gap: 7px; }
+  .snap-head .shot { font-size: 12.5px; font-weight: 620; }
+  .snap-head .shw { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .snap-head .right { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+  .snap-head .snote { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .meter { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+  .meter-bar { flex: 0 0 92px; height: 5px; border-radius: 3px; background: var(--fg-tint); overflow: hidden; }
+  .meter-bar i { display: block; height: 100%; background: var(--accent); }
+  .meter-bar i.hot { background: var(--warn); }
+  .meter-txt { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  .snap-body { padding: 4px 0 8px; }
+
+  /* ─── JSON 格式化树 ──────────────────────────────────────────────── */
+  .jrow { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto minmax(0, auto) auto; align-items: baseline; gap: 6px; padding: 2px 8px 2px 8px; padding-left: calc(8px + var(--d) * 15px); min-height: 22px; }
+  .jrow:hover { background: var(--fg-soft); }
+  .jrow .jt { width: 14px; height: 14px; display: grid; place-items: center; color: var(--muted); font-size: 9px; border-radius: 3px; align-self: center; }
+  .jrow .jt:hover { background: var(--fg-tint); color: var(--fg); }
+  .jkey { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
+  .jkey mark { background: color-mix(in oklch, var(--warn) 30%, transparent); color: var(--fg); border-radius: 3px; }
+  .jctx { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+  .jtb { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); letter-spacing: .03em; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; background: var(--surface); white-space: nowrap; }
+  .jv { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
+  .jv.s { color: var(--fg); }
+  .jv.n { font-variant-numeric: tabular-nums; }
+  .jsum { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+  .jdate { display: inline-flex; align-items: baseline; gap: 5px; }
+  .jdate .tz { color: var(--muted); font-size: 10.5px; }
+  .jnull { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); border: 1px dashed color-mix(in oklch, var(--muted) 55%, transparent); border-radius: 4px; padding: 0 5px; }
+  .jbool { font-family: var(--font-mono); font-size: 11.5px; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface); }
+  .jacts { display: flex; gap: 4px; opacity: 0; transition: opacity .12s ease; }
+  .jrow:hover .jacts, .jrow:focus-within .jacts { opacity: 1; }
+  .jacts button { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface); }
+  .jacts button:hover { color: var(--fg); border-color: color-mix(in oklch, var(--fg) 30%, var(--border)); }
+  .tree-empty { padding: 14px 12px; color: var(--muted); font-size: 12px; }
+  .note { display: flex; gap: 7px; align-items: flex-start; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); background: var(--bg-sunken); }
+  .note.warn { background: var(--warn-soft); color: var(--warn-ink); }
+  .note code { color: var(--fg); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+  .tchip { font-family: var(--font-mono); font-size: 10px; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; flex: 0 0 auto; }
+  pre.raw { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+  pre.rawtext { color: var(--fg); }
+
+  /* ─── 对照（上一步 → 本步） ─────────────────────────────────────── */
+  .diff { padding: 0 12px 12px; }
+  .dsum { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 0 8px; font-size: 11.5px; color: var(--muted); }
+  .dc { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 11px; }
+  .dc i { width: 7px; height: 7px; border-radius: 2px; display: block; }
+  .dc.same i { background: var(--fg-tint); }
+  .dc.chg i { background: var(--warn); }
+  .dc.add i { background: var(--accent); }
+  .dc.del i { background: color-mix(in oklch, var(--danger) 60%, transparent); }
+  .dgrid { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .dhead2, .drow { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,1fr) 20px minmax(0,1fr) 46px; gap: 8px; align-items: baseline; padding: 6px 10px; }
+  .dhead2 { background: var(--bg-sunken); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .drow { border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent); }
+  .drow:last-child { border-bottom: 0; }
+  .drow:hover { background: var(--fg-soft); }
+  .dpath { font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+  .dval { font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; color: var(--fg); }
+  .dval.old { color: var(--muted); }
+  .darrow { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-align: center; }
+  .dchip { font-family: var(--font-mono); font-size: 10px; text-align: center; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
+  .drow.st-chg .dchip { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 40%, var(--border)); background: var(--warn-soft); }
+  .drow.st-add .dchip { color: var(--ok-ink); border-color: color-mix(in oklch, var(--accent) 40%, var(--border)); background: var(--accent-soft); }
+  .drow.st-del .dchip { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft); }
+  .drow.st-chg .dval.new { font-weight: 600; }
+
+  /* ─── 错误块 / 卡脚 ─────────────────────────────────────────────── */
+  .errbox { margin: 0 12px 12px; border: 1px solid color-mix(in oklch, var(--danger) 28%, var(--border)); background: var(--danger-soft); border-radius: 10px; overflow: hidden; }
+  .errbox .eh { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid color-mix(in oklch, var(--danger) 22%, var(--border)); font-size: 11.5px; color: var(--danger-ink); font-weight: 600; }
+  .errbox pre { margin: 0; padding: 9px 11px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+  .errbox pre b { color: var(--danger-ink); }
+  .sc-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg-sunken); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+  .sc-foot .hint { font-size: 11.5px; color: var(--muted); }
+  .sc-foot .hint code { color: var(--fg); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+
+  /* ─── 弹窗 / 提示 ───────────────────────────────────────────────── */
+  .overlay { position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 42%, transparent); display: grid; place-items: center; padding: 20px; z-index: 60; }
+  .overlay[hidden] { display: none; }
+  .modal { width: 100%; max-width: 560px; max-height: 88vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 24px 60px color-mix(in oklch, var(--fg) 22%, transparent); }
+  .modal h3 { margin: 0; font-size: 14.5px; font-weight: 620; }
+  .modal .mh { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 9px; }
+  .modal .mb { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .modal .mf { padding: 11px 14px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 9px; background: var(--bg-sunken); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+  .modal p { font-size: 12.5px; color: var(--muted); }
+  .modal p b { color: var(--fg); font-weight: 600; }
+  .modal code { color: var(--fg); background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 11.5px; }
+  .rlist2 { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .rli { display: grid; grid-template-columns: 92px minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--border); font-size: 11.5px; }
+  .rli:last-child { border-bottom: 0; }
+  .rli .n { font-family: var(--font-mono); color: var(--muted); }
+  .rli .a { font-family: var(--font-mono); color: var(--fg); }
+  .rli .f { font-family: var(--font-mono); font-size: 10.5px; color: var(--ok-ink); }
+  .rli .f.no { color: var(--warn-ink); }
+
+  .toast { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .toast div { background: var(--fg); color: var(--surface); border-radius: 8px; padding: 8px 12px; font-size: 12px; box-shadow: 0 10px 30px color-mix(in oklch, var(--fg) 30%, transparent); }
+  .toast div.err { background: var(--danger-ink); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ─── 窄屏：单栏堆叠，不横向滚动 ──────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .st.run::before { animation: none; }
+    * { transition: none !important; }
+  }
+  @media (max-width: 920px) {
+    body { overflow: auto; }
+    .workspace { flex-direction: column; padding: 0 12px 16px; }
+    .runs { flex: 0 0 auto; max-height: 306px; }
+    .detail { flex: 0 0 auto; }
+    .snaps { grid-template-columns: minmax(0,1fr); }
+    .chain { flex-direction: column; align-items: stretch; overflow-x: visible; gap: 2px; }
+    .cnode { width: 100%; }
+    .cbtn { width: 100%; min-width: 0; }
+    .cbtn .cl { max-width: none; }
+    .carrow { width: 100%; transform: rotate(90deg); padding: 0; line-height: 1; }
+    .dhead2, .drow { grid-template-columns: minmax(0,1fr) 46px; }
+    .dhead2 span:nth-child(2), .dhead2 span:nth-child(3), .dhead2 span:nth-child(4),
+    .drow .dval.old, .drow .darrow { display: none; }
+    .appbar { flex-wrap: wrap; gap: 9px; }
+    .counts { width: 100%; margin-left: 0; }
+    .q { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header class="appbar" data-od-id="app-bar">
+  <span class="brand">edge-gateway<span>控制台</span></span>
+  <nav class="crumbs" aria-label="面包屑">
+    <span>可靠性</span><span>›</span><b>消息历史</b>
+  </nav>
+  <div class="right">
+    <span class="kbd">Esc 关弹窗</span>
+    <button class="btn btn-sm" data-act="reload" data-od-id="btn-reload">刷新</button>
+  </div>
+</header>
+
+<section class="pagehead" data-od-id="page-head">
+  <div class="title-row">
+    <div>
+      <h1>消息历史</h1>
+      <p class="subline">
+        <span>死信升维为「运行 + 消息步」<code>ADR-0009</code></span>
+        <span>·</span>
+        <span>失败即停、重试退避、从失败步断点续跑<code>ADR-0003</code></span>
+        <span>·</span>
+        <span>快照以 <code>message_step</code> 的 TEXT 列存储，上限 64 KB<code>#127</code></span>
+      </p>
+    </div>
+    <div class="counts" aria-label="当前数据集计数">
+      <span>运行 <b id="cRuns">0</b></span>
+      <span>消息 <b id="cMsgs">0</b></span>
+      <span>消息步 <b id="cSteps">0</b></span>
+      <span>失败步 <b id="cFail">0</b></span>
+    </div>
+  </div>
+</section>
+
+<section class="filters" data-od-id="history-filters">
+  <div class="ctl">
+    <label for="fJob">任务</label>
+    <select class="ctl-in" id="fJob" data-act="filter">
+      <option value="all">全部任务</option>
+      <option value="7">#7 MDM 编码回写（B6 链）</option>
+      <option value="3">#3 站点连通性探测</option>
+      <option value="12">#12 日终对账（条数 / 金额）</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <label for="fStatus">状态</label>
+    <select class="ctl-in" id="fStatus" data-act="filter">
+      <option value="all">全部状态</option>
+      <option value="FAILED">FAILED</option>
+      <option value="SUCCESS">SUCCESS</option>
+      <option value="REDELIVERED">REDELIVERED</option>
+      <option value="RUNNING">RUNNING</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <label for="fBiz">业务键</label>
+    <input class="ctl-in" id="fBiz" data-act="filter" placeholder="SO-2026-0917-0042" aria-label="按业务键检索（消息步）" />
+  </div>
+  <button class="btn" data-act="query">查询</button>
+  <button class="btn btn-ghost" data-act="reset">重置</button>
+  <div class="spacer"></div>
+  <div class="seg" role="group" aria-label="历史视图" data-od-id="view-toggle">
+    <button data-act="view" data-view="runs" aria-pressed="true">按运行展开</button>
+    <button data-act="view" data-view="steps" aria-pressed="false">消息步检索</button>
+  </div>
+  <span class="filter-note" id="filterNote"></span>
+</section>
+
+<main class="workspace" data-od-id="history-workspace">
+  <aside class="panel runs" data-od-id="run-list">
+    <div class="phead">
+      <span class="pt" id="listTitle">运行</span>
+      <span class="ps" id="listCount"></span>
+      <span class="right"><span class="filter-note" id="listHint">选一条运行看它的消息与消息步</span></span>
+    </div>
+    <div class="scroll"><div class="rlist" id="list"></div></div>
+  </aside>
+
+  <section class="panel detail" data-od-id="message-detail">
+    <div class="phead">
+      <span class="pt">消息详情</span>
+      <span class="ps" id="detailPath">—</span>
+      <span class="right">
+        <button class="btn btn-sm" data-act="copy-msg" data-od-id="btn-copy-message">复制消息 ID</button>
+      </span>
+    </div>
+    <div class="scroll"><div class="dbody" id="detail"></div></div>
+  </section>
+</main>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="redeliverTitle" data-od-id="redeliver-dialog">
+    <div class="mh">
+      <h3 id="redeliverTitle">断点重投</h3>
+      <span class="spacer"></span>
+      <span class="kbd">Esc 关闭</span>
+    </div>
+    <div class="mb" id="modalBody"></div>
+    <div class="mf">
+      <span class="hint" style="font-size:11.5px;color:var(--muted)">重投只投这一条消息，成功后原步置 <code>REDELIVERED</code>。</span>
+      <span class="spacer"></span>
+      <button class="btn" data-act="close-modal">取消</button>
+      <button class="btn btn-primary" data-act="confirm-redeliver" data-od-id="btn-confirm-redeliver">确认重投</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" aria-live="polite"></div>
+<p class="sr" id="live" aria-live="polite"></p>
+
+<script>
+(function () {
+  'use strict';
+
+  var CAP = 65535; /* message_step.data_snapshot / input_snapshot：TEXT，65535 字节（#127） */
+
+  /* ── 演示数据：取自本仓可靠性流与 #90 / #108 / #123 的记录场景 ── */
+  var RUNS = [
+    {
+      id: 301, jobId: 7, job: 'MDM 编码回写（B6 链）', status: 'FAILED',
+      startedAt: '2026-09-17 09:12:31', finishedAt: '2026-09-17 09:12:34', cost: '3.1 s',
+      error: "Duplicate entry 'MDM-88231' for key 'uk_mdm_code'",
+      messages: [
+        {
+          id: '9f3c41a7-2d55-4b0e-9a10-8c7e51d0b2a4', businessKey: 'SO-2026-0917-0042', at: '09:12:31.190',
+          steps: [
+            {
+              n: 1, action: 'READ_SQL', name: '读编码基准记录', status: 'SUCCESS', attempt: 1, cost: '38 ms', at: '09:12:31.210',
+              input: { '0': { order_no: 'SO-2026-0917-0042', site_code: 'SH-02', qty: 120, requested_at: '2026-09-17T09:12:30+08:00', operator: 'mes-bridge' } },
+              inputNote: '进入本步的整份上下文：此刻只有 context[0]（本次运行的触发报文）',
+              data: { code_id: 88231, code_type: 'MDM_CODE', code_value: 'SO-2026-0917-0042', site_code: 'SH-02', f_handle: null, enabled: true, tags: ['mes', 'north'], remark: '', updated_at: '2026-09-16T18:40:02+08:00' },
+              dataNote: '本步输出 → 写入 context[1]，下游以 sourceStep=1 引用'
+            },
+            {
+              n: 2, action: 'FIELD_MAP', name: '映射写库字段', status: 'SUCCESS', attempt: 1, cost: '42 ms', at: '09:12:31.268',
+              sourceStep: 1,
+              input: {
+                '0': { order_no: 'SO-2026-0917-0042', site_code: 'SH-02', qty: 120, requested_at: '2026-09-17T09:12:30+08:00', operator: 'mes-bridge' },
+                '1': { code_id: 88231, code_type: 'MDM_CODE', code_value: 'SO-2026-0917-0042', site_code: 'SH-02', f_handle: null, enabled: true, tags: ['mes', 'north'], remark: '', updated_at: '2026-09-16T18:40:02+08:00' }
+              },
+              inputNote: 'FIELD_MAP 的唯一输入是整份上下文：键即步骤号，取值写成 $s_1.code_value 这样的来源路径',
+              data: { order_no: 'SO-2026-0917-0042', site_code: 'SH-02', qty: 120, handle: null, shipped_at: '2026-09-17T09:12:33+08:00' },
+              dataNote: '本步输出 → 写入 context[2]；handle 取 $s_1.f_handle，此刻上游还是 null'
+            },
+            {
+              n: 3, action: 'HTTP_CALL', name: '调标识服务取 FHandle', status: 'SUCCESS', attempt: 1, cost: '210 ms', at: '09:12:31.318',
+              input: {
+                url: 'http://10.20.8.31:8088/api/identity/handle', method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Site': 'SH-02' }, timeout_ms: 3000,
+                body: { code: 'MDM-88231', order_no: 'SO-2026-0917-0042' }
+              },
+              inputNote: 'HTTP_CALL 的输入不是上下文，而是拼好的出站请求（请求体来自上下文取值）',
+              data: { results: [{ handle: 'H-77A21', code: 'MDM-88231', status: 'OK' }], elapsed_ms: 208 },
+              dataNote: '响应解析进 context[3]（#123：对象 / 数组 / 标量都按 JSON 值还原）'
+            },
+            {
+              n: 4, action: 'WRITE_UPSERT', name: '回写 MDM_Code.FHandle', status: 'FAILED', attempt: 3, cost: '1.2 s', at: '09:12:34.010',
+              input: {
+                table: 'MDM_Code', key: { code_id: 88231 },
+                columns: { FHandle: 'H-77A21', OrderNo: 'SO-2026-0917-0042', Remark: '' },
+                source_paths: ['context[1].code_id', 'context[3].results[0].handle']
+              },
+              inputNote: '写库动作的输入：目标表、主键与列值（列值由上下文路径求值而来）',
+              dataMissing: '失败步不写快照 —— 报错发生在写入返回之前，没有可回填的上游数据（ADR-0003：失败即停，绝不写半截）',
+              error: "Duplicate entry 'MDM-88231' for key 'uk_mdm_code'\n\tat WriteUpsertAction.execute(WriteUpsertAction.java:88)\n\tat ActionChainRunner.runStep(ActionChainRunner.java:142)"
+            }
+          ]
+        },
+        {
+          id: 'b71d08c3-4e19-4a77-8f2b-1d0c6a9e3355', businessKey: 'SO-2026-0917-0041', at: '09:12:33.640',
+          steps: [
+            {
+              n: 1, action: 'MQ_CONSUME', name: '消费站点报文', status: 'SUCCESS', attempt: 1, cost: '6 ms', at: '09:12:33.655',
+              input: { '0': { order_no: 'SO-2026-0917-0041', site_code: 'SH-02', qty: 60, requested_at: '2026-09-17T09:12:29+08:00' } },
+              inputNote: '入口动作之前只有 context[0]（投递给本链的报文）',
+              dataMissing: 'MQ 入口动作不记成功步快照（#90 已知边界）：上游没有快照，下游引用该步时会静默出空',
+              error: ''
+            },
+            {
+              n: 2, action: 'FIELD_MAP', name: '映射写库字段', status: 'SUCCESS', attempt: 1, cost: '41 ms', at: '09:12:33.702',
+              sourceStep: 1,
+              input: { '0': { order_no: 'SO-2026-0917-0041', site_code: 'SH-02', qty: 60, requested_at: '2026-09-17T09:12:29+08:00' } },
+              inputNote: '规则写的是 $s_1.*，而步骤 1 没有快照 → 上下文里只有 [0]，取值全部落空',
+              data: {},
+              dataNote: '本步输出 → 写入 context[2]：SUCCESS 但对象是空的，下游拿到的是空数据',
+              emptyWarn: '空对象：上游无快照时映射会「成功但出空」，错误要等到下游写库才暴露（#90 / run 301 现场）'
+            },
+            {
+              n: 3, action: 'WRITE_UPSERT', name: '回写 MDM_Code', status: 'FAILED', attempt: 3, cost: '1.1 s', at: '09:12:36.220',
+              input: { table: 'MDM_Code', columns: { FHandle: null, OrderNo: null }, source_paths: ['context[2].order_no', 'context[2].handle'] },
+              inputNote: '列值来自步骤 2 的空对象——两个路径都求不出值',
+              dataMissing: '失败步不写快照',
+              error: "Field 'order_no' doesn't have a default value\n\tat WriteUpsertAction.execute(WriteUpsertAction.java:88)\n\tat ActionChainRunner.runStep(ActionChainRunner.java:142)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: 302, jobId: 3, job: '站点连通性探测', status: 'FAILED',
+      startedAt: '2026-09-17 09:20:00', finishedAt: '2026-09-17 09:20:05', cost: '5.1 s',
+      error: 'Communications link failure（connect timed out after 5000 ms）',
+      messages: [
+        {
+          id: 'c02e7b41-9a38-4d16-b0f5-77e29c4a0618', businessKey: 'SITE-SH-02', at: '09:20:00.410',
+          steps: [
+            {
+              n: 1, action: 'HTTP_CALL', name: '探活 GET /health', status: 'SUCCESS', attempt: 1, cost: '118 ms', at: '09:20:00.426',
+              input: { url: 'http://10.20.8.31:8088/health', method: 'GET', timeout_ms: 2000 },
+              inputNote: '出站请求：无请求体',
+              dataText: 'OK 1024 bytes\nserver: nginx/1.24.0\nx-request-id: 5f0c1a9e\ndb=UP mq=UP site=SH-02',
+              dataNote: '本步输出 → context[1]'
+            },
+            {
+              n: 2, action: 'READ_SQL', name: '读待对账清单', status: 'FAILED', attempt: 3, cost: '5.0 s', at: '09:20:05.180',
+              input: { '0': { site_code: 'SH-02', probe_at: '2026-09-17T09:20:00+08:00' } },
+              inputNote: '步骤 1 的快照是非 JSON 文本，不进上下文（#90 口径）——这份 context 里只有 [0]',
+              dataMissing: '失败步不写快照',
+              error: 'Communications link failure\n\tThe last packet sent successfully to the server was 0 milliseconds ago.\n\tCaused by: java.net.SocketTimeoutException: connect timed out after 5000 ms\n\tat ReadSqlAction.execute(ReadSqlAction.java:74)'
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: 300, jobId: 7, job: 'MDM 编码回写（B6 链）', status: 'SUCCESS',
+      startedAt: '2026-09-17 09:08:00', finishedAt: '2026-09-17 09:08:01', cost: '0.9 s', error: '',
+      messages: [
+        {
+          id: '42aa10d9-7c64-4f8b-9c31-6b0e8a72d114', businessKey: 'SO-2026-0917-0040', at: '09:08:00.120',
+          steps: [
+            {
+              n: 1, action: 'READ_SQL', name: '读编码基准记录', status: 'SUCCESS', attempt: 1, cost: '21 ms', at: '09:08:00.140',
+              input: { '0': { order_no: 'SO-2026-0917-0040', site_code: 'SH-02', qty: 60, requested_at: '2026-09-17T09:08:00+08:00' } },
+              inputNote: '进入本步的整份上下文：只有 context[0]',
+              data: { code_id: 88230, code_type: 'MDM_CODE', code_value: 'SO-2026-0917-0040', site_code: 'SH-02', f_handle: 'H-77A19', enabled: true, tags: ['mes', 'north'], remark: '', updated_at: '2026-09-16T18:40:01+08:00' },
+              dataNote: '本步输出 → context[1]'
+            },
+            {
+              n: 2, action: 'FIELD_MAP', name: '映射写库字段', status: 'SUCCESS', attempt: 1, cost: '19 ms', at: '09:08:00.186',
+              sourceStep: 1,
+              input: { '1': { code_id: 88230, code_value: 'SO-2026-0917-0040', site_code: 'SH-02', f_handle: 'H-77A19' } },
+              inputNote: '只摘了本步用到的来源字段，真实快照是整份上下文',
+              data: { order_no: 'SO-2026-0917-0040', site_code: 'SH-02', qty: 60, handle: 'H-77A19', shipped_at: '2026-09-17T09:08:00+08:00' },
+              dataNote: '本步输出 → context[2]'
+            },
+            {
+              n: 3, action: 'HTTP_CALL', name: '调标识服务取 FHandle', status: 'SUCCESS', attempt: 1, cost: '96 ms', at: '09:08:00.240',
+              input: { url: 'http://10.20.8.31:8088/api/identity/handle', method: 'POST', body: { code: 'MDM-88230', order_no: 'SO-2026-0917-0040' } },
+              inputNote: '出站请求',
+              data: { results: [{ handle: 'H-77A19', code: 'MDM-88230', status: 'OK' }], elapsed_ms: 94 },
+              dataNote: '响应解析进 context[3]'
+            },
+            {
+              n: 4, action: 'WRITE_UPSERT', name: '回写 MDM_Code.FHandle', status: 'SUCCESS', attempt: 1, cost: '34 ms', at: '09:08:00.360',
+              input: { table: 'MDM_Code', key: { code_id: 88230 }, columns: { FHandle: 'H-77A19' } },
+              inputNote: '写库动作的输入',
+              data: { affected_rows: 1, code_id: 88230 },
+              dataNote: '本步输出 → context[4]'
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: 299, jobId: 7, job: 'MDM 编码回写（B6 链）', status: 'REDELIVERED',
+      startedAt: '2026-09-17 08:40:11', finishedAt: '2026-09-17 08:40:14', cost: '3.0 s', error: '',
+      messages: [
+        {
+          id: '1d77c5e2-6b90-4a31-88f0-2c4a7e0538bb', businessKey: 'SO-2026-0917-0039', at: '08:40:11.004',
+          redeliveredFrom: 297,
+          steps: [
+            {
+              n: 1, action: 'READ_SQL', name: '读编码基准记录', status: 'SUCCESS', attempt: 1, cost: '24 ms', at: '08:40:11.022',
+              input: { '0': { order_no: 'SO-2026-0917-0039', site_code: 'SH-02', qty: 30 } },
+              inputNote: '进入本步的整份上下文：只有 context[0]',
+              data: { code_id: 88229, code_value: 'SO-2026-0917-0039', site_code: 'SH-02', f_handle: 'H-77A15', enabled: true, remark: '' },
+              dataNote: '本步输出 → context[1]'
+            },
+            {
+              n: 2, action: 'FIELD_MAP', name: '映射写库字段', status: 'SUCCESS', attempt: 1, cost: '18 ms', at: '08:40:11.070',
+              sourceStep: 1,
+              input: { '1': { code_id: 88229, code_value: 'SO-2026-0917-0039', f_handle: 'H-77A15' } },
+              inputNote: '只摘了本步用到的来源字段',
+              data: { order_no: 'SO-2026-0917-0039', handle: 'H-77A15', qty: 30 },
+              dataNote: '本步输出 → context[2]'
+            },
+            {
+              n: 3, action: 'WRITE_UPSERT', name: '回写 MDM_Code.FHandle', status: 'REDELIVERED', attempt: 2, cost: '31 ms', at: '08:40:14.220',
+              input: { table: 'MDM_Code', key: { code_id: 88229 }, columns: { FHandle: 'H-77A15' } },
+              inputNote: '写库动作的输入（重投时由断点路由入口回填 context[3]）',
+              data: { affected_rows: 1, code_id: 88229 },
+              dataNote: '本步输出 → context[3]',
+              error: "Duplicate entry 'MDM-88229' for key 'uk_mdm_code'\n\t（首跑报错；重投成功后原步置 REDELIVERED，#108）"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: 298, jobId: 12, job: '日终对账（条数 / 金额）', status: 'RUNNING',
+      startedAt: '2026-09-17 09:30:00', finishedAt: '', cost: '运行中', error: '',
+      messages: [
+        {
+          id: 'ff0a2c86-31d4-4e6a-9c02-58b7de1f4a90', businessKey: null, at: '09:30:00.008',
+          steps: [
+            {
+              n: 1, action: 'READ_SQL', name: '读当日流水汇总', status: 'SUCCESS', attempt: 1, cost: '620 ms', at: '09:30:00.030',
+              input: { '0': { biz_date: '2026-09-16', site_code: 'SH-02' } },
+              inputNote: '进入本步的整份上下文：只有 context[0]',
+              data: { biz_date: '2026-09-16', row_count: 3, total_amount: 128400, currency: 'CNY' },
+              dataNote: '本步输出 → context[1]'
+            },
+            {
+              n: 2, action: 'FIELD_MAP', name: '映射对账维度', status: 'RUNNING', attempt: 1, cost: '—', at: '09:30:00.700',
+              sourceStep: 1,
+              input: { '1': { biz_date: '2026-09-16', row_count: 3, total_amount: 128400, currency: 'CNY' } },
+              inputNote: '只摘了本步用到的来源字段',
+              dataMissing: '运行中：本步还没落快照',
+              error: ''
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  /* ── 状态 ───────────────────────────────────────────────────────── */
+  var state = {
+    view: 'runs', jobId: 'all', status: 'all', biz: '',
+    runId: 301, msgIdx: 0, stepN: 4,
+    snapView: 'side', depth: 2, query: '', raw: false
+  };
+  var expanded = {};   /* path -> true */
+  var longOpen = {};   /* path -> true（长字符串展开） */
+
+  var $ = function (s) { return document.querySelector(s); };
+
+  function save() {
+    try {
+      localStorage.setItem('fmhistory.v1', JSON.stringify({
+        view: state.view, jobId: state.jobId, status: state.status, biz: state.biz,
+        runId: state.runId, msgIdx: state.msgIdx, stepN: state.stepN,
+        snapView: state.snapView, depth: state.depth, raw: state.raw
+      }));
+    } catch (e) { /* 隐私模式下写不进去就算了 */ }
+  }
+  function restore() {
+    try {
+      var raw = localStorage.getItem('fmhistory.v1');
+      if (!raw) return;
+      var s = JSON.parse(raw);
+      ['view', 'jobId', 'status', 'biz', 'runId', 'msgIdx', 'stepN', 'snapView', 'depth', 'raw'].forEach(function (k) {
+        if (s[k] !== undefined) state[k] = s[k];
+      });
+    } catch (e) { /* 坏数据忽略 */ }
+  }
+
+  /* ── 取值 / 工具 ─────────────────────────────────────────────────── */
+  var esc = function (s) {
+    return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+  };
+  var isObj = function (v) { return v !== null && typeof v === 'object' && !Array.isArray(v); };
+  var isArr = function (v) { return Array.isArray(v); };
+  var isCont = function (v) { return isObj(v) || isArr(v); };
+  var shortId = function (id) { return id && id.length > 10 ? id.slice(0, 8) + '…' : (id || '—'); };
+  var statusCls = function (s) {
+    if (s === 'SUCCESS') return 'ok';
+    if (s === 'FAILED') return 'bad';
+    if (s === 'REDELIVERED') return 'warn';
+    return 'run';
+  };
+  function bytesOf(str) {
+    try { return new TextEncoder().encode(str).length; } catch (e) { return str.length; }
+  }
+  function fmtBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function toCtxPath(p) {
+    if (!p) return 'context';
+    return /^\d/.test(p) ? 'context[' + p.replace(/^(\d+)/, '$1]') : p;
+  }
+  function keyLabel(k) {
+    if (!/^\d+$/.test(k)) return '';
+    return Number(k) === 0 ? '任务输入' : '步骤 ' + k + ' 输出';
+  }
+  var ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+  function fmtIso(v) {
+    var m = ISO.exec(v);
+    if (!m) return '';
+    var tz = m[2] === 'Z' ? 'UTC' : m[2];
+    var t = v.slice(0, 19).replace('T', ' ');
+    return { t: t, tz: tz.slice(0, 6) };
+  }
+  function runOf(id) { for (var i = 0; i < RUNS.length; i++) { if (RUNS[i].id === id) return RUNS[i]; } return RUNS[0]; }
+  function msgsOf(run) { return run.messages || []; }
+  function cur() {
+    var run = runOf(state.runId);
+    var msgs = msgsOf(run);
+    var idx = Math.min(state.msgIdx, msgs.length - 1);
+    if (idx < 0) idx = 0;
+    var msg = msgs[idx];
+    if (!msg) return { run: run, msg: null, step: null, prev: null, idx: 0, msgs: msgs };
+    var k = 0;
+    for (var i = 0; i < msg.steps.length; i++) { if (msg.steps[i].n === state.stepN) k = i; }
+    return { run: run, msg: msg, step: msg.steps[k], prev: k > 0 ? msg.steps[k - 1] : null, idx: idx, msgs: msgs, i: k };
+  }
+  function stepCount(run) {
+    var n = 0;
+    msgsOf(run).forEach(function (m) { n += m.steps.length; });
+    return n;
+  }
+  function failSteps(run) {
+    var n = 0;
+    msgsOf(run).forEach(function (m) { m.steps.forEach(function (s) { if (s.status === 'FAILED') n++; }); });
+    return n;
+  }
+
+  /* ── 过滤 ───────────────────────────────────────────────────────── */
+  function runMatches(run) {
+    if (state.jobId !== 'all' && String(run.jobId) !== String(state.jobId)) return false;
+    if (state.view === 'runs' && state.status !== 'all' && run.status !== state.status) return false;
+    if (state.biz) {
+      var hit = false;
+      msgsOf(run).forEach(function (m) {
+        if ((m.businessKey || '').toLowerCase().indexOf(state.biz.toLowerCase()) >= 0) hit = true;
+      });
+      if (!hit) return false;
+    }
+    return true;
+  }
+  function stepMatches(s, run) {
+    if (state.jobId !== 'all' && String(run.jobId) !== String(state.jobId)) return false;
+    var want = state.status === 'all' ? 'FAILED' : state.status;  /* 消息步检索默认只看 FAILED（#74） */
+    if (s.status !== want) return false;
+    if (state.biz && (s.bk || '').toLowerCase().indexOf(state.biz.toLowerCase()) < 0) return false;
+    return true;
+  }
+  function stepRows() {
+    var rows = [];
+    RUNS.forEach(function (run) {
+      msgsOf(run).forEach(function (m, mi) {
+        m.steps.forEach(function (s) {
+          if (stepMatches({ status: s.status, bk: m.businessKey }, run)) rows.push({ run: run, msg: m, mi: mi, s: s });
+        });
+      });
+    });
+    return rows;
+  }
+
+  /* ── 列表渲染 ───────────────────────────────────────────────────── */
+  function renderList() {
+    var box = $('#list'), title = $('#listTitle'), cnt = $('#listCount'), hint = $('#listHint');
+    var html = '';
+    if (state.view === 'runs') {
+      title.textContent = '运行';
+      hint.textContent = '选一条运行看它的消息与消息步';
+      var shown = RUNS.filter(runMatches);
+      cnt.textContent = shown.length + ' / ' + RUNS.length;
+      shown.forEach(function (run) {
+        var msgs = msgsOf(run);
+        var visibleMsgs = state.biz ? msgs.filter(function (m) { return (m.businessKey || '').toLowerCase().indexOf(state.biz.toLowerCase()) >= 0; }) : msgs;
+        html += '<button class="ritem" data-act="open-run" data-run="' + run.id + '" aria-pressed="' + (run.id === state.runId) + '">'
+          + '<div class="r-top"><span class="r-id">#' + run.id + '</span><span class="r-job" title="#' + run.jobId + ' ' + esc(run.job) + '">#' + run.jobId + ' ' + esc(run.job) + '</span>'
+          + '<span class="st ' + statusCls(run.status) + '">' + run.status + '</span></div>'
+          + '<div class="r-sub"><span>' + esc(run.startedAt.slice(11)) + '</span><span>' + esc(run.cost) + '</span><span>' + msgs.length + ' 消息 · ' + stepCount(run) + ' 步</span>'
+          + (failSteps(run) ? '<span style="color:var(--danger-ink)">失败 ' + failSteps(run) + '</span>' : '') + '</div>'
+          + (run.error ? '<div class="r-err" title="' + esc(run.error) + '">' + esc(run.error) + '</div>' : '')
+          + (shown.length && visibleMsgs.length > 1 ? '<div class="r-sub" style="margin-top:5px">' + visibleMsgs.map(function (m) { return '<span class="r-biz">' + esc(m.businessKey || '无业务键') + '</span>'; }).join('') + '</div>' : '')
+          + '</button>';
+      });
+      if (!shown.length) html = '<div class="list-empty">没有符合条件的运行。<br />当前状态过滤：' + esc(state.status) + '</div>';
+    } else {
+      title.textContent = '消息步';
+      hint.textContent = '默认只看 FAILED（#74）';
+      var rows = stepRows();
+      cnt.textContent = rows.length + ' 条';
+      rows.forEach(function (r) {
+        var sel = r.run.id === state.runId && r.mi === cur().idx && r.s.n === state.stepN;
+        html += '<button class="ritem" data-act="open-step" data-run="' + r.run.id + '" data-msg="' + r.mi + '" data-step="' + r.s.n + '" aria-pressed="' + sel + '">'
+          + '<div class="r-top"><span class="r-id">#' + r.run.id + ' · 步骤 ' + r.s.n + '</span><span class="st ' + statusCls(r.s.status) + '">' + r.s.status + '</span></div>'
+          + '<div class="r-sub"><span>' + esc(r.s.action) + '</span><span>' + esc(r.msg.businessKey || '无业务键') + '</span></div>'
+          + '<div class="r-sub"><span>' + esc(r.s.at) + '</span><span>尝试 ' + (r.s.attempt || 1) + '</span><span>任务 #' + r.run.jobId + '</span></div>'
+          + (r.s.error ? '<div class="r-err" title="' + esc(r.s.error) + '">' + esc(r.s.error.split('\n')[0]) + '</div>' : '')
+          + '</button>';
+      });
+      if (!rows.length) html = '<div class="list-empty">没有符合条件的消息步。<br />默认只看 FAILED，可把状态改成「全部状态」。</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  /* ── 详情渲染 ───────────────────────────────────────────────────── */
+  function renderDetail() {
+    var c = cur();
+    var el = $('#detail');
+    if (!c.msg) { el.innerHTML = '<div class="list-empty">这条运行还没有消息。</div>'; $('#detailPath').textContent = '—'; return; }
+    state.stepN = c.step.n;   /* 来回切换后把选中的步骤归一到真实存在的那一步 */
+    $('#detailPath').textContent = '#' + c.run.id + ' · 消息 ' + shortId(c.msg.id) + ' · 步骤 ' + c.step.n;
+
+    var msgChips = c.msgs.map(function (m, i) {
+      var bad = m.steps.filter(function (s) { return s.status === 'FAILED'; }).length;
+      return '<button class="mchip" data-act="open-msg" data-msg="' + i + '" aria-pressed="' + (i === c.idx) + '">'
+        + '<span class="mid">' + esc(shortId(m.id)) + '</span>'
+        + '<span class="mbk">' + esc(m.businessKey || '无业务键') + '</span>'
+        + '<span class="st ' + (bad ? 'bad' : 'ok') + '">' + (bad ? '失败 ' + bad + ' 步' : '全通') + '</span>'
+        + '</button>';
+    }).join('');
+
+    el.innerHTML =
+      '<div class="dhead">'
+      + '<h2>运行 #' + c.run.id + '</h2>'
+      + '<span class="st ' + statusCls(c.run.status) + '">' + c.run.status + '</span>'
+      + '<span class="sl" style="color:var(--muted)">任务 #' + c.run.jobId + ' · ' + esc(c.run.job) + '</span>'
+      + '</div>'
+      + '<div class="dsub"><span>开始 <b>' + esc(c.run.startedAt) + '</b></span><span>结束 <b>' + esc(c.run.finishedAt || '—') + '</b></span>'
+      + '<span>耗时 <b>' + esc(c.run.cost) + '</b></span><span>' + c.msgs.length + ' 条消息 / ' + stepCount(c.run) + ' 个消息步</span></div>'
+      + (c.run.error ? '<div class="runerr"><span class="mk">运行错误</span><span>' + esc(c.run.error) + '</span></div>' : '')
+      + '<div class="msgs"><span class="lbl">消息</span>' + msgChips + '</div>'
+      + chainHTML(c)
+      + stepCardHTML(c);
+  }
+
+  function chainHTML(c) {
+    var nodes = '<div class="cnode"><div class="cbtn node0"><span class="cn">0 · 任务输入</span>'
+      + '<span class="ca">context[0]</span><span class="cl">本次运行的触发报文</span></div></div>';
+    c.msg.steps.forEach(function (s) {
+      var hasIn = !!(s.input || s.inputText), hasData = !!(s.data !== undefined || s.dataText);
+      var dots = '<span class="snapdots" title="输入快照 / 数据快照">'
+        + '<i class="sdot ' + (hasIn ? 'on' : 'none') + '"></i><i class="sdot ' + (hasData ? 'on' : 'none') + '"></i></span>';
+      nodes += '<div class="cnode"><span class="carrow" aria-hidden="true">→</span>'
+        + '<button class="cbtn ' + (s.status === 'FAILED' ? 'bad' : '') + '" data-act="open-step" data-run="' + c.run.id + '" data-msg="' + c.idx + '" data-step="' + s.n + '" aria-pressed="' + (s.n === state.stepN) + '"'
+        + ' title="步骤 ' + s.n + ' · ' + esc(s.action) + ' · ' + esc(s.name || '') + ' · ' + esc(s.status) + ' · ' + esc(s.cost) + '">'
+        + '<span class="cn">步骤 ' + s.n + dots + '</span>'
+        + '<span class="ca">' + esc(s.action) + '</span>'
+        + '<span class="cl">' + esc(s.name || '') + '</span>'
+        + '<span class="cm"><span class="cstat ' + statusCls(s.status) + '">' + s.status + '</span><span class="cstat" style="color:var(--muted)">' + esc(s.cost) + '</span></span>'
+        + '</button></div>';
+    });
+    return '<div class="chain-wrap" data-od-id="step-chain">'
+      + '<div class="chain-head"><span class="ct">步骤链</span>'
+      + '<span class="cs">点一个步骤看它的两份快照 · 每格左侧两个点＝输入快照 / 数据快照是否落了</span>'
+      + '<span class="spacer"></span><span class="cs">' + c.msg.steps.length + ' 步 · 入口 ' + esc(c.msg.steps[0].action) + '</span></div>'
+      + '<div class="chain">' + nodes + '</div></div>';
+  }
+
+  function stepCardHTML(c) {
+    var s = c.step;
+    var facts = '<span class="fact">尝试 <b>' + (s.attempt || 1) + '</b>/3</span>'
+      + '<span class="fact">耗时 <b>' + esc(s.cost) + '</b></span>'
+      + '<span class="fact">落库 <b>' + esc(s.at) + '</b></span>'
+      + (s.sourceStep ? '<span class="fact">来源 <b>sourceStep=' + s.sourceStep + '</b></span>' : '')
+      + '<span class="fact">输出 <b>context[' + s.n + ']</b>' + (s.status === 'SUCCESS' || s.status === 'REDELIVERED' ? '' : '（未写）') + '</span>';
+
+    var tools = '<div class="sc-tools" data-od-id="snapshot-tools">'
+      + '<div class="seg-group"><span class="seg-label" title="输入快照＝进入本步的报文 / 上下文；数据快照＝本步写回 context[本步序号] 的输出。">视图</span>'
+      + '<div class="seg" role="group" aria-label="快照视图">'
+      + ['side:并排对照', 'input:只看输入', 'data:只看数据', 'diff:与上一步对照'].map(function (o) {
+        var p = o.split(':');
+        return '<button data-act="snapview" data-sv="' + p[0] + '" aria-pressed="' + (state.snapView === p[0]) + '">' + p[1] + '</button>';
+      }).join('')
+      + '</div></div>'
+      + '<div class="seg-group"><span class="seg-label" title="快照树的默认展开深度：容器字段自动展开这么多层嵌套，更深的层级保持折叠；行首 ▸ / ▾ 可单独开合，搜索命中会自动展开所在分支。">展开</span>'
+      + '<div class="seg" role="group" aria-label="默认展开层级">'
+      + ['1:1 层:容器只自动展开第一层，更深的嵌套折叠', '2:2 层:容器自动展开两层（默认），更深的嵌套折叠', '9:全部:一次展开所有嵌套层级与数组元素，行数最多'].map(function (o) {
+        var p = o.split(':');
+        return '<button data-act="depth" data-d="' + p[0] + '" aria-pressed="' + (String(state.depth) === p[0]) + '" title="' + p[2] + '">' + p[1] + '</button>';
+      }).join('')
+      + '</div></div>'
+      + '<input class="q" data-act="search" placeholder="搜键路径，如 handle" value="' + esc(state.query) + '" aria-label="搜索键路径" />'
+      + '<span class="spacer"></span>'
+      + '<button class="btn btn-sm" data-act="raw" aria-pressed="' + state.raw + '">原始文本</button>'
+      + '</div>';
+
+    var body;
+    if (state.snapView === 'diff') {
+      body = diffHTML(c);
+    } else {
+      var one = state.snapView !== 'side';
+      body = '<div class="snaps" style="' + (one ? 'grid-template-columns:minmax(0,1fr)' : '') + '">'
+        + (state.snapView === 'data' ? '' : snapHTML(c, 'input'))
+        + (state.snapView === 'input' ? '' : snapHTML(c, 'data'))
+        + '</div>'
+        + '<div class="note" data-od-id="snapshot-legend"><span class="tchip">口径</span>'
+        + '<span><b style="color:var(--fg)">输入快照</b>＝进入本步时的报文 / 上下文；<b style="color:var(--fg)">数据快照</b>＝本步输出，'
+        + '写入 <code>context[本步序号]</code>，下游用 <code>sourceStep</code> 引用。类型标记 '
+        + '<code>OBJ</code> / <code>ARR</code> / <code>STR</code> / <code>NUM</code> / <code>BOOL</code> / <code>NULL</code> / <code>EMPTY</code>；'
+        + '时间字符串按原时区格式化，空值、空对象与非 JSON 文本各自单独标注。'
+        + '嵌套容器默认按工具栏「展开」的层数折叠，行首 <code>▸</code> 可单独开合。</span></div>';
+    }
+
+    return '<div class="card" data-od-id="step-detail">'
+      + '<div class="sc-head"><span class="sn">步骤 ' + s.n + '</span><span class="sa">' + esc(s.action) + '</span>'
+      + '<span class="sl">' + esc(s.name || '') + '</span>'
+      + '<span class="st ' + statusCls(s.status) + '">' + s.status + '</span>'
+      + '<span class="right">' + facts + '</span></div>'
+      + tools + body
+      + errHTML(s)
+      + '<div class="sc-foot">'
+      + (s.status === 'FAILED'
+        ? '<button class="btn btn-primary" data-act="redeliver" data-od-id="btn-redeliver">从步骤 ' + s.n + ' 断点重投</button>'
+          + '<span class="hint">重投成功后原步置 <code>REDELIVERED</code>，重投失败则原步保持 <code>FAILED</code>（#108）。</span>'
+        : '<span class="hint">本步状态 <code>' + esc(s.status) + '</code>，不可重投：只有 <code>FAILED</code> 消息步能断点续跑（#108）。'
+          + (s.status === 'REDELIVERED' ? '这一步的首跑报错已由重投修复。' : '') + '</span>')
+      + '</div></div>';
+  }
+
+  function errHTML(s) {
+    if (!s.error) return '';
+    var lines = s.error.split('\n');
+    return '<div class="errbox" data-od-id="step-error"><div class="eh"><span>错误</span>'
+      + '<span class="mono" style="font-weight:500;opacity:.85">' + esc(s.action) + '</span>'
+      + '<span class="spacer"></span><span class="mono" style="font-weight:500;opacity:.85">' + esc(s.at) + '</span></div>'
+      + '<pre><b>' + esc(lines[0]) + '</b>' + (lines.length > 1 ? '\n' + esc(lines.slice(1).join('\n')) : '') + '</pre></div>';
+  }
+
+  /* ── 单份快照面板 ───────────────────────────────────────────────── */
+  function snapHTML(c, which) {
+    var s = c.step;
+    var isInput = which === 'input';
+    var title = isInput ? '输入快照' : '数据快照';
+    var raw = isInput ? s.input : s.data;
+    var text = isInput ? s.inputText : s.dataText;
+    var missing = isInput ? s.inputMissing : s.dataMissing;
+    var note = isInput ? s.inputNote : s.dataNote;
+    var where = isInput ? '进入本步的报文' : '本步输出 → context[' + s.n + ']';
+
+    var head = '<div class="snap-head"><div class="shr"><span class="shot">' + title + '</span>'
+      + '<span class="shw">' + where + '</span>'
+      + '<span class="right">'
+      + (text || missing ? '' : '<button class="btn btn-sm" data-act="copy-json" data-which="' + which + '">复制 JSON</button>')
+      + '</span></div>'
+      + (note ? '<div class="snote">' + esc(note) + '</div>' : '')
+      + metaHTML(raw, text)
+      + '</div>';
+
+    var body;
+    if (text) body = rawTextHTML(text, which);
+    else if (missing) body = '<div class="tree-empty">本步没有' + title + '。<br />' + esc(missing) + '</div>';
+    else body = treeBlock(raw, which, c);
+    return '<div class="snap" data-od-id="snapshot-' + which + '">' + head + '<div class="snap-body">' + body + '</div></div>';
+  }
+
+  function metaHTML(raw, text) {
+    var payload = text ? text : (raw === undefined ? '' : JSON.stringify(raw));
+    if (!payload) return '';
+    var b = bytesOf(payload), pct = Math.min(100, (b / CAP) * 100);
+    var keys = text ? 0 : (isCont(raw) ? Object.keys(raw).length : 1);
+    return '<div class="meter"><span class="meter-bar"><i class="' + (pct > 50 ? 'hot' : '') + '" style="width:' + Math.max(2, pct) + '%"></i></span>'
+      + '<span class="meter-txt">' + (text ? '文本' : keys + (isArr(raw) ? ' 项' : ' 键')) + ' · ' + fmtBytes(b) + ' / 上限 64 KB</span></div>';
+  }
+
+  function rawTextHTML(text, which) {
+    return '<div class="rawtext"><pre class="raw">' + esc(text) + '</pre></div>'
+      + '<div class="note warn" data-od-id="text-note"><span class="tchip">非 JSON 文本</span>'
+      + '<span>断点续投回填只认 JSON 值（对象 / 数组 / 标量）：这段文本' + (which === 'data' ? '不会进上下文' : '无法解析') + '，'
+      + '下游引用该步时会取到空值（#90 / #123 口径）。</span></div>';
+  }
+
+  /* ── 格式化树 ───────────────────────────────────────────────────── */
+  function treeBlock(raw, which, c) {
+    if (raw === undefined) return '<div class="tree-empty">本步没有这份快照。</div>';
+    if (!isCont(raw)) {
+      return '<div class="tree" role="tree" aria-label="快照">' + leafRow('（标量）', '', raw, 0, which) + '</div>';
+    }
+    var q = state.query.toLowerCase();
+    var count = 0;
+    var html = walk(raw, '', 0, q, function () { count++; });
+    var footer = '';
+    if (q) {
+      footer = '<div class="note"><span class="tchip">搜索</span><span>“' + esc(state.query) + '” 命中 <b>' + count + '</b> 处键路径'
+        + (count ? '，命中分支已自动展开' : '：没有匹配，试着换成字段名片段') + '</span></div>';
+    }
+    if (state.raw) {
+      return '<pre class="raw">' + esc(JSON.stringify(raw, null, 2)) + '</pre>' + footer;
+    }
+    var emptyWarn = '';
+    if (which === 'data' && c.step.emptyWarn && Object.keys(raw).length === 0) {
+      emptyWarn = '<div class="note warn" data-od-id="empty-note"><span class="tchip">空对象</span><span>' + esc(c.step.emptyWarn) + '</span></div>';
+    }
+    return '<div class="tree" role="tree" aria-label="快照格式化视图" id="tree-' + which + '">' + html + '</div>' + emptyWarn + footer;
+  }
+
+  function walk(val, path, d, q, onMatch) {
+    var out = '';
+    var keys = isArr(val) ? val.map(function (_, i) { return String(i); }) : Object.keys(val);
+    keys.forEach(function (k) {
+      var v = isArr(val) ? val[Number(k)] : val[k];
+      var p = path ? (isArr(val) ? path + '[' + k + ']' : path + '.' + k) : k;
+      var cont = isCont(v);
+      var selfMatch = !q || p.toLowerCase().indexOf(q) >= 0;
+      var childHit = cont ? subtreeMatch(v, p, q) : false;
+      if (q && !selfMatch && !childHit) return;
+      if (selfMatch && onMatch) onMatch();
+      if (cont && q && (childHit || selfMatch)) expanded[p] = true;
+      var open = cont && (expanded[p] === true || (expanded[p] === undefined && d < state.depth));
+      out += rowHTML(k, p, v, d, cont, open, q);
+      if (cont && open && !state.raw) out += walk(v, p, d + 1, q, onMatch);
+    });
+    return out;
+  }
+
+  function subtreeMatch(v, path, q) {
+    if (!q) return false;
+    if (path.toLowerCase().indexOf(q) >= 0) return true;
+    if (!isCont(v)) return false;
+    var keys = isArr(v) ? v.map(function (_, i) { return String(i); }) : Object.keys(v);
+    for (var i = 0; i < keys.length; i++) {
+      var child = isArr(v) ? v[Number(keys[i])] : v[keys[i]];
+      var p = isArr(v) ? path + '[' + keys[i] + ']' : path + '.' + keys[i];
+      if (subtreeMatch(child, p, q)) return true;
+    }
+    return false;
+  }
+
+  function rowHTML(k, p, v, d, cont, open, q) {
+    var keyHTML = highlight(k, q);
+    var ctx = d === 0 ? keyLabel(k) : '';
+    var typeBadge;
+    if (isArr(v)) typeBadge = 'ARR';
+    else if (isObj(v)) typeBadge = 'OBJ';
+    else if (v === null) typeBadge = 'NULL';
+    else if (typeof v === 'string') typeBadge = v === '' ? 'EMPTY' : 'STR';
+    else if (typeof v === 'number') typeBadge = 'NUM';
+    else if (typeof v === 'boolean') typeBadge = 'BOOL';
+    else typeBadge = typeof v;
+
+    var valueHTML;
+    if (cont) {
+      valueHTML = '<span class="jsum">' + (isArr(v) ? '[' + v.length + ' 项]' : '{' + Object.keys(v).length + ' 键}') + '</span>';
+      if (isObj(v) && Object.keys(v).length === 0) valueHTML = '<span class="jnull">空对象 {}</span>';
+      if (isArr(v) && v.length === 0) valueHTML = '<span class="jnull">空数组 []</span>';
+    } else {
+      valueHTML = scalarHTML(v, p);
+    }
+
+    var acts = '<span class="jacts"><button data-act="copy-path" data-path="' + esc(p) + '" title="复制上下文路径">路径</button>'
+      + '<button data-act="copy-val" data-path="' + esc(p) + '" title="复制值">值</button></span>';
+
+    return '<div class="jrow" role="treeitem" aria-level="' + (d + 1) + '"'
+      + (cont ? ' aria-expanded="' + (open ? 'true' : 'false') + '"' : '')
+      + ' style="--d:' + d + '" data-path="' + esc(p) + '" title="' + esc(toCtxPath(p)) + '">'
+      + (cont ? '<button class="jt" data-act="toggle-node" data-path="' + esc(p) + '" aria-label="展开或收起">' + (open ? '▾' : '▸') + '</button>' : '<span class="jt"></span>')
+      + '<span class="jkey">' + keyHTML + (ctx ? ' <span class="jctx">' + ctx + '</span>' : '') + '</span>'
+      + '<span class="jtb">' + typeBadge + '</span>'
+      + '<span class="jv">' + valueHTML + '</span>'
+      + acts
+      + '</div>';
+  }
+
+  /* 命中高亮：先切片再转义，避免把实体本身标成命中 */
+  function highlight(raw, q) {
+    if (!q) return esc(raw);
+    var i = raw.toLowerCase().indexOf(q);
+    if (i < 0) return esc(raw);
+    return esc(raw.slice(0, i)) + '<mark>' + esc(raw.slice(i, i + q.length)) + '</mark>' + highlight(raw.slice(i + q.length), q);
+  }
+
+  function scalarHTML(v, p) {
+    if (v === null) return '<span class="jnull">null</span>';
+    if (v === '') return '<span class="jnull">"" 空字符串</span>';
+    if (typeof v === 'boolean') return '<span class="jbool">' + v + '</span>';
+    if (typeof v === 'number') return '<span class="jv n">' + String(v) + '</span>';
+    var str = String(v);
+    var iso = fmtIso(str);
+    if (iso) return '<span class="jdate" title="' + esc(str) + '"><span>' + esc(iso.t) + '</span><span class="tz">' + esc(iso.tz) + '</span></span>';
+    if (str.length > 72 && !longOpen[p]) {
+      return '<span class="jv s">' + esc(str.slice(0, 72)) + '…</span> '
+        + '<button class="jtb" data-act="open-long" data-path="' + esc(p) + '">展开 ' + str.length + ' 字</button>';
+    }
+    return '<span class="jv s">' + esc(str) + '</span>';
+  }
+
+  function leafRow(label, p, v, d) {
+    return '<div class="jrow" role="treeitem" aria-level="1" style="--d:0">'
+      + '<span class="jt"></span><span class="jkey">' + esc(label) + '</span>'
+      + '<span class="jtb">SCALAR</span><span class="jv">' + scalarHTML(v, p) + '</span><span class="jacts"></span></div>';
+  }
+
+  /* ── 与上一步对照 ───────────────────────────────────────────────── */
+  function flatten(v, path, out) {
+    if (isCont(v)) {
+      var keys = isArr(v) ? v.map(function (_, i) { return String(i); }) : Object.keys(v);
+      if (!keys.length) { out[path || '（空）'] = isArr(v) ? '[]' : '{}'; return out; }
+      keys.forEach(function (k) {
+        var child = isArr(v) ? v[Number(k)] : v[k];
+        var p = path ? (isArr(v) ? path + '[' + k + ']' : path + '.' + k) : k;
+        flatten(child, p, out);
+      });
+      return out;
+    }
+    out[path || '（标量）'] = v;
+    return out;
+  }
+  function showVal(v) {
+    if (v === null) return 'null';
+    if (v === '') return '""';
+    if (typeof v === 'string') {
+      var iso = fmtIso(v);
+      return iso ? iso.t + ' ' + iso.tz : (v.length > 46 ? v.slice(0, 46) + '…' : v);
+    }
+    return String(v);
+  }
+  function diffHTML(c) {
+    var prev = c.prev;
+    var head = '<div class="dsum">';
+    if (!prev) {
+      return '<div class="diff"><div class="tree-empty">步骤 ' + c.step.n + ' 是这条消息的第一步，没有上一步可对照。</div></div>';
+    }
+    if (prev.data === undefined || c.step.data === undefined) {
+      var who = prev.data === undefined ? '上一步（步骤 ' + prev.n + ' ' + esc(prev.action) + '）' : '本步（步骤 ' + c.step.n + ' ' + esc(c.step.action) + '）';
+      return '<div class="diff" data-od-id="snapshot-diff"><div class="tree-empty">' + who
+        + '没有数据快照，没法对照。<br />失败步、被跳步与运行中的步骤都不写快照；MQ 入口动作也不记成功步快照（#90）。</div></div>';
+    }
+    var a = flatten(prev.data, '', {});
+    var b = flatten(c.step.data, '', {});
+    var keys = Object.keys(a).concat(Object.keys(b).filter(function (k) { return !(k in a); }));
+    var stat = { same: 0, chg: 0, add: 0, del: 0 };
+    var rows = '';
+    keys.forEach(function (k) {
+      var inA = k in a, inB = k in b, st;
+      if (inA && inB) st = JSON.stringify(a[k]) === JSON.stringify(b[k]) ? 'same' : 'chg';
+      else if (inB) st = 'add';
+      else st = 'del';
+      stat[st]++;
+      rows += '<div class="drow st-' + st + '"><span class="dpath" title="' + esc(toCtxPath(k)) + '">' + esc(k) + '</span>'
+        + '<span class="dval old">' + (inA ? esc(showVal(a[k])) : '—') + '</span>'
+        + '<span class="darrow">→</span>'
+        + '<span class="dval new">' + (inB ? esc(showVal(b[k])) : '—') + '</span>'
+        + '<span class="dchip">' + ({ same: '同', chg: '改', add: '增', del: '减' })[st] + '</span></div>';
+    });
+    head += '<span>上一步 <b class="mono">步骤 ' + prev.n + ' ' + esc(prev.action) + '</b> 的输出 → 本步 <b class="mono">步骤 ' + c.step.n + ' ' + esc(c.step.action) + '</b> 的输出</span>'
+      + '<span class="spacer"></span>'
+      + '<span class="dc same"><i></i>同 ' + stat.same + '</span>'
+      + '<span class="dc chg"><i></i>改 ' + stat.chg + '</span>'
+      + '<span class="dc add"><i></i>增 ' + stat.add + '</span>'
+      + '<span class="dc del"><i></i>减 ' + stat.del + '</span></div>';
+    return '<div class="diff" data-od-id="snapshot-diff">' + head
+      + '<div class="dgrid"><div class="dhead2"><span>路径</span><span>上一步</span><span></span><span>本步</span><span>状态</span></div>'
+      + (rows || '<div class="tree-empty">两侧都没有可对照的字段。</div>') + '</div>'
+      + '<div class="note"><span class="tchip">对照口径</span><span>按叶子路径对齐两侧快照：<code>改</code> 是同名路径取值变了，<code>增 / 减</code> 只出现在一侧。'
+      + '映射步骤里，这一步就是「来源字段 → 目标字段」的实际证据。</span></div></div>';
+  }
+
+  /* ── 交互 ───────────────────────────────────────────────────────── */
+  function toast(msg, kind) {
+    var box = $('#toast');
+    var d = document.createElement('div');
+    if (kind === 'err') d.className = 'err';
+    d.textContent = msg;
+    box.appendChild(d);
+    setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 3000);
+  }
+  function setLive(t) { $('#live').textContent = t; }
+
+  function copy(text, what) {
+    var done = function () { toast('已复制：' + what); setLive('已复制 ' + what); };
+    var fail = function () { toast('复制失败，请手动选中', 'err'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fail);
+    } else {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta); done();
+      } catch (e) { fail(); }
+    }
+  }
+
+  function valAtPath(root, path) {
+    if (!path) return root;
+    var parts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+    var v = root;
+    for (var i = 0; i < parts.length; i++) {
+      if (v === null || v === undefined) return undefined;
+      v = v[parts[i]];
+    }
+    return v;
+  }
+
+  function openRedeliver() {
+    var c = cur(), s = c.step;
+    var ups = c.msg.steps.filter(function (x) { return x.n < s.n; });
+    var list = ups.map(function (x) {
+      var has = x.data !== undefined;
+      var txt = x.dataText ? true : false;
+      var note = txt ? '非 JSON 文本 · 不回填' : (has ? '有快照 · 回填 context[' + x.n + ']' : '无快照 · 不进上下文');
+      return '<div class="rli"><span class="n">步骤 ' + x.n + '</span><span class="a">' + esc(x.action) + ' · ' + esc(x.status) + '</span>'
+        + '<span class="f' + (has && !txt ? '' : ' no') + '">' + esc(note) + '</span></div>';
+    }).join('') || '<div class="rli"><span class="n">—</span><span class="a">失败步之前没有可回填的步骤</span><span class="f no">空上下文</span></div>';
+
+    $('#modalBody').innerHTML =
+      '<p>从失败消息步 <b>#' + c.run.id + ' / 步骤 ' + s.n + ' ' + esc(s.action) + '</b>（业务键 <b>' + esc(c.msg.businessKey || '无') + '</b>）断点续跑。'
+      + '重投按 <code>(runId, messageId)</code> 取 <code>step &lt; ' + s.n + '</code> 且 SUCCESS 的消息步，把各自 <code>data_snapshot</code> 解析后经属性 <code>edge.resumeContext</code> 投递，'
+      + '断点路由入口回填 <code>context[step]</code>；<code>context[0]</code> 语义不变（= 该步 <code>inputSnapshot</code>）。</p>'
+      + '<div class="rlist2">' + list + '</div>'
+      + '<p>将回填的上游步骤，以及它们这次能提供什么：无快照（失败步 / 被跳步 / 非 JSON 文本）的步骤不进上下文，下游引用仍是空值。</p>';
+    $('#overlay').hidden = false;
+    var btn = document.querySelector('[data-act="confirm-redeliver"]');
+    if (btn) btn.focus();
+  }
+  function closeModal() { $('#overlay').hidden = true; }
+
+  function confirmRedeliver() {
+    var c = cur(), s = c.step;
+    if (s.status !== 'FAILED') { closeModal(); return; }
+    var run = c.run;
+
+    /* 新运行：这一步这次是正常跑通的 */
+    var clone = JSON.parse(JSON.stringify(run));
+    clone.id = run.id + 2;
+    clone.startedAt = '2026-09-17 09:31:00';
+    clone.cost = '2.4 s';
+    clone.status = 'SUCCESS';
+    clone.error = '';
+    clone.redeliveredFrom = run.id;
+    clone.messages.forEach(function (m) {
+      m.redeliveredFrom = run.id;
+      m.steps.forEach(function (x) {
+        if (x.n === s.n) {
+          x.status = 'SUCCESS';
+          x.attempt = 1;
+          x.cost = '46 ms';
+          x.at = '09:31:02.140';
+          x.error = '';
+          x.dataMissing = '';
+          x.data = { affected_rows: 1, code_id: 88231 };
+          x.dataNote = '本步输出 → 写入 context[' + x.n + ']（重投这次跑通了）';
+        }
+      });
+    });
+    /* 原步：成功后置 REDELIVERED，原运行本身仍然是那次失败（#108） */
+    s.status = 'REDELIVERED';
+    s.attempt = (s.attempt || 1) + 1;
+
+    RUNS.unshift(clone);
+    state.runId = clone.id;
+    closeModal();
+    render();
+    toast('重投完成：原运行 #' + run.id + ' 的步骤 ' + s.n + ' 置 REDELIVERED，新运行 #' + clone.id + ' SUCCESS');
+    setLive('重投完成，新运行 ' + clone.id);
+  }
+
+  /* ── 事件委派 ───────────────────────────────────────────────────── */
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-act]');
+    var ov = $('#overlay');
+    if (!t) {
+      if (!ov.hidden && e.target === ov) closeModal();
+      return;
+    }
+    var act = t.dataset.act;
+    var c;
+
+    if (act === 'open-run') {
+      state.runId = Number(t.dataset.run); state.msgIdx = 0;
+      var r = runOf(state.runId);
+      state.stepN = msgsOf(r)[0].steps[0].n;
+      expanded = {}; longOpen = {};
+      render();
+    } else if (act === 'open-msg') {
+      state.msgIdx = Number(t.dataset.msg);
+      c = cur(); state.stepN = c.msg.steps[0].n;
+      expanded = {}; longOpen = {};
+      render();
+    } else if (act === 'open-step') {
+      state.runId = Number(t.dataset.run);
+      state.msgIdx = Number(t.dataset.msg || 0);
+      state.stepN = Number(t.dataset.step);
+      expanded = {}; longOpen = {};
+      render();
+    } else if (act === 'view') {
+      state.view = t.dataset.view;
+      render();
+    } else if (act === 'toggle-node') {
+      var p = t.dataset.path;
+      var row = t.closest('.jrow');
+      var open = row.getAttribute('aria-expanded') === 'true';
+      if (open) expanded[p] = false; else expanded[p] = true;
+      renderDetail();
+      var back = document.querySelector('.jrow[data-path="' + cssEsc(p) + '"] .jt');
+      if (back) back.focus();
+    } else if (act === 'open-long') {
+      longOpen[t.dataset.path] = true; renderDetail();
+    } else if (act === 'copy-path') {
+      copy(toCtxPath(t.dataset.path), toCtxPath(t.dataset.path));
+    } else if (act === 'copy-val') {
+      c = cur();
+      var which = t.closest('[data-od-id^="snapshot-"]');
+      var root = which && which.dataset.odId === 'snapshot-data' ? c.step.data : c.step.input;
+      var v = valAtPath(root, t.dataset.path);
+      copy(typeof v === 'string' ? v : JSON.stringify(v), String(t.dataset.path).split('.').pop());
+    } else if (act === 'copy-json') {
+      c = cur();
+      var w = t.dataset.which;
+      var payload = w === 'input' ? c.step.input : c.step.data;
+      if (payload === undefined) { toast('这一步没有可复制的 JSON 快照', 'err'); return; }
+      copy(JSON.stringify(payload, null, 2), (w === 'input' ? '输入快照' : '数据快照') + ' JSON');
+    } else if (act === 'raw') {
+      state.raw = !state.raw; render();
+    } else if (act === 'snapview') {
+      state.snapView = t.dataset.sv; render();
+    } else if (act === 'depth') {
+      state.depth = Number(t.dataset.d); expanded = {}; render();
+    } else if (act === 'copy-msg') {
+      c = cur(); if (c.msg) copy(c.msg.id, '消息 ID');
+    } else if (act === 'query') {
+      render();
+      toast('查询完成：' + (state.view === 'runs'
+        ? RUNS.filter(runMatches).length + ' 条运行'
+        : stepRows().length + ' 条消息步（状态 ' + (state.status === 'all' ? 'FAILED' : state.status) + '）'));
+    } else if (act === 'reset') {
+      state.jobId = 'all'; state.status = 'all'; state.biz = ''; state.view = 'runs'; state.query = '';
+      $('#fJob').value = 'all'; $('#fStatus').value = 'all'; $('#fBiz').value = '';
+      render();
+    } else if (act === 'reload') {
+      render();
+      toast('已刷新（演示数据未变）');
+    } else if (act === 'redeliver') {
+      openRedeliver();
+    } else if (act === 'close-modal') {
+      closeModal();
+    } else if (act === 'confirm-redeliver') {
+      confirmRedeliver();
+    }
+  });
+
+  function cssEsc(s) { return String(s).replace(/"/g, '\\"'); }
+
+  document.addEventListener('input', function (e) {
+    var t = e.target.closest('[data-act]');
+    if (!t) return;
+    if (t.id === 'fBiz') { state.biz = t.value.trim(); renderList(); }
+    else if (t.dataset.act === 'search') {
+      state.query = t.value.trim();
+      renderDetail();
+      var q = document.querySelector('.q');
+      if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    }
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target.closest('[data-act="filter"]');
+    if (!t) return;
+    if (t.id === 'fJob') state.jobId = t.value;
+    if (t.id === 'fStatus') state.status = t.value;
+    render();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('#overlay').hidden) { closeModal(); }
+  });
+
+  /* ── 渲染入口 ───────────────────────────────────────────────────── */
+  function renderHead() {
+    var msgs = 0, steps = 0, fail = 0;
+    RUNS.forEach(function (r) {
+      msgs += msgsOf(r).length;
+      steps += stepCount(r);
+      fail += failSteps(r);
+    });
+    $('#cRuns').textContent = RUNS.length;
+    $('#cMsgs').textContent = msgs;
+    $('#cSteps').textContent = steps;
+    $('#cFail').textContent = fail;
+    $('#fJob').value = state.jobId;
+    $('#fStatus').value = state.status;
+    $('#fBiz').value = state.biz;
+    document.querySelectorAll('[data-act="view"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.view === state.view));
+    });
+    $('#filterNote').innerHTML = state.view === 'steps'
+      ? '消息步检索默认只看 <b>FAILED</b>（#74）· 业务键按消息步过滤'
+      : '运行视图默认不过滤状态 · 业务键过滤到消息粒度';
+  }
+  function render() {
+    var r = runOf(state.runId);
+    if (!msgsOf(r).length) state.runId = RUNS[0].id;
+    renderHead();
+    renderList();
+    renderDetail();
+    save();
+  }
+
+  restore();
+  render();
+})();
+</script>
+</body>
+</html>

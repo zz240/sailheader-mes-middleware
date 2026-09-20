@@ -6,7 +6,8 @@
 - 相关：ADR-0006（前端技术栈）、ADR-0011 / ADR-0012（字段映射编辑器的两轮改版）、
   `docs/features/config-ui/README.md`、`frontend/prototype/README.md`、
   `docs/research/ui-visual-refresh-scope.md`（工作量实测）
-- 实现：第 1 期 = #121（**已落**）；第 2 期 = #122（**已落**）；第 3 期 = #120（已开）
+- 实现：第 1 期 = #121（**已落**）；第 2 期 = #122（**已落**）；第 3 期 = #120（已开）；
+  第 4 期 = 消息历史页（2026-09-20 另开契约 **ADR-0016**）
 - 取代：无。本条**不修订** ADR-0011 / 0012 的任何决策——它们管的是数据形状与交互口径，与外观无关
 
 ## 背景
@@ -37,7 +38,7 @@
    同源（合计 0 处 hex），可一并参照。契约内容是十几个令牌 + 从它们派生的规则
    （`color-mix(in oklch, …)`），不是逐像素复刻。**改原型等于改契约**，要先改本条 ADR。
 
-3. **分三期，先令牌后结构**：
+3. **分期落地，先令牌后结构**（原「分三期」；2026-09-20 加了第 4 期，见下）：
 
    | 期 | 内容 | 动几个文件 | 票 |
    |---|---|---|---|
@@ -45,6 +46,10 @@
    | 1 | 令牌桥：`tokens.css` + `main.ts` 一行 + 全局 `body` | 2–3 | **#121** |
    | 2 | 编辑器这棵树换名（158 处 hex / 53 处字号 / 14 处圆角 / 5 处深度覆盖） | 13 | **#122** |
    | 3 | 结构对齐：试算页签的结论条 / 计量条 / 证据表 | 1–2 + 后端 | **#120** |
+   | 4 | 结构对齐：消息历史页（双栏控制台 + 只读聚合接口 + 单步计时） | ~10 + 后端 | **#128**（契约 **ADR-0016**） |
+
+   第 4 期是**另一个页面**的结构对齐（消息历史，设计稿 `frontend/prototype/04-message-history.html`）：
+   它的信息架构、只读聚合接口与单步计时另立 `ADR-0016`，本条只登记进度；令牌口径仍旧以第 1、2 期为准。
 
    **分期不是可选项**：第 1 期只能买到「主色/圆角/边框/文字/底色/菜单色一次改完」，
    **买不到「像原型」**——有实测为证（`docs/research/ui-visual-refresh-scope.md` §5、
@@ -114,6 +119,7 @@
   Element Plus `:root` 137 个可覆盖变量、170 处够不着的字面字号
 - 视觉契约：`frontend/prototype/03-studio.html`（最新令牌）、`01-canvas.html`、`02-workbench.html`、
   `field-mapping-ledger.html`；说明见 `frontend/prototype/README.md`
+- 消息历史页的契约：`docs/adr/0016-message-history-console.md` + `frontend/prototype/04-message-history.html`
 - 设计说明：`docs/design/field-mapping-canvas-brief.md`（§2 设计方向、§10–§12 后两轮迭代）、
   `docs/design/DESIGN-HANDOFF.md`
 - 一次真实渲染的三态对照（令牌前 / 只换令牌 / 令牌+换名）：
