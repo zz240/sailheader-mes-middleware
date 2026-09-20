@@ -84,8 +84,9 @@ const server = http.createServer((req, res) => {
             return send(res, 200, { total: received.length, returned: list.length, records: list });
         }
         if (path === '/__handles') {
-            // 已注册的 handle 清单：HTTP 响应不回链（HTTP_CALL 只出站、不返回响应体），
-            // 所以核对「注册成功且能解析回来」要靠这里，而不是从链路里拿。
+            // 已注册的 handle 清单：**旁证**用（替身自己的账本）。回写是否真的发生，看链路——#123 之后
+            // HTTP_CALL 的响应进 context[本动作序号]，B6 链的 write-handle 步快照里有 handle，库里
+            // MDM_Code.FHandle 也能直接查（verify-scenario.ps1 就是这么断言的）。这里用来交叉核对。
             return send(res, 200, {
                 total: handles.size,
                 handles: [...handles.entries()].map(([fCode, handle]) => ({ fCode, handle })),
