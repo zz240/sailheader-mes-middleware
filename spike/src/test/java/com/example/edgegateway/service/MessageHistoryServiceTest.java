@@ -9,6 +9,8 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.RunStepSummary;
+import com.example.edgegateway.model.RunStepTotals;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -33,6 +35,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -502,10 +506,6 @@ class MessageHistoryServiceTest {
     /** #129：运行列表按业务键筛——命中的运行 id 从消息步里挑出来。 */
     @Test
     void listRunsKeepsRunsWhoseMessageMatchesBusinessKey() {
-        MessageStep hit = new MessageStep();
-        hit.setRunId(3L);
-        hit.setBusinessKey("SO-2026-0917-0042");
-        when(messageStepMapper.selectList(any())).thenReturn(List.of(hit));
         JobRun run = new JobRun();
         run.setId(3L);
         run.setJobId(7L);
@@ -521,15 +521,244 @@ class MessageHistoryServiceTest {
         assertThat((List<?>) result.get("records")).hasSize(1);
     }
 
-    /** 一条消息都没命中时给空页，不白跑一次运行查询（也避免 `IN ()` 这种空集合 SQL）。 */
+    /**
+     * #130 / ADR-0016 结果 ⑥：业务键筛选收成**一次查询**（命中判据下推成 EXISTS 子查询）——
+     * 旧实现「先 LIKE 扫 message_step 拿 runId、再 IN 筛运行」在命中很多运行时是个无界 IN。
+     * 所以这里钉住：不再单独扫一遍 message_step，分页查询照发。
+     */
     @Test
-    void listRunsByBusinessKeyWithoutHitSkipsRunQuery() {
-        when(messageStepMapper.selectList(any())).thenReturn(List.of());
+    void listRunsPushesBusinessKeyFilterIntoOneQuery() {
+        Page<JobRun> page = new Page<>(1, 20);
+        page.setRecords(List.of());
+        page.setTotal(0L);
+        when(jobRunMapper.selectPage(any(), any())).thenReturn(page);
 
-        Map<String, Object> result = service.listRuns(null, null, "SO-404", 1, 20);
+        Map<String, Object> result = service.listRuns(null, null, "SO-2026-0917-0042", 1, 20);
 
         assertThat(result.get("total")).isEqualTo(0L);
-        assertThat((List<?>) result.get("records")).isEmpty();
-        verify(jobRunMapper, never()).selectPage(any(), any());
+        verify(jobRunMapper).selectPage(any(), any());
+        verify(messageStepMapper, never()).selectList(any());
+    }
+
+    /**
+     * #130：计数条与每运行摘要一条接口给全。四个计数是**整个筛选集**的（不含分页），
+     * 每运行摘要只给这一页的行——两件事共用同一组筛选，所以数字一行一列都对得上。
+     */
+    @Test
+    void runsSummaryCountsRunsMessagesStepsAndFailures() {
+        JobRun failed = runOf(2L, "FAILED");
+        JobRun ok = runOf(1L, "SUCCESS");
+        when(jobRunMapper.selectCount(any())).thenReturn(2L);
+        // 摘要用的那一页：主键倒序（与运行列表同一顺序）
+        stubPage(List.of(failed, ok));
+        when(messageStepMapper.summarizeByRunIds(List.of(2L, 1L))).thenReturn(List.of(
+                summary(2L, 4, 3, 2),
+                summary(1L, 2, 0, 1)));
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(6, 3, 3));
+
+        Map<String, Object> result = service.runsSummary(7L, null, null, 1, 20);
+
+        assertThat(result.get("runs")).isEqualTo(2L);
+        assertThat(result.get("messages")).isEqualTo(3L);
+        assertThat(result.get("steps")).isEqualTo(6L);
+        assertThat(result.get("failedSteps")).isEqualTo(3L);
+        List<?> summaries = (List<?>) result.get("summaries");
+        assertThat(summaries).hasSize(2);
+        assertThat(asMap(summaries.get(0)))
+                .containsEntry("runId", 2L)
+                .containsEntry("messageCount", 2L)
+                .containsEntry("stepCount", 4L)
+                .containsEntry("failedSteps", 3L);
+        // 没筛业务键时那一格是空的（不把每条运行的全部业务键都塞回来）
+        assertThat(asMap(summaries.get(0))).containsEntry("matchedBusinessKeys", List.of());
+    }
+
+    /**
+     * #130 票面「翻页不影响计数」：换一页只换摘要给哪一批运行，四个计数照旧是整个筛选集的。
+     * 第 2 页只回一行摘要，而计数仍是整条筛选集的总和。
+     */
+    @Test
+    void runsSummaryCountsIgnorePaging() {
+        JobRun second = runOf(1L, "SUCCESS");
+        when(jobRunMapper.selectCount(any())).thenReturn(2L);
+        stubPage(List.of(second));
+        when(messageStepMapper.summarizeByRunIds(any())).thenReturn(List.of(summary(1L, 2, 1, 1)));
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(2, 1, 1));
+
+        Map<String, Object> result = service.runsSummary(null, null, null, 2, 1);
+
+        assertThat(result.get("runs")).isEqualTo(2L);
+        assertThat(result.get("steps")).isEqualTo(2L);
+        assertThat(result.get("failedSteps")).isEqualTo(1L);
+        assertThat((List<?>) result.get("summaries")).hasSize(1);
+    }
+
+    /**
+     * #130 口径：业务键那一格传的是 `%关键词%`，两侧空白不算（与列表同一个模式串形状）。
+     *
+     * <p>刻意**不转义** `%` / `_`：消息步检索那一侧用的是 MyBatis-Plus 的 `like()`，也不转义；
+     * 只在这一侧加转义，同一个业务键会在两个模式里筛出不同的集合（审查抓到的口径分叉）。</p>
+     */
+    @Test
+    void businessKeyPatternIsPlainLike() {
+        when(jobRunMapper.selectCount(any())).thenReturn(0L);
+        stubPage(List.of());
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(0, 0, 0));
+
+        service.runsSummary(7L, "FAILED", "  SO_2026  ", 1, 20);
+
+        verify(messageStepMapper).summarizeMatchingRuns(eq(7L), eq("FAILED"), eq("%SO_2026%"));
+    }
+
+    /** 没筛业务键时那格模式串给 null（SQL 里就不带那个 EXISTS），不是「%%」这种全匹配。 */
+    @Test
+    void runsSummaryCountsWithoutBusinessKeyPassNullPattern() {
+        when(jobRunMapper.selectCount(any())).thenReturn(0L);
+        stubPage(List.of());
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(0, 0, 0));
+
+        service.runsSummary(null, null, null, 1, 20);
+
+        // 没筛业务键时那格模式串给 null（SQL 里就不带那个 EXISTS），不是「%%」这种全匹配
+        verify(messageStepMapper).summarizeMatchingRuns(isNull(), isNull(), isNull());
+    }
+
+    /**
+     * 一条消息步都没有的运行照旧回一行 0（不是「查不到」，界面要写「0 消息 · 0 步」）。
+     */
+    @Test
+    void runsSummaryFillsZeroesForRunsWithoutSteps() {
+        JobRun empty = runOf(5L, "SUCCESS");
+        when(jobRunMapper.selectCount(any())).thenReturn(1L);
+        stubPage(List.of(empty));
+        when(messageStepMapper.summarizeByRunIds(List.of(5L))).thenReturn(List.of());
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(0, 0, 0));
+
+        Map<String, Object> result = service.runsSummary(null, null, null, 1, 20);
+
+        assertThat(result.get("messages")).isEqualTo(0L);
+        assertThat(asMap(((List<?>) result.get("summaries")).get(0)))
+                .containsEntry("messageCount", 0L)
+                .containsEntry("stepCount", 0L)
+                .containsEntry("failedSteps", 0L)
+                .containsEntry("matchedBusinessKeys", List.of());
+    }
+
+    /** 筛了业务键时只回**命中**的那几个（#129 的「只筛不显示」缺口在这一格补上）。 */
+    @Test
+    void runsSummaryReturnsOnlyMatchedBusinessKeys() {
+        JobRun run = runOf(3L, "SUCCESS");
+        when(jobRunMapper.selectCount(any())).thenReturn(1L);
+        stubPage(List.of(run));
+        when(messageStepMapper.summarizeByRunIds(List.of(3L))).thenReturn(List.of(summary(3L, 1, 0, 1)));
+        when(messageStepMapper.selectList(any())).thenReturn(List.of(
+                stepOf(3L, "SO-2026-0917-0042"), stepOf(3L, "PO-2026-0001")));
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(1, 0, 1));
+
+        Map<String, Object> result = service.runsSummary(null, null, "SO-2026", 1, 20);
+
+        assertThat(asMap(((List<?>) result.get("summaries")).get(0)).get("matchedBusinessKeys"))
+                .isEqualTo(List.of("SO-2026-0917-0042"));
+    }
+
+    /**
+     * 没筛业务键时不查也不需要那一格：每条运行的全部业务键塞回来，一页二十行就是几十个标签，
+     * 而界面上那一块只在「业务键筛出结果」时才有话要说。
+     */
+    @Test
+    void runsSummarySkipsBusinessKeyLookupWhenNotFiltering() {
+        JobRun run = runOf(3L, "SUCCESS");
+        when(jobRunMapper.selectCount(any())).thenReturn(1L);
+        stubPage(List.of(run));
+        when(messageStepMapper.summarizeByRunIds(any())).thenReturn(List.of(summary(3L, 1, 0, 1)));
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(1, 0, 1));
+
+        Map<String, Object> result = service.runsSummary(null, null, null, 1, 20);
+
+        assertThat(asMap(((List<?>) result.get("summaries")).get(0)).get("matchedBusinessKeys"))
+                .isEqualTo(List.of());
+        verify(messageStepMapper, never()).selectList(any());
+    }
+
+    /** 命中 0 条运行时不再往下查（不白跑每页摘要那一次消息步查询，也不给它凑一行假摘要）。 */
+    @Test
+    void runsSummaryStopsWhenNothingMatches() {
+        when(jobRunMapper.selectCount(any())).thenReturn(0L);
+        stubPage(List.of());
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(0, 0, 0));
+
+        Map<String, Object> result = service.runsSummary(7L, "FAILED", "SO-404", 1, 20);
+
+        assertThat(result.get("runs")).isEqualTo(0L);
+        assertThat((List<?>) result.get("summaries")).isEmpty();
+        verify(messageStepMapper, never()).summarizeByRunIds(any());
+        verify(messageStepMapper, never()).selectList(any());
+    }
+
+    /**
+     * #130 口径：业务键筛到一条都没有时，**四个数一起归零**。
+     *
+     * <p>这条是实测抓到的：三个步数曾经只用任务 / 状态算，于是界面写着「运行 0 / 消息 5478」——
+     * 一个筛选集里运行是 0 而消息不是 0，自己打自己的脸。</p>
+     */
+    @Test
+    void runsSummaryZeroesEverythingWhenBusinessKeyMatchesNothing() {
+        when(jobRunMapper.selectCount(any())).thenReturn(0L);
+        stubPage(List.of());
+        when(messageStepMapper.summarizeMatchingRuns(any(), any(), any())).thenReturn(totals(0, 0, 0));
+
+        Map<String, Object> result = service.runsSummary(null, null, "SO-404", 1, 20);
+
+        assertThat(result.get("runs")).isEqualTo(0L);
+        assertThat(result.get("messages")).isEqualTo(0L);
+        assertThat(result.get("steps")).isEqualTo(0L);
+        assertThat(result.get("failedSteps")).isEqualTo(0L);
+        assertThat((List<?>) result.get("summaries")).isEmpty();
+    }
+
+    private JobRun runOf(Long id, String status) {
+        JobRun run = new JobRun();
+        run.setId(id);
+        run.setJobId(7L);
+        run.setStatus(status);
+        return run;
+    }
+
+    private void stubPage(List<JobRun> records) {
+        when(jobRunMapper.selectPage(any(), any())).thenAnswer(inv -> {
+            Page<JobRun> page = inv.getArgument(0);
+            page.setRecords(records);
+            page.setTotal(records.size());
+            return page;
+        });
+    }
+
+    private RunStepTotals totals(long steps, long failedSteps, long messageCount) {
+        RunStepTotals totals = new RunStepTotals();
+        totals.setStepCount(steps);
+        totals.setFailedSteps(failedSteps);
+        totals.setMessageCount(messageCount);
+        return totals;
+    }
+
+    private RunStepSummary summary(Long runId, long steps, long failedSteps, long messageCount) {
+        RunStepSummary summary = new RunStepSummary();
+        summary.setRunId(runId);
+        summary.setStepCount(steps);
+        summary.setFailedSteps(failedSteps);
+        summary.setMessageCount(messageCount);
+        return summary;
+    }
+
+    private MessageStep stepOf(Long runId, String businessKey) {
+        MessageStep step = new MessageStep();
+        step.setRunId(runId);
+        step.setBusinessKey(businessKey);
+        return step;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asMap(Object value) {
+        return (Map<String, Object>) value;
     }
 }

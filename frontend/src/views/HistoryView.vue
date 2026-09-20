@@ -10,6 +10,7 @@
             <span>失败即停、重试退避、从失败步断点续跑<code>ADR-0003</code></span>
           </p>
         </div>
+        <HistoryCountsBar :counts="counts" :error="countsError" @retry="load" />
       </div>
     </section>
 
@@ -30,6 +31,7 @@
         :runs="runs"
         :steps="steps"
         :jobs="jobs"
+        :summaries="summaries"
         :total="total"
         :selected="selection"
         :loading="loading"
@@ -61,14 +63,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import HistoryFilters from '../components/history/HistoryFilters.vue'
+import HistoryCountsBar from '../components/history/HistoryCountsBar.vue'
 import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
 import { api, ApiError } from '../api/client'
 import {
   DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, selectRun, selectStep,
+  statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
-import type { Job, JobRun, MessageStep, Page } from '../types'
+import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
 const jobs = ref<Job[]>([])
 const jobsError = ref('')
@@ -76,6 +80,11 @@ const mode = ref<HistoryMode>(DEFAULT_MODE)
 const runs = ref<JobRun[]>([])
 const steps = ref<MessageStep[]>([])
 const filters = ref<RunFilters>(emptyFilters())
+/** 计数条与每运行摘要（#130）：与列表同一次加载取回来，行摘要不会比列表慢半拍。 */
+const counts = ref<RunsSummary | null>(null)
+const summaries = ref<RunSummary[]>([])
+/** 聚合那条自己挂了时的那句话（列表那侧的错误另说；计数条空着与「真的是 0」得分得开）。 */
+const countsError = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -107,8 +116,17 @@ async function load() {
   const asked = mode.value
   loading.value = true
   error.value = ''
+  // 上一次的计数与摘要先收回来：它们属于上一组筛选，留着就是「数字与列表说的不是一回事」
+  counts.value = null
+  summaries.value = []
+  countsError.value = ''
   try {
     const qs = listQuery(asked, filters.value, currentPage.value, pageSize.value)
+    // 计数与运行摘要（#130）：与列表**同一组筛选、同一页**——四个计数是整个筛选集的（翻页不减），
+    // 而每运行摘要跟着页走。与列表一起发（互不依赖），省一次往返；它自己挂了不许拖垮列表。
+    const summaryStatus = statusParam(asked, filters.value)
+    const summary = loadSummary(
+      summaryQuery(filters.value, summaryStatus, currentPage.value, pageSize.value), token)
     if (asked === 'runs') {
       const page = await api<Page<JobRun>>(`/history/runs?${qs}`)
       if (token !== loadToken) return
@@ -116,6 +134,7 @@ async function load() {
       steps.value = []
       total.value = page.total
       syncRunSelection(page.records)
+      await summary
     } else {
       const page = await api<Page<MessageStep>>(`/history/steps?${qs}`)
       if (token !== loadToken) return
@@ -123,6 +142,7 @@ async function load() {
       runs.value = []
       total.value = page.total
       syncStepSelection(page.records)
+      await summary
     }
   } catch (e) {
     if (token !== loadToken) return
@@ -130,9 +150,32 @@ async function load() {
     runs.value = []
     steps.value = []
     total.value = 0
+    counts.value = null
+    summaries.value = []
     clearSelection()
   } finally {
     if (token === loadToken) loading.value = false
+  }
+}
+
+/**
+ * 计数条与运行摘要那条只读聚合接口（#130）。
+ *
+ * **它自己挂了不抛**：列表已经拿到了，计数条空着比整页报错强（原型上它也只是页头那几个数字）。
+ * 计数与摘要是「这次筛选有多大」的旁证，不是列表本身——列表那侧的错误由 `load()` 统一说。
+ *
+ * `token` 与列表同一个（连点两下筛选时，先发的那次回来得晚会把旧数字写进新筛选集）。
+ */
+async function loadSummary(qs: string, token: number) {
+  try {
+    const data = await api<RunsSummary>(`/history/runs/summary${qs ? `?${qs}` : ''}`)
+    if (token !== loadToken) return
+    counts.value = data
+    summaries.value = data.summaries
+  } catch {
+    if (token !== loadToken) return
+    counts.value = null
+    summaries.value = []
   }
 }
 

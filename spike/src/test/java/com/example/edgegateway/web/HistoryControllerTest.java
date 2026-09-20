@@ -63,6 +63,62 @@ class HistoryControllerTest {
                 eq("SO-2026-0917-0042"), eq(1), eq(20));
     }
 
+    /**
+     * #130：计数条与运行摘要接口跟 `/history/runs` **同一组筛选参数**原样传下去
+     * （多一个参数或少传一个，计数与列表就是两套口径）。
+     */
+    @Test
+    void passesRunFiltersToSummary() throws Exception {
+        when(messageHistoryService.runsSummary(nullable(Long.class), nullable(String.class),
+                nullable(String.class), anyInt(), anyInt()))
+                .thenReturn(Map.of("runs", 3L, "messages", 5L, "steps", 9L, "failedSteps", 1L,
+                        "summaries", List.of(Map.of("runId", 1L, "messageCount", 2L, "steps", 4L,
+                                "failedSteps", 1L, "matchedBusinessKeys", List.of("SO-1")))));
+
+        mockMvc.perform(get("/api/history/runs/summary").param("jobId", "7").param("status", "FAILED")
+                        .param("businessKey", "SO-2026-0917-0042").param("page", "2").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runs").value(3))
+                .andExpect(jsonPath("$.data.messages").value(5))
+                .andExpect(jsonPath("$.data.steps").value(9))
+                .andExpect(jsonPath("$.data.failedSteps").value(1))
+                .andExpect(jsonPath("$.data.summaries[0].runId").value(1))
+                .andExpect(jsonPath("$.data.summaries[0].failedSteps").value(1))
+                .andExpect(jsonPath("$.data.summaries[0].matchedBusinessKeys[0]").value("SO-1"));
+
+        // page/size 只决定摘要给哪一页（计数与它们无关），照样原样传；默认值是 1 / 20
+        verify(messageHistoryService).runsSummary(eq(7L), eq("FAILED"), eq("SO-2026-0917-0042"), eq(2), eq(50));
+    }
+
+    /** 不传分页时按默认 1 / 20（与运行列表同一套默认值）。 */
+    @Test
+    void summaryDefaultsToFirstPage() throws Exception {
+        when(messageHistoryService.runsSummary(nullable(Long.class), nullable(String.class),
+                nullable(String.class), anyInt(), anyInt()))
+                .thenReturn(Map.of("runs", 0L, "messages", 0L, "steps", 0L, "failedSteps", 0L,
+                        "summaries", List.of()));
+
+        mockMvc.perform(get("/api/history/runs/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runs").value(0));
+
+        verify(messageHistoryService).runsSummary(nullable(Long.class), nullable(String.class),
+                nullable(String.class), eq(1), eq(20));
+    }
+
+    /** 路径别被 `/runs/{id}` 抢走：`summary` 不是数字，仍要落到聚合这一条上。 */
+    @Test
+    void summaryPathIsNotSwallowedByRunDetail() throws Exception {
+        when(messageHistoryService.runsSummary(nullable(Long.class), nullable(String.class),
+                nullable(String.class), anyInt(), anyInt()))
+                .thenReturn(Map.of("runs", 0L, "messages", 0L, "steps", 0L, "failedSteps", 0L,
+                        "summaries", List.of()));
+
+        mockMvc.perform(get("/api/history/runs/summary").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summaries").isEmpty());
+    }
+
     @Test
     void getsRunDetail() throws Exception {
         JobRun run = new JobRun();

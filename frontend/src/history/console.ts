@@ -6,7 +6,7 @@
  * 这一条不是洁癖：本文件被 `views/HistoryView.vue` 与 `components/history/*` import，
  * 自测要是留在这里，每次开页面都会在浏览器里跑一遍断言、还会碰到 `process` 这个浏览器没有的全局。
  */
-import type { Job, JobRun, MessageStep } from '../types'
+import type { HistoryCounts, Job, JobRun, MessageStep, RunSummary } from '../types'
 
 export type StatusChipKind = 'ok' | 'bad' | 'warn' | 'run'
 
@@ -149,6 +149,26 @@ export function listQuery(mode: HistoryMode, filters: RunFilters, page: number, 
 }
 
 /**
+ * 计数与运行摘要那条只读聚合接口的查询串（#130）：**同一组筛选参数**——
+ * 「这次筛选命中了多大规模」与「这条运行值不值得点开」是两个问题，分页只回答第三个。
+ *
+ * 参数名与顺序跟 {@link listQuery} 一致，`status` 由调用方按当前模式算好
+ * （运行那一侧默认不过滤，消息步那一侧默认 FAILED）——两条请求带同一组条件，数字才对得上。
+ *
+ * `page` / `size` 照传，但它们**只决定摘要给哪一页的运行**：四个计数是**整个筛选集**的，
+ * 与分页无关（票面「翻页不影响计数」）。后端把「摘要有页、计数无页」这条写在它自己的注释里。
+ */
+export function summaryQuery(filters: RunFilters, status: string, page: number, size: number): string {
+  const params = new URLSearchParams()
+  if (filters.jobId !== null) params.set('jobId', String(filters.jobId))
+  if (status) params.set('status', status)
+  if (filters.businessKey.trim()) params.set('businessKey', filters.businessKey.trim())
+  params.set('page', String(page))
+  params.set('size', String(size))
+  return params.toString()
+}
+
+/**
  * 状态下拉的占位文案。
  *
  * 消息步那一侧「什么都没选」时实际看的是 FAILED，占位符就说这件事——旧实现把它写成「全部状态」、
@@ -240,7 +260,71 @@ export function listEmptyCopy(state: ListEmptyState): ListEmptyCopy {
 
 /* ── 列表行 ───────────────────────────────────────────────────────── */
 
-/** 运行行的说法：一次算好，模板里不再重复调 statusChip / 反复查任务名。 */
+/* ── 计数条与运行摘要（#130） ─────────────────────────────────────── */
+
+/** 计数条上的一项：标签与数字分开给，模板里不再拼字符串。 */
+export interface CountItem {
+  key: 'runs' | 'messages' | 'steps' | 'failed'
+  label: string
+  value: number
+}
+
+/**
+ * 计数条四项，顺序照原型（`运行 / 消息 / 消息步 / 失败步`）。
+ *
+ * `counts` 为 `null` = 这一轮还没取到（或没取）——此时**一个数都不编**，返回空数组让界面留白。
+ */
+export function countItems(counts: HistoryCounts | null): CountItem[] {
+  if (!counts) return []
+  return [
+    { key: 'runs', label: '运行', value: counts.runs },
+    { key: 'messages', label: '消息', value: counts.messages },
+    { key: 'steps', label: '消息步', value: counts.steps },
+    { key: 'failed', label: '失败步', value: counts.failedSteps },
+  ]
+}
+
+/**
+ * 运行行的规模摘要（原型 `N 消息 · M 步` + 失败时才有的一段，票面：`N 消息 · M 步 · 失败 K`）。
+ *
+ * **`失败 0` 不许出现**（票面明说）：没有失败步时那一段整个不写，别拿一个恒在的 `失败 0` 占位——
+ * 一屏运行里绝大多数是 0，写出来只是噪声。
+ *
+ * 返回**分段**而不是一整句：模板要把 `失败 K` 那一段单独上色（原型 `style="color:var(--danger-ink)"`），
+ * 而「哪一段算失败」这件事只能有一处说法——{@link countsText} 是从它拼出来的。
+ */
+export function countsParts(
+  summary: Pick<RunSummary, 'messageCount' | 'stepCount' | 'failedSteps'>,
+): { text: string; bad: boolean }[] {
+  const parts = [
+    { text: `${summary.messageCount} 消息`, bad: false },
+    { text: `${summary.stepCount} 步`, bad: false },
+  ]
+  if (summary.failedSteps > 0) parts.push({ text: `失败 ${summary.failedSteps}`, bad: true })
+  return parts
+}
+
+/** 摘要那一整句（`N 消息 · M 步[ · 失败 K]`）：由 {@link countsParts} 拼出来，别再各写一遍。 */
+export function countsText(
+  summary: Pick<RunSummary, 'messageCount' | 'stepCount' | 'failedSteps'>,
+): string {
+  return countsParts(summary).map((part) => part.text).join(' · ')
+}
+
+/** 业务键那一格没得写时的说法（消息步行与运行行两处共用一句）。 */
+const NO_BUSINESS_KEY = '无业务键'
+
+/** 命中的业务键小标签（原型 `.r-biz`）：一条都没有时给空数组，模板据此整块不铺。 */
+export function matchedKeysView(keys: readonly string[] | undefined): string[] {
+  return (keys ?? []).map((key) => key.trim() || NO_BUSINESS_KEY)
+}
+
+/**
+ * 运行行的说法：一次算好，模板里不再重复调 statusChip / 反复查任务名。
+ *
+ * `summaries` 是聚合接口按运行 id 回的那一份（#130）：缺一条就给空段（界面写「—」）而不是
+ * `0 消息 · 0 步`——「还没取到摘要」与「这条运行真的一条消息都没有」在界面上必须分得开。
+ */
 export interface RunRow {
   run: JobRun
   chip: StatusChip
@@ -248,17 +332,31 @@ export interface RunRow {
   started: string
   finished: string
   errLine: string
+  /** `N 消息 · M 步[ · 失败 K]` 的分段（拿不到摘要时是 `[{ text: '—', bad: false }]`），模板直接上色。 */
+  counts: { text: string; bad: boolean }[]
+  /** 命中的业务键（运行侧按业务键筛过时才有内容）。 */
+  keys: string[]
 }
 
-export function runRows(runs: readonly JobRun[], jobs: readonly Job[]): RunRow[] {
-  return runs.map((run) => ({
-    run,
-    chip: statusChip(run.status),
-    jobTitle: jobTitleOf(jobs, run.jobId),
-    started: stampOf(run.startedAt),
-    finished: stampOf(run.finishedAt),
-    errLine: firstLine(run.error),
-  }))
+export function runRows(
+  runs: readonly JobRun[],
+  jobs: readonly Job[],
+  summaries: readonly RunSummary[] = [],
+): RunRow[] {
+  const byRun = new Map(summaries.map((summary) => [summary.runId, summary]))
+  return runs.map((run) => {
+    const summary = byRun.get(run.id)
+    return {
+      run,
+      chip: statusChip(run.status),
+      jobTitle: jobTitleOf(jobs, run.jobId),
+      started: stampOf(run.startedAt),
+      finished: stampOf(run.finishedAt),
+      errLine: firstLine(run.error),
+      counts: summary ? countsParts(summary) : [{ text: '—', bad: false }],
+      keys: matchedKeysView(summary?.matchedBusinessKeys),
+    }
+  })
 }
 
 /**
@@ -286,7 +384,7 @@ export function stepRows(steps: readonly MessageStep[]): StepRow[] {
     head: `#${step.runId} · 步骤 ${step.step}`,
     chip: statusChip(step.status),
     action: step.actionName?.trim() || '—',
-    businessKey: step.businessKey?.trim() || '无业务键',
+    businessKey: step.businessKey?.trim() || NO_BUSINESS_KEY,
     at: stampOf(step.createdAt),
     attempt: step.attempt ?? 1,
     job: step.jobId === null || step.jobId === undefined ? '任务 —' : `任务 #${step.jobId}`,

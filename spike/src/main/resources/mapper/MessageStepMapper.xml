@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  消息步的自定义查询（#130）：按运行聚合出「消息数 / 消息步数 / 失败步数」。
+
+  为什么落 XML 而不是注解散装：`summarizeByRunIds` 要遍历 runIds（<foreach>），注解里写不动；
+  `summarizeMatchingRuns` 虽说没有 foreach，但与它同一件事的两个方向（按 id 名单 / 按运行条件），
+  分两处放只会让人以为口径不一样。列名与 DTO 字段名靠 MyBatis 的下划线转驼峰对上，改名字要两边一起改。
+-->
+<mapper namespace="com.example.edgegateway.mapper.MessageStepMapper">
+
+    <!--
+      口径（#130）：
+        - step_count    这条运行下所有消息步（不分状态）
+        - failed_steps  status = 'FAILED' 的那些（与消息步列表的 status=FAILED 同一口径）
+        - message_count 消息数按 message_id 去重（一条消息穿过多个动作只算一条）
+      没有任何消息步的运行**不出现在结果里**——那是「0 消息 0 步」，由服务层补默认值，
+      而不是让这里编一行 0（编的话「查不到」与「真的是 0」就分不开了）。
+    -->
+    <select id="summarizeByRunIds" resultType="com.example.edgegateway.model.RunStepSummary">
+        SELECT run_id,
+               COUNT(*) AS step_count,
+               SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) AS failed_steps,
+               COUNT(DISTINCT message_id) AS message_count
+        FROM message_step
+        WHERE run_id IN
+        <foreach collection="runIds" item="runId" open="(" separator="," close=")">
+            #{runId}
+        </foreach>
+        GROUP BY run_id
+    </select>
+
+    <!--
+      整条筛选集的**合计**（计数条那三个数，#130）：命中运行的判据下推成子查询，
+      一次查询出总数，**不把命中运行的 id 拉回内存再拼 `IN`**——整库运行时那个 `IN` 是无界的
+      （ADR-0016 结果 ⑥ 刚把 listRuns 那处同一个毛病收掉）。
+
+      JOIN 而不是 `IN (SELECT run_id ...)`：MySQL 对 `IN (子查询)` 的优化不如 JOIN 稳。
+      三个条件与运行列表的 matchingRuns 一一对应；`business_key LIKE` 那一格传的是
+      `%关键词%`（与消息步检索那一侧的 like() 同一档语义：`%` / `_` 就是通配符，不做字面量转义）。
+    -->
+    <select id="summarizeMatchingRuns" resultType="com.example.edgegateway.model.RunStepTotals">
+        SELECT COUNT(*) AS step_count,
+               SUM(CASE WHEN s.status = 'FAILED' THEN 1 ELSE 0 END) AS failed_steps,
+               COUNT(DISTINCT CONCAT(s.run_id, ':', s.message_id)) AS message_count
+        FROM job_run r
+        JOIN message_step s ON s.run_id = r.id
+        <where>
+            <if test="jobId != null">
+                AND r.job_id = #{jobId}
+            </if>
+            <if test="status != null and status != ''">
+                AND r.status = #{status}
+            </if>
+            <if test="businessKeyPattern != null and businessKeyPattern != ''">
+                AND EXISTS (SELECT 1 FROM message_step k
+                            WHERE k.run_id = r.id AND k.business_key LIKE #{businessKeyPattern})
+            </if>
+        </where>
+    </select>
+
+</mapper>

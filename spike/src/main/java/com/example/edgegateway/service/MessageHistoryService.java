@@ -11,6 +11,8 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.RunStepSummary;
+import com.example.edgegateway.model.RunStepTotals;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
@@ -25,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -198,35 +201,191 @@ public class MessageHistoryService {
     /**
      * 运行列表。
      *
-     * <p>{@code businessKey} 的口径（#129）：**该运行下任一条消息的业务键命中就保留这条运行**——
-     * 候选运行 id 从消息步里挑，再拿它筛运行；一条也没命中时直接给空页，不白跑一次运行查询。
-     * 匹配走 {@code LIKE}（子串，与消息步那一侧同一个口径）。</p>
+     * <p>{@code businessKey} 的口径（#129）：**该运行下任一条消息的业务键命中就保留这条运行**。
+     * 实现（#130 收口，ADR-0016 结果 ⑥）：**一次查询**，命中判据下推成 {@code EXISTS} 子查询——
+     * 旧实现是「先 `LIKE` 扫 {@code message_step} 拿全部候选 runId，再 `IN (...)` 筛运行」，
+     * 一条业务键命中很多运行时就是一个无界 `IN`。</p>
      */
     public Map<String, Object> listRuns(Long jobId, String status, String businessKey, int page, int size) {
-        LambdaQueryWrapper<JobRun> wrapper = new LambdaQueryWrapper<JobRun>()
-                .orderByDesc(JobRun::getId);
+        Page<JobRun> result = jobRunMapper.selectPage(new Page<>(page, size),
+                matchingRuns(jobId, status, businessKey).orderByDesc(JobRun::getId));
+        return pageOf(result.getTotal(), result.getRecords());
+    }
+
+    /**
+     * 计数条与运行摘要那条只读聚合接口（#130）。
+     *
+     * <p>回答两个问题：**这次筛选命中了多大规模**（四个计数，口径是当前筛选集、**不含分页**）
+     * 与**这条运行值不值得点开**（每运行摘要）。两组数字与运行列表同一组筛选算出来，
+     * 所以界面上的行摘要与展开后按 runId 取到的消息步数对得上。</p>
+     *
+     * <p>三个数与运行列表同一口径：`status` 命中 {@code job_run.status}（不是某个消息步的状态，
+     * 与 `/history/runs` 完全同一个参数语义）；命中的业务键也按同一口径（该运行下任一消息命中）筛。</p>
+     *
+     * <p><b>摘要有页、计数没有页</b>：四个计数是**整个筛选集**的（票面：「翻页不影响计数」），
+     * 而每运行摘要只给这一页的行——界面上用得到的就这一页。全量回一次实测两三千条时要 1 MB
+     * （业务键那一格最占地方），换来的是没人看的数字。调用方按运行列表的 page/size 同步传，
+     * 摘要便一行不差地对上。</p>
+     */
+    public Map<String, Object> runsSummary(Long jobId, String status, String businessKey, int page, int size) {
+        Long runs = jobRunMapper.selectCount(matchingRuns(jobId, status, businessKey));
+        Page<JobRun> pageOfRuns = jobRunMapper.selectPage(new Page<>(page, size),
+                matchingRuns(jobId, status, businessKey).orderByDesc(JobRun::getId));
+
+        // 摘要是**这一页**的行：与运行列表同一顺序，按 runId 给出去，界面自己按行对
+        List<Long> runIds = pageOfRuns.getRecords().stream().map(JobRun::getId).toList();
+        Map<Long, RunStepSummary> byRunId = summarizeSteps(runIds);
+        // 命中的业务键**只在筛了业务键时才有内容**：没筛的时候把每条运行的全部业务键都回来，
+        // 一页二十行就是几十个没人看的标签（实测 runs=2682 时那一格占了大半 payload），
+        // 而界面上那一块本来也只在「业务键筛出结果」时才有话要说
+        boolean keyFiltered = businessKey != null && !businessKey.isBlank();
+        Map<Long, List<String>> keysByRunId = keyFiltered ? businessKeysOf(runIds) : Map.of();
+        List<Map<String, Object>> summaries = new ArrayList<>(runIds.size());
+        for (Long runId : runIds) {
+            RunStepSummary summary = byRunId.get(runId);
+            summaries.add(Map.of(
+                    "runId", runId,
+                    "messageCount", summary == null ? 0L : summary.getMessageCount(),
+                    // 一格叫 stepCount：`steps` 这个名字留给**整条筛选集**的那个数（计数条），
+                    // 同一个词在两条 scope 上各指一个范围是这类接口最容易读错的地方
+                    "stepCount", summary == null ? 0L : summary.getStepCount(),
+                    "failedSteps", summary == null ? 0L : summary.getFailedSteps(),
+                    // Map.of 不收 null 值：业务键可为空，这里用 List.of() 表示「没有可显示的业务键」
+                    "matchedBusinessKeys", keyFiltered
+                            ? matchedKeys(keysByRunId.get(runId), businessKey) : List.of()));
+        }
+
+        Map<String, Object> totals = stepTotals(jobId, status, businessKey);
+        return Map.of(
+                "runs", runs,
+                "messages", totals.get("messages"),
+                "steps", totals.get("steps"),
+                "failedSteps", totals.get("failedSteps"),
+                "summaries", summaries);
+    }
+
+    /**
+     * 整个筛选集的消息 / 消息步 / 失败步三个数（#130 的计数条，**不含分页**）。
+     *
+     * <p>一条 SQL 出结果：命中运行的判据（任务 / 状态 / **业务键**）下推给
+     * {@link MessageStepMapper#summarizeMatchingRuns}，**不把命中运行的 id 拉回内存再拼 `IN`**
+     * ——整库运行时那个 `IN` 是无界的，而这条路上的「命中运行」就是整库。</p>
+     *
+     * <p>业务键**必须**在这一组条件里：曾经只用任务 / 状态算这三个数，于是「业务键筛出一条也没命中」
+     * 时计数条写着「运行 0 / 消息 5478」——一个筛选集里运行是 0 而消息不是 0，自己打自己的脸。</p>
+     */
+    private Map<String, Object> stepTotals(Long jobId, String status, String businessKey) {
+        RunStepTotals totals = messageStepMapper.summarizeMatchingRuns(jobId,
+                status == null ? null : status.trim(), likePattern(businessKey));
+        // 没有任何消息步时 SQL 仍回一行（0 / 0 / 0）；这一层只兜「一条 SQL 也没回」这种不可能的情况
+        return Map.of(
+                "messages", totals == null ? 0L : totals.getMessageCount(),
+                "steps", totals == null ? 0L : totals.getStepCount(),
+                "failedSteps", totals == null ? 0L : totals.getFailedSteps());
+    }
+
+    /** 「哪些运行属于当前筛选集」的**唯一定义**（#130）：运行列表分页、计数条的计数、每运行摘要
+     * 都从这一处来。同一个条件写两遍，就是「列表说有 3 条、计数说 5 条」那类对不上的来源。
+     */
+    private LambdaQueryWrapper<JobRun> matchingRuns(Long jobId, String status, String businessKey) {
+        LambdaQueryWrapper<JobRun> wrapper = new LambdaQueryWrapper<>();
         if (jobId != null) {
             wrapper.eq(JobRun::getJobId, jobId);
         }
         if (status != null && !status.isBlank()) {
             wrapper.eq(JobRun::getStatus, status.trim());
         }
-        if (businessKey != null && !businessKey.isBlank()) {
-            // 只要 runId：整行带上 data_snapshot / input_snapshot 两个 TEXT 列纯属白读（#127 那两列）
-            List<Long> runIds = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
-                            .select(MessageStep::getRunId)
-                            .like(MessageStep::getBusinessKey, businessKey.trim()))
-                    .stream()
-                    .map(MessageStep::getRunId)
-                    .distinct()
-                    .toList();
-            if (runIds.isEmpty()) {
-                return pageOf(0L, List.of());
-            }
-            wrapper.in(JobRun::getId, runIds);
+        String pattern = likePattern(businessKey);
+        if (pattern != null) {
+            // 一次查询：命中判据下推成 EXISTS 子查询（旧实现是「LIKE 扫 message_step 拿 runId，
+            // 再 IN 筛运行」——命中很多运行时那个 IN 是无界的）。
+            // 为什么不走 apply(sql, 参数)：MyBatis-Plus 3.5.17 这条重载在这里**没绑上参数**
+            // （`apply("status = {0}", "SUCCESS")` 连 FAILED 的行一起返回，H2 真 SQL 测试抓到的），
+            // 所以按老办法把模式串内联进子查询，值先过 {@link #likeLiteral}。
+            wrapper.inSql(JobRun::getId, "SELECT s.run_id FROM message_step s"
+                    + " WHERE s.business_key LIKE " + likeLiteral(pattern));
         }
-        Page<JobRun> result = jobRunMapper.selectPage(new Page<>(page, size), wrapper);
-        return pageOf(result.getTotal(), result.getRecords());
+        return wrapper;
+    }
+
+    /**
+     * 业务键的 `LIKE` 模式串（`%关键词%`）；没筛业务键时给 {@code null}（SQL 里就不带那个 EXISTS）。
+     *
+     * <p>**这里刻意不转义 `%` / `_`**：整条链路上业务键的子串匹配都走同一档语义——消息步检索那一侧
+     * （{@link #listSteps}）用的是 MyBatis-Plus 的 `like()`，它也不转义。只在这一侧加转义，同一个业务键
+     * 会在两个模式里筛出不同的集合（#130 审查抓到的正是这个「两边口径不一致」）。</p>
+     *
+     * <p>要改成「字面量匹配」得三条路一起改（两处 SQL + 界面说明），那是另一张票；MySQL 的 `\` 默认
+     * 转义在 H2 上也不成立（真 SQL 测试跑 H2），单边转义连测试都过不了。</p>
+     */
+    private String likePattern(String businessKey) {
+        if (businessKey == null || businessKey.isBlank()) {
+            return null;
+        }
+        return "%" + businessKey.trim() + "%";
+    }
+
+    /**
+     * 把模式串变成可以内联进 SQL 的字符串字面量（模式串本身是拼出来的，只能内联，见 {@link #matchingRuns}）。
+     *
+     * <p>两步：`'` 翻倍（别把用户的引号当成字符串结束）；`\` 翻倍（MySQL 的 `LIKE` 默认拿 `\` 当转义符，
+     * 不翻倍的话「业务键里带反斜杠」会让后面的字符被静默吃掉——找一个包含 `\` 的业务键正是会踩到的那一步）。
+     * `%` / `_` 不动：它们是通配符，与消息步检索那一侧同一档语义。</p>
+     */
+    private static String likeLiteral(String pattern) {
+        return "'" + pattern.replace("\\", "\\\\").replace("'", "''") + "'";
+    }
+
+    /**
+     * 给这一页的运行按 run_id 聚合消息步（一次查询）；没有消息步的运行不在结果里，由调用方补 0。
+     *
+     * <p>**输入只该是当前这一页的运行**：`summarizeByRunIds` 的 `WHERE run_id IN (...)` 是无界的，
+     * 整条筛选集的合计走 {@link #stepTotals}（判据下推，一条 SQL）。</p>
+     */
+    private Map<Long, RunStepSummary> summarizeSteps(List<Long> runIds) {
+        if (runIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, RunStepSummary> byRunId = new HashMap<>();
+        messageStepMapper.summarizeByRunIds(runIds)
+                .forEach(summary -> byRunId.put(summary.getRunId(), summary));
+        return byRunId;
+    }
+
+    /**
+     * 命中运行下出现过的业务键（去重）：运行侧「命中的业务键」小标签（#130）与
+     * ADR-0016 结果 ⑤ 里 #129 留下的那处缺口（「只筛不显示」）都靠它。
+     *
+     * <p>只要 run_id 与 business_key 两列——整行读回来会白读 `message_step` 上那两个 TEXT 快照列。</p>
+     */
+    private Map<Long, List<String>> businessKeysOf(List<Long> runIds) {
+        if (runIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<String>> keys = new HashMap<>();
+        messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
+                        .select(MessageStep::getRunId, MessageStep::getBusinessKey)
+                        .in(MessageStep::getRunId, runIds)
+                        .isNotNull(MessageStep::getBusinessKey))
+                .forEach(step -> {
+                    List<String> perRun = keys.computeIfAbsent(step.getRunId(), id -> new ArrayList<>());
+                    if (!perRun.contains(step.getBusinessKey())) {
+                        perRun.add(step.getBusinessKey());
+                    }
+                });
+        return keys;
+    }
+
+    /**
+     * 命中的业务键：只留**子串命中**的那几个（大小写敏感——与 SQL 那边一样，同一份业务键
+     * 不该在两处被判成不同结果）。调用方只在筛了业务键时才走这里。
+     */
+    private List<String> matchedKeys(List<String> keys, String businessKey) {
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+        String needle = businessKey.trim();
+        return keys.stream().filter(key -> key.contains(needle)).toList();
     }
 
     /**

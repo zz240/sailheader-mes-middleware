@@ -49,6 +49,7 @@ node part-transform-112.cjs        # 在哪个目录跑都行：截图落在 too
 | `target-fields-118.cjs` | #118 | 目标那一片两个入口（重新探测目标字段 / 粘贴 JSON）、粘一份带数组的目标数据推出的清单与连库探测同一形状（数组折成数组行 + 相对路径子行）、写明「必填推不出来」与「按第 1 条推的」、已配好的行没被冲掉、重新探测把清单与说法都换回去 | 不会（全程不保存） |
 | `sample-stored-119.cjs` | #119 | 打开时存过的那份压过探测（来源顶上「粘的（已存）」、目标那一片不连库探测）、保存那一刻那两格的形状与先后（粘的带原文、探测的只报归属）、重开之后那份清单还在 | **会**：最后一段真写 `mapping_sample` 一格（要后端是新起的；旧后端时那一段 SKIP，其余照跑） |
 | `message-history-129.cjs` | #129 | 消息历史页的双栏骨架与筛选：页内不滚动而两栏各自滚、任务 / 状态即时生效而业务键靠查询、重置回到初始、改筛选回第 1 页、翻页与改每页条数、加载中占位 / 空 / 筛没了 / 接口出错并重试、选中一条运行右栏是它的头与错误块 | 不会 |
+| `message-history-130.cjs` | #130 | 消息历史页的计数条与运行摘要：页头四项（运行 / 消息 / 消息步 / 失败步）与聚合接口逐个对上、聚合请求与列表同一组筛选且同一页、**翻页不减计数**、改任务 / 业务键筛选计数跟着变并与接口重算一致、运行行写 `N 消息 · M 步[ · 失败 K]`（**不出现「失败 0」**、失败那段是红的）、**行摘要与按 runId 取到的消息步一致**、命中的业务键只在该筛时显示 | 不会 |
 | `message-history-136.cjs` | #136 | 消息历史页第二个模式（消息步检索）：切模式改打 `/history/steps` 且**默认只看 FAILED**（这句话在列表头、筛选条、状态下拉占位上读得到）、「全部状态」才真的全看、业务键命中消息步、点一行定位到对应消息与步骤（右栏路径 + 行选中态 + 右栏取那条运行）、分页与每页条数同样有效、每行写全（运行 / 步骤 / 状态 / 动作 / 业务键 / 时刻 / 尝试 / 任务 / 错误首行） | 不会 |
 
 ## 后端是旧进程时
@@ -66,5 +67,5 @@ node part-transform-112.cjs        # 在哪个目录跑都行：截图落在 too
 - 规则 → 编译 → 执行往返：`spike/src/test/java/com/example/edgegateway/mapping/JsonataRuleCompilerTest.java`
 - 保存那道门：`spike/src/test/java/com/example/edgegateway/service/ActionServiceTest.java`
 - 编辑器端点契约：`spike/src/test/java/com/example/edgegateway/web/FieldMappingEditorControllerTest.java`
-- 消息历史（含 #136 消息步列表补 `jobId` 的那条投影查询）：`spike/src/test/java/com/example/edgegateway/service/MessageHistoryServiceTest.java`、
+- 消息历史（含 #136 消息步列表补 `jobId` 的投影查询、#130 计数与运行摘要的聚合查询）：`spike/src/test/java/com/example/edgegateway/service/MessageHistoryServiceTest.java`、
   `.../mapper/MessageHistoryMapperTest.java`、`.../web/HistoryControllerTest.java`

@@ -16,10 +16,10 @@
  *   8. 任务名的写法与面板计数。
  */
 import {
-  describeFilters, detailPath, emptyFilters, filterNote, firstLine, hasAnyFilter, HISTORY_MODES,
-  isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf, listCountText, listEmptyCopy,
-  listHint, listQuery, listTitle, noSelection, runRows, selectRun, selectStep, shortId, stampOf,
-  statusChip, statusParam, statusPlaceholder, stepRows,
+  countItems, countsParts, countsText, describeFilters, detailPath, emptyFilters, filterNote, firstLine,
+  hasAnyFilter, HISTORY_MODES, isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf, listCountText,
+  listEmptyCopy, listHint, listQuery, listTitle, matchedKeysView, noSelection, runRows, selectRun,
+  selectStep, shortId, stampOf, statusChip, statusParam, statusPlaceholder, stepRows, summaryQuery,
   DEFAULT_MODE, RUN_STATUSES, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
 import type { Job, JobRun, MessageStep } from '../types.ts'
@@ -103,6 +103,18 @@ eq('选了具体状态就只看那一个',
 eq('业务键与分页在消息步这一侧同样有效',
   listQuery('steps', { ...emptyFilters(), businessKey: 'SO-2026', status: STATUS_ANY }, 4, 50),
   'businessKey=SO-2026&page=4&size=50')
+
+// 4b. 计数与运行摘要那条聚合请求（#130）：筛选与列表逐字一致；page/size 只决定「摘要给哪一页」
+eq('聚合请求带上同一组筛选与分页',
+  summaryQuery(emptyFilters(), '', 1, 20), 'page=1&size=20')
+eq('聚合请求的筛选与列表同一套（只有路径不同）',
+  summaryQuery({ jobId: 7, status: '', businessKey: ' SO-1 ' }, 'FAILED', 3, 50),
+  'jobId=7&status=FAILED&businessKey=SO-1&page=3&size=50')
+eq('运行那一侧默认不过滤时聚合请求也不带 status',
+  summaryQuery(emptyFilters(), statusParam('runs', emptyFilters()), 1, 20), 'page=1&size=20')
+eq('消息步那一侧的默认 FAILED 也带进聚合请求',
+  summaryQuery(emptyFilters(), statusParam('steps', emptyFilters()), 1, 20),
+  'status=FAILED&page=1&size=20')
 eq('「全部状态」在运行那一侧也不带 status',
   listQuery('runs', { ...emptyFilters(), status: STATUS_ANY }, 1, 20), 'page=1&size=20')
 
@@ -192,6 +204,8 @@ eq('运行行一次算好（芯片 / 任务名 / 两个时刻 / 错误首行）'
   started: '2026-09-17 09:12:31',
   finished: '2026-09-17 09:12:34',
   errLine: 'boom',
+  counts: [{ text: '—', bad: false }],
+  keys: [],
 }])
 
 const stepRowList = stepRows(steps)
@@ -233,6 +247,39 @@ eq('任务下拉的写法', jobOptionLabel({ id: 7, name: 'MDM 编码回写（B6
 eq('按 id 说任务名', jobTitleOf([{ id: 3, name: '站点连通性探测' }], 3), '#3 站点连通性探测')
 eq('查不到那个任务就只报 id', jobTitleOf([], 9), '#9')
 eq('面板计数的写法', listCountText(128), '共 128 条')
+
+// 9. 计数条与运行摘要（#130）
+eq('计数条四项、顺序照原型', countItems({ runs: 12, messages: 30, steps: 88, failedSteps: 3 }),
+  [{ key: 'runs', label: '运行', value: 12 }, { key: 'messages', label: '消息', value: 30 },
+    { key: 'steps', label: '消息步', value: 88 }, { key: 'failed', label: '失败步', value: 3 }])
+eq('还没取到计数时一项都不编', countItems(null), [])
+eq('计数全是 0 也是真计数（与「没取到」分得开）',
+  countItems({ runs: 0, messages: 0, steps: 0, failedSteps: 0 }).map((i) => i.value), [0, 0, 0, 0])
+
+const summaryOf = (n: number, failed: number, keys: string[] = []) => ({
+  runId: runs[0].id, messageCount: n, stepCount: n * 2, failedSteps: failed, matchedBusinessKeys: keys,
+})
+eq('行摘要按票面写法', countsText(summaryOf(3, 1)), '3 消息 · 6 步 · 失败 1')
+eq('失败步为 0 时不出现「失败 0」这段噪声', countsText(summaryOf(3, 0)), '3 消息 · 6 步')
+eq('一条消息都没有的运行写全 0（不是破折号）', countsText(summaryOf(0, 0)), '0 消息 · 0 步')
+eq('行摘要切段：只有失败那一段是红的', countsParts(summaryOf(3, 1)),
+  [{ text: '3 消息', bad: false }, { text: '6 步', bad: false }, { text: '失败 1', bad: true }])
+eq('没有失败步时切段里也就没有红的那一段', countsParts(summaryOf(3, 0)),
+  [{ text: '3 消息', bad: false }, { text: '6 步', bad: false }])
+eq('整句就是切段拼出来的（一处说法，改标签不会只改一半）',
+  countsText(summaryOf(3, 1)), countsParts(summaryOf(3, 1)).map((p) => p.text).join(' · '))
+
+eq('命中业务键照原样给标签', matchedKeysView(['SO-1', ' SO-2 ']), ['SO-1', 'SO-2'])
+eq('空业务键写「无业务键」（与消息步行同一个口径）', matchedKeysView(['']), ['无业务键'])
+eq('一条都没有时整块不铺', matchedKeysView(undefined), [])
+
+eq('运行行带上摘要与命中业务键',
+  runRows(runs, jobs, [summaryOf(3, 1, ['SO-2026-0917-0042'])]).map((r) => [r.counts, r.keys]),
+  [[[{ text: '3 消息', bad: false }, { text: '6 步', bad: false }, { text: '失败 1', bad: true }],
+    ['SO-2026-0917-0042']]])
+eq('没有这条运行的摘要时写破折号（不是 0 消息 · 0 步）',
+  runRows(runs, jobs, [{ ...summaryOf(1, 0), runId: 999 }]).map((r) => r.counts.map((p) => p.text)),
+  [['—']])
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

@@ -70,6 +70,45 @@ export interface MessageStep {
   businessKey?: string | null
 }
 
+/**
+ * 运行摘要（#130）：某一条运行在当前筛选集里的规模，由 `/history/runs/summary` 一次带回
+ * （`message_step` 上没有 jobId，逐行补拉就是 ADR-0016 决策 6 拒绝的 N+1）。
+ *
+ * 名字分工：`stepCount` 是**这一条运行**的消息步数，与计数条的 `steps`（整条筛选集的合计）
+ * 不是同一个范围——两处都叫 `steps` 时最容易读成同一个数。
+ *
+ * 不变量：三个数与运行列表用同一组筛选算出来，所以界面上的行摘要与按 `runId` 取到的消息步数
+ * 对得上（`failedSteps` 对着 `status=FAILED`）。
+ */
+export interface RunSummary {
+  runId: number
+  /** 消息数（按 messageId 去重）。 */
+  messageCount: number
+  /** 这条运行的消息步数。 */
+  stepCount: number
+  /** 失败步数（status = FAILED）。 */
+  failedSteps: number
+  /** 命中的业务键（运行侧筛选是「任一消息命中即保留整运行」，这里回的是命中的那几个）。 */
+  matchedBusinessKeys: string[]
+}
+
+/**
+ * 计数条（#130）：**整条筛选集**（不含分页）的四个数。
+ *
+ * 这里的 `steps` 是整个筛选集的消息步合计；每运行的那一格叫 `RunSummary.stepCount`。
+ */
+export interface HistoryCounts {
+  runs: number
+  messages: number
+  steps: number
+  failedSteps: number
+}
+
+/** 只读聚合接口的应答：四个计数（整条筛选集）+ 每运行摘要（当前这一页）。 */
+export interface RunsSummary extends HistoryCounts {
+  summaries: RunSummary[]
+}
+
 export interface Page<T> {
   total: number
   records: T[]

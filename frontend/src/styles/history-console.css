@@ -30,6 +30,13 @@
   color: var(--fg); font-family: var(--font-mono); font-size: var(--fs-meta);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 6px;
 }
+/* 计数条（#130 / 原型 `pagehead .counts`）：贴页头右侧，等宽数字，四个数排一行。
+   窄屏时整条落到标题下面（原型 620px 断点里那句 `width:100%; margin-left:0`）。 */
+.hc-counts {
+  margin-left: auto; display: flex; align-items: center; gap: 14px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+}
+.hc-counts b { color: var(--fg); font-weight: 600; }
 
 /* ── 筛选条 ───────────────────────────────────────────────────────── */
 .hc-filters { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 0 12px; }
@@ -90,6 +97,16 @@
 .hc-r-err {
   font-size: 11px; color: var(--danger-ink); margin-top: 4px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 规模摘要那一段（#130）：`N 消息 · M 步` 与（有失败步时的）`失败 K`。
+   失败那一段是这一行唯一的一等信息——原型 `r-sub` 里那句 `color:var(--danger-ink)`。 */
+.hc-r-counts { display: inline-flex; gap: 8px; }
+.hc-r-counts .hc-r-bad { color: var(--danger-ink); }
+/* 命中的业务键小标签（原型 `.r-biz`）：只有按业务键筛过时才有内容 */
+.hc-r-keys { margin-top: 5px; }
+.hc-r-biz {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); padding: 0 5px;
 }
 
 /* ── 状态芯片 ─────────────────────────────────────────────────────── */

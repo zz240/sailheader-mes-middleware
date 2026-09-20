@@ -55,6 +55,24 @@ public class HistoryController {
         return messageHistoryService.getRun(id);
     }
 
+    /**
+     * 计数条与运行摘要（#130）：与 {@link #listRuns} **同一组筛选参数**，回四个计数
+     * （运行 / 消息 / 消息步 / 失败步，口径是当前筛选集、**不含分页**）与每运行摘要。
+     *
+     * <p>{@code page} / {@code size} 只决定**摘要给哪一页的运行**（调用方按运行列表同步传，
+     * 行摘要才一行不差地对上）；四个计数与它们无关——票面：「翻页不影响计数」。</p>
+     *
+     * <p>路径不必排在 {@code /runs/{id}} 前面：按段精确匹配优先于模板变量。</p>
+     */
+    @GetMapping("/runs/summary")
+    public Map<String, Object> runsSummary(@RequestParam(required = false) Long jobId,
+                                           @RequestParam(required = false) String status,
+                                           @RequestParam(required = false) String businessKey,
+                                           @RequestParam(defaultValue = "1") int page,
+                                           @RequestParam(defaultValue = "20") int size) {
+        return messageHistoryService.runsSummary(jobId, status, businessKey, safePage(page), safeSize(size));
+    }
+
     @GetMapping("/steps")
     public Map<String, Object> listSteps(@RequestParam(required = false) Long jobId,
                                          @RequestParam(required = false) Long runId,
