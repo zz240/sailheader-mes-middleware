@@ -15,10 +15,18 @@
 | 南向同步 | MQ 订阅 → 字段映射 → 幂等 upsert 客户 MySQL | 任务 / 映射编辑器 | [southbound-sync.md](southbound-sync.md) |
 | 同步 + 通知 | 读库 → 映射 → HTTP 推送 + MQ 发布 | 任务 / 动作链 | [notify-push.md](notify-push.md) |
 | 触发流 | 手动执行 / 定时 / 外部 API 触发 | 任务 / 站点（API Key） | [trigger-flow.md](trigger-flow.md) |
-| 字段映射（转换流） | 规则树 → JSONata 编译 → 求值；建议器 | 映射编辑器 / 建议面板 | [transform-flow.md](transform-flow.md) |
+| 字段映射 · 标量行 | 一行一个目标字段 → 行级转换 → JSONata 编译求值 | 映射编辑器（逐行） | [field-mapping/scalar-row-mapping.md](field-mapping/scalar-row-mapping.md) |
+| 字段映射 · 数组层级 | 数组行 + 子行 + 外层引用 → `$map` 组规则 | 映射编辑器（数组行） | [field-mapping/array-mapping.md](field-mapping/array-mapping.md) |
+| 字段映射 · 拼接片段 | 多段拼接 + 每段一个片段转换 → `&` 表达式 | 映射编辑器（CONCAT 行） | [field-mapping/concat-part-mapping.md](field-mapping/concat-part-mapping.md) |
+| 字段映射 · 手写表达式 | `mode=EXPRESSION`：整段 JSONata，跳过规则树校验 | 映射编辑器（高级入口） | [field-mapping/expression-mode.md](field-mapping/expression-mode.md) |
+| 字段映射 · 建议器 | 结构探测 → 归一化 → 相似度 → 历史复用 → 转换推断 | 后端 `/api/mapping-suggestions`（当前无 UI 入口） | [field-mapping/suggester.md](field-mapping/suggester.md) |
 | 可靠性流 | 任务执行失败 → 重试退避 → 消息历史 → 断点重投 | 消息历史页 / 任务执行 | [reliability-flow.md](reliability-flow.md) |
 
-> 七个场景已从项目代码与文档全量归纳；每份产出文件均含业务场景与交互、Mermaid 时序图、逐环节代码走查
+> **字段映射那一组按映射形态拆成五份**（上面的五行），形态无关的共性——规则模型、编译与求值那一段、
+> 「两档校验 + 保存那道门」的机制——在同一目录的总览里：[field-mapping/README.md](field-mapping/README.md)。
+> 旧的单份文件 [transform-flow.md](transform-flow.md) 只留导航与旧编号（P6/P7/P8/P9、F1–F9）对照，不再有正文。
+
+> 其余六个场景与字段映射五份共十一份产出文件均含业务场景与交互、Mermaid 时序图、逐环节代码走查
 > （文件+行号）、测试环境、造数指导、建议表。
 
 ## 建议路由（走查后进入改进流程）

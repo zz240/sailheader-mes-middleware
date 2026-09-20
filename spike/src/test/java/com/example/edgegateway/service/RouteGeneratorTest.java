@@ -6,6 +6,7 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import org.apache.camel.Exchange;
@@ -113,6 +114,7 @@ class RouteGeneratorTest {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
         when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         Job job = new Job();
         job.setId(7L);
@@ -145,6 +147,7 @@ class RouteGeneratorTest {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
         when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         Job job = new Job();
         job.setId(8L);
@@ -166,6 +169,7 @@ class RouteGeneratorTest {
     void readSqlRoutesToActionSelectedCustomerDataSource() throws Exception {
         when(dataSourceMapper.selectById(1L)).thenReturn(mysqlDataSource(1L));
         when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         Job job = new Job();
         job.setId(11L);
@@ -187,6 +191,7 @@ class RouteGeneratorTest {
         when(dataSourceMapper.selectById(1L)).thenReturn(rabbitDataSource(1L));
         when(dataSourceMapper.selectById(2L)).thenReturn(mysqlDataSource(2L));
         when(dataSourceManager.get(2L)).thenReturn(mock(javax.sql.DataSource.class));
+        when(dataSourceManager.dialect(2L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         Job job = new Job();
         job.setId(9L);
@@ -284,6 +289,7 @@ class RouteGeneratorTest {
         when(dataSourceMapper.selectById(2L)).thenReturn(httpDataSource(2L));
         when(dataSourceMapper.selectById(3L)).thenReturn(rabbitDataSource(3L));
         when(dataSourceManager.get(1L)).thenReturn(mock(javax.sql.DataSource.class));
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         Job job = new Job();
         job.setId(10L);

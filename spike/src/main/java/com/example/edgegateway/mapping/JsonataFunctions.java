@@ -1,6 +1,8 @@
 package com.example.edgegateway.mapping;
 
 import com.dashjoin.jsonata.Jsonata.JFunction;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -8,14 +10,49 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
 
 /** JSONata 自定义函数集合（S0 验证：dashjoin registerFunction + JFunction 签名）。 */
 public final class JsonataFunctions {
+
+    /** 解析 JSON 字符串用（ObjectMapper 线程安全，复用一份）。 */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 没写格式串时用的默认值（{@code JsonataRuleCompiler} 与 {@link DatePatterns} 都认这一个）。 */
     private static final String DEFAULT_PATTERN = DatePatterns.DEFAULT;
 
     private JsonataFunctions() {
+    }
+
+    /**
+     * {@code $parse}：把一个 JSON 字符串解析成对象或数组。
+     *
+     * <p>给「一单多行 → 一条报文」这个形状用：源库侧用 JSON 聚合（SQL Server 的 {@code FOR JSON PATH}、
+     * MySQL 的 {@code JSON_ARRAYAGG}/{@code JSON_OBJECT}）把明细折成一列字符串，这里把它还原成数组，
+     * 再交给 {@code $map} 加工。**引擎自带的函数里没有它**（实测 {@code $parse(...)} 报
+     * "Attempted to invoke a non-function"），所以要自己注册。</p>
+     *
+     * <p>已经是结构（Map/List）时原样返回，方便「这一列有时候是 JSON 类型、有时候是字符串」的存量数据
+     * ——签名因此写成 {@code <j:j>}（任意→任意）：写成 {@code <s:j>} 的话，引擎会在调用前就把非字符串参数拦掉，
+     * 那条宽容分支根本到不了（实测 {@code Argument "1" of Object "parse" does not match Object signature}）。
+     * **解析不出来就抛**——与其它求值错误一样让映射步 FAILED，不静默出空。</p>
+     */
+    public static JFunction parseJson() {
+        return new JFunction((input, args) -> {
+            Object value = args.get(0);
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof Map || value instanceof List) {
+                return value;
+            }
+            try {
+                return MAPPER.readValue(String.valueOf(value), Object.class);
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("$parse 解析 JSON 失败: " + e.getOriginalMessage(), e);
+            }
+        }, "<j:j>");
     }
 
     /**

@@ -6,6 +6,7 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import org.apache.camel.builder.RouteBuilder;
@@ -63,6 +64,7 @@ class RouteGeneratorBatchTest {
         watermarkStore = new RecordingWatermarkStore(new JdbcTemplate(ds));
         dataSourceManager = mock(DataSourceManager.class);
         when(dataSourceManager.get(1L)).thenReturn(ds);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
         messageHistory = mock(MessageHistoryService.class);
         when(messageHistory.startRun(anyLong(), any())).thenReturn(jobRun());
         dataSourceMapper = mock(DataSourceMapper.class);

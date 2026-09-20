@@ -48,7 +48,7 @@ public class DataSourceAdditionMigration {
                         changed = true;
                     }
                 }
-            } else if (ds.getType() == DataSourceType.MYSQL) {
+            } else if (ds.getType() == DataSourceType.MYSQL || ds.getType() == DataSourceType.SQLSERVER) {
                 if (clean.remove("url") != null) {
                     changed = true;
                 }

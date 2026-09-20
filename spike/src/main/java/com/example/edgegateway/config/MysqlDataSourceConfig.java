@@ -9,7 +9,7 @@ import java.util.Set;
  * MySQL 数据源配置（连接级，ADR-0007）：连接 url 取数据源 {@code address}，addition 仅存 username/password。
  */
 public record MysqlDataSourceConfig(String username, String password)
-        implements DataSourceConfig {
+        implements JdbcDataSourceConfig {
 
     public static MysqlDataSourceConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;

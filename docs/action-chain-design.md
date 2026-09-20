@@ -26,7 +26,10 @@
 
 `Exchange` property `edge.context`：`Map<Integer, Object>`，键 = 动作序号（action_index），`0` 为任务输入（Job Input）。
 
-- 每个动作完成后写入 `context[actionIndex] = 输出`；
+- 每个动作完成后写入 `context[actionIndex] = 输出`；HTTP 动作的输出就是**解析后的响应**
+  （JSON 对象 → `Map`、数组 → `List`、非 JSON → 原样字符串、空响应体 → `null`），
+  且出站后链上消息体**保持为本次请求体**（#123 / #126）——想继续往下传响应，就显式引用该动作序号；
+  捕获内容不截断：装不下 `message_step` 快照列时该动作**显式失败**（列容量本身是 #127，见 ADR-0015）；
 - `READ_SQL` 的 split 后，每个子 exchange 的 `context[readIndex]` = 该行数据；
 - 字段映射规则引用改为结构化 `sourceStep + sourcePath`（不再拼接路径字符串），`sourceStep` 默认等于"前一个动作的序号"（迁移时按原链推断）；
 - `MQ_PUBLISH` 的请求体来源 = `bodySourceStep`（**必填**，显式指向链中存在的更早动作，校验期检查；发布时该步无输出——如被断点跳过——则执行失败，不静默发旧值）；`HTTP_CALL` 直接使用当前 body（上一步输出）；
@@ -58,7 +61,7 @@ for (Action a : sorted(actions)) {
 | `READ_SQL` | 读水位（配置在动作上）→ `to(sql:..)` → 算新水位 → `split(body())` → 每行存 `context[序号]` |
 | `FIELD_MAP` | processor：从 `context[sourceStep]` 取源 → 规则映射 → 存 `context[序号]` |
 | `WRITE_UPSERT` | processor：取 body → 组装 `INSERT ... ON DUPLICATE KEY UPDATE` → jdbc 执行 |
-| `HTTP_CALL` | `marshal().json()` → 设 method/鉴权头 → `to(baseUrl + path)` |
+| `HTTP_CALL` | `marshal().json()` → 设 method/鉴权头 → `to(baseUrl + path)` → processor：响应解析进 `context[序号]` + 消息体还原为本次请求体（#123/#126，失败面不变：非 2xx 抛异常、不写 context） |
 | `MQ_PUBLISH` | `marshal().json()` → `to(spring-rabbitmq:name?routingKey=..)` |
 
 入口判定：链首为 `MQ_CONSUME` → 南向（消费主路由 + direct 重放路由，现状保留）；否则北向（`direct:job-{id}` + 定时入口，cron 就绪后替换硬编码 timer）。

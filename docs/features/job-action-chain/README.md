@@ -12,7 +12,7 @@
   - `buildPollingEntry`（直连入口）：READ_SQL 链首 → 仅 `direct:job-<id>`；自动触发由 `JobScheduler` 依调度配置投递；
   - `buildConsumerEntry`：MQ_CONSUME 链首 → `spring-rabbitmq:<exchange>?exchangeType=<t>&queues=<queue>&routingKey=<rk>&autoDeclare=true` 消费（exchange 名/类型/binding key 归动作，缺省=数据源名/direct/queue，ADR-0010）；
   - `buildReplay`：`direct:job-<id>` 重放（手动执行/断点重放共用）。
-- **上下文列表**：动作输出按序号存入 exchange 属性 `edge.context`，`FIELD_MAP.sourceStep` 指向来源步骤（0=任务输入）；MQ 消费入口把消息体放 `context[1]`。
+- **上下文列表**：动作输出按序号存入 exchange 属性 `edge.context`，`FIELD_MAP.sourceStep` 指向来源步骤（0=任务输入）；MQ 消费入口把消息体放 `context[1]`。`HTTP_CALL` 也不例外（#123）：出站后把**响应**解析进 `context[本动作序号]`（对象→Map / 数组→List / 非 JSON→原样字符串 / 空体→null），并把消息体**还原为本次请求体**（#126：以前响应会顶替 body，紧随的 `WRITE_UPSERT` 在空响应上直接 NPE）；想继续往下用响应就显式引用该动作序号。捕获内容装不下快照列时该动作显式失败，不写半截（列容量归 #127，见 ADR-0015）。
 - **生命周期**：任务启用时 `RouteRegistry` 注册路由、停用移除；启动后由 `RouteLifecycle`（`@Order(3)`）重载启用任务；**动作增/改/删后自动重建路由**（6d0895a）；启用/重建失败由 `RouteLifecycle` 自动停用 + 摘除路由/调度 + 写 `job.lastError`（启动重载只对 sourceStep 引用不一致这类配置问题停用，其余失败保留启用、只记日志）；启用/重建前先做 sourceStep 引用校验，不一致拒绝注册路由（#89）。
 - **代码位置**：`model/Job.java`、`model/ScheduleConfig.java`（调度值类型：解析/校验/编译）、`model/Action.java`、`service/RouteGenerator.java`、`service/RouteRegistry.java`、`service/RouteLifecycle.java`（配置变更后的路由/调度重建与失败自动停用）、`service/JobScheduler.java`、`service/JobTrigger.java`（触发端点 adapter：`direct:job-<id>` 与 producer 调用）、`service/JobExecutionService.java`、`service/ActionService.java`。
 
@@ -26,6 +26,7 @@
 | 08-24 | 动作变更自动重建路由 | 已运行路由不感知配置变化 | — | 6d0895a |
 | 09-09 | `FIELD_MAP.sourceStep` 链一致性校验（写时 + `/validate` + 启用前） | 删中间动作/重排后 sourceStep 悬空或错位会让目标字段静默 null 且任务仍 SUCCESS | — | #89 / `ChainConsistencyValidator` |
 | 09-15 | 字段映射动作的名称 / 序号改从全屏编辑器那条路保存 | 旧编辑器删掉之后（#107），弹窗里没有可编辑的映射，不带映射的 PUT 会被「至少一条映射规则」拒掉，改名就没人能存了 | 弹窗「保存」带上编辑器里那份映射（按钮改叫「改名称 / 序号顺便保存映射」） | #107 / `JobsView.vue` |
+| 09-20 | `HTTP_CALL` 响应进 `context[本动作序号]`，消息体还原为请求体 | 契约本就要求每个动作写 `context`，HTTP 动作却只出站：下游 `FIELD_MAP` 取不到响应字段（B6 的 `FHandle` 回写做不了）；且响应顶替了消息体，空响应时紧随的 `WRITE_UPSERT` 必 NPE（#126） | — | #123 / #126 / ADR-0015 |
 
 ## 待办 / 已知限制
 

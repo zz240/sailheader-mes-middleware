@@ -10,6 +10,7 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
@@ -23,6 +24,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.net.InetSocketAddress;
@@ -72,6 +74,14 @@ class MessageHistoryExecutionTest {
 
     private long runSeq = 1;
     private long stepSeq = 1;
+
+    /** #123 用例的 HTTP 替身：现场可改的状态码/报文，以及"目标端被调了几次"。 */
+    private final java.util.concurrent.atomic.AtomicInteger httpCalls =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicInteger httpStatus =
+            new java.util.concurrent.atomic.AtomicInteger(200);
+    private final java.util.concurrent.atomic.AtomicReference<String> httpBody =
+            new java.util.concurrent.atomic.AtomicReference<>("{}");
 
     private MessageHistoryService service(DefaultCamelContext context) {
         MessageHistoryService s = new MessageHistoryService(
@@ -193,6 +203,7 @@ class MessageHistoryExecutionTest {
             st.execute("insert into po_order(id, order_no, vendor_code) values (1,'PO-1','V1')");
         }
         when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
         context.getRegistry().bind("edge-ds-1", h2);
 
         // 目标先不可用（500）→ 首次运行在步骤 3 失败；重投前"修复"为 200
@@ -270,6 +281,300 @@ class MessageHistoryExecutionTest {
         }
     }
 
+    /**
+     * #123 口径 1/2：HTTP_CALL 的响应进 {@code context[本动作序号]}，后续 FIELD_MAP 以 {@code sourceStep}
+     * 取响应字段——B6「标识服务注册 → 拿 handle」的形状（{@code results[0].handle}）。
+     *
+     * <p>同时断言 #126：HTTP_CALL 出站后链上消息体仍是本次请求体。证据是下游 FIELD_MAP 的
+     * {@code input_snapshot}——它是该动作开始时的 body；若响应顶替了消息体，那里会是响应。
+     */
+    @Test
+    void httpCallResponseIsAddressableByFollowingFieldMapAndKeepsRequestBody() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(19L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 0, "source", "FCode", "target", "FCode")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
+                action(4, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 3, "source", "results[0].handle", "target", "FHandle")))));
+        stubConsumeDataSource();
+
+        httpBody.set("{\"code\":\"0\",\"results\":[{\"FCode\":\"C-1\",\"handle\":\"88.1.200020\"}]}");
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+        try {
+            buildRoutes(context, history, job, actions);
+            context.createProducerTemplate().requestBody("direct:job-19", Map.of("FCode", "C-1"));
+
+            assertThat(httpCalls.get()).isEqualTo(1);
+            JobRun run = runOf(19L);
+            assertThat(run).as("运行记录 | runs=" + describeRuns(19L)).isNotNull();
+            assertThat(run.getStatus()).isEqualTo("SUCCESS");
+
+            List<MessageStep> runSteps = stepsOf(run);
+            MessageStep call = stepOf(runSteps, 3);
+            assertThat(call.getInputSnapshot()).as("HTTP 步的 input = 请求").contains("\"FCode\":\"C-1\"");
+            assertThat(call.getDataSnapshot()).as("HTTP 步的 data = 响应（语义不变）")
+                    .contains("\"handle\":\"88.1.200020\"");
+
+            MessageStep mapped = stepOf(runSteps, 4);
+            assertThat(mapped.getDataSnapshot()).as("响应字段被后续 FIELD_MAP 取到（sourceStep=HTTP_CALL 序号）")
+                    .contains("\"FHandle\":\"88.1.200020\"");
+            assertThat(mapped.getInputSnapshot()).as("#126：HTTP_CALL 出站后消息体仍是请求体")
+                    .contains("\"FCode\":\"C-1\"")
+                    .doesNotContain("handle");
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /**
+     * #126 回归：响应为空（204 / 空 200）时紧随其后的 WRITE_UPSERT 不再 NPE。
+     * 原行为是 HTTP 响应顶替消息体 → body = null → upsert 对 null 取 keySet 直接 NPE，
+     * 一次**成功**的调用被判成整链失败。
+     */
+    @Test
+    void emptyHttpResponseDoesNotBreakFollowingWriteUpsert() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(20L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 0, "source", "FCode", "target", "FCode"),
+                        Map.of("sourceStep", 0, "source", "handle", "target", "FHandle")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
+                action(4, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 3L, "tableName", "mdm_code", "idempotencyKey", "FCode")));
+        stubConsumeDataSource();
+
+        httpStatus.set(204);
+        httpBody.set(null);
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:httpEmpty;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        execute(h2, "create table mdm_code(FCode varchar(64) primary key, FHandle varchar(64))");
+        when(dataSourceManager.get(3L)).thenReturn(h2);
+        when(dataSourceManager.dialect(3L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        try {
+            buildRoutes(context, history, job, actions);
+            context.createProducerTemplate()
+                    .requestBody("direct:job-20", Map.of("FCode", "C-1", "handle", "88.1.200020"));
+
+            JobRun run = runOf(20L);
+            assertThat(run).as("运行记录 | runs=" + describeRuns(20L)).isNotNull();
+            assertThat(run.getStatus()).as("空响应不该把成功的调用判成失败 | " + describeSteps())
+                    .isEqualTo("SUCCESS");
+            assertThat(queryString(h2, "select FHandle from mdm_code where FCode = 'C-1'"))
+                    .as("写回的是请求数据，不是响应")
+                    .isEqualTo("88.1.200020");
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /** #123 口径 3：目标端 5xx 时不写 context、不写回，链路按 ADR-0003 失败即停。 */
+    @Test
+    void httpCallFailureStopsChainWithoutWritingBack() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(21L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 0, "source", "FCode", "target", "FCode"),
+                        Map.of("sourceStep", 0, "source", "handle", "target", "FHandle")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
+                action(4, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 3L, "tableName", "mdm_code", "idempotencyKey", "FCode")));
+        stubConsumeDataSource();
+
+        httpStatus.set(500);
+        httpBody.set("boom");
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:httpFail;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        execute(h2, "create table mdm_code(FCode varchar(64) primary key, FHandle varchar(64))");
+        when(dataSourceManager.get(3L)).thenReturn(h2);
+        when(dataSourceManager.dialect(3L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        try {
+            buildRoutes(context, history, job, actions);
+            assertThatThrownBy(() -> context.createProducerTemplate()
+                    .requestBody("direct:job-21", Map.of("FCode", "C-1", "handle", "88.1.200020")))
+                    .isInstanceOf(Exception.class);
+
+            JobRun failed = runOf(21L);
+            assertThat(failed).as("运行记录 | runs=" + describeRuns(21L)).isNotNull();
+            assertThat(failed.getStatus()).isEqualTo("FAILED");
+            assertThat(stepsOf(failed)).extracting(MessageStep::getStep)
+                    .as("失败即停：只跑到 HTTP 步 | steps=" + describeSteps())
+                    .containsExactlyInAnyOrder(2, 3);
+            // 目标端失败 → 捕获根本没发生：该步没有 data_snapshot（响应不进 context，也没落半截快照）
+            assertThat(stepOf(stepsOf(failed), 3).getDataSnapshot())
+                    .as("5xx 不写 context / 不落快照").isNull();
+            assertThat(queryString(h2, "select FHandle from mdm_code where FCode = 'C-1'"))
+                    .as("目标端失败不写回").isNull();
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /**
+     * #123 口径 7：HTTP_CALL 步已成功的消息从后续动作续跑时，{@code context[HTTP_CALL 序号]} 由该步的
+     * {@code data_snapshot}（响应）经 {@code edge.resumeContext} 重建——步骤 2 因此**不会**被重新调用，
+     * 步骤 4 仍能取到响应字段。
+     */
+    @Test
+    void resumeRebuildsHttpCallResponseFromSnapshot() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(22L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 0, "source", "FCode", "target", "FCode")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
+                action(4, ActionKind.WRITE_UPSERT, Map.of(
+                        "dataSourceId", 3L, "tableName", "mdm_code", "idempotencyKey", "FCode")),
+                action(5, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 3, "source", "results[0].handle", "target", "handle_copied")))));
+        stubConsumeDataSource();
+
+        httpBody.set("{\"code\":\"0\",\"results\":[{\"handle\":\"88.1.200020\"}]}");
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+
+        javax.sql.DataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:httpResume;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        // 目标表**先不存在**：首次运行在步骤 3 失败（失败即停），修好之后再重投
+        when(dataSourceManager.get(3L)).thenReturn(h2);
+        when(dataSourceManager.dialect(3L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        try {
+            buildRoutes(context, history, job, actions);
+            when(jobMapper.selectById(22L)).thenReturn(job(22L));
+            assertThatThrownBy(() -> context.createProducerTemplate()
+                    .requestBody("direct:job-22", Map.of("FCode", "C-1")))
+                    .isInstanceOf(Exception.class);
+
+            MessageStep failed = steps.values().stream()
+                    .filter(s -> "FAILED".equals(s.getStatus()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("首次运行未记录 FAILED 消息步 | steps=" + describeSteps()));
+            assertThat(failed.getStep()).as("失败步序号 | steps=" + describeSteps()).isEqualTo(4);
+
+            // 修好依赖（建表）后重投：序号 2~4 的动作被跳过，context[3] 只能由 HTTP 步（序号 3）的快照重建
+            execute(h2, "create table mdm_code(FCode varchar(64) primary key, FHandle varchar(64))");
+            history.redeliver(failed.getId());
+
+            JobRun redelivered = runs.values().stream()
+                    .filter(r -> "SUCCESS".equals(r.getStatus()))
+                    .max(java.util.Comparator.comparing(JobRun::getId))
+                    .orElseThrow(() -> new AssertionError("重投未产生 SUCCESS 运行 | runs=" + describeRuns(22L)));
+            List<MessageStep> redeliveredSteps = stepsOf(redelivered);
+            assertThat(redeliveredSteps).extracting(MessageStep::getStep)
+                    .as("重投执行步骤 | steps=" + describeSteps()).containsExactlyInAnyOrder(4, 5);
+            assertThat(stepOf(redeliveredSteps, 5).getDataSnapshot())
+                    .as("重投后仍能取到 HTTP 响应字段（context[3] 由 data_snapshot 重建）")
+                    .contains("\"handle_copied\":\"88.1.200020\"");
+            assertThat(httpCalls.get()).as("HTTP 步（序号 3）被跳过，不该再调一次目标端").isEqualTo(1);
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /**
+     * #123 口径 1：顶层是**数组**的响应进 context 是 {@code List}（不是被丢掉、也不是塞成字符串）——
+     * 后续规则用 {@code $root[0].FCode} 取得到。
+     */
+    @Test
+    void jsonArrayResponseIsAddressableAsList() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(23L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 0, "source", "FCode", "target", "FCode")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
+                action(4, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 3, "source", "$root[0].FCode", "target", "FCode")))));
+        stubConsumeDataSource();
+
+        httpBody.set("[{\"FCode\":\"C-1\",\"handle\":\"88.1.200020\"}]");
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+        try {
+            buildRoutes(context, history, job, actions);
+            context.createProducerTemplate().requestBody("direct:job-23", Map.of("FCode", "C-1"));
+
+            JobRun run = runOf(23L);
+            assertThat(run).as("运行记录 | runs=" + describeRuns(23L)).isNotNull();
+            assertThat(run.getStatus()).isEqualTo("SUCCESS");
+            assertThat(stepOf(stepsOf(run), 4).getDataSnapshot())
+                    .as("数组响应的首元素被后续映射取到")
+                    .contains("\"FCode\":\"C-1\"");
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /**
+     * #123 口径 4：响应大到装不下快照列 → 该动作**显式失败**且错误可读（不是一句 SQL 的 Data too long），
+     * 也不落半截快照。放宽容量本身归 #127。
+     */
+    @Test
+    void oversizedHttpResponseFailsTheStepWithReadableError() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(24L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 0, "source", "FCode", "target", "FCode")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")));
+        stubConsumeDataSource();
+
+        httpBody.set("{\"blob\":\"" + "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1) + "\"}");
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+        try {
+            buildRoutes(context, history, job, actions);
+            assertThatThrownBy(() -> context.createProducerTemplate()
+                    .requestBody("direct:job-24", Map.of("FCode", "C-1")))
+                    .isInstanceOf(Exception.class);
+
+            JobRun run = runOf(24L);
+            assertThat(run.getStatus()).isEqualTo("FAILED");
+            MessageStep failed = stepOf(stepsOf(run), 3);
+            assertThat(failed.getStatus()).isEqualTo("FAILED");
+            assertThat(failed.getError()).as("错误要说人话：哪一步、多少字节、装不下")
+                    .contains("data_snapshot")
+                    .contains(String.valueOf(MessageHistoryService.SNAPSHOT_LIMIT_BYTES));
+            assertThat(failed.getDataSnapshot()).as("绝不写半截").isNull();
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
     /** #71 AC3：跑一条会失败的链 → 表中出现一条 FAILED run + 一条 FAILED 消息步（含动作序号/错误）。 */
     @Test
     void failedChainRecordsOneRunAndOneFailedStep() throws Exception {
@@ -287,6 +592,7 @@ class MessageHistoryExecutionTest {
         javax.sql.DataSource broken = mock(javax.sql.DataSource.class);
         when(broken.getConnection()).thenThrow(new SQLException("connection broken"));
         when(dataSourceManager.get(2L)).thenReturn(broken);
+        when(dataSourceManager.dialect(2L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
@@ -331,6 +637,7 @@ class MessageHistoryExecutionTest {
             st.execute("create table if not exists po_receipt(order_no varchar(64) primary key, material varchar(64))");
         }
         when(dataSourceManager.get(2L)).thenReturn(h2);
+        when(dataSourceManager.dialect(2L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
 
         RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
         for (RouteBuilder builder : generator.build(job, actions)) {
@@ -387,6 +694,7 @@ class MessageHistoryExecutionTest {
             st.execute("insert into po_order(id, order_no, vendor_code) values (1,'PO-1','V1'), (2,'PO-2','V2')");
         }
         when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
         // READ 的 sql: 组件按 `#edge-ds-1` bean 解析数据源（真实应用由 DataSourceManager 注册）
         context.getRegistry().bind("edge-ds-1", h2);
 
@@ -441,6 +749,7 @@ class MessageHistoryExecutionTest {
         javax.sql.DataSource h2 = new DriverManagerDataSource(
                 "jdbc:h2:mem:failRead;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
         when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
         context.getRegistry().bind("edge-ds-1", h2);
 
         RouteGenerator generator = new RouteGenerator(dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
@@ -467,6 +776,83 @@ class MessageHistoryExecutionTest {
                 .filter(r -> jobId.equals(r.getJobId()))
                 .map(r -> r.getId() + "/" + r.getStatus() + "/" + r.getError())
                 .toList().toString();
+    }
+
+    // ---------- #123 用例的脚手架：本地 HTTP 替身 + H2 目标库 + 内存表取数 ----------
+
+    /**
+     * 建路由并启动上下文。链首是 MQ_CONSUME 时摘掉真消费路由（测试里不连 broker），
+     * 入口改用重放路由 {@code direct:job-<id>}——与既有用例同一手法。
+     */
+    private void buildRoutes(DefaultCamelContext context, MessageHistoryService history, Job job,
+                             List<Action> actions) throws Exception {
+        RouteGenerator generator = new RouteGenerator(
+                dataSourceMapper, watermarkStore, history, dataSourceManager, new ReadSqlBatcher());
+        for (RouteBuilder builder : generator.build(job, actions)) {
+            context.addRoutes(builder);
+        }
+        if (actions.getFirst().getType() == ActionKind.MQ_CONSUME) {
+            context.removeRouteDefinition(context.getRouteDefinition("job-" + job.getId()));
+        }
+        context.start();
+    }
+
+    /**
+     * 起一个本地 HTTP 替身：状态码与报文由 {@link #httpStatus}/{@link #httpBody} 现场控制，
+     * 调用次数记在 {@link #httpCalls}（断言"该步没被重新调用"）。用完必须 {@code stop(0)}。
+     */
+    private HttpServer startHttpTarget() throws java.io.IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            httpCalls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            String payload = httpBody.get();
+            byte[] body = payload == null ? new byte[0] : payload.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(httpStatus.get(), body.length == 0 ? -1 : body.length);
+            if (body.length > 0) {
+                exchange.getResponseBody().write(body);
+            }
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    private void stubHttpDataSource(Long id, HttpServer server) {
+        DataSource ds = new DataSource();
+        ds.setId(id);
+        ds.setType(DataSourceType.HTTP);
+        ds.setAddress("http://127.0.0.1:" + server.getAddress().getPort());
+        ds.setAddition(Map.of());
+        when(dataSourceMapper.selectById(id)).thenReturn(ds);
+    }
+
+    private void execute(javax.sql.DataSource ds, String... sql) throws SQLException {
+        try (java.sql.Connection connection = ds.getConnection();
+             java.sql.Statement statement = connection.createStatement()) {
+            for (String each : sql) {
+                statement.execute(each);
+            }
+        }
+    }
+
+    /** 单值查询：无行时返回 null（断言"没写回"用）。 */
+    private String queryString(javax.sql.DataSource ds, String sql) {
+        List<String> rows = new JdbcTemplate(ds).queryForList(sql, String.class);
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    private JobRun runOf(Long jobId) {
+        return runs.values().stream().filter(r -> jobId.equals(r.getJobId())).findFirst().orElse(null);
+    }
+
+    private List<MessageStep> stepsOf(JobRun run) {
+        return steps.values().stream().filter(s -> s.getRunId().equals(run.getId())).toList();
+    }
+
+    private MessageStep stepOf(List<MessageStep> runSteps, int index) {
+        return runSteps.stream().filter(s -> s.getStep() == index).findFirst()
+                .orElseThrow(() -> new AssertionError("没有步骤 " + index + " | steps=" + describeSteps()));
     }
 
     private String describeSteps() {

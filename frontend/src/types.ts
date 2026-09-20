@@ -1,4 +1,4 @@
-export type DataSourceType = 'HTTP' | 'MYSQL' | 'RABBITMQ'
+export type DataSourceType = 'HTTP' | 'MYSQL' | 'SQLSERVER' | 'RABBITMQ'
 
 export interface DataSource {
   id: number

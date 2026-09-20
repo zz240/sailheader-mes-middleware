@@ -10,6 +10,7 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.support.H2MapperTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -167,6 +168,7 @@ class RouteGeneratorJobWritebackTest {
             st.execute("merge into po_order(id, order_no) values (1, 'PO-1')");
         }
         when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
         context.getRegistry().bind("edge-ds-1", h2);
         try {
             addRoutes(context, job, actions);
@@ -248,6 +250,7 @@ class RouteGeneratorJobWritebackTest {
         javax.sql.DataSource broken = mock(javax.sql.DataSource.class);
         when(broken.getConnection()).thenThrow(new java.sql.SQLException("connection broken"));
         when(dataSourceManager.get(2L)).thenReturn(broken);
+        when(dataSourceManager.dialect(2L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
     }
 
     private Job insertJob() {

@@ -47,14 +47,15 @@ class StructureProbeServiceTest {
                 f.name().equals("data.items[0].qty") && f.samples().contains(3));
     }
 
+    /** 非关系库（HTTP/MQ）没有结构可探；关系库两种都支持（ADR-0014 起多了 SQL Server）。 */
     @Test
-    void rejectsNonMysqlDataSource() {
+    void rejectsNonJdbcDataSource() {
         DataSource ds = new DataSource();
         ds.setType(DataSourceType.HTTP);
 
         assertThatThrownBy(() -> service.probeFromDb(ds, "po_order", false))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("仅 MySQL");
+                .hasMessageContaining("不支持结构探测");
     }
 
     @Test

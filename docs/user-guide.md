@@ -48,7 +48,7 @@
 |---|---|---|
 | READ_SQL | 数据源（MySQL）、SQL、水位策略、水位列、批大小 | 增量/刷量读取；SQL 里可用 `{watermark}` 占位，`batchSize`（缺省 500）控制每批行数 |
 | WRITE_UPSERT | 数据源（MySQL）、表名、幂等键 | 按业务主键 upsert |
-| HTTP_CALL | 数据源（HTTP）、路径、方法 | 地址取数据源根地址 + 路径 |
+| HTTP_CALL | 数据源（HTTP）、路径、方法 | 地址取数据源根地址 + 路径；**响应进链上上下文**（本动作序号），后续 FIELD_MAP 可用 `sourceStep=本动作序号` 取响应字段（如 `results[0].handle`）；出站后消息体仍是本次请求体（#123/#126） |
 | MQ_CONSUME | 数据源（RabbitMQ）、队列 | **只能作为链首（序号 1）**；exchange/routingKey 可选 |
 | MQ_PUBLISH | 数据源（RabbitMQ）、exchange、routingKey/queue、body 步骤 | 发消息通知 |
 | FIELD_MAP | 映射规则（在「编辑映射」的全屏编辑器里配，弹窗里只有一句提示） | 字段映射 |

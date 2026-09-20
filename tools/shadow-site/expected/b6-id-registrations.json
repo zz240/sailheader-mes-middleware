@@ -1,0 +1,362 @@
+[
+    {
+        "at":  "2026-09-18T15:07:08.117Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0001",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0001",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.145Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0002",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0002",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.178Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0003",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0003",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.205Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0004",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0004",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.235Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0005",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0005",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.267Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0006",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0006",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.298Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0007",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0007",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.327Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0008",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0008",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.358Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0009",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0009",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.389Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0010",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0010",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.427Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0011",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0011",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.458Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0012",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0012",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.491Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0013",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0013",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.521Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0014",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0014",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.551Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0015",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0015",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.582Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0016",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0016",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.616Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0017",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0017",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.646Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0018",
+                                       "objectType":  "TOOL",
+                                       "objectNo":  "T-SH-0018",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.674Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0019",
+                                       "objectType":  "MOLD",
+                                       "objectNo":  "MD-SH-0019",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:08.706Z",
+        "method":  "POST",
+        "path":  "/mes/api/id-register",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "codes":  [
+                                   {
+                                       "FCode":  "SH-CODE-0020",
+                                       "objectType":  "PART",
+                                       "objectNo":  "P-SH-0020",
+                                       "batch":  "B2026Q3"
+                                   }
+                               ]
+                 }
+    }
+]

@@ -1,0 +1,110 @@
+[
+    {
+        "at":  "2026-09-18T15:07:00.263Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0001",
+                     "operationSeq":  10,
+                     "qtyOk":  1,
+                     "qtyNg":  0,
+                     "worker":  "E1021",
+                     "equipment":  "CNC-01",
+                     "reportTime":  "2026-09-05 08:35:00",
+                     "reportKey":  "WO-SH-0001#10"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.293Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0001",
+                     "operationSeq":  20,
+                     "qtyOk":  1,
+                     "qtyNg":  0,
+                     "worker":  "E1021",
+                     "equipment":  "EDM-02",
+                     "reportTime":  "2026-09-05 11:10:00",
+                     "reportKey":  "WO-SH-0001#20"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.327Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0002",
+                     "operationSeq":  10,
+                     "qtyOk":  2,
+                     "qtyNg":  0,
+                     "worker":  "E1033",
+                     "equipment":  "CNC-03",
+                     "reportTime":  "2026-09-05 09:05:00",
+                     "reportKey":  "WO-SH-0002#10"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.364Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0002",
+                     "operationSeq":  30,
+                     "qtyOk":  1,
+                     "qtyNg":  1,
+                     "worker":  "E1033",
+                     "equipment":  "WEDM-01",
+                     "reportTime":  "2026-09-05 15:45:00",
+                     "reportKey":  "WO-SH-0002#30"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.402Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0003",
+                     "operationSeq":  10,
+                     "qtyOk":  4,
+                     "qtyNg":  0,
+                     "worker":  "E1055",
+                     "equipment":  "MILL-02",
+                     "reportTime":  "2026-09-06 09:20:00",
+                     "reportKey":  "WO-SH-0003#10"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.429Z",
+        "method":  "POST",
+        "path":  "/mes/api/report",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "workOrderNo":  "WO-SH-0003",
+                     "operationSeq":  40,
+                     "qtyOk":  1,
+                     "qtyNg":  0,
+                     "worker":  "E1055",
+                     "equipment":  "GRIND-01",
+                     "reportTime":  "2026-09-06 17:00:00",
+                     "reportKey":  "WO-SH-0003#40"
+                 }
+    }
+]

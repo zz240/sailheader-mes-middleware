@@ -368,8 +368,8 @@ const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
 
 const filteredDataSources = computed(() => {
   const typeFilter: Record<string, string[]> = {
-    READ_SQL: ['MYSQL'],
-    WRITE_UPSERT: ['MYSQL'],
+    READ_SQL: ['MYSQL', 'SQLSERVER'],
+    WRITE_UPSERT: ['MYSQL', 'SQLSERVER'],
     HTTP_CALL: ['HTTP'],
     MQ_CONSUME: ['RABBITMQ'],
     MQ_PUBLISH: ['RABBITMQ'],

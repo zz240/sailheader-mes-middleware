@@ -37,8 +37,7 @@ class RuleMappingSuggesterEvalTest {
 
     @Test
     void matchesEvalBaseline() throws Exception {
-        Path evalSet = Path.of("../tools/evaluation/eval-set.json")
-                .toAbsolutePath().normalize();
+        Path evalSet = evalSetPath();
         assertTrue(evalSet.toFile().exists(), "找不到评测集: " + evalSet);
         JsonNode root = MAPPER.readTree(evalSet.toFile());
 
@@ -219,5 +218,24 @@ class RuleMappingSuggesterEvalTest {
 
     private double pct(int n, int d) {
         return d == 0 ? 0 : n * 100.0 / d;
+    }
+
+    /**
+     * 定位评测集：相对路径取决于测试的工作目录（Maven 跑在 {@code spike/}，IDE/自建 runner 可能在仓库根），
+     * 两种布局都接受，找不到时把已试过的路径列出来，避免只报"找不到"而不知找过哪里。
+     */
+    private static Path evalSetPath() {
+        List<Path> candidates = List.of(
+                Path.of("../tools/evaluation/eval-set.json"),
+                Path.of("tools/evaluation/eval-set.json"));
+        for (Path candidate : candidates) {
+            Path resolved = candidate.toAbsolutePath().normalize();
+            if (resolved.toFile().exists()) {
+                return resolved;
+            }
+        }
+        throw new AssertionError("找不到评测集，已尝试: " + candidates.stream()
+                .map(p -> p.toAbsolutePath().normalize().toString())
+                .toList());
     }
 }

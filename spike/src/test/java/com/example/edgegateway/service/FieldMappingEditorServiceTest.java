@@ -147,7 +147,7 @@ class FieldMappingEditorServiceTest {
         // HTTP 数据源不能探测——沿用结构探测自己的限制，错误信息一致
         assertThatThrownBy(() -> service.probeTargetFields(13L, "po_order", false))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("仅 MySQL");
+                .hasMessageContaining("不支持结构探测");
     }
 
     @Test

@@ -4,7 +4,8 @@ import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.MqConsumeConfig;
-import com.example.edgegateway.config.MysqlDataSourceConfig;
+import com.example.edgegateway.config.JdbcDataSourceConfig;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.NameNormalizer;
@@ -99,7 +100,7 @@ public class JobValidationService {
             errors.add(new ValidationResult.Issue("data-source", ds.getName(), "连接失败: " + test.message()));
             return;
         }
-        if (action.getType() == ActionKind.READ_SQL && ds.getType() == DataSourceType.MYSQL) {
+        if (action.getType() == ActionKind.READ_SQL && SqlDialects.isJdbc(ds.getType())) {
             ReadSqlConfig read = (ReadSqlConfig) config;
             validateSql(ds, action, read, errors);
         }
@@ -130,7 +131,7 @@ public class JobValidationService {
             return;
         }
         try {
-            MysqlDataSourceConfig db = (MysqlDataSourceConfig) DataSourceConfig.from(ds.getType(), ds.getAddition());
+            JdbcDataSourceConfig db = (JdbcDataSourceConfig) DataSourceConfig.from(ds.getType(), ds.getAddition());
             sqlValidator.validate(ds.getAddress(), db, sql);
         } catch (Exception e) {
             errors.add(new ValidationResult.Issue("sql", action.getName(), e.getMessage()));

@@ -1,6 +1,9 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.ReadSqlConfig;
+import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialect;
+import com.example.edgegateway.service.sql.SqlDialects;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Timestamp;
@@ -21,6 +24,8 @@ class ReadSqlBatcherTest {
 
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private final ReadSqlBatcher batcher = new ReadSqlBatcher();
+    private final SqlDialect mysql = SqlDialects.of(DataSourceType.MYSQL);
+    private final SqlDialect sqlserver = SqlDialects.of(DataSourceType.SQLSERVER);
 
     private ReadSqlConfig sequence(String column) {
         return new ReadSqlConfig(1L, "select * from po_order where {watermark}",
@@ -50,22 +55,31 @@ class ReadSqlBatcherTest {
     @Test
     void batchSqlAppendsKeysetOrderByAndLimitWithConfiguredBatchSize() {
         ReadSqlConfig read = sequence("id");
-        assertThat(batcher.batchSql(read))
+        assertThat(batcher.batchSql(read, mysql))
                 .isEqualTo("select * from po_order where id > ? ORDER BY id LIMIT 3");
+    }
+
+    /** 分页写法归方言（ADR-0014）：同一个配置在 SQL Server 上必须是 OFFSET…FETCH，不能是 LIMIT。 */
+    @Test
+    void sqlServerBatchSqlPaginatesWithOffsetFetch() {
+        ReadSqlConfig read = sequence("FInterID");
+        assertThat(batcher.batchSql(read, sqlserver))
+                .isEqualTo("select * from po_order where FInterID > ?"
+                        + " ORDER BY FInterID OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY");
     }
 
     @Test
     void batchSizeDefaultWhenUnset() {
         ReadSqlConfig read = new ReadSqlConfig(1L, "select * from po_order where {watermark}",
                 "SEQUENCE", "id", null, null);
-        assertThat(batcher.batchSql(read)).endsWith("LIMIT " + ReadSqlConfig.DEFAULT_BATCH_SIZE);
+        assertThat(batcher.batchSql(read, mysql)).endsWith("LIMIT " + ReadSqlConfig.DEFAULT_BATCH_SIZE);
     }
 
     @Test
     void invalidBatchSizeGivesLocatableError() {
         ReadSqlConfig read = new ReadSqlConfig(1L, "select * from po_order where {watermark}",
                 "SEQUENCE", "id", null, 0);
-        assertThatThrownBy(() -> batcher.batchSql(read))
+        assertThatThrownBy(() -> batcher.batchSql(read, mysql))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("batchSize");
     }

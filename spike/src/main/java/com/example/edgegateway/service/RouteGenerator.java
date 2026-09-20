@@ -15,9 +15,12 @@ import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
+import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleConfig;
 import com.example.edgegateway.model.WatermarkType;
+import com.example.edgegateway.service.sql.SqlDialect;
+import com.example.edgegateway.service.sql.SqlDialects;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.builder.ExpressionBuilder;
@@ -94,6 +97,50 @@ public class RouteGenerator {
         }
         builders.add(buildResumeRoute(job, sorted));
         return builders;
+    }
+
+    /**
+     * HTTP 出站后的收尾（#123 / #126）：把响应体解析进 {@code context[本动作序号]}，再把链上消息体还原成
+     * 本次请求体。
+     *
+     * <p><b>恒捕获</b>——契约（{@code docs/action-chain-design.md} §2）本就要求每个动作完成后写
+     * {@code context[actionIndex] = 输出}，HTTP 动作的输出就是响应，所以没有开关也不新增配置项。</p>
+     *
+     * <p><b>还原消息体</b>是 #126：Camel HTTP 组件默认把响应装进 body，于是响应顶替了请求数据——
+     * 紧随其后的 {@code WRITE_UPSERT} 在空响应（204 / 空 200）上拿到 {@code null} 取 keySet 直接 NPE，
+     * 一次**成功**的调用被判成整链失败。想继续往下传响应，就显式引用本动作序号
+     * （下一步 FIELD_MAP 的 {@code sourceStep}，或后续动作的取源参数）。</p>
+     *
+     * <p>失败面不变：4xx/5xx 由 Camel HTTP 组件抛 {@code HttpOperationFailedException}，根本走不到这里
+     * （不写 context、不执行后续写回），按 ADR-0003 失败即停 + 重试退避。</p>
+     */
+    private void captureResponse(Exchange ex, Action action, int index) {
+        Object request = ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class);
+        String raw = responseText(ex);
+        // 捕获内容不做截断：装不下就当场失败（可读错误），绝不写半截 JSON（#123 口径 4；列容量本身是 #127）
+        messageHistory.requireCaptureFitsSnapshot(index, raw);
+        Map<Integer, Object> context = context(ex);
+        context.put(index, HttpCallResponse.parse(raw));
+        ex.setProperty(CONTEXT, context);
+        ex.getMessage().setBody(request);
+        // data_snapshot 语义不变（input = 请求、data = 响应）：记响应原文，不记解析后的对象
+        recordSuccessStep(ex, action, request, raw);
+    }
+
+    /**
+     * 响应体的原始文本。走 Camel 的类型转换（InputStream / StreamCache / byte[] 都能读），
+     * 读不出来就当场失败——不留一个"看起来成功、其实没捕获到"的步骤。
+     */
+    private String responseText(Exchange ex) {
+        Object body = ex.getMessage().getBody();
+        if (body == null) {
+            return null;
+        }
+        try {
+            return ex.getContext().getTypeConverter().mandatoryConvertTo(String.class, ex, body);
+        } catch (Exception e) {
+            throw new IllegalStateException("HTTP 响应体读不出文本，无法捕获: " + e.getMessage(), e);
+        }
     }
 
     /** 直连入口：仅构建 direct（手动/外部/自动调度共用一个执行入口）；自动触发由 JobScheduler 依调度配置投递。 */
@@ -299,6 +346,8 @@ public class RouteGenerator {
             case WRITE_UPSERT -> {
                 WriteUpsertConfig write = (WriteUpsertConfig) config;
                 JdbcTemplate writeJdbc = new JdbcTemplate(customerDataSource(write.dataSourceId()));
+                // 方言在构建期定一次（不是每条消息重算）：库类型决定 upsert 写法（ADR-0014）
+                SqlDialect writeDialect = requireDialect(write.dataSourceId());
                 yield current.process(ex -> {
                     if (isResumeSkipped(ex, index)) {
                         return;
@@ -307,7 +356,7 @@ public class RouteGenerator {
                     ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                     Object input = ex.getMessage().getBody();
                     ex.setProperty(MessageHistoryService.STEP_INPUT, input);
-                    upsert(ex, writeJdbc, write.tableName(), write.idempotencyKey());
+                    upsert(ex, writeJdbc, write.tableName(), write.idempotencyKey(), writeDialect);
                     recordSuccessStep(ex, action, input);
                 });
             }
@@ -329,6 +378,9 @@ public class RouteGenerator {
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
+                            // 出站前先把 context[0] 落在**请求体**上：context() 是懒建的（拿当时的 body 当任务输入），
+                            // 等出站后再建就把响应当成了任务输入。链上已有 context 时这里是空操作（#123）
+                            context(ex);
                             ex.getMessage().setHeader(Exchange.HTTP_METHOD, method);
                             ex.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
                             if (auth != null) {
@@ -339,8 +391,7 @@ public class RouteGenerator {
                             .when(ex -> !Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class)))
                                 .marshal().json()
                                 .to(url)
-                                .process(ex -> recordSuccessStep(ex, action,
-                                        ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class)))
+                                .process(ex -> captureResponse(ex, action, index))
                         .endChoice()
                         .end();
             }
@@ -451,13 +502,21 @@ public class RouteGenerator {
     }
 
     private void recordSuccessStep(Exchange ex, Action action, Object input) {
+        recordSuccessStep(ex, action, input, ex.getMessage().getBody());
+    }
+
+    /**
+     * 记一条成功消息步。{@code data} 单独传（而不是一律取当前 body）：HTTP 步收尾时 body 已被还原成请求体，
+     * 而 {@code data_snapshot} 要记的是**响应**（见 {@link #captureResponse}）。
+     */
+    private void recordSuccessStep(Exchange ex, Action action, Object input, Object data) {
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
         String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
         if (runId == null || messageId == null) {
             return; // 未创建消息（如 MQ_CONSUME 入口反序列化失败）时不记消息步
         }
         messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
-                input, ex.getMessage().getBody(),
+                input, data,
                 ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attemptsOnSuccess(ex));
     }
 
@@ -556,7 +615,7 @@ public class RouteGenerator {
         Object bound = readSqlBatcher.parseType(read) == WatermarkType.TIMESTAMP
                 ? readSqlBatcher.formatTimeBound(current, ScheduleConfig.from(job).zone())
                 : current;
-        String sql = readSqlBatcher.batchSql(read);
+        String sql = readSqlBatcher.batchSql(read, requireDialect(read.dataSourceId()));
         List<Map<String, Object>> rows = new JdbcTemplate(ds).queryForList(sql, bound);
         long newWatermark = readSqlBatcher.newBatchWatermark(read, rows, current, ScheduleConfig.from(job).zone());
         exchange.getMessage().setBody(rows);
@@ -576,26 +635,23 @@ public class RouteGenerator {
         return Boolean.TRUE.equals(exchange.getProperty(HAS_MORE, Boolean.class));
     }
 
-    private void upsert(Exchange exchange, JdbcTemplate jdbc, String table, String idempotencyKey) {
+    private void upsert(Exchange exchange, JdbcTemplate jdbc, String table, String idempotencyKey,
+                        SqlDialect dialect) {
         Map<String, Object> row = exchange.getMessage().getBody(Map.class);
-        jdbc.update(buildUpsertSql(row, table, idempotencyKey), row.values().toArray());
+        jdbc.update(buildUpsertSql(row, table, idempotencyKey, dialect), row.values().toArray());
     }
 
     /**
-     * 生成幂等 upsert SQL（#67）：动态列 + 业务键 {@code ON DUPLICATE KEY UPDATE}。
-     * 包内可见以便单测校验幂等语义（同业务键重复执行不产生重复行）。
+     * 生成幂等 upsert SQL（#67）：动态列 + 业务键，写法归方言（MySQL 的 {@code on duplicate key update}、
+     * SQL Server 的 {@code MERGE}，ADR-0014）。包内可见以便单测校验幂等语义（同业务键重复执行不产生重复行）。
      */
+    String buildUpsertSql(Map<String, Object> row, String table, String idempotencyKey, SqlDialect dialect) {
+        return dialect.upsert(table, new ArrayList<>(row.keySet()), idempotencyKey);
+    }
+
+    /** MySQL 方言的 upsert SQL：同包历史单测的入口；生产路径一律显式传方言（见上一个重载）。 */
     String buildUpsertSql(Map<String, Object> row, String table, String idempotencyKey) {
-        List<String> columns = new ArrayList<>(row.keySet());
-        String columnList = String.join(",", columns);
-        String placeholders = String.join(",", Collections.nCopies(columns.size(), "?"));
-        String updates = columns.stream()
-                .filter(c -> !c.equals(idempotencyKey))
-                .map(c -> c + " = values(" + c + ")")
-                .collect(Collectors.joining(", "));
-        return "insert into " + table + " (" + columnList + ") values (" + placeholders + ")"
-                + " on duplicate key update "
-                + (updates.isEmpty() ? idempotencyKey + " = values(" + idempotencyKey + ")" : updates);
+        return buildUpsertSql(row, table, idempotencyKey, SqlDialects.of(DataSourceType.MYSQL));
     }
 
     private String composeUrl(String base, String path) {
@@ -611,14 +667,23 @@ public class RouteGenerator {
     /**
      * 取动作选定的客户库连接池并确保其已登记为 {@code edge-ds-<id>} bean（懒建），
      * 供 READ_SQL 的 {@code #edge-ds-<id>} 与 WRITE_UPSERT 的 {@link JdbcTemplate} 使用。
-     * 数据源缺失或非 MySQL 时注册期即失败，避免把读写错误落到错误库。
+     * 数据源缺失或不是关系库时注册期即失败，避免把读写错误落到错误库。
      */
     private javax.sql.DataSource customerDataSource(Long dataSourceId) {
         javax.sql.DataSource pool = dataSourceManager.get(dataSourceId);
         if (pool == null) {
-            throw new IllegalArgumentException("动作引用的数据源不可用（非 MySQL 或未配置）: " + dataSourceId);
+            throw new IllegalArgumentException("动作引用的数据源不可用（不是关系库或未配置）: " + dataSourceId);
         }
         return pool;
+    }
+
+    /** 取动作选定数据源的方言（与连接池同一份判断，池建好时记下）；拿不到时当场报错，不猜一个默认方言。 */
+    private SqlDialect requireDialect(Long dataSourceId) {
+        SqlDialect dialect = dataSourceManager.dialect(dataSourceId);
+        if (dialect == null) {
+            throw new IllegalArgumentException("动作引用的数据源不可用（不是关系库或未配置）: " + dataSourceId);
+        }
+        return dialect;
     }
 
 }

@@ -264,9 +264,13 @@ class MessageHistoryServiceTest {
         assertThat(ex.getProperty(MessageHistoryService.RESUME_FROM)).isNull();
     }
 
-    /** #90 边界：上游快照不是 JSON 对象（数组 / 非 JSON 文本）时跳过该步骤，绝不阻断整次重投。 */
+    /**
+     * #90 + #123：上游快照按 JSON 值还原——对象 / 数组 / 标量都回填（HTTP 响应可以是数组或标量，
+     * 只认对象会把这类响应在续跑时静默丢掉）；只有**非 JSON 文本**不进上下文（与一段乱码无从区分），
+     * 且绝不因此阻断整次重投。
+     */
     @Test
-    void redeliverSkipsUpstreamSnapshotsThatAreNotJsonObjects() throws Exception {
+    void redeliverCarriesUpstreamSnapshotsOfAnyJsonShapeButSkipsPlainText() throws Exception {
         stubRedeliver(failedStep(4), List.of(
                 upstreamStep(1, "SUCCESS", "[{\"order_no\":\"PO-1\"}]"),
                 upstreamStep(2, "SUCCESS", "plain text, not json"),
@@ -277,8 +281,47 @@ class MessageHistoryServiceTest {
 
         Exchange ex = new DefaultExchange(camelContext);
         captor.getValue().process(ex);
-        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT))
-                .isEqualTo(Map.of(3, Map.of("order_no", "PO-1")));
+        Map<Integer, Object> expected = new LinkedHashMap<>();
+        expected.put(1, List.of(Map.of("order_no", "PO-1")));
+        expected.put(3, Map.of("order_no", "PO-1"));
+        assertThat(ex.getProperty(MessageHistoryService.RESUME_CONTEXT)).isEqualTo(expected);
+    }
+
+    /**
+     * #123 口径 4：捕获内容（HTTP 响应，大小由目标端决定）装不下快照列时**显式失败**，不写半截 JSON——
+     * 写半截的话，断点续投会拿着一个语法都不完整的上游快照去重建 context，报出来的错离现场十万八千里。
+     * 列容量本身归 #127。
+     */
+    @Test
+    void oversizedCaptureFailsExplicitlyInsteadOfWritingHalfSnapshot() {
+        String tooBig = "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1);
+
+        assertThatThrownBy(() -> service.requireCaptureFitsSnapshot(3, tooBig))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("data_snapshot")
+                .hasMessageContaining(String.valueOf(MessageHistoryService.SNAPSHOT_LIMIT_BYTES));
+    }
+
+    /** 容量边界：正好等于上限放行（合法快照不该被拒），空响应体（null）照常。 */
+    @Test
+    void captureAtTheCapacityLimitIsAccepted() {
+        service.requireCaptureFitsSnapshot(3, "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES));
+        service.requireCaptureFitsSnapshot(3, null);
+    }
+
+    /**
+     * 这道闸只给捕获内容：其余动作的快照行为一概不变（超容量时照旧写库报 Data too long、动作失败）。
+     * 把列本身改大、或让这些也显式失败，都归 #127，不在本票内。
+     */
+    @Test
+    void otherActionSnapshotsKeepTheirOldBehaviour() {
+        String tooBig = "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1);
+
+        service.recordSuccess(1L, "msg-1", 2, "map", Map.of("FCode", "C-1"), tooBig, "C-1", 1);
+
+        ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
+        verify(messageStepMapper).insert(captor.capture());
+        assertThat(captor.getValue().getDataSnapshot()).hasSize(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1);
     }
 
     private MessageStep failedStep(Integer step) {

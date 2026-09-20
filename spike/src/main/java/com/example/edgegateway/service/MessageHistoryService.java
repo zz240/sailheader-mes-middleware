@@ -58,6 +58,12 @@ public class MessageHistoryService {
     public static final String FAILED = "FAILED";
     public static final String REDELIVERED = "REDELIVERED";
 
+    /**
+     * 消息步快照列（{@code data_snapshot} / {@code input_snapshot}，TEXT）的字节上限。
+     * 超过它的快照按失败处理而不是截断（#123 口径 4）；把列本身改大是 #127。
+     */
+    static final int SNAPSHOT_LIMIT_BYTES = 65_535;
+
     private final JobRunMapper jobRunMapper;
     private final MessageStepMapper messageStepMapper;
     private final JobMapper jobMapper;
@@ -122,6 +128,9 @@ public class MessageHistoryService {
         record(runId, messageId, step, actionName, SUCCESS, data, input, null, businessKey, attempt);
     }
 
+    /**
+     * 记一条失败消息步。
+     */
     public void recordFailure(Long runId, String messageId, Integer step, String actionName,
                               String error, Object input, String businessKey, int attempt) {
         record(runId, messageId, step, actionName, FAILED, null, input, error, businessKey, attempt);
@@ -152,6 +161,33 @@ public class MessageHistoryService {
             messageStepMapper.insert(entity);
         } else {
             messageStepMapper.updateById(entity);
+        }
+    }
+
+    /**
+     * 捕获内容（HTTP 响应，**大小由目标端决定、本地拦不住**）装不装得进 {@code data_snapshot}（#123 口径 4）：
+     * 装不下就当场**显式失败**，绝不写半截 JSON——写半截的话，断点续投会拿着一个语法都不完整的上游快照去
+     * 重建 context，报出来的错离现场十万八千里。
+     *
+     * <p>只给捕获路径调用。其余动作的快照行为一概不变（本地自己的数据，超容量时照旧由写库报
+     * {@code Data too long}、动作失败）：换更可读的说法、放宽这里的容量，都归 #127。</p>
+     */
+    void requireCaptureFitsSnapshot(Integer step, Object captured) {
+        String json = toJson(captured);
+        if (json == null) {
+            return;
+        }
+        int bytes = json.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > SNAPSHOT_LIMIT_BYTES) {
+            throw new SnapshotTooLargeException("消息步 " + step + " 的 data_snapshot 有 " + bytes
+                    + " 字节，超过快照列容量 " + SNAPSHOT_LIMIT_BYTES + " 字节：按失败处理，不写半截（#123 / #127）");
+        }
+    }
+
+    /** 快照超容量（#123 口径 4）：显式失败，绝不写半截。 */
+    static final class SnapshotTooLargeException extends IllegalStateException {
+        SnapshotTooLargeException(String message) {
+            super(message);
         }
     }
 
@@ -308,17 +344,20 @@ public class MessageHistoryService {
     }
 
     /**
-     * 解析上游快照：只接受 JSON 对象（FIELD_MAP 输出即对象）。源行快照、非 JSON 文本、数组一律返回 null
-     * ——该步骤不注入，绝不让一个上游步骤的异常快照阻断整次重投（与"无快照则不注入"同一条边界）。
+     * 解析上游快照并回填 context：**任意 JSON 值**都算数——对象 / 数组 / 标量各自还原成 Map / List / 原值。
+     * HTTP 响应做成数组或标量的情形（#123）因此也能续投，而不是静默丢掉该键、让下游映射出空。
+     *
+     * <p>只挡一种：解析不出来的**非 JSON 文本**（如目标端回一句 {@code ok}）——那份快照与一段乱码无从区分，
+     * 宁可当作"没有快照"（该步骤不注入），也不把来路不明的文本当成上游输出。任何情况下都不因此阻断整次重投
+     * （与"无快照则不注入"同一条边界）。</p>
      */
     private Object parseSnapshot(String snapshot) {
         if (snapshot == null || snapshot.isBlank()) {
             return null;
         }
         try {
-            Object parsed = objectMapper.readValue(snapshot, Object.class);
-            return parsed instanceof Map ? parsed : null;
-        } catch (Exception e) {
+            return objectMapper.readValue(snapshot, Object.class);
+        } catch (Exception notJson) {
             return null;
         }
     }

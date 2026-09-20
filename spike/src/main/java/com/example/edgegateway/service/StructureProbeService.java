@@ -1,7 +1,7 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.DataSourceConfig;
-import com.example.edgegateway.config.MysqlDataSourceConfig;
+import com.example.edgegateway.config.JdbcDataSourceConfig;
 import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
@@ -12,6 +12,7 @@ import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
+import com.example.edgegateway.service.sql.SqlDialects;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -67,8 +68,9 @@ public class StructureProbeService {
     }
 
     public SourceStructure probeFromDb(DataSource dataSource, String table, boolean refresh) {
-        if (dataSource == null || dataSource.getType() != DataSourceType.MYSQL) {
-            throw new IllegalArgumentException("该数据源类型不支持结构探测（当前仅 MySQL）");
+        if (dataSource == null || !SqlDialects.isJdbc(dataSource.getType())) {
+            throw new IllegalArgumentException("该数据源类型不支持结构探测: "
+                    + (dataSource == null ? null : dataSource.getType()));
         }
         if (table == null || !SAFE_TABLE.matcher(table).matches()) {
             throw new IllegalArgumentException("表名不合法，仅允许字母/数字/下划线: " + table);
@@ -111,9 +113,9 @@ public class StructureProbeService {
     }
 
     private SourceStructure probeDb(DataSource dataSource, String table) {
-        MysqlDataSourceConfig config = (MysqlDataSourceConfig)
+        JdbcDataSourceConfig config = (JdbcDataSourceConfig)
                 DataSourceConfig.from(dataSource.getType(), dataSource.getAddition());
-        String sql = "SELECT * FROM " + table + " LIMIT " + SAMPLE_LIMIT;
+        String sql = SqlDialects.of(dataSource.getType()).probeTable(table, SAMPLE_LIMIT);
         try (Connection conn = DriverManager.getConnection(dataSource.getAddress(), config.username(), config.password());
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {

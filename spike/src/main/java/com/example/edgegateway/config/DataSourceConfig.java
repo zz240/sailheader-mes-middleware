@@ -10,7 +10,7 @@ import java.util.Map;
  * 服务层 toMap() 落库（Map 存储不变），读取时 DataSourceConfig.from(type, map) 恢复强类型。
  */
 public sealed interface DataSourceConfig
-        permits HttpDataSourceConfig, MysqlDataSourceConfig, RabbitMqDataSourceConfig {
+        permits HttpDataSourceConfig, JdbcDataSourceConfig, RabbitMqDataSourceConfig {
 
     DataSourceType type();
 
@@ -25,6 +25,7 @@ public sealed interface DataSourceConfig
         return switch (type) {
             case HTTP -> HttpDataSourceConfig.from(map);
             case MYSQL -> MysqlDataSourceConfig.from(map);
+            case SQLSERVER -> SqlServerDataSourceConfig.from(map);
             case RABBITMQ -> RabbitMqDataSourceConfig.from(map);
         };
     }

@@ -53,6 +53,8 @@ public final class JsonataFieldMapper {
         try {
             this.expression = Jsonata.jsonata(compiled);
             this.expression.registerFunction("dateFormat", JsonataFunctions.dateFormat());
+            // $parse：把 JSON 聚合出来的一列字符串还原成数组/对象（「一单多行 → 一条报文」那个形状）
+            this.expression.registerFunction("parse", JsonataFunctions.parseJson());
         } catch (Exception e) {
             throw new IllegalArgumentException("字段映射编译失败: " + e.getMessage(), e);
         }

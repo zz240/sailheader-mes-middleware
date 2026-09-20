@@ -15,7 +15,7 @@
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="test(row)">测试连接</el-button>
-          <el-button size="small" v-if="row.type === 'MYSQL'" @click="openProbe(row)">探测结构</el-button>
+          <el-button size="small" v-if="row.type === 'MYSQL' || row.type === 'SQLSERVER'" @click="openProbe(row)">探测结构</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
         </template>
@@ -30,6 +30,7 @@
           <el-select v-model="form.type" @change="onTypeChange">
             <el-option label="HTTP" value="HTTP" />
             <el-option label="MySQL" value="MYSQL" />
+            <el-option label="SQL Server" value="SQLSERVER" />
             <el-option label="RabbitMQ" value="RABBITMQ" />
           </el-select>
         </el-form-item>
@@ -44,7 +45,7 @@
             <el-input v-model="addition.token" type="password" show-password placeholder="可选，Bearer 鉴权" />
           </el-form-item>
         </template>
-        <template v-else-if="form.type === 'MYSQL'">
+        <template v-else-if="form.type === 'MYSQL' || form.type === 'SQLSERVER'">
           <el-form-item label="用户名"><el-input v-model="addition.username" placeholder="如 gateway" /></el-form-item>
           <el-form-item label="密码"><el-input v-model="addition.password" type="password" show-password /></el-form-item>
         </template>
@@ -109,6 +110,7 @@ const advancedText = ref('') // 高级原始 JSON，非空时优先
 const addressPlaceholder = computed(() => {
   switch (form.type) {
     case 'MYSQL': return 'jdbc:mysql://host:3306/库名（作为连接 url，以 address 为准）'
+    case 'SQLSERVER': return 'jdbc:sqlserver://host:1433;databaseName=库名（作为连接 url，以 address 为准）'
     case 'RABBITMQ': return 'amqp://host:5672（broker）'
     default: return 'http://host:port（根地址，path/method 在动作里配）'
   }
@@ -130,7 +132,7 @@ function initAddition(ad: Record<string, any> | undefined, type: string) {
   const a = ad || {}
   if (type === 'HTTP') {
     addition.token = a.token ?? ''
-  } else if (type === 'MYSQL') {
+  } else if (type === 'MYSQL' || type === 'SQLSERVER') {
     addition.username = a.username ?? ''
     addition.password = a.password ?? ''
   } else if (type === 'RABBITMQ') {
@@ -145,8 +147,8 @@ function buildAddition(): Record<string, any> {
   const o: Record<string, any> = {}
   if (form.type === 'HTTP') {
     if (addition.token) o.token = addition.token
-  } else if (form.type === 'MYSQL') {
-    // url 以 address 为准（后端 MysqlDataSourceConfig 不再接收 url）
+  } else if (form.type === 'MYSQL' || form.type === 'SQLSERVER') {
+    // 连接 url 以 address 为准（关系库配置只收 username/password）
     if (addition.username) o.username = addition.username
     if (addition.password) o.password = addition.password
   } else if (form.type === 'RABBITMQ') {
@@ -161,9 +163,10 @@ function buildAddition(): Record<string, any> {
 
 function formValidate(): string | null {
   if (!form.address) return '需要填写地址'
-  if (form.type === 'MYSQL') {
-    if (!addition.username) return 'MySQL 需要用户名'
-    if (!addition.password) return 'MySQL 需要密码'
+  if (form.type === 'MYSQL' || form.type === 'SQLSERVER') {
+    const dbName = form.type === 'SQLSERVER' ? 'SQL Server' : 'MySQL'
+    if (!addition.username) return `${dbName} 需要用户名`
+    if (!addition.password) return `${dbName} 需要密码`
   }
   if (form.type === 'RABBITMQ' && addition.port != null && !Number.isInteger(Number(addition.port))) {
     return '端口必须是整数'

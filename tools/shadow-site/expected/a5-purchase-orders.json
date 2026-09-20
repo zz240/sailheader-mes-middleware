@@ -1,0 +1,82 @@
+[
+    {
+        "at":  "2026-09-18T15:06:59.937Z",
+        "method":  "POST",
+        "path":  "/mes/api/purchase-order",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "sheet_no":  "PO-SH-0001",
+                     "vendor_code":  "V-SH-001",
+                     "sheet_date":  "2026-09-01",
+                     "status":  "1",
+                     "source_ref":  "ERP-PO-SH-0001",
+                     "remark":  "718H 预硬钢 2 件"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:06:59.969Z",
+        "method":  "POST",
+        "path":  "/mes/api/purchase-order",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "sheet_no":  "PO-SH-0002",
+                     "vendor_code":  "V-SH-002",
+                     "sheet_date":  "2026-09-01",
+                     "status":  "1",
+                     "source_ref":  "ERP-PO-SH-0002",
+                     "remark":  "顶针/司筒一批"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.008Z",
+        "method":  "POST",
+        "path":  "/mes/api/purchase-order",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "sheet_no":  "PO-SH-0003",
+                     "vendor_code":  "V-SH-001",
+                     "sheet_date":  "2026-09-02",
+                     "status":  "1",
+                     "source_ref":  "ERP-PO-SH-0003",
+                     "remark":  "SKD61 淬火料 4 件"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.038Z",
+        "method":  "POST",
+        "path":  "/mes/api/purchase-order",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "sheet_no":  "PO-SH-0004",
+                     "vendor_code":  "V-SH-003",
+                     "sheet_date":  "2026-09-03",
+                     "status":  "2",
+                     "source_ref":  "ERP-PO-SH-0004",
+                     "remark":  "氮化处理外协（已到货）"
+                 }
+    },
+    {
+        "at":  "2026-09-18T15:07:00.083Z",
+        "method":  "POST",
+        "path":  "/mes/api/purchase-order",
+        "contentType":  "application/json",
+        "authorization":  "",
+        "apiKey":  "",
+        "body":  {
+                     "sheet_no":  "PO-SH-0005",
+                     "vendor_code":  "V-SH-002",
+                     "sheet_date":  "2026-09-04",
+                     "status":  "1",
+                     "source_ref":  "ERP-PO-SH-0005",
+                     "remark":  "热流道配件"
+                 }
+    }
+]

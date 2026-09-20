@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.ReadSqlConfig;
 import com.example.edgegateway.model.WatermarkType;
+import com.example.edgegateway.service.sql.SqlDialect;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -74,13 +75,16 @@ public class ReadSqlBatcher {
                 : read.watermarkColumn() + " > ?";
     }
 
-    /** 批查询完整 SQL：替换谓词 + keyset 排序 + LIMIT batchSize；水位列缺失则原样返回（无分批）。 */
-    public String batchSql(ReadSqlConfig read) {
+    /**
+     * 批查询完整 SQL：替换谓词 + keyset 排序 + 取 batchSize 行；水位列缺失则原样返回（无分批）。
+     * 分页写法归方言（MySQL 的 {@code LIMIT} / SQL Server 的 {@code OFFSET…FETCH}，ADR-0014）。
+     */
+    public String batchSql(ReadSqlConfig read, SqlDialect dialect) {
         if (read.watermarkColumn() == null || read.watermarkColumn().isBlank()) {
             return read.sql();
         }
-        return read.sql().replace("{watermark}", predicate(read))
-                + " ORDER BY " + read.watermarkColumn() + " LIMIT " + batchSize(read);
+        return dialect.paginate(read.sql().replace("{watermark}", predicate(read)),
+                read.watermarkColumn(), batchSize(read));
     }
 
     /** 某批加工后应推进到的水位值（只前不后退，与本次读取前水位取 max）。 */

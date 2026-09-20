@@ -15,7 +15,9 @@
 - **断点续跑**：从一条 `FAILED` 消息步精确重投（用该步数据从该动作重放，不整链重跑），成功后原步状态 `REDELIVERED`。
   - **上游快照回填（#90）**：重投时 `MessageHistoryService.redeliver` 按 `(runId, messageId)` 取 `step < resumeFrom` 且 `SUCCESS` 的消息步，把各自 `data_snapshot` 解析后经 property `edge.resumeContext` 随 `direct:job-<id>-resume` 投递；断点路由入口回填 `context[step]`。
   - 于是被跳过的上游步骤仍可被下游规则引用（如 FIELD_MAP 的 `sourceStep=1`），不再因 `$s_1` 未定义而**静默映射出空**（这是以前写库/推送型链之外的主要缺口）。
-  - 边界：上游步骤无快照（源行未记 `data_snapshot`、失败步、被跳步）→ **该步骤不进上下文**（属性照常投递，值为空 `Map`），下游引用仍是空，行为与现状一致；`context[0]` 语义保持不变（= 本次重投 body，即该步 `inputSnapshot`）。
+  - 快照按 **JSON 值**还原：对象 / 数组 / 标量都回填（HTTP 响应可以就是数组或标量——#123 起 `HTTP_CALL` 的响应也走这条路），只有解析不出来的**非 JSON 文本**不进上下文。
+  - 边界：上游步骤无快照（失败步、被跳步、非 JSON 文本快照）→ **该步骤不进上下文**（属性照常投递，值为空 `Map`），下游引用仍是空，行为与现状一致；`context[0]` 语义保持不变（= 本次重投 body，即该步 `inputSnapshot`）。
+  - **捕获内容的容量闸（#123 口径 4）**：`HTTP_CALL` 的响应大小由目标端决定，装不下 `message_step.data_snapshot`（TEXT，65535 字节）时该动作**显式失败并给出可读错误**，绝不写半截 JSON（半截的上游快照会让续投在解析处报出离现场很远的错）。其余动作的快照行为不变，容量本身归 #127（见 ADR-0015）。
   - **失败就报失败（#108）**：`redeliver` 投递后检查返回 exchange（`getException()` / `EXCEPTION_CAUGHT` / `isFailed()`），失败即抛"重投失败：<根因>"且**不改**原步状态。`ProducerTemplate.request(uri, processor)` 不重抛 exchange 上的异常，少了这道检查就会出现"接口返回 OK + 原步 `REDELIVERED`，而新 run 是 `FAILED`"（实测 run 301/302）。
 - **列表分页**：`GET /api/history/runs`（运行）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
 - **交付语义（至少一次）**：水位仅整批成功才推进，失败整批重读（at-least-once）；重试退避与断点重投下 HTTP/MQ 推送**可能重复**——南向 `WRITE_UPSERT` 按幂等键去重，北向推送需 MES 按业务键去重。与 ADR-0003 一致（不承诺恰好一次/分布式补偿）。
@@ -33,12 +35,13 @@
 | 09-10 | 断点重投回填上游步骤快照（`edge.resumeContext`） | 被跳步骤不写 context，而下游 FIELD_MAP 唯一输入是整份 context → 引用上游输出的映射重投后静默出空 | — | #90 |
 | 09-15 | 重投失败不再被当成成功（检查返回 exchange 的异常） | `request(uri, processor)` 不重抛 exchange 异常 → 接口返回 OK、原步标 `REDELIVERED`，而新 run 是 `FAILED`，运维据此收工 | — | #108 |
 | 09-15 | `attempt` 修为真实总尝试次数（`onExceptionOccurred` 自计数） | 原读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把它写进 message header → 恒为 `null + 1`，历史页「尝试次数」永远显示 1 | 保留 run 内自动重投的决策不变 | #109 |
+| 09-20 | 快照回填放宽到**任意 JSON 值**（对象/数组/标量），并给捕获内容加快照容量闸 | 只认对象会把数组/标量响应的上游步骤在续投时静默丢掉；HTTP 响应的大小由目标端决定，落不进快照列时要在动作处显式失败、不写半截 | 容量本身归 #127；其余动作快照行为不变 | #123 / ADR-0015 |
 
 ## 当前生效
 
 - 失败即停 + 重试退避 + 消息历史（ADR-0003 / ADR-0009）
 - 历史页默认 FAILED，按运行/消息/业务键分组检索
-- 从失败消息步断点续跑（人工重投），成功后原步 `REDELIVERED`；重投失败则抛"重投失败：<根因>"且原步保持 `FAILED`（#108）；重投回填上游步骤快照，引用上游输出的映射链同样可续跑（#90）
+- 从失败消息步断点续跑（人工重投），成功后原步 `REDELIVERED`；重投失败则抛"重投失败：<根因>"且原步保持 `FAILED`（#108）；重投回填上游步骤快照（对象/数组/标量都还原），引用上游输出的映射链同样可续跑（#90 / #123）
 - 消息步 `attempt` 记录**总尝试次数**（含 run 内自动重投），历史页「尝试次数」可直接回答"一次就成功还是重试才成功"（#109）
 - 源动作 `businessKey` 配置与消息创建时提取
 - 任务最近运行结果由 `finishRun` 统一回写（消费/调度/手动/重投），手动与外部触发只回读

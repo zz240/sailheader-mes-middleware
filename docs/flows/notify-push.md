@@ -42,7 +42,7 @@ sequenceDiagram
 |---|---|---|---|---|---|
 | 读库 | 增量读 | READ_SQL（`service/RouteGenerator.java:147` `appendChain`） | 同北向 | 行 `Map` | — |
 | 映射 | 字段映射 | FIELD_MAP | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→FAILED 消息步 |
-| HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` | `Map`→JSON→HTTP | 非 2xx→FAILED 消息步 |
+| HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` + `captureResponse`（响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→FAILED 消息步 |
 | MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` **必填**（发布哪一步的输出，通常 FIELD_MAP 序号）；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
 
 `bodySourceStep`（`service/RouteGenerator.java` MQ_PUBLISH 片段）显式取 `context[step]`——**不再有缺省推断**：
