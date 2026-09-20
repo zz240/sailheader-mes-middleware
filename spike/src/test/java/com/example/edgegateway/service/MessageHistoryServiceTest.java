@@ -11,6 +11,7 @@ import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
@@ -447,5 +448,39 @@ class MessageHistoryServiceTest {
         when(messageStepMapper.selectById(99L)).thenReturn(null);
         assertThatThrownBy(() -> service.getStep(99L))
                 .isInstanceOf(NoSuchElementException.class);
+    }
+
+    /** #129：运行列表按业务键筛——命中的运行 id 从消息步里挑出来。 */
+    @Test
+    void listRunsKeepsRunsWhoseMessageMatchesBusinessKey() {
+        MessageStep hit = new MessageStep();
+        hit.setRunId(3L);
+        hit.setBusinessKey("SO-2026-0917-0042");
+        when(messageStepMapper.selectList(any())).thenReturn(List.of(hit));
+        JobRun run = new JobRun();
+        run.setId(3L);
+        run.setJobId(7L);
+        run.setStatus("FAILED");
+        Page<JobRun> page = new Page<>(1, 20);
+        page.setRecords(List.of(run));
+        page.setTotal(1L);
+        when(jobRunMapper.selectPage(any(), any())).thenReturn(page);
+
+        Map<String, Object> result = service.listRuns(null, null, "SO-2026-0917-0042", 1, 20);
+
+        assertThat(result.get("total")).isEqualTo(1L);
+        assertThat((List<?>) result.get("records")).hasSize(1);
+    }
+
+    /** 一条消息都没命中时给空页，不白跑一次运行查询（也避免 `IN ()` 这种空集合 SQL）。 */
+    @Test
+    void listRunsByBusinessKeyWithoutHitSkipsRunQuery() {
+        when(messageStepMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.listRuns(null, null, "SO-404", 1, 20);
+
+        assertThat(result.get("total")).isEqualTo(0L);
+        assertThat((List<?>) result.get("records")).isEmpty();
+        verify(jobRunMapper, never()).selectPage(any(), any());
     }
 }

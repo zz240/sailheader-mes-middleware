@@ -1,0 +1,139 @@
+/*
+ * 消息历史页（#129）：双栏控制台的骨架、列表与最小详情。
+ *
+ * 令牌全部来自 `styles/tokens.css`——本页**零新增令牌**（ADR-0016「风险」③）：
+ * 颜色、圆角（8 / 6 / 12 三档）、字号里**有令牌可用的那几处**一律走 `var()`。
+ * 还有一批小字号（12.5 / 12 / 11 / 10.5px）在令牌层没有对应档位——它们逐字照抄原型那份
+ * dense utility 的密度，`tokens.css` 只带 `--fs-body` / `--fs-meta` 两档，硬套会把原型的层次压平。
+ * 类名统一 `hc-` 前缀：原型的 `.panel` / `.st` / `.ritem` 太通用，直接进全局样式会踩别的页面。
+ *
+ * 尺寸口径对着 `frontend/prototype/04-message-history.html`：左栏 322px 固定、右栏吃掉剩下的，
+ * 页内不滚动、两栏各自滚。本页的高度靠 `.hc-page { height: 100% }` 从 `el-main` 拿（不动 App 壳）。
+ */
+
+.hc-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── 页头 ─────────────────────────────────────────────────────────── */
+.hc-pagehead { flex: 0 0 auto; }
+.hc-title-row { display: flex; align-items: flex-start; gap: 13px; flex-wrap: wrap; }
+.hc-pagehead h1 { margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -.015em; }
+.hc-subline {
+  margin: 4px 0 0; color: var(--muted); font-size: 12px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.hc-subline code {
+  color: var(--fg); font-family: var(--font-mono); font-size: var(--fs-meta);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 6px;
+}
+
+/* ── 筛选条 ───────────────────────────────────────────────────────── */
+.hc-filters { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 0 12px; }
+.hc-ctl { display: flex; align-items: center; gap: 6px; }
+.hc-ctl > label { font-size: var(--fs-meta); color: var(--muted); }
+.hc-filter-job { width: 240px; }
+.hc-filter-status { width: 170px; }
+.hc-filter-biz { width: 210px; }
+.hc-note { font-size: 11px; color: var(--muted); margin-left: auto; }
+.hc-note-warn { color: var(--danger-ink); }
+
+/* ── 工作区骨架 ───────────────────────────────────────────────────── */
+.hc-workspace { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; padding-bottom: 4px; }
+.hc-panel {
+  box-sizing: border-box;   /* 原型的 `*{box-sizing:border-box}`：322px 是**含边框**的宽度 */
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.hc-phead {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); min-height: 44px;
+}
+.hc-phead .hc-pt { font-size: 12.5px; font-weight: 620; }
+.hc-phead .hc-ps { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.hc-phead .hc-right { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.hc-scroll { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; }
+.hc-list-panel { flex: 0 0 322px; min-width: 0; }
+.hc-detail-panel { flex: 1 1 auto; min-width: 0; }
+/* 分页条在**页级**：左栏 322px 装不下 element-plus 那套完整分页（实测会被推到栏外） */
+.hc-pfoot { flex: 0 0 auto; display: flex; justify-content: flex-end; padding: 8px 0 0; }
+
+/* ── 运行列表 ─────────────────────────────────────────────────────── */
+.hc-rlist { padding: 6px 6px 10px; }
+.hc-ritem {
+  position: relative; display: block; width: 100%; text-align: left;
+  padding: 8px 10px 9px 12px; border-radius: var(--radius); border: 1px solid transparent;
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.hc-ritem:hover { background: var(--fg-soft); }
+.hc-ritem[aria-pressed="true"] { background: var(--bg-sunken); border-color: var(--border); }
+.hc-ritem[aria-pressed="true"]::before {
+  content: ''; position: absolute; left: 2px; top: 8px; bottom: 8px; width: 2px;
+  border-radius: 2px;   /* 2px 宽的选中条不套三档圆角（原样照抄原型） */
+  background: var(--accent);
+}
+.hc-r-top { display: flex; align-items: center; gap: 7px; }
+.hc-r-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.hc-r-job { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hc-r-top .hc-st { margin-left: auto; }
+.hc-r-sub {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+  margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap;
+}
+.hc-r-err {
+  font-size: 11px; color: var(--danger-ink); margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── 状态芯片 ─────────────────────────────────────────────────────── */
+.hc-st {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .02em; white-space: nowrap;
+}
+.hc-st::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+/* 成功态这一支用的是生产侧的 `--success-*`（原型那份叫 `--ok-ink`，同角色，不另立令牌） */
+.hc-st-ok { color: var(--success-ink); border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: var(--success-soft); }
+.hc-st-bad { color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 32%, var(--border)); background: var(--danger-soft); }
+.hc-st-warn { color: var(--warn-ink); border-color: color-mix(in oklch, var(--warn) 34%, var(--border)); background: var(--warn-soft); }
+.hc-st-run::before { animation: hc-pulse 1.4s ease-in-out infinite; }
+@keyframes hc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* ── 空 / 加载中 / 出错 ───────────────────────────────────────────── */
+.hc-list-empty { padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12px; }
+.hc-list-empty .hc-empty-title { color: var(--fg); font-size: 12.5px; }
+.hc-list-empty .hc-empty-hint { margin-top: 4px; }
+.hc-skel { padding: 12px; }
+.hc-skel i { display: block; height: 9px; border-radius: var(--radius-sm); background: var(--fg-soft); margin-bottom: 7px; }
+.hc-skel i:nth-child(1) { width: 42%; }
+.hc-skel i:nth-child(2) { width: 68%; }
+.hc-errbox {
+  margin: 10px; border: 1px solid color-mix(in oklch, var(--danger) 26%, var(--border));
+  background: var(--danger-soft); border-radius: var(--radius); padding: 8px 10px;
+  font-size: 12px; color: var(--danger-ink);
+}
+.hc-errbox .hc-err-act { margin-top: 7px; }
+
+/* ── 详情（#129 只有运行头与错误块；消息与步骤链在后续票里长出来） ── */
+.hc-dbody { padding: 12px 14px 16px; }
+.hc-dhead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.hc-dhead h2 { margin: 0; font-size: 14.5px; font-weight: 620; letter-spacing: -.01em; }
+.hc-dsub {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  margin-top: 4px; display: flex; gap: 9px; flex-wrap: wrap;
+}
+.hc-dsub b { color: var(--fg); font-weight: 600; }
+.hc-runerr {
+  margin-top: 9px; display: flex; gap: 8px; align-items: flex-start;
+  border: 1px solid color-mix(in oklch, var(--danger) 26%, var(--border));
+  background: var(--danger-soft); border-radius: var(--radius); padding: 7px 10px;
+  font-size: 12px; color: var(--danger-ink);
+}
+.hc-runerr .hc-mk {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 10.5px;
+  border: 1px solid color-mix(in oklch, var(--danger) 34%, transparent); border-radius: var(--radius-sm); padding: 0 4px;
+}
+.hc-runerr pre { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-all; }

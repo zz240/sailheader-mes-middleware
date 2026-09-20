@@ -193,7 +193,14 @@ public class MessageHistoryService {
 
     // ---------- 检索 ----------
 
-    public Map<String, Object> listRuns(Long jobId, String status, int page, int size) {
+    /**
+     * 运行列表。
+     *
+     * <p>{@code businessKey} 的口径（#129）：**该运行下任一条消息的业务键命中就保留这条运行**——
+     * 候选运行 id 从消息步里挑，再拿它筛运行；一条也没命中时直接给空页，不白跑一次运行查询。
+     * 匹配走 {@code LIKE}（子串，与消息步那一侧同一个口径）。</p>
+     */
+    public Map<String, Object> listRuns(Long jobId, String status, String businessKey, int page, int size) {
         LambdaQueryWrapper<JobRun> wrapper = new LambdaQueryWrapper<JobRun>()
                 .orderByDesc(JobRun::getId);
         if (jobId != null) {
@@ -201,6 +208,20 @@ public class MessageHistoryService {
         }
         if (status != null && !status.isBlank()) {
             wrapper.eq(JobRun::getStatus, status.trim());
+        }
+        if (businessKey != null && !businessKey.isBlank()) {
+            // 只要 runId：整行带上 data_snapshot / input_snapshot 两个 TEXT 列纯属白读（#127 那两列）
+            List<Long> runIds = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
+                            .select(MessageStep::getRunId)
+                            .like(MessageStep::getBusinessKey, businessKey.trim()))
+                    .stream()
+                    .map(MessageStep::getRunId)
+                    .distinct()
+                    .toList();
+            if (runIds.isEmpty()) {
+                return pageOf(0L, List.of());
+            }
+            wrapper.in(JobRun::getId, runIds);
         }
         Page<JobRun> result = jobRunMapper.selectPage(new Page<>(page, size), wrapper);
         return pageOf(result.getTotal(), result.getRecords());

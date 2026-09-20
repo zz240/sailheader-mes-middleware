@@ -19,7 +19,7 @@
   - 边界：上游步骤无快照（失败步、被跳步、非 JSON 文本快照）→ **该步骤不进上下文**（属性照常投递，值为空 `Map`），下游引用仍是空，行为与现状一致；`context[0]` 语义保持不变（= 本次重投 body，即该步 `inputSnapshot`）。
   - **捕获内容的容量闸（#123 口径 4）**：`HTTP_CALL` 的响应大小由目标端决定，装不下 `message_step.data_snapshot`（TEXT，65535 字节）时该动作**显式失败并给出可读错误**，绝不写半截 JSON（半截的上游快照会让续投在解析处报出离现场很远的错）。其余动作的快照行为不变，容量本身归 #127（见 ADR-0015）。
   - **失败就报失败（#108）**：`redeliver` 投递后检查返回 exchange（`getException()` / `EXCEPTION_CAUGHT` / `isFailed()`），失败即抛"重投失败：<根因>"且**不改**原步状态。`ProducerTemplate.request(uri, processor)` 不重抛 exchange 上的异常，少了这道检查就会出现"接口返回 OK + 原步 `REDELIVERED`，而新 run 是 `FAILED`"（实测 run 301/302）。
-- **列表分页**：`GET /api/history/runs`（运行）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
+- **列表分页**：`GET /api/history/runs`（运行，可按 jobId/status/**businessKey** 过滤；业务键的口径是「该运行下任一条消息的业务键命中即保留这条运行」，一条也没命中直接给空页）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
 - **交付语义（至少一次）**：水位仅整批成功才推进，失败整批重读（at-least-once）；重试退避与断点重投下 HTTP/MQ 推送**可能重复**——南向 `WRITE_UPSERT` 按幂等键去重，北向推送需 MES 按业务键去重。与 ADR-0003 一致（不承诺恰好一次/分布式补偿）。
 - **代码位置**：`service/MessageHistoryService.java`（核心）、`service/JobLastRunWriter.java`（任务最近运行结果回写）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`spike/src/main/resources/db/migration/`（表定义）、`spike/src/test/resources/schema.sql`（H2 测试库）。
 
@@ -36,6 +36,7 @@
 | 09-15 | 重投失败不再被当成成功（检查返回 exchange 的异常） | `request(uri, processor)` 不重抛 exchange 异常 → 接口返回 OK、原步标 `REDELIVERED`，而新 run 是 `FAILED`，运维据此收工 | — | #108 |
 | 09-15 | `attempt` 修为真实总尝试次数（`onExceptionOccurred` 自计数） | 原读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把它写进 message header → 恒为 `null + 1`，历史页「尝试次数」永远显示 1 | 保留 run 内自动重投的决策不变 | #109 |
 | 09-20 | 快照回填放宽到**任意 JSON 值**（对象/数组/标量），并给捕获内容加快照容量闸 | 只认对象会把数组/标量响应的上游步骤在续投时静默丢掉；HTTP 响应的大小由目标端决定，落不进快照列时要在动作处显式失败、不写半截 | 容量本身归 #127；其余动作快照行为不变 | #123 / ADR-0015 |
+| 09-20 | 运行列表接上业务键筛选（口径：任一消息命中即保留该运行） | 新历史页是双栏控制台，运行那一层也要能按业务对象找；前端按行补拉 `/history/steps?runId=` 是 N+1 | 消息步那一侧的 businessKey 语义不变；运行侧的 status 仍默认不过滤 | #129 / ADR-0016 |
 
 ## 当前生效
 

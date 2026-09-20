@@ -36,12 +36,18 @@ public class HistoryController {
                 safePage(page), safeSize(size));
     }
 
+    /**
+     * 运行列表。
+     *
+     * <p>{@code businessKey} 的口径（#129）：该运行下**任一条消息**的业务键命中，就保留这条运行。</p>
+     */
     @GetMapping("/runs")
     public Map<String, Object> listRuns(@RequestParam(required = false) Long jobId,
                                         @RequestParam(required = false) String status,
+                                        @RequestParam(required = false) String businessKey,
                                         @RequestParam(defaultValue = "1") int page,
                                         @RequestParam(defaultValue = "20") int size) {
-        return messageHistoryService.listRuns(jobId, status, safePage(page), safeSize(size));
+        return messageHistoryService.listRuns(jobId, status, businessKey, safePage(page), safeSize(size));
     }
 
     @GetMapping("/runs/{id}")
