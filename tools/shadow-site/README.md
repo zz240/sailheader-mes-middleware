@@ -74,6 +74,10 @@ powershell -File tools/shadow-site/verify-scenario.ps1 -SkipWrite   # 只跑读�
 
 **结果（2026-09-19 复验；真 SQL Server 2022 + 真 MySQL + 真 RabbitMQ/MES 替身）：29 项通过 / 0 失败**
 
+**2026-09-20 复验（#123 落地后，同一套真机环境）：`verify-scenario.ps1` 33 项通过 / 0 失败 + `verify-b1.ps1` 19 项通过 / 0 失败。**
+B6 的回写闭环真机成立（`step 4` 从链上响应取到 `handle` → `step 5` MERGE 回写 20 行 `MDM_Code.FHandle`）；
+B1 链已还原成现场最常见的「先推上云、再落本地库」顺序（不再靠调换顺序绕 #126）。
+
 | 链 | 入口 | 验到了什么 |
 |---|---|---|
 | A5 | SQL Server 读（轮询） | 5 张采购单逐字段对上（含 `CLOSED→"2"` 与中文备注往返）；`batchSize=2` **分 3 批走 `OFFSET/FETCH`**；水位推进到 5；**重跑 0 条新增** |
@@ -180,8 +184,12 @@ node tools/shadow-site/modbus-bridge.cjs                       # 采集桥（管
 **所以断网期间设备照采、数据不丢，恢复后按原采样时刻补写**（`metric_key` 里带 `ts`，重复补发也只会 upsert 同一行）。
 
 > **这条链第一次跑是 86/86 全失败**：`WRITE_UPSERT` 紧跟 `HTTP_CALL` 时拿到 null → NPE。
-> 根因是 `HTTP_CALL` 会把消息体换成响应体（**#126**，已随 #123 修复：出站后消息体保持为请求体）；
-> 当时把动作顺序调成「先写看板库、再推上云」绕过，现在两种顺序都成立。
+> 根因是 `HTTP_CALL` 会把消息体换成响应体（**#126**，已随 #123 修复：出站后消息体保持为请求体）。
+> 链现在**就是**当时失败的那个顺序（`FIELD_MAP → HTTP_CALL(上云) → WRITE_UPSERT(看板库)`，也是现场最
+> 常见的形状），19 项断言全绿——不再需要调换顺序。
+>
+> 顺序仍值得按可靠性取舍：`失败即停` 之下，写在前面的那步失败会挡住后面那步。想「云断了本地照写」，
+> 就把 `WRITE_UPSERT` 放前面；想「没推上云就别落库」，就保持现在这个顺序。
 
 ## Windows PowerShell 5.1 的坑（重要，会坑到现场机器）
 

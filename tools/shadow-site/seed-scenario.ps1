@@ -321,6 +321,8 @@ $a4pushId = New-ScenarioJob -Name 'SH-A4PUSH-Report-to-MES' -Direction 'NORTH' -
 # ---------- B1: device point -> cloud push + local board upsert ----------
 # The bridge (tools/shadow-site/modbus-bridge.cjs) posts ONE point per trigger call; the chain head is
 # FIELD_MAP so the body is the chain-head input (sourceStep 0). metric_key is the flattened composite key.
+# Order is deliberately the field's most common shape (push first, write local second): before #126 that
+# shape died with an NPE in WRITE_UPSERT, and the acceptance run now proves it no longer needs swapping.
 $b1 = @(
     @{ name = 'map-device-point'; type = 'FIELD_MAP'; addition = @{ rules = @(
         @{ sourceStep = 0; source = 'device_no'; target = 'device_no'; transform = 'STRING' },
@@ -330,12 +332,12 @@ $b1 = @(
         @{ sourceStep = 0; source = 'quality'; target = 'quality'; transform = 'STRING' },
         @{ sourceStep = 0; source = 'device_no'; target = 'metric_key'; transform = 'CONCAT'; parts = @(@{ path = 'device_no' }, ':', @{ path = 'point' }, ':', @{ path = 'ts' }) }
     ) } },
-    @{ name = 'upsert-board'; type = 'WRITE_UPSERT'; addition = @{
-        dataSourceId = $dsBoardDb; tableName = 'dev_metric'; idempotencyKey = 'metric_key' } },
     @{ name = 'push-cloud'; type = 'HTTP_CALL'; addition = @{
-        dataSourceId = $dsMesHttp; path = '/mes/api/device-metric'; method = 'POST' } }
+        dataSourceId = $dsMesHttp; path = '/mes/api/device-metric'; method = 'POST' } },
+    @{ name = 'upsert-board'; type = 'WRITE_UPSERT'; addition = @{
+        dataSourceId = $dsBoardDb; tableName = 'dev_metric'; idempotencyKey = 'metric_key' } }
 )
-$b1Id = New-ScenarioJob -Name 'SH-B1-DEVICE-UP' -Direction 'NORTH' -Remarks 'B1 device point: upsert into local board db, then push to cloud (order kept for clarity; #126 fixed: HTTP_CALL no longer replaces the message body)' -Actions $b1
+$b1Id = New-ScenarioJob -Name 'SH-B1-DEVICE-UP' -Direction 'NORTH' -Remarks 'B1 device point: push to cloud, then upsert into local board db (the field shape that used to NPE; #126 fixed, no order swap needed)' -Actions $b1
 
 # ---------- A7 big-payload variant: the WHOLE report in one message ----------
 # Source side aggregates the detail rows into one JSON string (FOR JSON PATH); the EXPRESSION mapping

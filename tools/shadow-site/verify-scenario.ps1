@@ -233,8 +233,13 @@ $writeback = @($runSteps | Where-Object { "$($_.step)" -eq '5' })
 Check 'B6 write-back step succeeded for all 20 rows' ($writeback.Count -eq 20) ("writeback={0} steps={1}" -f $writeback.Count, $runSteps.Count)
 $chainHandles = @($writeback | ForEach-Object { ($_.dataSnapshot | ConvertFrom-Json).FHandle } | Sort-Object -Unique)
 Check 'B6 chain carried a handle for every row' ($chainHandles.Count -eq 20) ("distinct={0}" -f $chainHandles.Count)
-$written = @(Mssql 'SELECT FHandle FROM CustomerERP.dbo.MDM_Code WHERE FHandle IS NOT NULL' | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
-Check 'B6 FHandle written back to MDM_Code (20 rows)' ($written.Count -eq 20) ("rows={0}" -f $written.Count)
+# sqlcmd prints a "(N rows affected)" summary line unless NOCOUNT is set, so the row COUNT comes from SQL
+# itself (same style as the A2/A3 checks above) and the value list filters that summary out.
+$writtenCount = Mssql 'SELECT COUNT(*) FROM CustomerERP.dbo.MDM_Code WHERE FHandle IS NOT NULL'
+Check 'B6 FHandle written back to MDM_Code (20 rows)' ($writtenCount -match '^\s*20\s*$') ("count={0}" -f ($writtenCount -join '|'))
+$written = @(Mssql 'SELECT FHandle FROM CustomerERP.dbo.MDM_Code WHERE FHandle IS NOT NULL' |
+    ForEach-Object { "$_".Trim() } |
+    Where-Object { $_ -and $_ -notmatch 'rows affected' })
 $missing = @($chainHandles | Where-Object { $h = $_; @($written | Where-Object { $_ -eq "$h" }).Count -eq 0 })
 Check 'B6 written-back handles are the ones the chain received' ($missing.Count -eq 0) ("missing={0}" -f ($missing -join ','))
 

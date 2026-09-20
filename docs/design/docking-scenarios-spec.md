@@ -11,10 +11,11 @@
 > **本轮从场景里刨出四个真问题**：#123 响应回链、#124 明细级水位列、#125 多列幂等键、
 > **#126 `HTTP_CALL` 换掉消息体（紧随的 `WRITE_UPSERT` 必 NPE）**、**#127 报文 >64 KB 写不进消息历史**；
 > 并为「一单多行 → 一条报文」补了产品函数 `$parse`。
-> **#123 / #126 的修复已落地**（`HTTP_CALL` 响应进 `context[本动作序号]`、消息体不再被顶替，决策见
-> `docs/adr/0015`）：B6 链已加 `map-handle` + `write-handle` 两步把 `handle` 回写 `MDM_Code.FHandle`，
-> B1 链的顺序不再有讲究。代码与单测/链路测试已覆盖；**影子站点的真机复验待跑**（改这两条时手边没有
-> docker 环境），断言清单见 `tools/shadow-site/verify-scenario.ps1`。
+> **#123 / #126 的修复已落地并真机复验**（`HTTP_CALL` 响应进 `context[本动作序号]`、消息体不再被顶替，
+> 决策见 `docs/adr/0015`）：2026-09-20 在影子站点真机环境跑 `verify-scenario.ps1` **33/33** +
+> `verify-b1.ps1` **19/19** 全绿。B6 链加了 `map-handle` + `write-handle` 两步，`handle` 回写
+> `MDM_Code.FHandle`（断言从消息历史读，不再靠替身 `GET /__handles` 旁证）；B1 链还原成现场最常见的
+> 「先推上云、再落本地库」顺序，不再需要调换顺序。
 > 覆盖 SQL Server 读分页、`MERGE` 幂等 upsert、240 行分 5 批、组合键展平、`EXPRESSION` 模式；
 > 实测报文基线在 `tools/shadow-site/expected/`，跑法见 `tools/shadow-site/README.md`。
 
@@ -151,7 +152,7 @@ MES 侧收单替身要能：记录每一次请求（供逐字段核对）、按�
 
 ### B1 设备数据上云 + 本地看板（设备 → 边缘 → 云 + 本地库）
 
-- **触发与入口**：设备（Modbus TCP 从站）→ **采集桥** → 网关 `HTTP_CALL` 型入口（`/api/external/jobs/{id}/trigger`，请求体作链首输入）→ 映射 → ① `WRITE_UPSERT` 本地看板库 ② `HTTP_CALL` 上云。**顺序曾经不能颠倒**（#126），现已无此约束。
+- **触发与入口**：设备（Modbus TCP 从站）→ **采集桥** → 网关 `HTTP_CALL` 型入口（`/api/external/jobs/{id}/trigger`，请求体作链首输入）→ 映射 → ① `HTTP_CALL` 上云 ② `WRITE_UPSERT` 本地看板库（现场最常见的形状，正是 #126 修复前必 NPE 的那个顺序；现已全绿）。
 - **数据形态与量级**：本项目按 2 台 × 4 点位、5 s 一周期（=96 点位/分钟）实测；现场 1~3 台 × 10~30 点位时约 100~360 点位/分钟，报文小而频，**一条消息 = 一个点位**（产品没有「一分多」，批次里的多点位只能拆成多条消息）。
 - **键·幂等·水位**：看板库幂等键 `device_no:point:ts` 用 `CONCAT` 展平成一列（`dev_metric.metric_key`）；上云按同一 `metric_key` 去重。
 - **期望落点**：本地 `dev_metric`；上云 HTTP 服务。
