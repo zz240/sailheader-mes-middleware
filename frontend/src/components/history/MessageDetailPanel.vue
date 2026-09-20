@@ -2,11 +2,17 @@
   <section class="hc-panel hc-detail-panel" aria-label="消息详情">
     <div class="hc-phead">
       <span class="hc-pt">消息详情</span>
-      <span class="hc-ps">{{ run ? `#${run.id}` : '—' }}</span>
+      <!-- 头右端就是**选中了什么**：消息步检索模式下点一行，这里写清运行 / 消息 / 步骤（#136） -->
+      <span class="hc-ps">{{ detailPath(selection) }}</span>
     </div>
 
     <div class="hc-scroll">
-      <div v-if="!run" class="hc-list-empty">
+      <div v-if="runError" class="hc-errbox">
+        <div>这条运行的详情没取到。</div>
+        <div class="hc-ps">{{ runError }}</div>
+      </div>
+
+      <div v-else-if="!run" class="hc-list-empty">
         <div class="hc-empty-title">选一条运行看它的消息与消息步</div>
       </div>
 
@@ -31,12 +37,15 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { jobTitleOf, stampOf, statusChip } from '../../history/console'
+import { detailPath, jobTitleOf, stampOf, statusChip, type HistorySelection } from '../../history/console'
 import type { Job, JobRun } from '../../types'
 
 const props = defineProps<{
   run: JobRun | null
   jobs: Job[]
+  selection: HistorySelection
+  /** 取这条运行失败时的说法（消息步模式下点一行会按需去取它所属的运行）。 */
+  runError?: string
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))

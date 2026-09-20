@@ -1,9 +1,9 @@
 <template>
-  <aside class="hc-panel hc-list-panel" aria-label="运行列表">
+  <aside class="hc-panel hc-list-panel" :aria-label="`${listTitle(mode)}列表`">
     <div class="hc-phead">
-      <span class="hc-pt">运行</span>
+      <span class="hc-pt">{{ listTitle(mode) }}</span>
       <span class="hc-ps">{{ listCountText(total) }}</span>
-      <span class="hc-right">选一条运行看它的消息与消息步</span>
+      <span class="hc-right">{{ listHint(mode) }}</span>
     </div>
 
     <div class="hc-scroll">
@@ -21,19 +21,20 @@
         </div>
       </div>
 
-      <div v-else-if="!rows.length" class="hc-list-empty">
+      <div v-else-if="!rowCount" class="hc-list-empty">
         <div class="hc-empty-title">{{ emptyCopy.title }}</div>
         <div class="hc-empty-hint">{{ emptyCopy.hint }}</div>
       </div>
 
-      <div v-else class="hc-rlist">
+      <!-- 模式一：运行 -->
+      <div v-else-if="mode === 'runs'" class="hc-rlist">
         <button
-          v-for="row in rows"
+          v-for="row in runList"
           :key="row.run.id"
           class="hc-ritem"
           type="button"
-          :aria-pressed="row.run.id === selectedId"
-          @click="emit('select', row.run)"
+          :aria-pressed="isRunSelected(selected, row.run.id)"
+          @click="emit('select-run', row.run)"
         >
           <div class="hc-r-top">
             <span class="hc-r-id">#{{ row.run.id }}</span>
@@ -47,6 +48,34 @@
           <div v-if="row.errLine" class="hc-r-err" :title="row.run.error ?? ''">{{ row.errLine }}</div>
         </button>
       </div>
+
+      <!-- 模式二：消息步检索（#136）——「运行 × 消息 × 步」拍平成一条条消息步，直接按步排查 -->
+      <div v-else class="hc-rlist">
+        <button
+          v-for="row in stepList"
+          :key="row.step.id"
+          class="hc-ritem"
+          type="button"
+          :aria-pressed="isStepSelected(selected, row.step)"
+          @click="emit('select-step', row.step)"
+        >
+          <div class="hc-r-top">
+            <span class="hc-r-id">{{ row.head }}</span>
+            <span class="hc-st" :class="`hc-st-${row.chip.kind}`">{{ row.chip.label }}</span>
+          </div>
+          <div class="hc-r-sub">
+            <span>{{ row.action }}</span>
+            <!-- 业务键单独一个 class 是给真机脚本读的抓手（样式照原型留在这一行里） -->
+            <span class="hc-r-bk">{{ row.businessKey }}</span>
+          </div>
+          <div class="hc-r-sub">
+            <span>{{ row.at }}</span>
+            <span>尝试 {{ row.attempt }}</span>
+            <span>{{ row.job }}</span>
+          </div>
+          <div v-if="row.errLine" class="hc-r-err" :title="row.step.error ?? ''">{{ row.errLine }}</div>
+        </button>
+      </div>
     </div>
   </aside>
 </template>
@@ -54,35 +83,34 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  firstLine, jobTitleOf, listCountText, listEmptyCopy, stampOf, statusChip,
-  type RunFilters,
+  isRunSelected, isStepSelected, listCountText, listEmptyCopy, listHint, listTitle, runRows, stepRows,
+  type HistoryMode, type HistorySelection, type RunFilters,
 } from '../../history/console'
-import type { Job, JobRun } from '../../types'
+import type { Job, JobRun, MessageStep } from '../../types'
 
 const props = defineProps<{
+  mode: HistoryMode
   runs: JobRun[]
+  steps: MessageStep[]
   jobs: Job[]
   total: number
-  selectedId: number | null
+  selected: HistorySelection
   loading: boolean
   error: string
   filters: RunFilters
 }>()
 
 const emit = defineEmits<{
-  select: [run: JobRun]
+  'select-run': [run: JobRun]
+  'select-step': [step: MessageStep]
   retry: []
 }>()
 
-const emptyCopy = computed(() => listEmptyCopy({ error: props.error, filters: props.filters }))
+const emptyCopy = computed(() => listEmptyCopy({ mode: props.mode, error: props.error, filters: props.filters }))
 
-/** 每行的说法一次算好：模板里不再重复调 statusChip / 反复查任务名。两个时刻**同一套写法**。 */
-const rows = computed(() => props.runs.map((run) => ({
-  run,
-  chip: statusChip(run.status),
-  jobTitle: jobTitleOf(props.jobs, run.jobId),
-  started: stampOf(run.startedAt),
-  finished: stampOf(run.finishedAt),
-  errLine: firstLine(run.error),
-})))
+/** 每行的说法一次算好：模板里不再重复调 statusChip / 反复查任务名。两个模式各一份投影。 */
+const runList = computed(() => runRows(props.runs, props.jobs))
+const stepList = computed(() => stepRows(props.steps))
+
+const rowCount = computed(() => (props.mode === 'runs' ? runList.value.length : stepList.value.length))
 </script>

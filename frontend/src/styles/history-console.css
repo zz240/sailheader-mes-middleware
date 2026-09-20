@@ -38,8 +38,12 @@
 .hc-filter-job { width: 240px; }
 .hc-filter-status { width: 170px; }
 .hc-filter-biz { width: 210px; }
-.hc-note { font-size: 11px; color: var(--muted); margin-left: auto; }
+.hc-note { font-size: 11px; color: var(--muted); }
 .hc-note-warn { color: var(--danger-ink); }
+/* 模式开关（原型那道 `.seg`）与右端那句口径抱成一组，一起贴右（#136）；
+   筛选条宽度不够时整组落到第二行，而不是「开关在上一行尾、口径在下一行头」 */
+.hc-tail { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hc-seg .el-radio-button__inner { font-size: 12px; }
 
 /* ── 工作区骨架 ───────────────────────────────────────────────────── */
 .hc-workspace { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; padding-bottom: 4px; }

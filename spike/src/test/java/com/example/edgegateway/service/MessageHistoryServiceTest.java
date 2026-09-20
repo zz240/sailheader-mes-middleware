@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -145,6 +146,54 @@ class MessageHistoryServiceTest {
 
         assertThat(result.get("total")).isEqualTo(1L);
         assertThat((List<?>) result.get("records")).hasSize(1);
+    }
+
+    /**
+     * #136：列表按页补上每步所属运行的 jobId（左列表的消息步行要写「任务 #id」）。
+     * 一次 in 查询补完——补 jobId 不是「每行一次」，前端那边更不是 N+1。
+     */
+    @Test
+    void listStepsCarriesRunJobIdInOneBatch() {
+        JobRun run = new JobRun();
+        run.setId(3L);
+        run.setJobId(7L);
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run));
+        MessageStep step = new MessageStep();
+        step.setId(1L);
+        step.setRunId(3L);
+        when(messageStepMapper.selectPage(any(), any())).thenAnswer(inv -> {
+            Page<MessageStep> page = inv.getArgument(0);
+            page.setRecords(List.of(step));
+            page.setTotal(1);
+            return page;
+        });
+
+        Map<String, Object> result = service.listSteps(null, null, null, null, "FAILED", 1, 20);
+
+        List<?> records = (List<?>) result.get("records");
+        assertThat(records).hasSize(1);
+        assertThat(((MessageStep) records.get(0)).getJobId()).isEqualTo(7L);
+        verify(jobRunMapper, times(1)).selectList(any());
+    }
+
+    /** 运行查不到（脏数据）时 jobId 留空，界面写「任务 —」，而不是编一个 id 出来。 */
+    @Test
+    void listStepsLeavesJobIdEmptyWhenRunMissing() {
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+        MessageStep step = new MessageStep();
+        step.setId(1L);
+        step.setRunId(3L);
+        when(messageStepMapper.selectPage(any(), any())).thenAnswer(inv -> {
+            Page<MessageStep> page = inv.getArgument(0);
+            page.setRecords(List.of(step));
+            page.setTotal(1);
+            return page;
+        });
+
+        Map<String, Object> result = service.listSteps(null, null, null, null, "FAILED", 1, 20);
+
+        List<?> records = (List<?>) result.get("records");
+        assertThat(((MessageStep) records.get(0)).getJobId()).isNull();
     }
 
     @Test

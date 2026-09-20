@@ -1,11 +1,12 @@
 /**
- * 消息历史页的口径（#129，第 1 张票）：状态芯片、时间戳、列表文案、查询串。
+ * 消息历史页的口径（#129 双栏骨架 / #136 消息步检索模式）：状态芯片、时间戳、列表行、查询串、选中态。
  *
  * **纯模块**：不碰 DOM、不发请求、**也不带自测**——自测在 `history/checks.ts`（本仓的规矩：
  * 纯模块与它的检查分开，见 `mapping/draft.ts` + `mapping/checks.ts`）。
  * 这一条不是洁癖：本文件被 `views/HistoryView.vue` 与 `components/history/*` import，
  * 自测要是留在这里，每次开页面都会在浏览器里跑一遍断言、还会碰到 `process` 这个浏览器没有的全局。
  */
+import type { Job, JobRun, MessageStep } from '../types'
 
 export type StatusChipKind = 'ok' | 'bad' | 'warn' | 'run'
 
@@ -20,7 +21,16 @@ export const STATUS_BAD = 'FAILED'
 export const STATUS_WARN = 'REDELIVERED'
 export const STATUS_RUNNING = 'RUNNING'
 
-/** 下拉里的顺序（原型同序）。 */
+/**
+ * 状态下拉里「全部状态」那一档的取值（#136）。
+ *
+ * 它与「没选」（空串）**必须分开**：消息步检索这一侧「没选」的口径是默认只看 FAILED（#74），
+ * 而「全部状态」是用户明确说「不看状态」。旧实现把这两件事混成一个空值，于是那一侧的
+ * 「全部状态」根本看不到全部——这一格就是那个 bug 的修法。
+ */
+export const STATUS_ANY = 'ALL'
+
+/** 下拉里的顺序（原型同序；「全部状态」不在这一列里，它是单独的一档，见 HistoryFilters.vue）。 */
 export const RUN_STATUSES = [STATUS_BAD, STATUS_OK, STATUS_WARN, STATUS_RUNNING] as const
 
 /** 状态芯片：原型 `statusCls` 的四档 + 原样标签（空值给破折号）。 */
@@ -46,8 +56,32 @@ export function firstLine(text?: string | null): string {
   return cut < 0 ? text : text.slice(0, cut)
 }
 
+/** 长 id（消息 UUID）在界面上只留前 8 位（原型 `shortId`）。 */
+export function shortId(id?: string | null): string {
+  const clean = id?.trim() ?? ''
+  if (!clean) return '—'
+  return clean.length > 10 ? `${clean.slice(0, 8)}…` : clean
+}
+
+/* ── 两个模式 ─────────────────────────────────────────────────────── */
+
+/** 左列表的两个模式（原型 `view-toggle`）。 */
+export type HistoryMode = 'runs' | 'steps'
+
+/** 模式开关的选项与顺序（界面从它渲染，别在组件里再写一遍标签）。 */
+export const HISTORY_MODES: readonly { value: HistoryMode; label: string }[] = [
+  { value: 'runs', label: '按运行展开' },
+  { value: 'steps', label: '消息步检索' },
+]
+
+/** 初始模式：运行那一侧（原型 `state.view = 'runs'`，重置也回到它）。 */
+export const DEFAULT_MODE: HistoryMode = 'runs'
+
+/* ── 筛选 ─────────────────────────────────────────────────────────── */
+
 export interface RunFilters {
   jobId: number | null
+  /** `''` 没选（用模式的默认口径）/ `STATUS_ANY` 全部状态 / 其余是具体状态。 */
   status: string
   businessKey: string
 }
@@ -56,42 +90,105 @@ export function emptyFilters(): RunFilters {
   return { jobId: null, status: '', businessKey: '' }
 }
 
+/** 「用户在这条筛选条上做过选择」——`STATUS_ANY` 也算（它关掉了消息步那一侧的默认 FAILED）。 */
 export function hasAnyFilter(filters: RunFilters): boolean {
-  return filters.jobId !== null || !!filters.status || !!filters.businessKey.trim()
+  return filters.jobId !== null || filters.status !== '' || !!filters.businessKey.trim()
+}
+
+/**
+ * 状态那一格的三档判决（**只有这一处**判档，查询串与界面文案都从它取）：
+ * 没选 / 明确「全部状态」/ 一个具体状态。`RunFilters.status` 是个字符串（控件要它），
+ * 但界面与查询串要的是这三档，别再各自 `=== STATUS_ANY`、`=== ''` 地判一遍。
+ */
+type StatusChoice = { kind: 'unset' } | { kind: 'all' } | { kind: 'one'; status: string }
+
+function statusChoice(filters: RunFilters): StatusChoice {
+  if (filters.status === STATUS_ANY) return { kind: 'all' }
+  const clean = filters.status.trim()
+  return clean ? { kind: 'one', status: clean } : { kind: 'unset' }
 }
 
 /** 筛选条上那句话：`任务 #7 · 状态 FAILED · 业务键 SO-2026`。 */
 export function describeFilters(filters: RunFilters): string {
   const parts: string[] = []
   if (filters.jobId !== null) parts.push(`任务 #${filters.jobId}`)
-  if (filters.status) parts.push(`状态 ${filters.status}`)
+  const choice = statusChoice(filters)
+  if (choice.kind === 'all') parts.push('状态 全部状态')
+  if (choice.kind === 'one') parts.push(`状态 ${choice.status}`)
   if (filters.businessKey.trim()) parts.push(`业务键 ${filters.businessKey.trim()}`)
   return parts.join(' · ')
 }
 
 /**
- * 运行视图的查询串。
+ * 状态那一格实际该带的参数（`''` = 这一侧不带状态）。
  *
- * **默认不过滤**：状态只有选了才带（消息步那一侧默认只看 FAILED，两边的口径本来就不对称，#74）。
- * 业务键走 `businessKey`，语义是「该运行下任一条消息的业务键命中就保留这条运行」。
+ * **两边不对称，别顺手对齐**：运行那一侧默认不过滤；消息步那一侧默认只看 `FAILED`（#74），
+ * 只有用户明确选了「全部状态」才放开。
  */
-export function runQuery(filters: RunFilters, page: number, size: number): string {
+export function statusParam(mode: HistoryMode, filters: RunFilters): string {
+  const choice = statusChoice(filters)
+  if (choice.kind === 'all') return ''
+  if (choice.kind === 'one') return choice.status
+  return mode === 'steps' ? STATUS_BAD : ''
+}
+
+/**
+ * 列表查询串（两个模式共用一个：参数名与顺序都一样，只有路径不同）。
+ *
+ * 业务键两边同一个语义：消息步那一侧按**该步所属消息**的业务键过滤（后端 `LIKE`）。
+ */
+export function listQuery(mode: HistoryMode, filters: RunFilters, page: number, size: number): string {
   const params = new URLSearchParams()
   if (filters.jobId !== null) params.set('jobId', String(filters.jobId))
-  if (filters.status) params.set('status', filters.status)
+  const status = statusParam(mode, filters)
+  if (status) params.set('status', status)
   if (filters.businessKey.trim()) params.set('businessKey', filters.businessKey.trim())
   params.set('page', String(page))
   params.set('size', String(size))
   return params.toString()
 }
 
+/**
+ * 状态下拉的占位文案。
+ *
+ * 消息步那一侧「什么都没选」时实际看的是 FAILED，占位符就说这件事——旧实现把它写成「全部状态」、
+ * 把真实口径藏在别处，这正是 #136 要修的（ADR-0016 决策 5）。
+ */
+export function statusPlaceholder(mode: HistoryMode): string {
+  return mode === 'steps' ? '默认 FAILED' : '全部状态'
+}
+
+/**
+ * 筛选条右端那句口径（原型 `filterNote`）。
+ *
+ * 消息步那一侧**把当前状态口径写出来**：默认只看 FAILED（#74）/ 只看某个状态 / 全部状态。
+ */
+export function filterNote(mode: HistoryMode, filters: RunFilters): string {
+  if (mode === 'runs') return '选任务 / 状态即时生效；业务键敲回车或点查询'
+  const choice = statusChoice(filters)
+  const status = choice.kind === 'all' ? '全部状态'
+    : choice.kind === 'one' ? `只看 ${choice.status}`
+      : '默认只看 FAILED（#74）'
+  return `消息步检索：${status} · 业务键按消息步过滤`
+}
+
+/** 面板头的标题（原型：运行 / 消息步）。 */
+export function listTitle(mode: HistoryMode): string {
+  return mode === 'runs' ? '运行' : '消息步'
+}
+
+/** 面板头右端那句提示（原型 `listHint`）。 */
+export function listHint(mode: HistoryMode): string {
+  return mode === 'runs' ? '选一条运行看它的消息与消息步' : '默认只看 FAILED（#74）'
+}
+
 /** 任务下拉的写法（原型：`#7 MDM 编码回写（B6 链）`）。 */
-export function jobOptionLabel(job: Pick<{ id: number; name: string }, 'id' | 'name'>): string {
+export function jobOptionLabel(job: Pick<Job, 'id' | 'name'>): string {
   return `#${job.id} ${job.name}`
 }
 
 /** 拿到 id 说任务名；找不到就只报 id（列表行与详情头共用一处）。 */
-export function jobTitleOf(jobs: readonly { id: number; name: string }[], jobId: number): string {
+export function jobTitleOf(jobs: readonly Pick<Job, 'id' | 'name'>[], jobId: number): string {
   const job = jobs.find((item) => item.id === jobId)
   return job ? jobOptionLabel(job) : `#${jobId}`
 }
@@ -102,6 +199,7 @@ export function listCountText(total: number): string {
 }
 
 export interface ListEmptyState {
+  mode: HistoryMode
   error?: string
   filters: RunFilters
 }
@@ -111,13 +209,132 @@ export interface ListEmptyCopy {
   hint: string
 }
 
-/** 空态三套说法：接口错了 / 筛没了 / 真的还没有。 */
+/** 空态说法按模式分：运行那一侧三套（接口错了 / 筛没了 / 真的还没有），消息步那一侧要带上状态口径。 */
 export function listEmptyCopy(state: ListEmptyState): ListEmptyCopy {
+  const { mode, filters } = state
   if (state.error) {
-    return { title: '运行列表没取到。', hint: '接口返回了错误，可以重试。' }
+    return mode === 'runs'
+      ? { title: '运行列表没取到。', hint: '接口返回了错误，可以重试。' }
+      : { title: '消息步列表没取到。', hint: '接口返回了错误，可以重试。' }
   }
-  if (hasAnyFilter(state.filters)) {
-    return { title: '没有符合条件的运行。', hint: `当前筛选：${describeFilters(state.filters)}` }
+  if (mode === 'steps') {
+    if (hasAnyFilter(filters)) {
+      const filtered = `当前筛选：${describeFilters(filters)}`
+      // 状态没选时那半句默认口径要补上，否则「筛没了」看起来像是因为筛得太严
+      return {
+        title: '没有符合条件的消息步。',
+        hint: statusChoice(filters).kind === 'unset' ? `${filtered} · 默认只看 FAILED（#74）` : filtered,
+      }
+    }
+    return { title: '没有符合条件的消息步。', hint: '默认只看 FAILED（#74），可把状态改成「全部状态」。' }
+  }
+  // 运行那一侧：只有**真把结果收窄**的筛选才配叫「没有符合条件」——「全部状态」是放开的，不算。
+  // （它在这里出现，只可能是从消息步那一侧切过来时带过来的。）
+  const narrowed = filters.jobId !== null || !!filters.businessKey.trim()
+    || statusChoice(filters).kind === 'one'
+  if (narrowed) {
+    return { title: '没有符合条件的运行。', hint: `当前筛选：${describeFilters(filters)}` }
   }
   return { title: '还没有任何运行记录。', hint: '任务跑过之后，这里会出现它的运行。' }
+}
+
+/* ── 列表行 ───────────────────────────────────────────────────────── */
+
+/** 运行行的说法：一次算好，模板里不再重复调 statusChip / 反复查任务名。 */
+export interface RunRow {
+  run: JobRun
+  chip: StatusChip
+  jobTitle: string
+  started: string
+  finished: string
+  errLine: string
+}
+
+export function runRows(runs: readonly JobRun[], jobs: readonly Job[]): RunRow[] {
+  return runs.map((run) => ({
+    run,
+    chip: statusChip(run.status),
+    jobTitle: jobTitleOf(jobs, run.jobId),
+    started: stampOf(run.startedAt),
+    finished: stampOf(run.finishedAt),
+    errLine: firstLine(run.error),
+  }))
+}
+
+/**
+ * 消息步行的说法（#136）：`#运行 id · 步骤 n`、状态、动作、业务键（无则「无业务键」）、
+ * 时刻、尝试次数、`任务 #任务 id`、错误首行。
+ *
+ * `jobId` 是消息步列表接口按页补上的**投影**（`message_step` 表没有这一列）——没有它，
+ * 界面每行都得再补拉一次运行，就是 ADR-0016 决策 6 拒绝的 N+1。取不到时写「任务 —」。
+ */
+export interface StepRow {
+  step: MessageStep
+  head: string
+  chip: StatusChip
+  action: string
+  businessKey: string
+  at: string
+  attempt: number
+  job: string
+  errLine: string
+}
+
+export function stepRows(steps: readonly MessageStep[]): StepRow[] {
+  return steps.map((step) => ({
+    step,
+    head: `#${step.runId} · 步骤 ${step.step}`,
+    chip: statusChip(step.status),
+    action: step.actionName?.trim() || '—',
+    businessKey: step.businessKey?.trim() || '无业务键',
+    at: stampOf(step.createdAt),
+    attempt: step.attempt ?? 1,
+    job: step.jobId === null || step.jobId === undefined ? '任务 —' : `任务 #${step.jobId}`,
+    errLine: firstLine(step.error),
+  }))
+}
+
+/* ── 选中态 ───────────────────────────────────────────────────────── */
+
+/**
+ * 左列表选中了什么。运行模式只定 `runId`；消息步模式连消息与步骤一起定（原型 `state.runId/idx/stepN`）。
+ * 右详情的头与列表的选中态都从它推出来——只有一个真相，切换模式时不会两边各说各话。
+ */
+export interface HistorySelection {
+  runId: number | null
+  messageId: string | null
+  step: number | null
+}
+
+export function noSelection(): HistorySelection {
+  return { runId: null, messageId: null, step: null }
+}
+
+export function selectRun(runId: number): HistorySelection {
+  return { runId, messageId: null, step: null }
+}
+
+export function selectStep(step: Pick<MessageStep, 'runId' | 'messageId' | 'step'>): HistorySelection {
+  return { runId: step.runId, messageId: step.messageId, step: step.step }
+}
+
+export function isRunSelected(selection: HistorySelection, runId: number): boolean {
+  return selection.runId === runId
+}
+
+/** 三样都对上才算「选中的那一条」——只比 runId 会把同一运行下的所有消息步都点亮。 */
+export function isStepSelected(
+  selection: HistorySelection,
+  step: Pick<MessageStep, 'runId' | 'messageId' | 'step'>,
+): boolean {
+  return selection.runId === step.runId
+    && selection.messageId === step.messageId
+    && selection.step === step.step
+}
+
+/** 右详情头上的路径（原型 `detailPath`）：`#12 · 消息 3f9a1c02… · 步骤 4`。 */
+export function detailPath(selection: HistorySelection): string {
+  if (selection.runId === null) return '—'
+  if (selection.messageId === null || selection.step === null) return `#${selection.runId}`
+  return `#${selection.runId} · 消息 ${shortId(selection.messageId)} · 步骤 ${selection.step}`
 }

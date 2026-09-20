@@ -26,10 +26,12 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -227,6 +229,13 @@ public class MessageHistoryService {
         return pageOf(result.getTotal(), result.getRecords());
     }
 
+    /**
+     * 消息步列表（#74 契约的检索面，#136 起每行还带上所属运行的 {@code jobId}）。
+     *
+     * <p>{@code businessKey} 的口径：**按该步所属消息的业务键**匹配（{@code LIKE} 子串，
+     * 与运行那一侧同一套）；{@code status} 为空时不带状态条件——「默认只看 FAILED（#74）」
+     * 是**界面（调用方）的口径**，不在这里兜底，否则这一层的调用者再也没法说「全部状态」。</p>
+     */
     public Map<String, Object> listSteps(Long jobId, Long runId, String messageId, String businessKey,
                                          String status, int page, int size) {
         LambdaQueryWrapper<MessageStep> wrapper = new LambdaQueryWrapper<MessageStep>()
@@ -255,7 +264,34 @@ public class MessageHistoryService {
             wrapper.eq(MessageStep::getStatus, status.trim());
         }
         Page<MessageStep> result = messageStepMapper.selectPage(new Page<>(page, size), wrapper);
+        attachRunJobIds(result.getRecords());
         return pageOf(result.getTotal(), result.getRecords());
+    }
+
+    /**
+     * 给这一页消息步补上所属运行的 {@code jobId}（#136）：左列表的消息步行要写「任务 #id」，
+     * 而消息步自己只带 {@code runId}。**按页一次 {@code in} 查询**补齐——不在前端按行补拉运行
+     * （ADR-0016 决策 6 拒绝 N+1 同一个理由）。运行查不到（脏数据）时该步留空，界面写「任务 —」。
+     */
+    private void attachRunJobIds(List<MessageStep> records) {
+        if (records.isEmpty()) {
+            return;
+        }
+        List<Long> runIds = records.stream()
+                .map(MessageStep::getRunId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (runIds.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> jobIds = new HashMap<>();
+        // 只要 id 与 jobId 两列：job_run 上还挂着两个 TEXT 快照列，整行读回来纯属白读（#127 那两列）
+        jobRunMapper.selectList(new LambdaQueryWrapper<JobRun>()
+                        .select(JobRun::getId, JobRun::getJobId)
+                        .in(JobRun::getId, runIds))
+                .forEach(run -> jobIds.put(run.getId(), run.getJobId()));
+        records.forEach(step -> step.setJobId(step.getRunId() == null ? null : jobIds.get(step.getRunId())));
     }
 
     public JobRun getRun(Long id) {

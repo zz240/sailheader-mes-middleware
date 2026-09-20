@@ -90,6 +90,22 @@ class HistoryControllerTest {
                 .andExpect(jsonPath("$.data.records[0].status").value("FAILED"));
     }
 
+    /** #136：消息步列表带上所属运行的 jobId（左列表每行要写「任务 #id」）。 */
+    @Test
+    void carriesRunJobIdInStepList() throws Exception {
+        MessageStep step = new MessageStep();
+        step.setId(2L);
+        step.setStatus("FAILED");
+        step.setJobId(7L);
+        when(messageHistoryService.listSteps(anyLong(), nullable(Long.class), nullable(String.class),
+                nullable(String.class), nullable(String.class), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 1L, "records", List.of(step)));
+
+        mockMvc.perform(get("/api/history/steps").param("jobId", "7").param("status", "FAILED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].jobId").value(7));
+    }
+
     @Test
     void listsHistoryRootAsSteps() throws Exception {
         MessageStep step = new MessageStep();

@@ -54,6 +54,11 @@ export interface MessageStep {
   id: number
   runId: number
   messageId: string
+  /**
+   * 所属运行的 `jobId`（#136）：列表接口按页补上的**投影**，`message_step` 表没有这一列，
+   * 所以消息步详情那条路不带它——取不到时界面写「任务 —」，不要按行补拉运行（那是 N+1）。
+   */
+  jobId?: number | null
   step: number
   actionName?: string | null
   status: string

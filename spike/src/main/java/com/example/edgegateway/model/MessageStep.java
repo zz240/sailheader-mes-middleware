@@ -1,6 +1,7 @@
 package com.example.edgegateway.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -45,6 +46,15 @@ public class MessageStep {
 
     /** 业务键（如单号），按源动作 businessKey 在消息创建时提取，可为空。 */
     private String businessKey;
+
+    /**
+     * 所属运行的 {@code jobId}（#136，**只读投影，不是表上的列**）：消息步检索模式每行要写「任务 #id」，
+     * 而这一步自己只带 {@code runId}。由
+     * {@link com.example.edgegateway.service.MessageHistoryService#listSteps} 按页补齐
+     * （一次 {@code in} 查询，不在前端按行补拉运行）；查不到运行（脏数据）时留空，界面写「任务 —」。
+     */
+    @TableField(exist = false)
+    private Long jobId;
 
     public Long getId() {
         return id;
@@ -140,5 +150,13 @@ public class MessageStep {
 
     public void setBusinessKey(String businessKey) {
         this.businessKey = businessKey;
+    }
+
+    public Long getJobId() {
+        return jobId;
+    }
+
+    public void setJobId(Long jobId) {
+        this.jobId = jobId;
     }
 }
