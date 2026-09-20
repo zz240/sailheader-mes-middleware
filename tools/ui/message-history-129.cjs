@@ -88,7 +88,7 @@ async function main() {
   await waitForList(page)
 
   fs.mkdirSync(shots, { recursive: true })
-  await page.screenshot({ path: path.join(shots, 'history-128-wide.png') })
+  await page.screenshot({ path: path.join(shots, 'history-129-wide.png') })
 
   // ── 一、双栏骨架：页内不滚动、两栏各自滚 ──
   // 注意：控制台全局有 `body` 默认的 8px 外边距（仓里既有问题，#129 不动 App 壳），
@@ -303,7 +303,7 @@ async function main() {
     const errText = await page.locator('.hc-errbox').innerText()
     check('接口出错时给出错态（不是「没有数据」）', errText.includes('运行列表没取到'), errText)
     check('错态里带上接口的说法', errText.includes('boom'), errText)
-    await page.screenshot({ path: path.join(shots, 'history-128-error.png') })
+    await page.screenshot({ path: path.join(shots, 'history-129-error.png') })
 
     await page.unroute('**/api/history/runs*')
     await page.getByRole('button', { name: '重试' }).click()
