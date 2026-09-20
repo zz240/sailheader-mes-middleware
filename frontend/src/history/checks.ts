@@ -1,5 +1,6 @@
 /**
- * 消息历史页的口径检查（#129 骨架 / #136 消息步检索模式）：不测组件，只测纯逻辑的外部行为。
+ * 消息历史页的口径检查（#129 骨架 / #136 消息步检索模式 / #131 消息切换与步骤链）：
+ * 不测组件，只测纯逻辑的外部行为。
  *
  * 跑法（零新依赖）：
  *   node --experimental-strip-types frontend/src/history/checks.ts
@@ -13,14 +14,19 @@
  *   5. 空态说法分得开（真的没有 / 筛没了 / 接口错了），且消息步那一侧把状态口径写出来；
  *   6. 两个模式的行怎么写（运行行与消息步行各一次的完整形状）；
  *   7. 选中态：三样（运行 / 消息 / 步骤）都对上才算选中，右详情的路径从它推出来；
- *   8. 任务名的写法与面板计数。
+ *   8. 任务名的写法与面板计数；
+ *   9. 计数条与每运行摘要（#130）；
+ *  10. 一条运行的消息步取多少（#131）：100 不再是天花板，真截断时必须把话说出来；
+ *  11. 消息分组与步骤链与单步卡（#131）：消息的先后、步骤号升序、快照点、可访问名称、
+ *      单步卡的事实格与「错误块保留换行、成功步不留空错误块」。
  */
 import {
-  countItems, countsParts, countsText, describeFilters, detailPath, emptyFilters, filterNote, firstLine,
-  hasAnyFilter, HISTORY_MODES, isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf, listCountText,
-  listEmptyCopy, listHint, listQuery, listTitle, matchedKeysView, noSelection, runRows, selectRun,
-  selectStep, shortId, stampOf, statusChip, statusParam, statusPlaceholder, stepRows, summaryQuery,
-  DEFAULT_MODE, RUN_STATUSES, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
+  chainNodes, chainSummary, countItems, countsParts, countsText, describeFilters, detailPath, emptyFilters,
+  filterNote, firstLine, hasAnyFilter, HISTORY_MODES, isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf,
+  listCountText, listEmptyCopy, listHint, listQuery, listTitle, matchedKeysView, messageChip, noSelection,
+  runDetail, runMessages, runRows, runStepsNote, runStepsPages, runStepsQuery, selectRun, selectStep, shortId,
+  stampOf, statusChip, statusParam, statusPlaceholder, stepCardView, stepRows, summaryQuery,
+  DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_MAX, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
 import type { Job, JobRun, MessageStep } from '../types.ts'
 
@@ -280,6 +286,102 @@ eq('运行行带上摘要与命中业务键',
 eq('没有这条运行的摘要时写破折号（不是 0 消息 · 0 步）',
   runRows(runs, jobs, [{ ...summaryOf(1, 0), runId: 999 }]).map((r) => r.counts.map((p) => p.text)),
   [['—']])
+
+// 10. 一条运行的消息步取多少（#131：那个「只取前 100 个」的上限必须显式）
+eq('取消息步一页顶格（与后端 safeSize 的上限同一个数）', RUN_STEPS_PAGE, 100)
+eq('查询串带 runId 与分页', runStepsQuery(12, 2), 'runId=12&page=2&size=100')
+eq('刚好一页就只取一页', runStepsPages(100), 1)
+eq('一条都没有也要问一次（才知道「真的没有」）', runStepsPages(0), 1)
+eq('多一条就追第二页（100 那个数不再是天花板）', runStepsPages(101), 2)
+eq('库里最大的一条运行（720 步）追 8 页', runStepsPages(720), 8)
+eq('撞上上限时页数封顶（剩下的靠界面把那句话说出来）', runStepsPages(RUN_STEPS_MAX + 1), 10)
+eq('没截断时界面上一个字都不写', runStepsNote(100, 100), '')
+eq('截断时把「共多少 / 带了多少 / 上限」一起说出来（不许静默）',
+  runStepsNote(1000, 2400),
+  '这条运行共 2400 个消息步，界面只带了前 1000 个（上限 1000）——不再静默截断（#131）。剩下的在消息步检索模式里按条件查。')
+
+// 11. 消息切换与步骤链（#131）
+const runStepData: MessageStep[] = [
+  // 接口给的是 id 倒序：这里刻意按倒序摆，考的是「分组时有没有翻回来」
+  { id: 95, runId: 12, messageId: 'msg-B', step: 3, actionName: 'upsert', status: 'SUCCESS', businessKey: 'SO-B' },
+  { id: 94, runId: 12, messageId: 'msg-A', step: 5, actionName: 'push', status: 'FAILED', businessKey: 'SO-A',
+    error: '约束冲突\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)',
+    inputSnapshot: '{"a":1}', dataSnapshot: null, createdAt: '2026-09-17T09:12:35', attempt: 2 },
+  { id: 93, runId: 12, messageId: 'msg-B', step: 1, actionName: 'read', status: 'SUCCESS', businessKey: 'SO-B',
+    inputSnapshot: '{"reportNo":"R1"}', dataSnapshot: '[{"x":1}]', createdAt: '2026-09-17T09:12:34' },
+  { id: 91, runId: 12, messageId: 'msg-A', step: 3, actionName: '  ', status: 'SUCCESS', businessKey: '  ',
+    inputSnapshot: null, dataSnapshot: '   ', createdAt: null },
+]
+const msgs = runMessages(runStepData)
+eq('消息按落库先后排（接口的 id 倒序先翻回来）', msgs.map((m) => m.messageId), ['msg-A', 'msg-B'])
+eq('消息之内的步骤号升序（票面：步骤链按步骤号升序）', msgs.map((m) => m.steps.map((s) => s.step)),
+  [[3, 5], [1, 3]])
+eq('失败步数按消息各数一遍', msgs.map((m) => m.failed), [1, 0])
+eq('chip：有失败步写「失败 N 步」、全通写「全通」', msgs.map((m) => m.chip),
+  [{ kind: 'bad', label: '失败 1 步' }, { kind: 'ok', label: '全通' }])
+eq('chip 的判决只在一个地方', [messageChip(0), messageChip(2)],
+  [{ kind: 'ok', label: '全通' }, { kind: 'bad', label: '失败 2 步' }])
+eq('业务键取该消息上第一个非空的（空白不算）', msgs.map((m) => m.businessKey), ['SO-A', 'SO-B'])
+eq('一条消息一步都没有时整个列表是空的', runMessages([]), [])
+eq('业务键全空白的消息写「无业务键」',
+  runMessages([{ id: 1, runId: 1, messageId: 'm', step: 1, status: 'SUCCESS', businessKey: '  ' }])
+    .map((m) => m.businessKey),
+  ['无业务键'])
+
+const detailA = runDetail(runStepData, selectStep({ runId: 12, messageId: 'msg-A', step: 5 }))
+eq('选中哪条消息就是哪条', detailA.index, 0)
+eq('选中的步骤就在那一条消息里', detailA.step?.step, 5)
+eq('没选消息时归到第 1 条（原型 cur() 的下标 0）',
+  runDetail(runStepData, selectRun(12)).message?.messageId, 'msg-A')
+eq('选中的消息不在了也归到第 1 条（换页 / 换运行之后）',
+  runDetail(runStepData, { runId: 12, messageId: 'msg-GONE', step: 9 }).index, 0)
+eq('选中的步骤不在这条消息里就归到它的第 1 步（换消息之后）',
+  runDetail(runStepData, { runId: 12, messageId: 'msg-B', step: 5 }).step?.step, 1)
+eq('一条消息都没有时右栏没有当前消息',
+  runDetail([], selectRun(12)), { messages: [], index: 0, message: null, step: null })
+
+const chain = chainNodes(msgs[0], detailA.step)
+eq('链头第一格永远是 context[0] 任务输入（原型 node0）',
+  [chain[0].head, chain[0].action, chain[0].note, chain[0].step],
+  ['0 · 任务输入', 'context[0]', '本次运行的触发报文', null])
+eq('步骤链节点数 = 这条消息的消息步数 + 入口那格', chain.length, msgs[0].steps.length + 1)
+eq('步骤链按步骤号升序', chain.slice(1).map((n) => n.n), [3, 5])
+eq('失败步那一格看得出来（芯片是坏档）', chain.map((n) => n.chip.kind), ['run', 'ok', 'bad'])
+eq('选中态只落在选中的那一步上', chain.map((n) => n.selected), [false, false, true])
+eq('刚点开运行、选中态里还没有步骤时，链上亮的也是归一之后的第 1 步（原型 open-run 的先归一）',
+  chainNodes(msgs[0], runDetail(runStepData, selectRun(12)).step).map((n) => n.selected),
+  [false, true, false])
+eq('两个快照点亮不亮按快照落没落（空白不算落）',
+  chain.slice(1).map((n) => [n.hasInput, n.hasData]), [[false, false], [true, false]])
+eq('没有动作名的那一格写破折号', chain[1].action, '—')
+eq('可访问名称写清步骤号 / 动作 / 状态 / 两个快照点',
+  chain[2].label, '步骤 5 · 动作 push · 状态 FAILED · 输入快照 有 · 数据快照 无')
+eq('入口那格的可访问名称',
+  chain[0].label, '步骤 0 · 任务输入 · context[0] · 本次运行的触发报文')
+eq('没有消息时链上只剩入口那一格，不整块抽掉', chainNodes(null, null).length, 1)
+eq('链头右端那句：几步 + 入口动作',
+  [chainSummary(msgs[0]), chainSummary(null)], ['2 步 · 入口 —', '还没有消息步'])
+
+const card = stepCardView(msgs[0].steps[1])
+eq('单步卡：步骤号 / 动作 / 状态芯片',
+  [card?.n, card?.action, card?.chip], [5, 'push', { kind: 'bad', label: 'FAILED' }])
+eq('单步卡的事实格：尝试 / 落库 / 输出（失败步没写上下文）', card?.facts,
+  [{ label: '尝试', value: '2' }, { label: '落库', value: '2026-09-17 09:12:35' },
+    { label: '输出', value: 'context[5]（未写）' }])
+eq('成功步写「输出 context[N]」不带「未写」',
+  stepCardView(msgs[1].steps[0])?.facts[2].value, 'context[1]')
+eq('错误块**整份保留换行**（堆栈要能直接贴给开发）', card?.error,
+  '约束冲突\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)')
+eq('只把第一行切出来加粗，其余原样',
+  [card?.errorFirst, card?.errorRest],
+  ['约束冲突', '\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)'])
+eq('单行错误没有「其余各行」', stepCardView({ ...msgs[0].steps[1], error: 'boom' })?.errorRest, '')
+eq('成功步没有错误块（不留一个空的）',
+  stepCardView(msgs[1].steps[0])?.error, '')
+eq('只有空白的错误也当没有', stepCardView({ ...msgs[0].steps[1], error: '   ' })?.error, '')
+eq('尝试次数缺了给 1（与消息步行同一个口径）',
+  stepCardView(msgs[1].steps[0])?.attempt, 1)
+eq('没选中步骤时不出单步卡', stepCardView(null), null)
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

@@ -1,5 +1,6 @@
 /*
- * 消息历史页（#129）：双栏控制台的骨架、列表与最小详情。
+ * 消息历史页（#129 骨架 / #130 计数条 / #136 消息步检索 / #131 消息切换与步骤链）：
+ * 双栏控制台的骨架、列表、计数条与右详情。
  *
  * 令牌全部来自 `styles/tokens.css`——本页**零新增令牌**（ADR-0016「风险」③）：
  * 颜色、圆角（8 / 6 / 12 三档）、字号里**有令牌可用的那几处**一律走 `var()`。
@@ -138,7 +139,7 @@
 }
 .hc-errbox .hc-err-act { margin-top: 7px; }
 
-/* ── 详情（#129 只有运行头与错误块；消息与步骤链在后续票里长出来） ── */
+/* ── 详情（#129 只有运行头与错误块；#131 长出消息切换、步骤链与单步卡） ── */
 .hc-dbody { padding: 12px 14px 16px; }
 .hc-dhead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .hc-dhead h2 { margin: 0; font-size: 14.5px; font-weight: 620; letter-spacing: -.01em; }
@@ -158,3 +159,112 @@
   border: 1px solid color-mix(in oklch, var(--danger) 34%, transparent); border-radius: var(--radius-sm); padding: 0 4px;
 }
 .hc-runerr pre { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-all; }
+
+/* ── 消息切换 / 步骤链 / 单步卡（#131，原型 `.msgs` `.chain-*` `.card`） ── */
+
+/* 消息 chips：一条消息一颗，短 id + 业务键 + 「全通 / 失败 N 步」 */
+.hc-msgs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.hc-msgs .hc-msgs-lbl { font-size: var(--fs-meta); color: var(--muted); }
+.hc-mchip {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 4px 10px;
+  border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface);
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.hc-mchip:hover { background: var(--fg-soft); }
+.hc-mchip[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+.hc-mchip .hc-mid { font-family: var(--font-mono); font-size: 11px; color: var(--fg); }
+.hc-mchip .hc-mbk { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.hc-mchip .hc-st { height: 18px; }
+
+/* 步骤链：横向一条，栏内超出时自己横滚（整页不横滚，ADR-0016 决策 3） */
+.hc-chain-wrap {
+  margin-top: 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--bg-sunken);
+}
+.hc-chain-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+}
+.hc-chain-head .hc-chain-t { font-size: 12px; font-weight: 620; }
+.hc-chain-head .hc-chain-s { font-size: 11px; color: var(--muted); }
+.hc-chain-head .hc-chain-right { margin-left: auto; font-family: var(--font-mono); }
+.hc-chain { display: flex; align-items: stretch; padding: 11px 12px; overflow-x: auto; }
+.hc-cnode { flex: 0 0 auto; display: flex; align-items: center; }
+/* 圆角走 `--radius`（8px）而不是原型的 9px：本页圆角只用 8 / 6 / 12 三档（ADR-0016 零新增令牌） */
+.hc-cbtn {
+  min-height: 58px; min-width: 124px; text-align: left; padding: 6px 11px;
+  border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface);
+  display: flex; flex-direction: column; gap: 2px; color: inherit; font: inherit; cursor: pointer;
+}
+.hc-cbtn:hover { border-color: color-mix(in oklch, var(--fg) 30%, var(--border)); }
+.hc-cbtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* 失败步那一格看得出来（票面） */
+.hc-cbtn-bad {
+  border-color: color-mix(in oklch, var(--danger) 40%, var(--border));
+  background: color-mix(in oklch, var(--danger) 5%, var(--surface));
+}
+.hc-cbtn .hc-cn {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+}
+.hc-cbtn .hc-ca { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: -.01em; }
+.hc-cbtn .hc-cl {
+  font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 142px;
+}
+.hc-cbtn .hc-cm { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+/* 入口那格（`context[0] 任务输入`）：虚线框 + 透明底，一眼看出它不是某一步 */
+.hc-cbtn-entry { min-width: 108px; background: transparent; border-style: dashed; cursor: default; }
+.hc-cbtn-entry .hc-ca { font-weight: 500; color: var(--muted); }
+.hc-carrow {
+  width: 22px; text-align: center; flex: 0 0 auto;
+  color: var(--muted); font-family: var(--font-mono); font-size: 12px;
+}
+.hc-snapdots { display: inline-flex; gap: 3px; align-items: center; }
+.hc-sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-tint); }
+.hc-sdot-on { background: var(--accent); }
+.hc-sdot-none { background: transparent; border: 1px dashed color-mix(in oklch, var(--muted) 60%, transparent); }
+.hc-cstat { font-family: var(--font-mono); font-size: 10px; }
+.hc-cstat-ok { color: var(--success-ink); }
+.hc-cstat-bad { color: var(--danger-ink); }
+.hc-cstat-warn { color: var(--warn-ink); }
+.hc-cstat-run { color: var(--muted); }
+/* 取步上限那句话（#131）：只在真的截断时出现 */
+.hc-chain-note {
+  margin-top: 8px; padding: 7px 10px; border-radius: var(--radius);
+  border: 1px solid color-mix(in oklch, var(--warn) 30%, var(--border));
+  background: var(--warn-soft); color: var(--warn-ink); font-size: var(--fs-meta);
+}
+
+/* 单步卡 */
+.hc-card {
+  margin-top: 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--surface);
+}
+.hc-sc-head {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.hc-sc-head .hc-sn { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.hc-sc-head .hc-sa { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; }
+.hc-sc-head .hc-sc-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hc-fact { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11px; color: var(--muted); }
+.hc-fact b { font-family: var(--font-mono); font-weight: 600; color: var(--fg); }
+/* 错误块：`pre` 的 `pre-wrap` 保住换行（票面：堆栈直接贴给开发） */
+.hc-step-err {
+  margin: 10px 12px 12px; overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--danger) 28%, var(--border));
+  background: var(--danger-soft); border-radius: var(--radius);
+}
+.hc-step-err .hc-eh {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-bottom: 1px solid color-mix(in oklch, var(--danger) 22%, var(--border));
+  font-size: var(--fs-meta); font-weight: 600; color: var(--danger-ink);
+}
+.hc-step-err .hc-eh-w { font-family: var(--font-mono); font-weight: 500; opacity: .85; }
+.hc-step-err .hc-eh-at { margin-left: auto; font-family: var(--font-mono); font-weight: 500; opacity: .85; }
+.hc-step-err pre {
+  margin: 0; padding: 9px 11px; font-family: var(--font-mono); font-size: var(--fs-meta);
+  line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg);
+}
+.hc-step-err pre b { color: var(--danger-ink); }

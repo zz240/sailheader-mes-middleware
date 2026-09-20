@@ -41,7 +41,18 @@
         @select-step="onSelectStep"
         @retry="load"
       />
-      <MessageDetailPanel :run="selectedRun" :jobs="jobs" :selection="selection" :run-error="runError" />
+      <MessageDetailPanel
+        :run="selectedRun"
+        :jobs="jobs"
+        :selection="selection"
+        :steps="runSteps"
+        :steps-loading="runStepsLoading"
+        :steps-error="runStepsError"
+        :steps-total="runStepsTotal"
+        :run-error="runError"
+        @select-step="onSelectStep"
+        @retry-steps="retryRunSteps"
+      />
     </main>
 
     <!-- 分页条放在**页级**：左栏只有 322px，装不下 element-plus 那套完整分页（实测会被推到栏外）。
@@ -68,8 +79,8 @@ import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
 import { api, ApiError } from '../api/client'
 import {
-  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, selectRun, selectStep,
-  statusParam, summaryQuery,
+  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runStepsPages, runStepsQuery, selectRun,
+  selectStep, statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
@@ -94,8 +105,23 @@ const error = ref('')
 const selection = ref<HistorySelection>(noSelection())
 const selectedRun = ref<JobRun | null>(null)
 const runError = ref('')
+/**
+ * 选中那条运行的**消息步**（#131）：右详情的消息 chips、步骤链与单步卡都从它长出来。
+ *
+ * 两个模式共用同一份：运行模式下点一条运行取它，消息步模式下点一行也取它所属运行的那一份
+ * （右栏不区分「我是在哪个模式里点开的」）。同一运行内换步骤**不重复取**（`stepsRunId`）。
+ */
+const runSteps = ref<MessageStep[]>([])
+/** 接口说的这条运行一共多少步：比 `runSteps.length` 大就是撞上了取步上限（票面：不许静默截断）。 */
+const runStepsTotal = ref(0)
+const runStepsLoading = ref(false)
+const runStepsError = ref('')
+/** 这份 `runSteps` 是哪条运行的（`null` = 还没取）；同一条运行换个步骤不再重复取。 */
+const stepsRunId = ref<number | null>(null)
 /** 取运行的响应可能乱序回来（连点两行）：token 一换，旧响应就作废。 */
 let runToken = 0
+/** 同一条：取消息步的响应也可能乱序回来（连点两行）。 */
+let stepsToken = 0
 /** 同一条：取列表的响应也可能乱序回来（连点两下模式开关）。 */
 let loadToken = 0
 
@@ -204,7 +230,12 @@ function clearSelection() {
   selection.value = noSelection()
   selectedRun.value = null
   runError.value = ''
+  runSteps.value = []
+  runStepsTotal.value = 0
+  runStepsError.value = ''
+  stepsRunId.value = null
   runToken++
+  stepsToken++
 }
 
 function onQuery() {
@@ -241,12 +272,67 @@ function onSelectRun(run: JobRun) {
   selection.value = selectRun(run.id)
   selectedRun.value = run
   runError.value = ''
+  // 已经拿着这条运行的消息步就不再取（连点两下同一行不该重打十页）——与 onSelectStep 同一道门
+  if (stepsRunId.value !== run.id) void loadRunSteps(run.id)
 }
 
+/**
+ * 链上点一步、或点一颗消息 chip（chip 选的是那条消息的**第 1 步**，原型 `open-msg` 同一套）。
+ *
+ * 两件事都可能要补：运行详情（消息步模式下手里只有行上的 runId）、这条运行的消息步。
+ * 同一条运行里换步骤两样都不重复取——一次点击最多一次请求，不是按行补拉的 N+1。
+ */
 function onSelectStep(step: MessageStep) {
   selection.value = selectStep(step)
   runError.value = ''
   void ensureRun(step.runId)
+  if (stepsRunId.value !== step.runId) void loadRunSteps(step.runId)
+}
+
+/** 右栏那句「消息步没取到」上的重试：重取当前这条运行的。 */
+function retryRunSteps() {
+  if (selection.value.runId !== null) void loadRunSteps(selection.value.runId)
+}
+
+/**
+ * 取一条运行的**全部**消息步（#131）。
+ *
+ * 票面把「展开一条运行只取前 100 个消息步」这个隐藏上限判了死刑：要么给提示、要么去掉。
+ * 这里两条都走——先取一页（一页顶格 100），接口回 `total` 之后再按 {@link runStepsPages}
+ * 把剩下的页追回来，所以「100 步」不再是天花板；只有真撞上 `RUN_STEPS_MAX` 那种病态大运行时
+ * 才停下来，而那时右栏会把「一共多少 / 带了多少」写在脸上（`runStepsTotal` 传下去）。
+ *
+ * 一次点击顶多十来条请求（实测库里最大的一条运行 720 步 = 8 页），换来的是右栏的数字与
+ * 列表里那条运行的摘要对得上——「只取前 100 步」那种半个运行会让 chips 上的「失败 N 步」撒谎。
+ */
+async function loadRunSteps(runId: number) {
+  const token = ++stepsToken
+  runStepsLoading.value = true
+  runStepsError.value = ''
+  runSteps.value = []
+  runStepsTotal.value = 0
+  stepsRunId.value = runId
+  try {
+    const first = await api<Page<MessageStep>>(`/history/steps?${runStepsQuery(runId, 1)}`)
+    if (token !== stepsToken) return
+    runStepsTotal.value = first.total
+    const all = [...first.records]
+    for (let page = 2; page <= runStepsPages(first.total) && all.length < first.total; page += 1) {
+      const next = await api<Page<MessageStep>>(`/history/steps?${runStepsQuery(runId, page)}`)
+      if (token !== stepsToken) return
+      if (!next.records.length) break
+      all.push(...next.records)
+    }
+    runSteps.value = all
+  } catch (e) {
+    if (token !== stepsToken) return
+    runSteps.value = []
+    runStepsError.value = e instanceof ApiError ? e.message : String(e)
+    // 没取到就当没取过：右栏那个「重试」按下去之外，下次再点到这条运行也会重来一次
+    stepsRunId.value = null
+  } finally {
+    if (token === stepsToken) runStepsLoading.value = false
+  }
 }
 
 /**

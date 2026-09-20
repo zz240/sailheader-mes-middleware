@@ -436,3 +436,279 @@ export function detailPath(selection: HistorySelection): string {
   if (selection.messageId === null || selection.step === null) return `#${selection.runId}`
   return `#${selection.runId} · 消息 ${shortId(selection.messageId)} · 步骤 ${selection.step}`
 }
+
+/* ── 一条运行的消息步取多少（#131） ───────────────────────────────── */
+
+/** 取一条运行的消息步时一页多少条——与后端 `safeSize` 的上限（100）对齐，一页顶格取。 */
+export const RUN_STEPS_PAGE = 100
+
+/**
+ * 一条运行最多取回多少步（#131 把票面那个「只取前 100 个」的隐藏上限**显式化**）。
+ *
+ * 票面给了两条路：给出提示，或去掉上限。这里**两条都走**——常见运行一次取全（上限远在它之上，
+ * 实测库里最大的一条运行 720 步：`/history/runs/summary` 逐页扫 2682 条运行得到），
+ * 而真遇到病态大运行时不至于把页面拖死；真撞上上限时 {@link runStepsNote} 会把话说出来，
+ * 「静默」这一条就此消失。
+ */
+export const RUN_STEPS_MAX = 1000
+
+/** 取某一条运行某一页消息步的查询串（按 id 倒序，与列表接口同一套分页口径）。 */
+export function runStepsQuery(runId: number, page: number): string {
+  const params = new URLSearchParams()
+  params.set('runId', String(runId))
+  params.set('page', String(page))
+  params.set('size', String(RUN_STEPS_PAGE))
+  return params.toString()
+}
+
+/**
+ * 接口回了 `total` 之后要追几页。
+ *
+ * 只回页数、不回「截没截断」——「截断了没有」是**手里有多少 vs 接口说有多少**比出来的，
+ * 界面拿 {@link runStepsNote} 从两个数直接算；多回一个布尔字段就是同一个判决的第二份定义
+ * （而且那一份没人读，只有测试读）。
+ */
+export function runStepsPages(total: number): number {
+  return Math.min(Math.max(1, Math.ceil(total / RUN_STEPS_PAGE)), Math.ceil(RUN_STEPS_MAX / RUN_STEPS_PAGE))
+}
+
+/**
+ * 截断那句话（**没截断给空串**，界面据此整块不铺）：界面只在「拿到的比接口说的少」时才开口。
+ *
+ * 说的不只是「截断了」，还包括「本来有多少」与「为什么」——只写一个上限数字，等于把
+ * 「你看的是残缺的」这件事又说了一半。
+ */
+export function runStepsNote(loaded: number, total: number): string {
+  if (total <= loaded) return ''
+  return `这条运行共 ${total} 个消息步，界面只带了前 ${loaded} 个（上限 ${RUN_STEPS_MAX}）`
+    + '——不再静默截断（#131）。剩下的在消息步检索模式里按条件查。'
+}
+
+/* ── 消息切换与步骤链（#131） ─────────────────────────────────────── */
+
+/** 消息 chip 上的那颗状态：`全通` / `失败 N 步`（原型 `mchip` 里那一句三元）。 */
+export interface MessageChip {
+  kind: 'ok' | 'bad'
+  label: string
+}
+
+/** 一条消息的判决——芯片与断言都从这里取，别在模板里再数一遍 FAILED。 */
+export function messageChip(failed: number): MessageChip {
+  return failed > 0 ? { kind: 'bad', label: `失败 ${failed} 步` } : { kind: 'ok', label: '全通' }
+}
+
+/**
+ * 一条运行里的一条消息：它自己的消息步（**按步骤号升序**）、失败步数与业务键。
+ *
+ * 业务键取该消息任一步上的第一个非空值：`message_step` 按步存业务键，同一条消息的每一步
+ * 都是同一个（链路生成时一次算出来），所以取第一个就够，不为它单独跑一趟接口。
+ */
+export interface RunMessage {
+  messageId: string
+  /** 没有（或全空白）时写「无业务键」——与消息步行、命中业务键标签同一个口径。 */
+  businessKey: string
+  steps: MessageStep[]
+  failed: number
+  chip: MessageChip
+}
+
+/**
+ * 把一条运行的消息步按消息分组（原型 `run.messages`）。
+ *
+ * 顺序两处都要归一：**消息之间按落库先后**（步 `id` 升序——接口给的是 id 倒序，不翻过来的话
+ * 消息 chip 会倒着走），**消息之内按步骤号升序**（票面：步骤链按步骤号升序）。
+ */
+export function runMessages(steps: readonly MessageStep[]): RunMessage[] {
+  const byMessage = new Map<string, RunMessage>()
+  for (const step of [...steps].sort((a, b) => a.id - b.id)) {
+    let message = byMessage.get(step.messageId)
+    if (!message) {
+      message = {
+        messageId: step.messageId, businessKey: '', steps: [], failed: 0,
+        chip: messageChip(0),
+      }
+      byMessage.set(step.messageId, message)
+    }
+    message.steps.push(step)
+    if (step.status === STATUS_BAD) message.failed += 1
+  }
+  for (const message of byMessage.values()) {
+    message.steps.sort((a, b) => (a.step ?? 0) - (b.step ?? 0))
+    message.businessKey = message.steps.map((s) => s.businessKey?.trim()).find((key) => !!key)
+      || NO_BUSINESS_KEY
+    message.chip = messageChip(message.failed)
+  }
+  return [...byMessage.values()]
+}
+
+/**
+ * 右详情手里那一份「选中了什么」（原型 `cur()`）：选中的消息与选中的步骤。
+ *
+ * **归一在同一处**：选中的消息不在（或还没选）就是第 1 条；选中的步骤不在这条消息里
+ * （换消息之后、或列表那一页刷新过）就是这条消息的**第 1 步**——原型 `cur()` 里那个
+ * 「找不到就取下标 0」的循环。界面因此永远有一个当前消息与当前步骤，不会出现半空的右栏。
+ */
+export interface RunDetail {
+  messages: RunMessage[]
+  /** 当前消息在 `messages` 里的下标（一条消息都没有时是 0）。 */
+  index: number
+  message: RunMessage | null
+  step: MessageStep | null
+}
+
+export function runDetail(steps: readonly MessageStep[], selection: HistorySelection): RunDetail {
+  const messages = runMessages(steps)
+  if (!messages.length) return { messages, index: 0, message: null, step: null }
+  const found = selection.messageId === null
+    ? -1
+    : messages.findIndex((m) => m.messageId === selection.messageId)
+  const index = found >= 0 ? found : 0
+  const message = messages[index]
+  const step = message.steps.find((s) => s.step === selection.step) ?? message.steps[0] ?? null
+  return { messages, index, message, step }
+}
+
+/** 快照点：这一格的两个小点里对应的那个亮不亮（空串与纯空白都算「没落」）。 */
+function hasSnapshot(text?: string | null): boolean {
+  return !!text && !!text.trim()
+}
+
+/** 步骤链上的一格（原型 `chainHTML` 里那个循环的一轮）。 */
+export interface ChainNode {
+  /** `0` = 原型那格 `context[0] 任务输入`；其余是步骤号。 */
+  n: number
+  /** 左上那行：`0 · 任务输入` / `步骤 3`。 */
+  head: string
+  /** 动作那行：`context[0]` / 动作名（没有动作名写破折号）。 */
+  action: string
+  /** 最下一行的灰字：只有 `context[0]` 那格有（`本次运行的触发报文`）。 */
+  note: string
+  chip: StatusChip
+  /** 两个快照点（输入 / 数据）亮不亮。 */
+  hasInput: boolean
+  hasData: boolean
+  selected: boolean
+  /** 可访问名称：步骤号、动作、状态，外加两个快照点有没有落（票面要求写清这几样）。 */
+  label: string
+  /** 点这一格要选中的那一步；`context[0]` 那格是静态的（原型里它也不是按钮）。 */
+  step: MessageStep | null
+}
+
+/**
+ * 步骤链的节点：从 `context[0] 任务输入` 起，其后每条消息步一格（原型 `chainHTML`）。
+ *
+ * 消息为 `null`（这条运行还没有消息步 / 还没取回来）时只回 `context[0]` 那一格——
+ * 「入口那一格永远在」是原型的口径，界面据此不会在取数途中把链整块抽掉。
+ *
+ * `current` 是**归一之后**的那一步（{@link runDetail} 的 `step`），不是原始 `selection`：
+ * 刚点开一条运行时选中态里还没有消息与步骤，而右栏已经在看第 1 条消息的第 1 步了——
+ * 拿原始选中态判的话，链上一格都不会亮（原型是在 `open-run` 里先把 `stepN` 归一再渲染的）。
+ *
+ * 票面要的可访问名称写「步骤号、动作、名称、状态」四样。**这个模型里只有一样**：
+ * `message_step` 只有 `action_name` 一列（没有独立的「动作类型」与「动作名称」两格），
+ * 所以那三样合成一句 `步骤 3 · 动作 push-qc · 状态 FAILED`，再带上两个快照点——
+ * 硬凑第四格只会把同一个值写两遍（ADR-0016 决策 5 的 #131 补记里记了这条偏差）。
+ */
+export function chainNodes(message: RunMessage | null, current: MessageStep | null): ChainNode[] {
+  const nodes: ChainNode[] = [{
+    n: 0,
+    head: '0 · 任务输入',
+    action: 'context[0]',
+    note: '本次运行的触发报文',
+    chip: statusChip(null),
+    hasInput: false,
+    hasData: false,
+    selected: false,
+    label: '步骤 0 · 任务输入 · context[0] · 本次运行的触发报文',
+    step: null,
+  }]
+  if (!message) return nodes
+  for (const step of message.steps) {
+    const chip = statusChip(step.status)
+    const action = step.actionName?.trim() || '—'
+    const hasInput = hasSnapshot(step.inputSnapshot)
+    const hasData = hasSnapshot(step.dataSnapshot)
+    nodes.push({
+      n: step.step,
+      head: `步骤 ${step.step}`,
+      action,
+      note: '',
+      chip,
+      hasInput,
+      hasData,
+      selected: !!current && current.messageId === step.messageId && current.step === step.step,
+      label: `步骤 ${step.step} · 动作 ${action} · 状态 ${chip.label}`
+        + ` · 输入快照 ${hasInput ? '有' : '无'} · 数据快照 ${hasData ? '有' : '无'}`,
+      step,
+    })
+  }
+  return nodes
+}
+
+/** 链头右端那句（原型 `${steps.length} 步 · 入口 ${steps[0].action}`）。 */
+export function chainSummary(message: RunMessage | null): string {
+  if (!message || !message.steps.length) return '还没有消息步'
+  return `${message.steps.length} 步 · 入口 ${message.steps[0].actionName?.trim() || '—'}`
+}
+
+/** 单步卡上的一格事实（原型 `.fact`）：标签与值分开给，模板里不再拼字符串。 */
+export interface StepFact {
+  label: string
+  value: string
+}
+
+/**
+ * 单步卡（#131 票面：状态、动作、尝试次数、时刻、错误块）。
+ *
+ * `facts` 三格照原型那张 `.fact` 行（尝试 / 落库 / 输出 `context[n]（未写）`）。
+ * **耗时不在这一票里**：动作耗时是 #134 的后端改动（`message_step.duration_ms`），
+ * 这一票只把卡片长出来，耗时那一格由它补——现在写 `—` 会把「没测」与「测得是 0」混起来，
+ * 正是 ADR-0016 决策 7 拒绝的那种含糊。
+ *
+ * `error` **原样保留换行**（票面：便于直接粘贴），只把第一行单独切出来给模板加粗
+ * （原型 `errHTML` 里那句 `<b>`）；`error` 为空串时整块不铺——成功步不显示空错误块。
+ */
+export interface StepCardView {
+  n: number
+  action: string
+  chip: StatusChip
+  /** 尝试次数（缺了给 1：与消息步行同一个口径）。 */
+  attempt: number
+  /** 落库时刻。 */
+  at: string
+  facts: StepFact[]
+  /** 错误原文（保留换行）；空串 = 没有错误块。 */
+  error: string
+  /** 错误第一行（加粗那一行）。 */
+  errorFirst: string
+  /** 其余各行（连同前面那个换行原样带回；单行错误时是空串）。 */
+  errorRest: string
+}
+
+/** 本步的输出有没有写回上下文：成功与重投过都写了，失败步没写（原型那半句「（未写）」）。 */
+function wroteOutput(status: string | null | undefined): boolean {
+  const clean = status?.trim() ?? ''
+  return clean === STATUS_OK || clean === STATUS_WARN
+}
+
+export function stepCardView(step: MessageStep | null): StepCardView | null {
+  if (!step) return null
+  const chip = statusChip(step.status)
+  const error = step.error && step.error.trim() ? step.error : ''
+  const lines = error.split('\n')
+  return {
+    n: step.step,
+    action: step.actionName?.trim() || '—',
+    chip,
+    attempt: step.attempt ?? 1,
+    at: stampOf(step.createdAt),
+    facts: [
+      { label: '尝试', value: String(step.attempt ?? 1) },
+      { label: '落库', value: stampOf(step.createdAt) },
+      { label: '输出', value: `context[${step.step}]${wroteOutput(step.status) ? '' : '（未写）'}` },
+    ],
+    error,
+    errorFirst: lines[0] ?? '',
+    errorRest: lines.length > 1 ? `\n${lines.slice(1).join('\n')}` : '',
+  }
+}
