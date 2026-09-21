@@ -127,8 +127,10 @@
             :prev-step-row="prevStepRow"
             :prev-step-row-loading="prevStepRowLoading"
             :prev-step-row-error="prevStepRowError"
+            :redeliver-pending="redeliverPending"
             @retry-step-row="emit('retry-step-row')"
             @retry-prev-row="emit('retry-prev-row')"
+            @redeliver="emit('redeliver')"
           />
         </template>
       </div>
@@ -172,6 +174,8 @@ const props = defineProps<{
   prevStepRow: MessageStep | null
   prevStepRowLoading: boolean
   prevStepRowError: string
+  /** 断点重投正在路上（#135）：入口按钮 pending 且不可连点。 */
+  redeliverPending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -179,6 +183,7 @@ const emit = defineEmits<{
   'retry-steps': []
   'retry-step-row': []
   'retry-prev-row': []
+  redeliver: []
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))

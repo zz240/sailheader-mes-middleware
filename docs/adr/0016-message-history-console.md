@@ -219,6 +219,61 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
 11. **四态补齐并进验收**：列表加载中（占位而非空白）、空态分「无数据 / 筛选无结果」两种文案、
     接口错误可重试、重投进行中按钮 pending 且成功后**列表与详情同步刷新**（现有实现只刷了 runs 模式下
     的展开缓存，这是重构最容易丢的一处）。toast 用 `ElMessage`；原型那个自绘 toast 属于 chrome，不进生产。
+    **补记（#135 落地时）**：入口、弹窗、双刷怎么落的，以及这一票踩到的几处：
+    ①**入口在单步卡底部**（原型 `.sc-foot`）：只有 `FAILED` 铺按钮，其余状态摆的是
+    「本步状态 X，不可重投：只有 FAILED 消息步能断点续跑（#108）」——`REDELIVERED` 另补一句
+    「这一步的首跑报错已由重投修复」，不然用户看着一个不能点的成功会以为重投坏了（原型同句）。
+    ②**弹窗用组件库的 `el-dialog`**（决策 2）：Esc、遮罩、焦点都归它管，本票只把
+    「进行中不许关」这一档加上（`close-on-press-escape` / `close-on-click-modal` / 关闭叉一起关掉）
+    ——请求已经发出去了，关掉弹窗就没地方说这一投到底成没成，正是决策 11 要挡的那类含糊。
+    ③**口径与文案落在纯模块** `frontend/src/history/redeliver.ts`（自测 `redeliver-checks.ts`，30 条）：
+    能不能投、入口的字、弹窗那五样事实、进行中的字、成功与失败各说什么，界面与真机脚本判的是同一句话。
+    业务键与动作的缺省写法直接复用列表那一套（`NO_BUSINESS_KEY` 与破折号），不另立第二套。
+    ④**双刷是三件事，不是两件**：`load()`（列表，两个模式共用）+ `loadRunSteps()`（右栏的消息步，
+    消息 chips / 步骤链 / 单步卡都从它长出来）+ **按 id 重取那一步与上一步的整行**——同一步的行 id
+    没变，「消息 + 步骤行 id」那道去重键不响，只靠 watch 会把重投前那份快照一直铺着。
+    ⑤**刷新完要把选中态回钉**：列表刷新时 `syncStepSelection` 会把「不在这一页了」的选中态收回，
+    而重投成功之后原步不再是 `FAILED`——**默认只看 FAILED 的那一侧它当场就从列表里消失**，
+    右栏会跳回第 1 条消息的第 1 步。票面要的是「原步仍显示 REDELIVERED」，所以刷新完把
+    `{runId, messageId, step}` 按原样放回去。这是本票最容易漏、也最像「刷新过了」的一处。
+    ⑥**有意与原型不同一处**：原型弹窗里还有一张「将要回填的上游步骤」清单（`.rlist2`）——
+    生产里那张表要靠**每一步再取一次整行**（快照在索引那条路上）才画得准，一次重投变成 N+1；
+    票面要的只有「哪条消息的哪一步」（消息 id / 业务键 / 步骤号 / 动作 / 状态）+ 后果交代，
+    本期就落这些。要那张清单得先有一个「按 (runId, messageId, step) 批量取快照」的接口。
+    ⑦**真机脚本 `tools/ui/message-history-135.cjs` 自己搭场景**（库里现成的失败步依赖多半是坏的，
+    重投只会再失败一次，验不了「成功后原步 REDELIVERED」那一侧）：本地起一个可控目标端
+    （默认 500、一拨就 200），建 `READ_SQL → HTTP_CALL` 一条链跑出失败步，再在界面上走完整条路
+    ——包括**故意让第一投失败**（错误铺出来、按钮恢复可点、原步仍 `FAILED`）再修好依赖投第二次。
+    两处挑场景的理由记在脚本头上：**首动作不是源动作（`READ_SQL` / `MQ_CONSUME`）的任务根本不记
+    消息步**（`buildPollingEntry` 只 `beginRun` 不 `beginMessage`），以及 `mes_work_order` 那三个
+    `LocalDateTime` 列会让快照序列化当场报错、把失败步真正的错误顶掉。
+    ⑧**「界面不停留在 pending」对挂住不回的请求也得成立**（两轴复核 (c)）：进行中弹窗不许关，
+    于是「请求永不回来」与「关不掉」凑在一起就只剩刷页面这一条路。`redeliver` 那次 POST 因此带
+    `AbortSignal.timeout(REDELIVER_TIMEOUT_MS)`（2 分钟 = 容得下目标端不可达时 HikariCP 30 s ×
+    重试退避，`docs/flows/reliability-flow.md` 实测 `retryCount=1` 一条消息 60 s），到点当成一次
+    失败：错误那格写「结果不知道 + 去刷新消息步再决定要不要重投」——不写成「再投一次」，
+    因为那一次可能已经落到了目标端。
+    ⑨**同一句话只在一个地方**（Standards 轴）：单步卡底部那半句与弹窗底下那句原来是模板里的硬编码，
+    与 `redeliverExplain()` 近乎逐字重复；现在三句都在 `redeliver.ts`
+    （`redeliverOutcomeNote` / `redeliverDialogNote` / `redeliverExplain` 拼出来），组件只负责摆。
+    成功提示里「已置 XX」也改成用**接口回的那一格**（`{status, stepId}`），界面这一侧不写死
+    `REDELIVERED`。缺省写法（破折号）与 `console.ts` 的 `textOrDash` 合成一处，不再手抄
+    `x?.trim() || '—'`。
+    ⑩**入口只判状态，别假装它判得更多**：后端另有两道门（任务未启用、源动作失败无断点数据），
+    要在这里判就得先取那个任务的动作表（一次点击多一次请求，决策 6 拒绝的 N+1）。所以
+    `canRedeliver` 只回答「状态是不是 FAILED」，失败文案也**不承诺「再投一次就行」**——
+    源动作失败那档本来就没有断点数据，得重新执行任务（§决策 11 补记①那句「不给出一个按下去
+    必然报错的按钮」收窄成「不给出一个**状态上**就不可能可投的按钮」）。
+    ⑪**默认档（消息步检索默认只看 FAILED）下的双刷单独验一遍**（Spec 轴 (a)）：那一档里重投成功后
+    原步不再是 FAILED，**它从列表里消失就是刷新后的内容**，而票面要的「原步仍显示 `REDELIVERED`」
+    落在右栏（靠 ⑤ 那次选中态回钉）。脚本因此最后再走一遍默认档：重开页面（状态那格是「没选」=
+    默认 FAILED）、重投、断言那一行**消失**而右栏是 `REDELIVERED`——上面那一段把状态调成
+    「全部状态」只是为了把弹窗与列表那一行逐格对上，不能拿它代替默认路径。
+    ⑫**刷新那一趟不去动选中态**：`load()` 途中的 `syncStepSelection` 会把选中态收成
+    「第 1 条消息的第 1 步」，于是 `currentStep` 的 watch 先为**别的一行**发一次请求，回钉再发一次、
+    `retryStepRow()` 又发一次——同一行三发、中间还有一帧右栏是别的步骤。现在 `refreshAfterRedeliver`
+    刷新期间把 `keepSelectionOnLoad` 立起来（那一趟的选中态归它自己管），刷新完只重取**本步与上一步**
+    两行。（`load()` 的失败分支仍会 `clearSelection()`，所以末尾那次回钉留着。）
 
 12. **键盘只做 Esc 关弹窗**，不做键盘导航，也不把 a11y 增强列进验收项（ADR-0013 记过 #106 那类
     命中区域的坑，收益小于回归风险）。
@@ -249,6 +304,8 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
   暂时从页面上消失**，要等 #135 / #136 落地才回来；这段时间里 ADR-0009 的「断点重投」只剩后端
   接口可用。**已定：先把 #136（消息步检索）与 #135（重投）提前做回来**，再回到 #130 / #131——
   过渡期因此只跨两票（#136、#135 都只被 #129 阻塞）。
+  **补记（#135 落地后）**：过渡期**结束**——#136 与 #135 都已落地，消息历史页上「按运行展开 /
+  消息步检索」两个模式与失败步的「断点重投」入口都回来了。
   ⑥**#129 里运行侧那格业务键筛得不省**：实现是「先 `LIKE` 扫 `message_step` 拿 runId，再 `IN` 筛运行」，
   一条业务键命中很多运行时就是一个无界 `IN`。口径对、代价大；#130 做每运行摘要接口时应把这两步
   收成一次查询（或换成子查询）。
@@ -279,9 +336,11 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
   只多 `--ok-ink` 与 `--font-display`，都不搬）
 - 现有实现：`frontend/src/views/HistoryView.vue`；
   `frontend/src/history/console.ts` + `frontend/src/history/snapshot.ts`（#132 的口径）+
-  `frontend/src/history/diff.ts`（#133 的对照口径）+
-  `frontend/src/history/checks.ts` / `frontend/src/history/diff-checks.ts`（纯模块那侧的断言）；
-  `frontend/src/components/history/`（`MessageDetailPanel` / `StepDetailCard` / `SnapshotPanel`…）；
+  `frontend/src/history/diff.ts`（#133 的对照口径）+ `frontend/src/history/redeliver.ts`（#135 的重投口径）+
+  `frontend/src/history/checks.ts` / `frontend/src/history/diff-checks.ts` /
+  `frontend/src/history/redeliver-checks.ts`（纯模块那侧的断言）；
+  `frontend/src/components/history/`（`MessageDetailPanel` / `StepDetailCard` / `SnapshotPanel` /
+  `RedeliverDialog`…）；
   `spike/src/main/java/com/example/edgegateway/web/HistoryController.java`；
   `spike/src/main/java/com/example/edgegateway/model/MessageStep.java`
 - 相邻问题：#127（快照 64 KB 写不进历史）、#123（HTTP_CALL 响应回链）、#74（消息步检索默认 FAILED）

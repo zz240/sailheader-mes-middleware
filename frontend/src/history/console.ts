@@ -93,6 +93,16 @@ export function shortId(id?: string | null): string {
   return clean.length > 10 ? `${clean.slice(0, 8)}…` : clean
 }
 
+/**
+ * 一格文本的缺省写法：空 / 全空白给破折号。
+ *
+ * 列表行、步骤链、单步卡与 #135 的重投弹窗都从这一处取——同一个「没有值」在这页上只有一种写法，
+ * 也免得每处各抄一遍 `x?.trim() || '—'`。
+ */
+export function textOrDash(value?: string | null): string {
+  return value?.trim() || '—'
+}
+
 /* ── 两个模式 ─────────────────────────────────────────────────────── */
 
 /** 左列表的两个模式（原型 `view-toggle`）。 */
@@ -341,8 +351,12 @@ export function countsText(
   return countsParts(summary).map((part) => part.text).join(' · ')
 }
 
-/** 业务键那一格没得写时的说法（消息步行与运行行两处共用一句）。 */
-const NO_BUSINESS_KEY = '无业务键'
+/**
+ * 业务键那一格没得写时的说法（消息步行 / 运行行 / 命中业务键标签 / #135 的重投弹窗共用一句）。
+ *
+ * 导出是给 `redeliver.ts` 用的：弹窗里也要写业务键，同一件事不能有第二种写法。
+ */
+export const NO_BUSINESS_KEY = '无业务键'
 
 /** 命中的业务键小标签（原型 `.r-biz`）：一条都没有时给空数组，模板据此整块不铺。 */
 export function matchedKeysView(keys: readonly string[] | undefined): string[] {
@@ -416,7 +430,7 @@ export function stepRows(steps: readonly MessageStep[]): StepRow[] {
     step,
     head: `#${step.runId} · 步骤 ${step.step}`,
     chip: statusChip(step.status),
-    action: step.actionName?.trim() || '—',
+    action: textOrDash(step.actionName),
     businessKey: step.businessKey?.trim() || NO_BUSINESS_KEY,
     at: stampOf(step.createdAt),
     attempt: step.attempt ?? 1,
@@ -651,7 +665,7 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
   if (!message) return nodes
   for (const step of message.steps) {
     const chip = statusChip(step.status)
-    const action = step.actionName?.trim() || '—'
+    const action = textOrDash(step.actionName)
     const hasInput = hasSnapshot(step.hasInputSnapshot)
     const hasData = hasSnapshot(step.hasDataSnapshot)
     const cost = durationText(step.durationMs)
@@ -676,7 +690,7 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
 /** 链头右端那句（原型 `${steps.length} 步 · 入口 ${steps[0].action}`）。 */
 export function chainSummary(message: RunMessage | null): string {
   if (!message || !message.steps.length) return '还没有消息步'
-  return `${message.steps.length} 步 · 入口 ${message.steps[0].actionName?.trim() || '—'}`
+  return `${message.steps.length} 步 · 入口 ${textOrDash(message.steps[0].actionName)}`
 }
 
 /** 单步卡上的一格事实（原型 `.fact`）：标签与值分开给，模板里不再拼字符串。 */
@@ -726,7 +740,7 @@ export function stepCardView(step: MessageStep | null): StepCardView | null {
   const lines = error.split('\n')
   return {
     n: step.step,
-    action: step.actionName?.trim() || '—',
+    action: textOrDash(step.actionName),
     chip,
     attempt: step.attempt ?? 1,
     at: stampOf(step.createdAt),

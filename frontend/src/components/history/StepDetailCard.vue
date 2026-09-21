@@ -35,6 +35,25 @@
       </div>
       <pre><b>{{ card.errorFirst }}</b>{{ card.errorRest }}</pre>
     </div>
+
+    <!-- 断点重投（#135 / 原型 `.sc-foot`）：**只有 FAILED 能重投**（#108），其余状态这一格
+         摆的是一句「为什么不能投」——票面第一条验收项要的就是「其余状态不可点」。 -->
+    <div class="hc-sc-foot">
+      <template v-if="redeliverable">
+        <el-button
+          type="primary"
+          size="small"
+          :loading="redeliverPending"
+          :disabled="redeliverPending"
+          data-od-id="btn-redeliver"
+          @click="emit('redeliver')"
+        >
+          {{ redeliverButtonLabel(step!) }}
+        </el-button>
+        <span class="hc-foot-hint">{{ redeliverOutcomeNote() }}</span>
+      </template>
+      <span v-else class="hc-foot-hint">{{ redeliverBlockedNote(step) }}</span>
+    </div>
   </div>
 </template>
 
@@ -42,6 +61,9 @@
 import { computed } from 'vue'
 import SnapshotPanel from './SnapshotPanel.vue'
 import { stepCardView } from '../../history/console'
+import {
+  canRedeliver, redeliverBlockedNote, redeliverButtonLabel, redeliverOutcomeNote,
+} from '../../history/redeliver'
 import type { MessageStep } from '../../types'
 
 const props = defineProps<{
@@ -61,9 +83,14 @@ const props = defineProps<{
   prevStepRow: MessageStep | null
   prevStepRowLoading: boolean
   prevStepRowError: string
+  /** 这一投正在路上：入口按钮 pending 且不可连点（票面「进行中按钮 pending 且不可连点」）。 */
+  redeliverPending?: boolean
 }>()
 
-const emit = defineEmits<{ 'retry-step-row': []; 'retry-prev-row': [] }>()
+const emit = defineEmits<{ 'retry-step-row': []; 'retry-prev-row': []; redeliver: [] }>()
 
 const card = computed(() => stepCardView(props.step))
+/** 能不能重投只有一处判（`redeliver.ts` 的 `canRedeliver`：状态是 FAILED 才铺按钮）。 */
+const redeliverable = computed(() => canRedeliver(props.step))
 </script>
+

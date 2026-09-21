@@ -424,3 +424,52 @@
 .hc-stree .vjs-node-index { color: var(--muted); }
 .hc-stree .vjs-tree-brackets:hover,
 .hc-stree .vjs-carets:hover { color: var(--accent); }
+
+/* ── 断点重投（#135，原型 `.sc-foot` + `.overlay .modal` 的两块内容） ─────────────
+   弹窗本身用组件库那一个（ADR-0016 决策 2），这一段只管两块内容：单步卡底部那一格，
+   以及弹窗里的「哪条消息的哪一步」那张事实表与失败那一档。判档与文案全在 `history/redeliver.ts`。 */
+.hc-sc-foot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg-sunken);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.hc-foot-hint { font-size: 11.5px; color: var(--muted); }
+.hc-foot-hint code,
+.hc-rd-foot-note code {
+  color: var(--fg); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0 4px; font-size: 11px;
+}
+/* 弹窗内容：先一句「投的是哪一步」，再那张事实表，再后果交代 */
+.hc-rd { display: flex; flex-direction: column; gap: 11px; }
+.hc-rd-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
+.hc-rd-facts {
+  margin: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.hc-rd-frow {
+  display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px; align-items: baseline;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+.hc-rd-frow:last-child { border-bottom: 0; }
+.hc-rd-frow dt { font-size: 11px; color: var(--muted); }
+.hc-rd-frow dd { margin: 0; font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
+.hc-rd-mono { font-family: var(--font-mono); }
+.hc-rd-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
+/* 失败那一档：标题 / 接口原因（原样，带换行）/「原步仍是 FAILED」那半句 */
+.hc-rd-fail {
+  border: 1px solid color-mix(in oklch, var(--danger) 28%, var(--border));
+  background: var(--danger-soft); border-radius: var(--radius); overflow: hidden;
+}
+.hc-rd-fail-h {
+  padding: 7px 10px; border-bottom: 1px solid color-mix(in oklch, var(--danger) 22%, var(--border));
+  font-size: var(--fs-meta); font-weight: 600; color: var(--danger-ink);
+}
+.hc-rd-fail-d {
+  margin: 0; padding: 9px 11px; font-family: var(--font-mono); font-size: var(--fs-meta);
+  line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg);
+}
+.hc-rd-fail-n {
+  padding: 7px 10px; border-top: 1px solid color-mix(in oklch, var(--danger) 22%, var(--border));
+  font-size: 11.5px; color: var(--danger-ink);
+}
+.hc-rd-foot { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.hc-rd-foot-note { margin-right: auto; font-size: 11.5px; color: var(--muted); text-align: left; }

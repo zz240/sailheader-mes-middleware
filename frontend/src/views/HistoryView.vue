@@ -55,12 +55,24 @@
         :prev-step-row="prevStepRow"
         :prev-step-row-loading="prevStepRowLoading"
         :prev-step-row-error="prevStepRowError"
+        :redeliver-pending="redeliverPending"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
         @retry-step-row="retryStepRow"
         @retry-prev-row="retryPrevStepRow"
+        @redeliver="openRedeliver"
       />
     </main>
+
+    <!-- 断点重投弹窗（#135）：打开的只是这一步；请求在路上时 `pending` 把它按在原地 -->
+    <RedeliverDialog
+      v-model:visible="redeliverVisible"
+      :step="redeliverTarget?.step ?? null"
+      :business-key="redeliverTarget?.businessKey ?? ''"
+      :pending="redeliverPending"
+      :error="redeliverError"
+      @confirm="confirmRedeliver"
+    />
 
     <!-- 分页条放在**页级**：左栏只有 322px，装不下 element-plus 那套完整分页（实测会被推到栏外）。
          只在接口出错时收起来——「筛没了」也要留着它，否则每页条数都没得改。两个模式共用同一套。 -->
@@ -80,18 +92,30 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import HistoryFilters from '../components/history/HistoryFilters.vue'
 import HistoryCountsBar from '../components/history/HistoryCountsBar.vue'
 import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
+import RedeliverDialog from '../components/history/RedeliverDialog.vue'
 import { api, ApiError } from '../api/client'
 import {
   DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runDetail, runStepsPages,
   runStepsPath, selectRun, selectStep, statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
+import {
+  canRedeliver, redeliverDoneMessage, redeliverErrorText, redeliverFacts, redeliverPath,
+  REDELIVER_TIMEOUT_MS,
+} from '../history/redeliver'
 import { previousStepOf } from '../history/diff'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
+
+/** 断点重投接口的应答（后端只回这两格：原步的新状态与它的 id）。 */
+interface RedeliverResult {
+  status: string
+  stepId: number
+}
 
 const jobs = ref<Job[]>([])
 const jobsError = ref('')
@@ -173,6 +197,27 @@ const prevStepRowError = ref('')
 const prevStepRowLoading = ref(false)
 const prevStepRowKey = ref<string | null>(null)
 let prevStepToken = 0
+
+/**
+ * 断点重投弹窗（#135，原型 `#overlay`）。
+ *
+ * `redeliverTarget` 在**按下按钮那一刻**把「哪一步 + 那条消息的业务键」捕获下来：这一投在路上时
+ * 列表与详情就会刷新（这一步可能已经不在当前筛选里了），弹窗里写的必须还是用户当时看到的那一步。
+ * 业务键跟着一起捕获，理由相同——它由右详情的分组算出来，刷新之后可能已经取不到那一条消息了。
+ */
+const redeliverVisible = ref(false)
+const redeliverTarget = ref<{ step: MessageStep; businessKey: string } | null>(null)
+/** 这一投正在路上：入口与确认按钮 pending 且不可连点，弹窗也不许关。 */
+const redeliverPending = ref(false)
+/** 接口那句错误（空串 = 这一投还没失败过）；成功一次就清掉。 */
+const redeliverError = ref('')
+/**
+ * 这次刷新要不要保住选中态（见 {@link refreshAfterRedeliver}）。
+ *
+ * 只有重投成功后的那次**自己发起的**双刷会把它立起来：那一趟的选中态由它自己管，
+ * 不该被 `syncStepSelection` 中途收走。
+ */
+let keepSelectionOnLoad = false
 
 /**
  * 归一之后的右详情（消息 / 下标 / 当前步骤）：**只算这一处**，右栏渲染与「按 id 取整行」
@@ -284,6 +329,80 @@ function retryPrevStepRow() {
   if (prev) void loadPrevStepRow(prev)
 }
 
+/* ── 断点重投（#135） ─────────────────────────────────────────────── */
+
+/**
+ * 打开重投弹窗：**只有 `FAILED` 那一步能开**（票面第一条验收项）。
+ *
+ * 单步卡底部那一格本来就只在 `FAILED` 时铺按钮（其余状态摆的是一句「为什么不能投」），
+ * 这里再挡一道是同一条判据的第二处落点——判据本身只有 `redeliver.ts` 一处。
+ */
+function openRedeliver() {
+  const step = currentStep.value
+  if (!step || !canRedeliver(step)) return
+  redeliverTarget.value = { step, businessKey: runDetailView.value.message?.businessKey ?? '' }
+  redeliverError.value = ''
+  redeliverVisible.value = true
+}
+
+/**
+ * 确认重投（弹窗上那一下就是**二次确认**）：投递 → 成功后关弹窗、说一句、**双刷**。
+ *
+ * 失败时弹窗**留着**并把接口那句原因铺出来（票面验收项五：界面给出错误、按钮恢复可点）——
+ * 关掉弹窗等于把「没投上」这件事藏起来，#108 修的就是这类谎报。
+ */
+async function confirmRedeliver() {
+  const target = redeliverTarget.value
+  if (!target || redeliverPending.value) return
+  redeliverPending.value = true
+  redeliverError.value = ''
+  try {
+    const done = await api<RedeliverResult>(redeliverPath(target.step.id), {
+      method: 'POST',
+      // 「界面不停留在 pending」对**挂住不回**的请求同样成立：到点当成一次失败
+      // （文案见 `redeliverTimeoutText`）——否则进行中弹窗不许关 + 请求永不回来 = 只能刷页面
+      signal: AbortSignal.timeout(REDELIVER_TIMEOUT_MS),
+    })
+    redeliverVisible.value = false
+    // 说「已置 XX」用的是接口回的那一格（`{status, stepId}`），界面这一侧不写死 REDELIVERED
+    ElMessage.success(redeliverDoneMessage(redeliverFacts(target.step, target.businessKey), done.status))
+    await refreshAfterRedeliver(target)
+  } catch (e) {
+    redeliverError.value = redeliverErrorText(e)
+  } finally {
+    redeliverPending.value = false
+  }
+}
+
+/**
+ * 重投成功后的**双刷**（票面验收项三：左侧列表与右侧详情同时是刷新后的内容）。
+ *
+ * 三件事要一起做，少一件就是「一半新一半旧」：
+ *   ① `load()` 重取列表（连同计数条与每运行摘要）——`/history/runs` 与 `/history/steps` 两条路
+ *      都由它按当前模式走，所以两个模式都不用另写一遍；
+ *   ② `loadRunSteps()` 重取这条运行的消息步：消息 chips、步骤链、单步卡都从它长出来，
+ *      原步那一格的芯片因此当场变成 `REDELIVERED`；
+ *   ③ 按 id 再取**整行**与**上一步的整行**——同一步的行 id 没变，`stepRowKey` 那道去重键不响，
+ *      只靠那个 watch 会把重投前那份快照一直铺着。
+ *
+ * 还有一处不显眼但必须做：列表刷新时 `syncStepSelection` 会把「不在这一页了」的选中态收回，
+ * 而重投成功之后原步不再是 `FAILED`——默认只看 FAILED 的那一侧它就从列表里消失了（那一行没了
+ * **就是**刷新后的内容）。票面要的是「原步仍显示 `REDELIVERED`」，所以这一趟把
+ * {@link keepSelectionOnLoad} 立起来（别让 `load()` 中途把它收走），末尾再按原样钉一次
+ * （`load()` 的失败分支会走 `clearSelection()`，那一趟选中态是真被清掉的）。
+ */
+async function refreshAfterRedeliver(target: { step: MessageStep; businessKey: string }) {
+  keepSelectionOnLoad = true
+  try {
+    await Promise.all([load(), loadRunSteps(target.step.runId)])
+  } finally {
+    keepSelectionOnLoad = false
+  }
+  selection.value = selectStep(target.step)
+  retryStepRow()
+  retryPrevStepRow()
+}
+
 async function loadJobs() {
   try {
     jobs.value = await api<Job[]>('/jobs')
@@ -378,6 +497,7 @@ function syncRunSelection(records: JobRun[]) {
  * 与运行那一侧不同（那里整条运行就是选中物，不在页上就没什么可看的了）。
  */
 function syncStepSelection(records: MessageStep[]) {
+  if (keepSelectionOnLoad) return
   const current = selection.value
   if (current.runId === null || current.messageId === null) return
   if (!records.some((step) => isStepSelected(current, step))) {
