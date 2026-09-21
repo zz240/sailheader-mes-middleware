@@ -225,6 +225,12 @@
  * 用 `var()` 引用它；而改之前全仓也没有别的全局 `font-family`，所以字体是由浏览器的默认字体决定的。
  */
 body {
+  /*
+   * 浏览器给 `body` 的默认外边距是 8px，而 `.layout` 是 `height: 100vh`——两者相加，每个页面
+   * 都凭空多出 16px 的页面级滚动条（#129 实测四个页面都是 `htmlScrollH = innerH + 16`）。
+   * 全高控制台（消息历史页那套双栏）要真成立就得把这一条归零（#137 / ADR-0016 风险④）。
+   */
+  margin: 0;
   font-family: var(--font-body);
   font-size: var(--fs-body);
   background: var(--bg);

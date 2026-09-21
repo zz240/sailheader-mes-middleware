@@ -1,5 +1,6 @@
 /*
- * 消息历史页（#129 骨架 / #130 计数条 / #136 消息步检索 / #131 消息切换与步骤链 / #132 快照面板）：
+ * 消息历史页（#129 骨架 / #130 计数条 / #136 消息步检索 / #131 消息切换与步骤链 / #132 快照面板 /
+ * #133 与上一步对照 / #134 单步计时 / #135 断点重投 / #137 窄屏与收尾）：
  * 双栏控制台的骨架、列表、计数条与右详情。
  *
  * 令牌全部来自 `styles/tokens.css`——本页**零新增令牌**（ADR-0016「风险」③）：
@@ -9,7 +10,9 @@
  * 类名统一 `hc-` 前缀：原型的 `.panel` / `.st` / `.ritem` 太通用，直接进全局样式会踩别的页面。
  *
  * 尺寸口径对着 `frontend/prototype/04-message-history.html`：左栏 322px 固定、右栏吃掉剩下的，
- * 页内不滚动、两栏各自滚。本页的高度靠 `.hc-page { height: 100% }` 从 `el-main` 拿（不动 App 壳）。
+ * **宽屏**下页内不滚动、两栏各自滚；本页的高度靠 `.hc-page { height: 100% }` 从 `el-main` 拿。
+ * 窄屏（≤1000px）反过来：整页滚、两栏竖排——见文件末尾那一段；而窄屏起把控制台壳折到顶上
+ * （导航条吃满整宽）那条在 `App.vue` 的 760px 里，本页够不着壳。
  */
 
 .hc-page {
@@ -402,12 +405,15 @@
   color: var(--danger-ink); border-color: color-mix(in oklch, var(--danger) 34%, var(--border)); background: var(--danger-soft);
 }
 .hc-drow.hc-dst-chg .hc-dval-new { font-weight: 600; }
-/* 窄屏（与 `.hc-snaps` 同一个断点）：五列压成「路径 + 状态」两列，两侧的值收起来
-   ——每列只剩几十像素时，值只会变成一串省略号（原型 620px 断点同义）。 */
+/* 窄屏（与 `.hc-snaps` 同一个断点）：三列压成「路径 + 本步 + 状态」，**上一步那一格与箭头收起来**
+   ——票面那句「对照行在窄屏只保留新值」就是这个意思（原型 920px 断点里那句
+   `.drow .dval.old, .drow .darrow { display:none }`）。
+   **不照抄原型那一格**：它把网格压成「路径 + 46px」，本步那一格正好落进那 46px 里，
+   值被挤成一串省略号——这里给它留一整列（ADR-0016 的 #137 补记）。 */
 @media (max-width: 1000px) {
-  .hc-dhead2, .hc-drow { grid-template-columns: minmax(0, 1fr) 46px; }
-  .hc-dhead2 span:nth-child(2), .hc-dhead2 span:nth-child(3), .hc-dhead2 span:nth-child(4),
-  .hc-drow .hc-dval, .hc-drow .hc-darrow { display: none; }
+  .hc-dhead2, .hc-drow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 46px; }
+  .hc-dhead2 span:nth-child(2), .hc-dhead2 span:nth-child(3),
+  .hc-drow .hc-dval-old, .hc-drow .hc-darrow { display: none; }
 }
 
 /* 库那份硬编码配色（`#1890ff` / `#e6f7ff`）压回本页令牌：本页零新增令牌（ADR-0016 风险③） */
@@ -473,3 +479,45 @@
 }
 .hc-rd-foot { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .hc-rd-foot-note { margin-right: auto; font-size: 11.5px; color: var(--muted); text-align: left; }
+
+/* ── 窄屏：单栏堆叠（#137，原型 `@media (max-width: 920px)` 那一段） ──────────────
+   断点为什么是 1000px 而不是原型的 920px：本页拿到的宽度是「视口 − 200px 侧栏 − 主区留白」，
+   原型那支没有控制台侧栏。按「和原型同一个内容宽度」换算，920px 对应到本页是 1160px 的视口；
+   可 1160px 上右栏还有约 580px，两块快照并排也看得清——真正不够用的是**右栏掉到约 420px** 那一档，
+   也就是 1000px 视口。所以本页按右栏的实际宽度收在这里，并且**本页只有这一个断点**
+   （两栏、两块快照、对照块三处一起翻，与上面两条 `@media (max-width: 1000px)` 同一个断点），
+   而不是照抄原型那个数。窄屏起把控制台壳折到顶上那条在 `App.vue` 的 760px 里，不在本文件。
+
+   滚动落在哪一层随之分两段：761–1000px 壳还带着侧栏，本页比一屏高出来的部分是 `el-main`
+   那一层在滚；≤760px 壳也折了（`.layout` 的高度交还内容），滚动落到文档那一层。 */
+@media (max-width: 1000px) {
+  /* 页内不滚 → **整页滚**：两栏竖排之后内容必然高于一屏（原型窄屏那句 `body{overflow:auto}`）。
+     `.hc-page` 的高度在窄屏交还给内容；滚的是哪一层见上面那段（761–1000 是 `el-main`，≤760 是文档）。 */
+  .hc-page { height: auto; min-height: 100%; }
+  .hc-workspace { flex-direction: column; }
+
+  /* 列表在上、详情在下（票面：单栏堆叠顺序）。列表按原型封顶 306px 并自己滚——
+     不封顶的话几十条运行会把详情推到好几屏之后，「先挑一条运行」这件事就断了。 */
+  .hc-list-panel { flex: 0 0 auto; max-height: 306px; }
+  .hc-detail-panel { flex: 0 0 auto; }
+
+  /* 页头与筛选条：能换行的一律换行、能整宽的一律整宽（原型 `.q{width:100%}`）。
+     筛选条上那几个固定宽（240 / 170 / 210px）在 320px 的窗口上就是横向滚动条。 */
+  .hc-title-row { gap: 8px; }
+  .hc-counts { margin-left: 0; width: 100%; flex-wrap: wrap; row-gap: 4px; }
+  .hc-ctl { width: 100%; }
+  .hc-filter-job, .hc-filter-status, .hc-filter-biz { width: 100%; }
+  .hc-tail { margin-left: 0; width: 100%; }
+
+  /* 步骤链竖着排（原型 `.chain{flex-direction:column}` + 箭头转 90°）：一屏里能一眼看完
+     「第几步断的」，比横向拖一条 720 步的链强。 */
+  .hc-chain { flex-direction: column; align-items: stretch; overflow-x: visible; gap: 2px; }
+  .hc-cnode { width: 100%; }
+  .hc-cbtn { width: 100%; min-width: 0; }
+  .hc-cbtn .hc-cl { max-width: none; }
+  .hc-carrow { width: 100%; padding: 0; line-height: 1; text-align: center; transform: rotate(90deg); }
+
+  /* 分页条：`layout` 那一串（总数 / 每页条数 / 页码 / 跳页）在 320px 上放不下，
+     让它自己换行而不是把主区撑出横向滚动条。 */
+  .hc-pfoot .el-pagination { flex-wrap: wrap; row-gap: 6px; justify-content: flex-end; }
+}
