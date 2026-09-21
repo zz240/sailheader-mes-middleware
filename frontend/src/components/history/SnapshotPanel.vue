@@ -53,13 +53,17 @@
       <button class="hc-sbtn" type="button" :aria-pressed="raw" @click="raw = !raw">原始文本</button>
     </div>
 
-    <div v-if="loading" class="hc-skel" aria-label="快照加载中">
+    <!-- 两个取景**共用**的取数三态（#133 收的一处）：这一步的整行与上一步的整行谁没取到，
+         都先说「没取到」并给重试——两块快照与对照那一档都不许在错误底下继续铺旧数据。
+         （旧行是**故意留着的**：一次取数失败不该把界面上那份证据也擦掉；但它不能冒充本步的
+         结果，所以话摆在这两块内容**之前**。） -->
+    <div v-if="loading || (isDiff && prevLoading)" class="hc-skel" aria-label="快照加载中">
       <i v-for="n in 2" :key="n" />
     </div>
 
-    <div v-else-if="error" class="hc-errbox">
-      <div>这一步的快照没取到。</div>
-      <div class="hc-snote-src">{{ error }}</div>
+    <div v-else-if="problem" class="hc-errbox">
+      <div>{{ problem }}</div>
+      <div class="hc-snote-src">{{ error || prevError }}</div>
       <div class="hc-err-act">
         <el-button size="small" @click="emit('retry')">重试</el-button>
       </div>
@@ -69,21 +73,10 @@
          能不能对照由纯模块判（`stepDiffStart`），这里只按它给的三样分派。
          **`v-show` 而不是 `v-if`**：这一档与下面那两块快照是同一个工具栏底下的两个取景，
          用 `v-if` 的话每次切档都会把另一侧的子树销毁重建——树那边是「用户手工折起来的节点
-         又被摊开」（组件实例没了），对照这边是白算一遍 diff。两边都留着，只切显示。 -->
-    <div v-show="isDiff" data-od-id="snapshot-diff-view">
-      <div v-if="prevLoading" class="hc-skel" aria-label="上一步的快照加载中">
-        <i v-for="n in 2" :key="n" />
-      </div>
-
-      <div v-else-if="prevError" class="hc-errbox">
-        <div>上一步的快照没取到，没法对照。</div>
-        <div class="hc-snote-src">{{ prevError }}</div>
-        <div class="hc-err-act">
-          <el-button size="small" @click="emit('retry-prev-row')">重试</el-button>
-        </div>
-      </div>
-
-      <div v-else-if="diffBlocker" class="hc-diff" data-od-id="snapshot-diff">
+         又被摊开」（组件实例没了），对照这边是白算一遍 diff。两边都留着，只切显示；
+         上面那两格取数三态才是「铺不铺」的判据（加载 / 出错时两个取景都不铺）。 -->
+    <div v-show="isDiff && !loading && !prevLoading && !problem" data-od-id="snapshot-diff-view">
+      <div v-if="diffBlocker" class="hc-diff" data-od-id="snapshot-diff">
         <div class="hc-stree-empty" data-od-id="snapshot-diff-blocked">{{ diffBlocker.text }}</div>
       </div>
 
@@ -111,7 +104,11 @@
             class="hc-drow"
             :class="`hc-dst-${row.status}`"
           >
-            <span class="hc-dpath" :title="contextPath(row.path)">{{ row.path }}</span>
+            <!-- 路径那一格的 `title` 就是**这条路径本身**：叶子路径可能长到换行（`overflow-wrap`），
+                 而这个名字是照着念 / 粘回配置里用的。**不铺上下文路径前缀**（原型 `toCtxPath` 那套）：
+                 生产里落库的 `data_snapshot` 是这一步的输出本身，第一段是字段名——
+                 `FCode` 前面没有 `context[N]`（ADR-0016 补记⑧）。 -->
+            <span class="hc-dpath" :title="row.path">{{ row.path }}</span>
             <span class="hc-dval hc-dval-old" :title="cellTitle(row.oldValue)">{{ cellText(row.oldValue) }}</span>
             <span class="hc-darrow" aria-hidden="true">→</span>
             <span class="hc-dval hc-dval-new" :title="cellTitle(row.newValue)">{{ cellText(row.newValue) }}</span>
@@ -136,7 +133,7 @@
          里面**不再套 `v-if` / `v-show`**：外面这层留着、里面一判「有没有快照」，
          `sides` 在对照档是空数组，子节点照样被销毁重建（真机脚本第一版就是这么抓到
          「切回来又全展开了」的）。空态与列表就叠着铺，空态那一格有自己的底色。 -->
-    <div v-show="!isDiff">
+    <div v-show="!isDiff && !loading && !problem">
       <div class="hc-snaps">
         <section
           v-for="side in allSides"
@@ -278,7 +275,7 @@ import {
   type SnapshotSide,
 } from '../../history/snapshot'
 import {
-  contextPath, diffCellText, diffCountsText, snapshotDiff, stepDiffStart, DIFF_LABELS, DIFF_NOTE,
+  diffCellText, diffCountsText, snapshotDiff, stepDiffStart, DIFF_LABELS, DIFF_NOTE,
 } from '../../history/diff'
 import type { MessageStep } from '../../types'
 
@@ -316,6 +313,17 @@ const raw = ref(false)
 const longOpen = ref(new Set<string>())
 
 const isDiff = computed(() => view.value === 'diff')
+/**
+ * 这一步的整行 / 上一步的整行**没取到**时那句话（两个取景共用的一格）。
+ *
+ * 两块快照与对照那一档都靠它挡住「错误底下继续铺旧数据」：旧行留着是故意的（一次取数失败不该把
+ * 界面上那份证据擦掉），但它不能冒充本步的结果。哪一侧没取到，就在这儿说清。
+ */
+const problem = computed(() => {
+  if (props.error) return '这一步的快照没取到。'
+  if (isDiff.value && props.prevError) return '上一步的快照没取到，没法对照。'
+  return ''
+})
 /**
  * 两块快照**始终都算出来**（不按视图过滤），视图只决定哪一块显示出来（模板上的 `v-show`）。
  *

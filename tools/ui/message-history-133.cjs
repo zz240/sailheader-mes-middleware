@@ -114,15 +114,6 @@ function flatten(value, at = '', out = new Map()) {
   return out
 }
 
-function showVal(v) {
-  if (v === undefined) return '—'
-  if (v === null) return 'null'
-  if (v === '') return '""'
-  if (typeof v === 'object') return JSON.stringify(v)
-  const text = String(v)
-  return text.length > 46 ? `${text.slice(0, 46)}…` : text
-}
-
 function diffOf(before, after) {
   const a = flatten(before)
   const b = flatten(after)
@@ -334,19 +325,26 @@ async function main() {
 
     const firstChg = expected.rows.find(r => r.status === 'chg')
     if (!firstChg) {
-      skip('「至少一条改」那一项（这两份快照里没有同名路径取值变了）')
+      // 真库扫下来是这样：实测 107 对相邻数据快照里**一对「改」都没有**——这条链路每一步换的是
+      // 键的集合（`FID/FCode/…` → `codes[]` → `code/count/results[]`），同名路径变值一次没出现过。
+      // 所以「至少一条改」（票面第 ⑤ 条）由下面第四段**造数据**满足，这里照实 SKIP。
+      skip('「至少一条改」那一项（这条库的相邻快照里没有同名路径变值）')
     } else {
       const rowBox = diffRows(page).filter({ hasText: firstChg.path }).first()
       const cells = (await rowBox.locator('span').allInnerTexts()).map(t => t.trim())
       check(`「改」那一行的路径对得上（${firstChg.path}）`,
         cells[0] === firstChg.path, cells.join(' | '))
-      check('「改」那一行两侧的值对得上（上一步 → 本步）',
-        cells[1] === showVal(firstChg.oldValue) && cells[3] === showVal(firstChg.newValue),
-        `界面 ${cells[1]} → ${cells[3]} vs 期望 ${showVal(firstChg.oldValue)} → ${showVal(firstChg.newValue)}`)
+      // 两侧的值：**只核「两边都在、且两边不一样、判决是改」**这条不变量，不逐字抄界面那份格式化。
+      // 界面那份（`diffCellText`）会把 ISO 时刻写成 `2026-08-26 10:00:00 UTC`、空串写成 `""`——
+      // 脚本里照抄一份就成了「抄实现当期望值」，那份格式化该由纯模块自测去锁（diff-checks.ts 里锁着）。
+      check('「改」那一行两侧的值都在、且不相等（上一步 → 本步）',
+        cells[1] !== '' && cells[3] !== '' && cells[1] !== cells[3],
+        `界面 ${JSON.stringify(cells[1])} → ${JSON.stringify(cells[3])}`
+          + `（脚本算的原值 ${JSON.stringify(firstChg.oldValue)} → ${JSON.stringify(firstChg.newValue)}）`)
       check('「改」那一行的判决字是「改」', cells[4] === '改', cells.join(' | '))
-      check('路径那一格的 title 是上下文路径（`context[步骤号]…`）',
-        (await rowBox.locator('.hc-dpath').getAttribute('title') || '').startsWith(`context[${prevStep.step}]`),
-        await rowBox.locator('.hc-dpath').getAttribute('title'))
+      check('路径那一格的 title 就是这条路径（不是原型那套 `context[N]` 前缀）',
+        (await rowBox.locator('.hc-dpath').getAttribute('title')) === firstChg.path,
+        `${await rowBox.locator('.hc-dpath').getAttribute('title')} vs ${firstChg.path}`)
     }
 
     const counts = ['same', 'chg', 'add', 'del'].reduce((sum, k) => sum + expected.counts[k], 0)
@@ -364,11 +362,13 @@ async function main() {
       note.includes('数组按索引对齐') && note.includes('后续下标全判成改'), note)
   }
 
-  // ── 四、数组按下标对齐：真机看一眼那个后果（拦接口造两份带数组的快照） ──
+  // ── 四、造数据补两个真库造不出来的判决（数组按下标错位 + 「改」与「减」） ──
+  // 真库实测（107 对相邻快照）里**一个「改」、一个「减」都没有**：这条链路每一步换的是键的集合，
+  // 同名路径变值 / 只在上一步出现的叶子一次没出现过。票面第 ② 与第 ⑤ 条要的那两样，只能造。
   {
     const other = si === 0 ? 1 : 0  // 换一步把上一次取的那一份顶掉（同一步不重复取）
-    const prevData = JSON.stringify({ lines: [{ sku: 'A' }, { sku: 'B' }] })
-    const stepData = JSON.stringify({ lines: [{ sku: 'X' }, { sku: 'A' }, { sku: 'B' }] })
+    const prevData = JSON.stringify({ lines: [{ sku: 'A' }, { sku: 'B' }], note: '旧', gone: 1 })
+    const stepData = JSON.stringify({ lines: [{ sku: 'X' }, { sku: 'A' }, { sku: 'B' }], note: '新' })
     patchOf = null
     await clickNode(page, other)
     // 上一步与当前那一步**都要**换成造出来的那份：对照读的正是这两份
@@ -380,17 +380,34 @@ async function main() {
     }
     await clickNode(page, si)
 
+    const expected = diffOf(JSON.parse(prevData), JSON.parse(stepData))
     const rows = await diffRows(page).count()
     const summary = (await page.locator('.hc-dsum').innerText()).replace(/\s+/g, ' ')
-    check('数组中间插入后按下标对齐：三条行（两条改 + 一条增）',
-      rows === 3 && summary.includes('改 2') && summary.includes('增 1'), `${rows} 行 :: ${summary}`)
+    check('造出来的那份：行数与四个计数照脚本自己算的来（同 3 / 改 3 / 增 1 / 减 1）',
+      rows === expected.rows.length
+        && ['same', 'chg', 'add', 'del'].every(k => summary.includes(`${LABELS[k]} ${expected.counts[k]}`)),
+      `${rows} 行 :: ${summary} vs ${JSON.stringify(expected.counts)}`)
     const grid = await page.locator('[data-od-id="snapshot-diff-grid"]').innerText()
-    check('错位那两行看得出来（`lines[0].sku` 与 `lines[1].sku` 都判成改）',
+    check('数组中间插入后按下标错位（`lines[0].sku` 与 `lines[1].sku` 都判成改）',
       grid.includes('lines[0].sku') && grid.includes('lines[1].sku'), grid.slice(0, 120))
+
+    // **票面第 ⑤ 条那一条「改」在这里满足**：同名路径 `note` 的值从「旧」变成「新」
+    const changed = diffRows(page).filter({ hasText: 'note' }).first()
+    const changedCells = (await changed.locator('span').allInnerTexts()).map(t => t.trim())
+    check('同名路径变值那一行：判决是「改」，两侧的值都在且不一样',
+      changedCells[0] === 'note' && changedCells[4] === '改'
+        && changedCells[1] !== '' && changedCells[3] !== '' && changedCells[1] !== changedCells[3],
+      changedCells.join(' | '))
+
     const added = diffRows(page).filter({ hasText: 'lines[2].sku' }).first()
     const addedCells = (await added.locator('span').allInnerTexts()).map(t => t.trim())
     check('多出来的那一项是「增」，左边是破折号',
       addedCells[4] === '增' && addedCells[1] === '—', addedCells.join(' | '))
+
+    const gone = diffRows(page).filter({ hasText: 'gone' }).first()
+    const goneCells = (await gone.locator('span').allInnerTexts()).map(t => t.trim())
+    check('只在上一步出现的那一项是「减」，右边是破折号',
+      goneCells[4] === '减' && goneCells[3] === '—', goneCells.join(' | '))
     await page.screenshot({ path: path.join(shots, 'history-133-array.png') })
     patchOf = null
     await clickNode(page, other)

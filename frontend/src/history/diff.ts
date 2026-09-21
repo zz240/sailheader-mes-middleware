@@ -1,9 +1,9 @@
 /**
  * 「与上一步对照」的口径（#133）：把一条消息里**相邻两步的数据快照**按叶子路径对齐，判出 同 / 改 / 增 / 减。
  *
- * **纯模块**：不碰 DOM、不发请求、不带自测（自测在 `history/checks.ts`，与 `console.ts` / `snapshot.ts`
- * 同一套规矩）。ADR-0016 决策 9 要的那一段口径只在这里判一次——组件按 `state` 分派，
- * 真机脚本按同一套口径自己算一遍当裁判。
+ * **纯模块**：不碰 DOM、不发请求、不带自测（自测在同目录 `diff-checks.ts`，与 `console.ts` 的
+ * `checks.ts`、`snapshot.ts` 同一套规矩）。ADR-0016 决策 9 要的那一段口径只在这里判一次——
+ * 组件按 `stepDiffStart` 给的结论分派，真机脚本按同一套口径自己算一遍当裁判。
  *
  * 口径本身（原型 `04-message-history.html` 的 `diffHTML` + 「对照口径」那行注）：
  *   ① 按**叶子路径**对齐：对象走 `.键`、数组走 `[下标]`，对齐的是路径字符串；
@@ -145,8 +145,13 @@ export function diffCellText(value: unknown): string {
 /**
  * 摊平路径 → 上下文路径（原型 `toCtxPath`）：`3.order_no` → `context[3].order_no`。
  *
- * 只在**首个数字段**上加方括号：`context[0]` 是任务输入、`context[3]` 是步骤 3 的输出
- * （映射里 `sourceStep` 引的就是它）。数组下标本来就是方括号，照原样留着。
+ * **原型口径，这一页用不上**（ADR-0016 补记⑧）：原型那份 fixture 的快照是**整份上下文**，
+ * 摊平出来就是 `0` / `1` / `2` 打头的路径，所以它得把第一段折成 `context[N]`；生产里落库的
+ * `data_snapshot` 是**这一步的输出本身**（`RouteGenerator` 写的就是捕获到的原文 / 响应），
+ * 摊平出来第一段是字段名——加前缀只会写出一句不存在的话（`FCode` 前面没有 `context[N]`）。
+ *
+ * 函数留着是为了「以后有别的上下文形态长出来时有个点名的地方」，**界面上一个字都不铺**：
+ * 路径那一格给的就是叶子路径本身（与它等价的 `title`）。生产库里也确实没有 `N.` 打头的快照。
  */
 export function contextPath(path: string): string {
   if (!path) return 'context'
@@ -271,14 +276,6 @@ export function stepDiffStart(
     },
     blocker: null,
   }
-}
-
-/**
- * 一侧快照的标题（`上一步 步骤 2 READ_SQL` / `本步 步骤 3 push-qc`）——
- * 摘要行与标题都从它写，样式不同但内容同源。
- */
-export function diffHeads(prevHead: string, nextHead: string): { prev: string; next: string } {
-  return { prev: `上一步 ${prevHead}`, next: `本步 ${nextHead}` }
 }
 
 /** 摘要行那四个计数（原型 `dc` 那四格）：`同 N / 改 N / 增 N / 减 N`。 */
