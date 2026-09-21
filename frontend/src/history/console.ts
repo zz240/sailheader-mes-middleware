@@ -56,6 +56,36 @@ export function firstLine(text?: string | null): string {
   return cut < 0 ? text : text.slice(0, cut)
 }
 
+/**
+ * 耗时那一格的说法（#134）：动作耗时（毫秒）→ 界面上的字。
+ *
+ * **空就是空**：没测过 / V4 之前落库的老数据（那时 `message_step` 还没有这一列）写 `—`，
+ * 不写 `0 ms`——「没测」与「测得就是 0 ms」是两件事，正是 ADR-0016 决策 7 要挡住的那种含糊。
+ * 形状照原型那份 fixture：`38 ms` / `620 ms` / `1.2 s` / `3.1 s`。
+ */
+export function durationText(ms?: number | null): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return '—'
+  // 先归一成整数再分档：不然 999.6 会印成 `1000 ms` 而 1000 印成 `1.0 s`——两档的边界各说各话
+  const rounded = Math.round(ms)
+  return rounded < 1000 ? `${rounded} ms` : `${(ms / 1000).toFixed(1)} s`
+}
+
+/**
+ * 运行行那一格的**运行耗时**（#134）：`finishedAt - startedAt` 的墙钟时长。
+ *
+ * 它不是动作耗时（那个落在消息步上、只包住一个动作），而是这条运行从头到尾的总时长——
+ * 票面把「运行行」单列成一处时取的就是这个口径，与原型 `run.cost` 一致。
+ * 没开始、或没结束又不是 RUNNING 时写 `—`，跑着没结束时写 `运行中`：一个都不编成 `0 ms`。
+ */
+export function runCostText(run: Pick<JobRun, 'status' | 'startedAt' | 'finishedAt'>): string {
+  if (!run.startedAt) return '—'
+  if (!run.finishedAt) return run.status === STATUS_RUNNING ? '运行中' : '—'
+  const started = Date.parse(run.startedAt)
+  const finished = Date.parse(run.finishedAt)
+  if (!Number.isFinite(started) || !Number.isFinite(finished)) return '—'
+  return durationText(finished - started)
+}
+
 /** 长 id（消息 UUID）在界面上只留前 8 位（原型 `shortId`）。 */
 export function shortId(id?: string | null): string {
   const clean = id?.trim() ?? ''
@@ -331,6 +361,8 @@ export interface RunRow {
   jobTitle: string
   started: string
   finished: string
+  /** 这条运行的**运行耗时**（#134）：`finishedAt - startedAt`，没结束写「运行中」、缺时刻写 `—`。 */
+  cost: string
   errLine: string
   /** `N 消息 · M 步[ · 失败 K]` 的分段（拿不到摘要时是 `[{ text: '—', bad: false }]`），模板直接上色。 */
   counts: { text: string; bad: boolean }[]
@@ -352,6 +384,7 @@ export function runRows(
       jobTitle: jobTitleOf(jobs, run.jobId),
       started: stampOf(run.startedAt),
       finished: stampOf(run.finishedAt),
+      cost: runCostText(run),
       errLine: firstLine(run.error),
       counts: summary ? countsParts(summary) : [{ text: '—', bad: false }],
       keys: matchedKeysView(summary?.matchedBusinessKeys),
@@ -574,8 +607,13 @@ export interface ChainNode {
   /** 两个快照点（输入 / 数据）亮不亮。 */
   hasInput: boolean
   hasData: boolean
+  /**
+   * 这一步的**动作耗时**（#134）：量不出来 / 老数据写 `—`。入口那格（`context[0]`）不是某一步，
+   * 所以它的这一格不铺（模板按 `step` 在不在判）。
+   */
+  cost: string
   selected: boolean
-  /** 可访问名称：步骤号、动作、状态，外加两个快照点有没有落（票面要求写清这几样）。 */
+  /** 可访问名称：步骤号、动作、状态、耗时，外加两个快照点有没有落（票面要求写清这几样）。 */
   label: string
   /** 点这一格要选中的那一步；`context[0]` 那格是静态的（原型里它也不是按钮）。 */
   step: MessageStep | null
@@ -605,6 +643,7 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
     chip: statusChip(null),
     hasInput: false,
     hasData: false,
+    cost: '—',
     selected: false,
     label: '步骤 0 · 任务输入 · context[0] · 本次运行的触发报文',
     step: null,
@@ -615,6 +654,7 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
     const action = step.actionName?.trim() || '—'
     const hasInput = hasSnapshot(step.hasInputSnapshot)
     const hasData = hasSnapshot(step.hasDataSnapshot)
+    const cost = durationText(step.durationMs)
     nodes.push({
       n: step.step,
       head: `步骤 ${step.step}`,
@@ -623,8 +663,9 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
       chip,
       hasInput,
       hasData,
+      cost,
       selected: !!current && current.messageId === step.messageId && current.step === step.step,
-      label: `步骤 ${step.step} · 动作 ${action} · 状态 ${chip.label}`
+      label: `步骤 ${step.step} · 动作 ${action} · 状态 ${chip.label} · 耗时 ${cost}`
         + ` · 输入快照 ${hasInput ? '有' : '无'} · 数据快照 ${hasData ? '有' : '无'}`,
       step,
     })
@@ -645,12 +686,12 @@ export interface StepFact {
 }
 
 /**
- * 单步卡（#131 票面：状态、动作、尝试次数、时刻、错误块）。
+ * 单步卡（#131 票面：状态、动作、尝试次数、时刻、错误块；#134 补上耗时）。
  *
- * `facts` 三格照原型那张 `.fact` 行（尝试 / 落库 / 输出 `context[n]（未写）`）。
- * **耗时不在这一票里**：动作耗时是 #134 的后端改动（`message_step.duration_ms`），
- * 这一票只把卡片长出来，耗时那一格由它补——现在写 `—` 会把「没测」与「测得是 0」混起来，
- * 正是 ADR-0016 决策 7 拒绝的那种含糊。
+ * `facts` 四格照原型那张 `.fact` 行（尝试 / 耗时 / 落库 / 输出 `context[n]（未写）`）。
+ * **耗时那一格由 #134 补上**，与步骤链节点同一份口径（都走 {@link durationText}）——两处显示同一步的
+ * 同一个值，靠的是同一个纯函数，而不是两个地方各写一遍格式化。老数据没这一列时它写 `—`，
+ * 不是 `0 ms`（ADR-0016 决策 7）。
  *
  * `error` **原样保留换行**（票面：便于直接粘贴），只把第一行单独切出来给模板加粗
  * （原型 `errHTML` 里那句 `<b>`）；`error` 为空串时整块不铺——成功步不显示空错误块。
@@ -691,6 +732,7 @@ export function stepCardView(step: MessageStep | null): StepCardView | null {
     at: stampOf(step.createdAt),
     facts: [
       { label: '尝试', value: String(step.attempt ?? 1) },
+      { label: '耗时', value: durationText(step.durationMs) },
       { label: '落库', value: stampOf(step.createdAt) },
       { label: '输出', value: `context[${step.step}]${wroteOutput(step.status) ? '' : '（未写）'}` },
     ],

@@ -44,6 +44,17 @@ public class MessageStep {
     /** 尝试次数（含重试）。 */
     private Integer attempt;
 
+    /**
+     * 本步的**动作耗时**（毫秒，#134）：这个动作从开始执行到返回的墙钟时长，用来回答「哪一步慢」。
+     *
+     * <p>可空，而且是**真的可空**：这一列之前落库的消息步没测过（V4 迁移不回溯），界面那一格
+     * 写 `—` 而不是 `0 ms`——「没测」与「测得就是 0 ms」是两件事（ADR-0016 决策 7）。</p>
+     *
+     * <p>失败步也记：耗时取自**最后一次尝试**的动作执行（不含重试退避那段等待，
+     * 所以它不是步间隔）。</p>
+     */
+    private Long durationMs;
+
     /** 业务键（如单号），按源动作 businessKey 在消息创建时提取，可为空。 */
     private String businessKey;
 
@@ -142,6 +153,14 @@ public class MessageStep {
 
     public void setAttempt(Integer attempt) {
         this.attempt = attempt;
+    }
+
+    public Long getDurationMs() {
+        return durationMs;
+    }
+
+    public void setDurationMs(Long durationMs) {
+        this.durationMs = durationMs;
     }
 
     public String getBusinessKey() {

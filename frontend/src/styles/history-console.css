@@ -229,6 +229,8 @@
 .hc-cstat-bad { color: var(--danger-ink); }
 .hc-cstat-warn { color: var(--warn-ink); }
 .hc-cstat-run { color: var(--muted); }
+/* 步骤链节点上的动作耗时（#134）：与状态同字号同字体，但恒为灰——耗时本身没有好坏档（照原型） */
+.hc-ccost { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
 
 /* 单步卡 */
 .hc-card {

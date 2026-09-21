@@ -43,6 +43,14 @@ public class MessageStepIndex {
     /** 尝试次数（含重试）。 */
     private Integer attempt;
 
+    /**
+     * 本步的**动作耗时**（毫秒，#134）。可空：V4 之前落库的消息步没测过，界面写 `—` 而不是 `0 ms`。
+     *
+     * <p>它必须在索引里（步骤链的每一格、单步卡都写它）：这一列是 BIGINT 的标量，不像两个
+     * TEXT 快照列那样按第三方响应体定价，带上它不违反「索引行只有几十到两百字节」那条。</p>
+     */
+    private Long durationMs;
+
     /** 业务键（如单号），可为空；界面写「无业务键」。 */
     private String businessKey;
 
@@ -122,6 +130,14 @@ public class MessageStepIndex {
 
     public void setAttempt(Integer attempt) {
         this.attempt = attempt;
+    }
+
+    public Long getDurationMs() {
+        return durationMs;
+    }
+
+    public void setDurationMs(Long durationMs) {
+        this.durationMs = durationMs;
     }
 
     public String getBusinessKey() {

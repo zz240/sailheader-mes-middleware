@@ -247,6 +247,25 @@ class MessageHistoryMapperTest {
         assertThat(row.getStatus()).isEqualTo("SUCCESS");
     }
 
+    /**
+     * #134：索引行带上**动作耗时**，而 V4 之前落库的老行那一格是**空**——
+     * 界面据此写 `—`（没测）而不是 `0 ms`（测得是 0），这两个数在页面上必须分得开。
+     */
+    @Test
+    void runStepIndexCarriesDurationAndKeepsOldRowsEmpty() {
+        JobRun run = insertRun(7L, "SUCCESS");
+        MessageStep measured = insertFullStep(run.getId(), "msg-a", 1, "SUCCESS", null, null, null);
+        measured.setDurationMs(37L);
+        messageStepMapper.updateById(measured);
+        insertFullStep(run.getId(), "msg-b", 2, "SUCCESS", null, null, null); // 老数据：没测过
+
+        List<MessageStepIndex> rows = messageStepMapper.pageRunStepIndex(new Page<>(1, 10), run.getId())
+                .getRecords();
+
+        assertThat(rows.get(0).getDurationMs()).isEqualTo(37L);
+        assertThat(rows.get(1).getDurationMs()).isNull();
+    }
+
     /** 分页按 id 升序翻：第 2 页接在第 1 页后面，不漏不重。 */
     @Test
     void runStepIndexPagesInStepOrder() {

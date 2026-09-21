@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS message_step (
     error TEXT,
     created_at TIMESTAMP,
     attempt INT NOT NULL DEFAULT 1,
+    duration_ms BIGINT,
     business_key VARCHAR(255),
     CONSTRAINT uk_msg_step_run_msg_step UNIQUE (run_id, message_id, step)
 );

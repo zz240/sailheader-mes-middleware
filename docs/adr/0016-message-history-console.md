@@ -97,6 +97,39 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
    （nullable、旧数据不回溯、失败步也记）。页面按「耗时可能为空」渲染（`—`），所以它推迟也不拖垮页面。
    **明确不接受**用相邻消息步 `createdAt` 差值近似：那是**步间隔**（含排队与开销），与**动作耗时**
    不是一回事，两个语义不同的数字长得一样是最坏的含糊（`CONTEXT.md` 两条术语已分开）。
+   **补记（#134 落地时）**：计时点、量法、三处各显示什么，一次记清：
+   ①**计时点是每步动作的入口**（`RouteGenerator.beginStep`），落库那一刻结算（`stepDuration`）。
+   本条决策与「风险」两处写的 `ActionChainRunner` 是排期时对「链路执行器」的叫法，**全仓没有这个类**，
+   落地的接缝就是 `RouteGenerator`（别照着那个名字去找）。
+   失败步在 `onExceptionOccurred` 里结算**本次尝试**，`onRedelivery`（下一次重投开始之前）重打起点——
+   退避等待因此不进这个数。不这么做，「连接超时 30 s + 退避 1 s × 2」的失败步会写成一个更大的数，
+   那正是本条拒绝的步间隔口径。`RouteGeneratorAttemptTest.failedStepDurationExcludesRetryBackoff`
+   把退避设成 300 ms 来钉这一条（含退避的话那个数会 ≥ 600 ms）。
+   **记完一步就把起点收掉**：终点之后链上再出错（落运行、推水位那两处都不属于任何一步），`onException`
+   仍会拿最后一步的序号记一条 FAILED——那时该给 `—`，不该给「上一步开始到现在」那个看着像模像样的错数
+   （`MessageHistoryExecutionTest.failureOutsideAnyStepDoesNotChargeThatStepsClock`）。
+   ②**READ_SQL 是唯一的例外**：读一次、落库却发生在每条源行上。它在 split **之前**结算
+   （分批那条路在 `readBatch` 尾部、不分批那条路是 `.process(this::settleStepDuration)`），split 会把
+   exchange 属性拷给各子 exchange，于是**同一批**的源行共用**同一次读**的耗时；不这么做，第二条源行
+   量到的是「读库 + 前一条消息跑完」。
+   分批时**起点打在每一批的开头**（`readBatch` 里）：`prepareRead` 在循环外只跑一次，起点放那儿的话
+   第二批起量到的还是第一批那个数。两条断言分别钉这两半——
+   `MessageHistoryExecutionTest.readChainRecordsSourceActionStepPerMessage`（同一批两条源行共用一个数）
+   与 `batchedReadTimesEveryBatchSeparately`（三批各量各的：用一个「一次比一次慢」的连接代理把批与批
+   分开，读耗时必须递增）。
+   ③**成功与失败两条落库路径都记**：`recordSuccess` / `recordFailure` 的签名一起加 `Long durationMs`
+   （调用点与测试里的匿名替身同步改，票面的验收项之一）。空值是**真的空**：没打过起点就传 null。
+   ④**索引接口带它**（`MessageStepIndex.durationMs` + `pageRunStepIndex` 的投影）：BIGINT 标量，
+   不像两个 TEXT 快照列那样按第三方响应体定价，所以步骤链与单步卡不必为它再按 id 取一次整行。
+   ⑤**界面三处、两种口径**：步骤链节点与单步卡显示该步的**动作耗时**，两处同源（都走 `console.ts`
+   的 `durationText`），所以不可能出现两处不一致；**运行行**那一处按票面拍板显示的是**运行耗时**
+   （`finishedAt - startedAt`，跑着写「运行中」）——原型第 804 行那个 `run.cost` 本来就是运行级的，
+   背景那句「每步耗时在三处一等信息」照着原型落成「三处都有耗时这一格」。两个量在 `CONTEXT.md` 里
+   是两条术语（动作耗时 / 运行耗时）。
+   ⑥**空值与 0 分得开**：`durationText` 只在 `null` / `undefined` / `NaN` / 负数时给 `—`，`0 ms` 是
+   **真测得 0**。老数据（V4 之前落库的步）该列为空、页面显示 `—`（票面第一条验收项）。
+   ⑦**迁移 V4 幂等**（`information_schema` 判断列在不在，与 V2 一个写法），测试库的 `schema.sql`
+   同步加列；不回溯老数据，也不留任何「用相邻消息步 `createdAt` 差值近似」的退路。
 
 8. **快照只做显示侧降级**：非 JSON 文本、空对象、超长不卡死，各给一句口径说明。**不碰 #127**
    （`data_snapshot` / `input_snapshot` 是 TEXT，超 64 KB 写不进历史、成功的动作反被判失败）——

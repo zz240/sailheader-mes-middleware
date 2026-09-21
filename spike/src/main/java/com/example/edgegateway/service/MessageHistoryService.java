@@ -129,21 +129,26 @@ public class MessageHistoryService {
 
     // ---------- 消息步（message_step） ----------
 
+    /**
+     * 记一条成功消息步。{@code durationMs} 是这一步的**动作耗时**（#134，毫秒）；
+     * 量不出来时传 {@code null}——不编 0（「没测」与「测得就是 0 ms」在页面上是两件事）。
+     */
     public void recordSuccess(Long runId, String messageId, Integer step, String actionName,
-                              Object input, Object data, String businessKey, int attempt) {
-        record(runId, messageId, step, actionName, SUCCESS, data, input, null, businessKey, attempt);
+                              Object input, Object data, String businessKey, int attempt, Long durationMs) {
+        record(runId, messageId, step, actionName, SUCCESS, data, input, null, businessKey, attempt, durationMs);
     }
 
     /**
-     * 记一条失败消息步。
+     * 记一条失败消息步（失败步也记耗时：#134 里最该看耗时的往往就是失败的那一步）。
      */
     public void recordFailure(Long runId, String messageId, Integer step, String actionName,
-                              String error, Object input, String businessKey, int attempt) {
-        record(runId, messageId, step, actionName, FAILED, null, input, error, businessKey, attempt);
+                              String error, Object input, String businessKey, int attempt, Long durationMs) {
+        record(runId, messageId, step, actionName, FAILED, null, input, error, businessKey, attempt, durationMs);
     }
 
     private void record(Long runId, String messageId, Integer step, String actionName, String status,
-                        Object data, Object input, String error, String businessKey, int attempt) {
+                        Object data, Object input, String error, String businessKey, int attempt,
+                        Long durationMs) {
         if (runId == null || messageId == null || step == null) {
             return;
         }
@@ -161,6 +166,7 @@ public class MessageHistoryService {
         entity.setInputSnapshot(toJson(input));
         entity.setError(error);
         entity.setAttempt(attempt);
+        entity.setDurationMs(durationMs);
         entity.setBusinessKey(businessKey);
         if (existing == null) {
             entity.setCreatedAt(LocalDateTime.now());

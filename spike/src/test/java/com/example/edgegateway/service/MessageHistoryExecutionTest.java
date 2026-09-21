@@ -123,6 +123,9 @@ class MessageHistoryExecutionTest {
         assertThat(step.getStatus()).isEqualTo("SUCCESS");
         assertThat(step.getStep()).isEqualTo(2);
         assertThat(step.getActionName()).isEqualTo("map");
+        assertThat(step.getDurationMs())
+                .as("#134：跑完一条成功链，落库的这一步要带动作耗时（不是空的）")
+                .isNotNull();
     }
 
     @Test
@@ -609,8 +612,13 @@ class MessageHistoryExecutionTest {
         }
 
         assertThat(runs.values()).anyMatch(r -> r.getJobId().equals(13L) && "FAILED".equals(r.getStatus()));
-        assertThat(steps.values()).anyMatch(s -> "FAILED".equals(s.getStatus())
-                && s.getStep() == 2 && "upsert".equals(s.getActionName()));
+        MessageStep failed = steps.values().stream()
+                .filter(s -> "FAILED".equals(s.getStatus()) && s.getStep() == 2)
+                .findFirst().orElseThrow();
+        assertThat(failed.getActionName()).isEqualTo("upsert");
+        assertThat(failed.getDurationMs())
+                .as("#134：失败那一步也要有耗时（失败往往正是要看耗时的那一步）")
+                .isNotNull();
     }
 
     /** #73 AC：成功链 每消息×每动作 一条 SUCCESS 步，同消息各步共享 message_id，businessKey 提取正确。 */
@@ -728,10 +736,112 @@ class MessageHistoryExecutionTest {
             assertThat(list).allMatch(s -> "SUCCESS".equals(s.getStatus()));
             assertThat(list).extracting(MessageStep::getStep).containsExactlyInAnyOrder(1, 2, 3);
             assertThat(list).allMatch(s -> s.getBusinessKey() != null); // order_no 提取
+            assertThat(list).allMatch(s -> s.getDurationMs() != null,
+                    "#134：成功链的每一步都要有耗时，源动作 READ_SQL 那一步也在内");
             MessageStep readStep = list.stream().filter(s -> s.getStep() == 1).findFirst().orElseThrow();
             assertThat(readStep.getActionName()).isEqualTo("read");
             assertThat(readStep.getInputSnapshot()).isNull(); // 源动作无输入快照
         });
+
+        // #134：读库只做了一次、落库却发生在每条源行上——两条源行的读步因此共用这一次读的耗时
+        //（起点在 split 之前就结算了）。不这么做，第二条源行量到的是「读库 + 前一条消息跑完」。
+        List<Long> readDurations = all.stream().filter(s -> s.getStep() == 1)
+                .map(MessageStep::getDurationMs).distinct().toList();
+        assertThat(readDurations).as("两条源行的读步共用一个耗时").hasSize(1);
+        assertThat(readDurations.getFirst()).isNotNull();
+    }
+
+    /**
+     * #134：**分批**读的时候每一批各量各的——第 2 批不能拿着第 1 批那个数。
+     *
+     * <p>起点与结算都挂在 exchange 属性上，起点要是打在循环外（`prepareRead` 那一处只跑一次），
+     * 第二批起就量的是第一批读库的时间。这条用「一次比一次慢」的连接代理把批与批分开：
+     * 三批的读耗时必须**递增**，全等于第 1 批那个数就是串味了。</p>
+     */
+    @Test
+    void batchedReadTimesEveryBatchSeparately() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(16L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select id, order_no from po_order where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id",
+                        "businessKey", "order_no", "batchSize", 1)),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "order_no", "target", "order_no")))));
+
+        DriverManagerDataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:readBatchTiming;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        execute(h2, "create table po_order(id bigint primary key, order_no varchar(64))",
+                "insert into po_order(id, order_no) values (1,'PO-1'), (2,'PO-2'), (3,'PO-3')");
+        javax.sql.DataSource slow = new SlowerEachTimeDataSource(h2, 30L);
+        when(dataSourceManager.get(1L)).thenReturn(slow);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        context.getRegistry().bind("edge-ds-1", slow);
+
+        buildRoutes(context, history, job, actions);
+        try {
+            context.createProducerTemplate().requestBody("direct:job-16", Map.of());
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runs.values().stream().filter(r -> r.getJobId().equals(16L)).findFirst().orElse(null);
+        assertThat(run).as("运行没起来: " + describeRuns(16L)).isNotNull();
+        List<Long> readDurations = steps.values().stream()
+                .filter(s -> s.getRunId().equals(run.getId()) && s.getStep() == 1)
+                .sorted(java.util.Comparator.comparing(MessageStep::getId))
+                .map(MessageStep::getDurationMs)
+                .toList();
+
+        assertThat(readDurations).as("三批各记一条读步 | " + readDurations).hasSize(3);
+        assertThat(readDurations).doesNotContainNull();
+        assertThat(readDurations.get(0)).as("第 2 批不能拿着第 1 批那个数 | " + readDurations)
+                .isLessThan(readDurations.get(1));
+        assertThat(readDurations.get(1)).as("第 3 批同理 | " + readDurations)
+                .isLessThan(readDurations.get(2));
+    }
+
+    /**
+     * #134：某一步**成功之后**、在步骤之外出的错（落运行 / 推水位那几处不在任何动作片段里），
+     * 不该把「上一步开始到现在」算成那一步的耗时——那是个看着像模像样的错数。
+     *
+     * <p>记完那一步就把计时起点收掉，所以这里给的是 {@code null}（页面写 `—`），
+     * 而不是「刚刚那一步的时间」。</p>
+     */
+    @Test
+    void failureOutsideAnyStepDoesNotChargeThatStepsClock() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(17L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "bom.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "orderNo", "target", "order_no")))));
+        stubConsumeDataSource();
+        // 链尾写运行那一刻炸掉：那一步不属于任何动作片段，onException 会拿最后一步（2）的序号记 FAILED
+        when(jobRunMapper.updateById(any(JobRun.class))).thenThrow(new RuntimeException("写运行失败"));
+
+        buildRoutes(context, history, job, actions);
+        try {
+            assertThatThrownBy(() -> context.createProducerTemplate()
+                    .requestBody("direct:job-17", Map.of("orderNo", "PO-1")))
+                    .as("失败链应向调用方抛异常").isInstanceOf(Exception.class);
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runOf(17L);
+        assertThat(run).as("运行没起来: " + describeRuns(17L)).isNotNull();
+        MessageStep failed = stepsOf(run).stream().filter(s -> "FAILED".equals(s.getStatus()))
+                .findFirst().orElseThrow(() -> new AssertionError("没有 FAILED 步 | " + describeSteps()));
+        assertThat(failed.getStep()).isEqualTo(2);
+        assertThat(failed.getDurationMs())
+                .as("不在任何一步里出的错，不该背上那一步的时钟 | " + describeSteps())
+                .isNull();
     }
 
     /** #73 按用户意见：READ_SQL 源失败也应记一条 FAILED 消息步（用批量占位消息 id，无输入快照）。 */
@@ -833,6 +943,33 @@ class MessageHistoryExecutionTest {
             for (String each : sql) {
                 statement.execute(each);
             }
+        }
+    }
+
+    /**
+     * 每取一次连接就比上一次多睡 {@code stepMs} 的数据源（#134 的分批计时用例要它）：
+     * 批与批的读耗时因此**递增**，「第 2 批拿着第 1 批那个数」这种串味一眼看得出来。
+     */
+    private static final class SlowerEachTimeDataSource
+            extends org.springframework.jdbc.datasource.DelegatingDataSource {
+
+        private final java.util.concurrent.atomic.AtomicInteger calls =
+                new java.util.concurrent.atomic.AtomicInteger();
+        private final long stepMs;
+
+        private SlowerEachTimeDataSource(javax.sql.DataSource target, long stepMs) {
+            super(target);
+            this.stepMs = stepMs;
+        }
+
+        @Override
+        public java.sql.Connection getConnection() throws SQLException {
+            try {
+                Thread.sleep(stepMs * calls.incrementAndGet());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return super.getConnection();
         }
     }
 

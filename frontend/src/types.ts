@@ -77,6 +77,14 @@ export interface MessageStep {
   error?: string | null
   createdAt?: string | null
   attempt?: number | null
+  /**
+   * 本步的**动作耗时**（毫秒，#134）：这个动作从开始执行到返回的墙钟时长。
+   *
+   * 可空，而且是**真的可空**：V4 迁移之前落库的消息步没测过，界面那一格写 `—` 而不是 `0 ms`
+   * （「没测」与「测得就是 0 ms」是两件事）。两条取数路都带它：索引那条（步骤链 + 单步卡）
+   * 与整行那条。
+   */
+  durationMs?: number | null
   businessKey?: string | null
 }
 

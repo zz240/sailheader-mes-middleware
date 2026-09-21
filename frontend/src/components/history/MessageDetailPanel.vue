@@ -110,6 +110,9 @@
                   <span class="hc-ca">{{ node.action }}</span>
                   <span class="hc-cm">
                     <span class="hc-cstat" :class="`hc-cstat-${node.chip.kind}`">{{ node.chip.label }}</span>
+                    <!-- 动作耗时（#134）：与单步卡那一格同源（都出自 console.ts 的 durationText），
+                         老数据没测过时写 `—` 而不是 `0 ms`。灰色照原型（不是状态色：耗时本身没有好坏档） -->
+                    <span class="hc-ccost">{{ node.cost }}</span>
                   </span>
                 </button>
               </div>

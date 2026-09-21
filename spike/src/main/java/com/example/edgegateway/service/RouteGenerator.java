@@ -61,6 +61,17 @@ public class RouteGenerator {
     private static final String WATERMARK = "edge.readWatermark";
     /** 是否还有下一批（keyset 分页未扫完）。 */
     private static final String HAS_MORE = "edge.hasMoreBatches";
+    /**
+     * 本步动作**开始执行**的时刻（epoch 毫秒，#134）。落库那一刻与它相减，得到这一步的
+     * {@code duration_ms}——量的是动作本身，不是相邻消息步的间隔（含排队与开销，另一个量）。
+     */
+    private static final String STEP_STARTED_AT = "edge.stepStartedAt";
+    /**
+     * 已经**结算好**的本步动作耗时（#134）。READ_SQL 的执行在 split 之前就结束了、落库却发生在每条源行上，
+     * 所以在 split 之前结算一次，各源行共用这一个数（split 会把 exchange 属性一并拷给子 exchange）——
+     * 不这么做，第二条源行量到的就是「读库 + 前一条消息跑完」的时长。
+     */
+    private static final String STEP_DURATION_MS = "edge.stepDurationMs";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
@@ -285,8 +296,12 @@ public class RouteGenerator {
                                 ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
                                 ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                                 ex.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
+                                beginStep(ex); // #134：计时起点打在读库之前
                             })
                             .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
+                            // 读完了就结算（#134）：落库发生在每条源行上，而读只做了一次。
+                            // 在 split 之前结算，各源行共用这一个数；不然第二条源行量到的是「读库 + 前一条跑完」
+                            .process(this::settleStepDuration)
                             .split(ExpressionBuilder.bodyExpression());
                 }
                 inSplit = true;
@@ -332,6 +347,7 @@ public class RouteGenerator {
                     if (isResumeSkipped(ex, index)) {
                         return;
                     }
+                    beginStep(ex); // #134：计时起点打在动作执行之前
                     ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                     ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                     Object input = ex.getMessage().getBody();
@@ -352,6 +368,7 @@ public class RouteGenerator {
                     if (isResumeSkipped(ex, index)) {
                         return;
                     }
+                    beginStep(ex); // #134：计时起点打在动作执行之前
                     ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                     ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                     Object input = ex.getMessage().getBody();
@@ -375,6 +392,7 @@ public class RouteGenerator {
                                 return;
                             }
                             ex.setProperty(SKIP_FLAG, false);
+                            beginStep(ex); // #134：计时起点打在动作执行之前（含出站与响应捕获）
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
@@ -408,6 +426,7 @@ public class RouteGenerator {
                                 return;
                             }
                             ex.setProperty(SKIP_FLAG, false);
+                            beginStep(ex); // #134：计时起点打在动作执行之前（含序列化与投递）
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
@@ -459,9 +478,63 @@ public class RouteGenerator {
                 // 每次投递失败都 +1（含最后一次）：计数写在自己的 exchange property 上。
                 // 不读 Camel 的 CamelRedeliveryCounter——它写在 message header 上，每次重投会被
                 // remove/decrement，读它恒为 null + 1（#109）。
-                .onExceptionOccurred(this::countAttempt)
+                .onExceptionOccurred(this::noteAttemptFailure)
+                // 退避等待之后的这一次重投：重打计时起点，退避那段时间因此不计入动作耗时（#134）
+                .onRedelivery(this::restartStepTiming)
                 .process(ex -> recordFailure(ex))
                 .handled(handled);
+    }
+
+    /**
+     * 一次投递失败（含最后一次）：计数 + **结算本次尝试的动作耗时**（#134）。
+     *
+     * <p>结算放在异常回调里而不是落库那一刻，是因为落库发生在重试耗尽之后、退避等待之后——
+     * 在那里现算的话，一个「连接超时 30 秒、退避 1 秒、重试 2 次」的失败步会写成一个更大的数，
+     * 而那正是 ADR-0016 决策 7 拒绝的**步间隔**口径。取最后一次尝试，退避不进去。</p>
+     */
+    private void noteAttemptFailure(Exchange exchange) {
+        countAttempt(exchange);
+        settleStepDuration(exchange);
+    }
+
+    /** 下一次重投开始前的计时起点（#134）：起点打在退避之后，退避等待因此不算动作耗时。 */
+    private void restartStepTiming(Exchange exchange) {
+        exchange.setProperty(STEP_STARTED_AT, System.currentTimeMillis());
+    }
+
+    /**
+     * 标记「这一步的动作从这里开始」（#134）：起点打在动作执行之前，落库时与之相减。
+     *
+     * <p>顺带清掉上一步结算好的那个值——属性是挂在 exchange 上的，不清就会串到下一步头上。</p>
+     */
+    private void beginStep(Exchange exchange) {
+        exchange.removeProperty(STEP_DURATION_MS);
+        exchange.setProperty(STEP_STARTED_AT, System.currentTimeMillis());
+    }
+
+    /** 结算本步动作耗时（#134）：把「起点到现在」落成显式值、清掉起点；没有起点（未计时）时什么都不做。 */
+    private void settleStepDuration(Exchange exchange) {
+        Long started = exchange.getProperty(STEP_STARTED_AT, Long.class);
+        if (started == null) {
+            return;
+        }
+        exchange.setProperty(STEP_DURATION_MS, System.currentTimeMillis() - started);
+        exchange.removeProperty(STEP_STARTED_AT);
+    }
+
+    /**
+     * 本步动作耗时（#134），落库时调。
+     *
+     * <p>**开着的起点优先**：重投过又成功的那一步，显式值是上一次失败尝试的时长，而起点是本次成功尝试
+     * 的（{@link #restartStepTiming}），要的是后者。起点不在（已结算 / 压根没计时）才退回显式值；
+     * 两个都没有时给 {@code null}——「没测」不编成 {@code 0}。</p>
+     */
+    private Long stepDuration(Exchange exchange) {
+        Long started = exchange.getProperty(STEP_STARTED_AT, Long.class);
+        if (started != null) {
+            return System.currentTimeMillis() - started;
+        }
+        return exchange.getProperty(STEP_DURATION_MS, Long.class);
     }
 
     /**
@@ -508,6 +581,10 @@ public class RouteGenerator {
     /**
      * 记一条成功消息步。{@code data} 单独传（而不是一律取当前 body）：HTTP 步收尾时 body 已被还原成请求体，
      * 而 {@code data_snapshot} 要记的是**响应**（见 {@link #captureResponse}）。
+     *
+     * <p>耗时（#134）从 {@link #stepDuration} 取——起点是本步动作执行之前打的那一个，
+     * 重投过的步取的是**这次成功那次尝试**（见该方法里那条优先级说明）。记完就把起点收掉，
+     * 理由见方法体里那段。</p>
      */
     private void recordSuccessStep(Exchange ex, Action action, Object input, Object data) {
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
@@ -515,9 +592,16 @@ public class RouteGenerator {
         if (runId == null || messageId == null) {
             return; // 未创建消息（如 MQ_CONSUME 入口反序列化失败）时不记消息步
         }
+        Long durationMs = stepDuration(ex);
+        // 记完这一步就把**计时起点**收掉（#134）：终点之后链上再出错（落运行、推水位那几处都不属于
+        // 任何一步），onException 会拿最后一步的序号记一条 FAILED——那时不该把「上一步开始到现在的
+        // 时长」算到它头上（那是个看着像模像样的错数），该给 `—`。
+        // 只收起点的、**不动**已经结算好的那个显式值：READ_SQL 同一批的后续源行还要用它。
+        ex.removeProperty(STEP_STARTED_AT);
         messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
                 input, data,
-                ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attemptsOnSuccess(ex));
+                ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attemptsOnSuccess(ex),
+                durationMs);
     }
 
     private void recordFailure(Exchange ex) {
@@ -537,7 +621,10 @@ public class RouteGenerator {
                     rootMessage(ex),
                     ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class),
                     ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class),
-                    attemptsOnFailure(ex));
+                    attemptsOnFailure(ex),
+                    // #134：失败步也记耗时——而且这里拿到的是**最后一次尝试**的动作耗时
+                    // （异常回调里已经结算过，退避等待不在里面）
+                    stepDuration(ex));
         }
     }
 
@@ -610,6 +697,9 @@ public class RouteGenerator {
 
     /** 读一批：keyset 分页（谓词 + ORDER BY 列 + LIMIT batchSize），计算批内水位并标记是否还有下一批。 */
     private void readBatch(Exchange exchange, Job job, ReadSqlConfig read) {
+        // #134：起点与结算都打在**这一批**上（`prepareRead` 在循环外只跑一次，起点放那儿的话
+        // 第二批起就量的是第一批那个数）。读库失败时起点已经在，异常回调照样结算得出来。
+        beginStep(exchange);
         long current = exchange.getProperty(WATERMARK, Long.class);
         javax.sql.DataSource ds = customerDataSource(read.dataSourceId());
         Object bound = readSqlBatcher.parseType(read) == WatermarkType.TIMESTAMP
@@ -621,6 +711,9 @@ public class RouteGenerator {
         exchange.getMessage().setBody(rows);
         exchange.setProperty(WATERMARK, newWatermark);
         exchange.setProperty(HAS_MORE, readSqlBatcher.hasMore(read, rows));
+        // 读完了就结算（#134）：与不分批那条路同一口径——落库在每条源行上，在 split 之前结算，
+        // 各源行共用**这一次读**的耗时
+        settleStepDuration(exchange);
     }
 
     /** 整批处理成功后才推进水位（持久化）；批失败时不执行，实现"批失败只丢该批"。 */

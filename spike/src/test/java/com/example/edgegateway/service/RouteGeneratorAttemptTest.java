@@ -112,6 +112,34 @@ class RouteGeneratorAttemptTest {
                 .as("步骤 4 一次成功，不该背上步骤 3 的重试").isEqualTo(1);
     }
 
+    /** #134 成功面：跑完一条成功链，落库的每一步都要带动作耗时（空的那些算没测出来）。 */
+    @Test
+    void successfulStepsRecordNonNullDuration() throws Exception {
+        Chain chain = run(0, 0, false);
+
+        assertThat(chain.history().successes)
+                .as("成功链每一步都要有耗时 | " + chain.history())
+                .isNotEmpty()
+                .allMatch(r -> r.durationMs() != null);
+    }
+
+    /**
+     * #134 失败面：失败那一步也记耗时，而且记的是**最后一次尝试的动作执行**，不是整段（含退避）。
+     *
+     * <p>退避故意设成 300 ms、重试 2 次：把退避算进去的话这个数会 ≥ 600 ms。这条是 ADR-0016
+     * 决策 7 那条口径（动作耗时 ≠ 步间隔）在链路上的钉子。</p>
+     */
+    @Test
+    void failedStepDurationExcludesRetryBackoff() throws Exception {
+        Chain chain = run(2, Integer.MAX_VALUE, false, actions(), 300L);
+
+        Recorded failure = onlyFailure(chain.history());
+        assertThat(failure.durationMs()).as("失败步也要有耗时 | " + chain.history()).isNotNull();
+        assertThat(failure.durationMs())
+                .as("含两次 300 ms 退避的话这里会 ≥ 600 ms | " + chain.history())
+                .isLessThan(300L);
+    }
+
     // ---------- 夹具 ----------
 
     /**
@@ -119,12 +147,17 @@ class RouteGeneratorAttemptTest {
      * （HTTP 调用计数 ≤ 它时返回 500），用来制造"重试才成功"。
      */
     private Chain run(int retryCount, int failuresBeforeOk, boolean consumerRoute) throws Exception {
-        return run(retryCount, failuresBeforeOk, consumerRoute, actions());
+        return run(retryCount, failuresBeforeOk, consumerRoute, actions(), 1L);
     }
 
     private Chain run(int retryCount, int failuresBeforeOk, boolean consumerRoute, List<Action> actions)
             throws Exception {
-        Job job = job(jobSeq.incrementAndGet(), retryCount);
+        return run(retryCount, failuresBeforeOk, consumerRoute, actions, 1L);
+    }
+
+    private Chain run(int retryCount, int failuresBeforeOk, boolean consumerRoute, List<Action> actions,
+                      long backoffMs) throws Exception {
+        Job job = job(jobSeq.incrementAndGet(), retryCount, backoffMs);
         AtomicInteger httpCalls = new AtomicInteger();
         RecordingHistory history = new RecordingHistory();
         try (Target target = new Target(httpCalls, failuresBeforeOk)) {
@@ -204,12 +237,12 @@ class RouteGeneratorAttemptTest {
         return mq;
     }
 
-    private Job job(long id, int retryCount) {
+    private Job job(long id, int retryCount, long backoffMs) {
         Job job = new Job();
         job.setId(id);
         job.setStatus(1);
         job.setRetryCount(retryCount);
-        job.setBackoffMs(1L);
+        job.setBackoffMs(backoffMs);
         return job;
     }
 
@@ -238,7 +271,7 @@ class RouteGeneratorAttemptTest {
         return matched.getFirst();
     }
 
-    private record Recorded(String messageId, int step, String status, int attempt) {
+    private record Recorded(String messageId, int step, String status, int attempt, Long durationMs) {
     }
 
     /** 一次真实链的结果：记下的消息步 + 目标端实际收到几次。 */
@@ -292,14 +325,14 @@ class RouteGeneratorAttemptTest {
 
         @Override
         public void recordSuccess(Long runId, String messageId, Integer step, String actionName,
-                                  Object input, Object data, String businessKey, int attempt) {
-            successes.add(new Recorded(messageId, step, "SUCCESS", attempt));
+                                  Object input, Object data, String businessKey, int attempt, Long durationMs) {
+            successes.add(new Recorded(messageId, step, "SUCCESS", attempt, durationMs));
         }
 
         @Override
         public void recordFailure(Long runId, String messageId, Integer step, String actionName,
-                                  String error, Object input, String businessKey, int attempt) {
-            failures.add(new Recorded(messageId, step, "FAILED", attempt));
+                                  String error, Object input, String businessKey, int attempt, Long durationMs) {
+            failures.add(new Recorded(messageId, step, "FAILED", attempt, durationMs));
         }
 
         @Override

@@ -107,7 +107,7 @@ class MessageHistoryServiceTest {
         when(messageStepMapper.selectOne(any())).thenReturn(null);
 
         service.recordSuccess(3L, "msg-1", 2, "map", Map.of("orderNo", "PO-1"),
-                Map.of("orderNo", "PO-1", "sheet_no", "S-1"), "PO-1", 1);
+                Map.of("orderNo", "PO-1", "sheet_no", "S-1"), "PO-1", 1, 12L);
 
         ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
         verify(messageStepMapper).insert(captor.capture());
@@ -118,6 +118,20 @@ class MessageHistoryServiceTest {
         assertThat(step.getActionName()).isEqualTo("map");
         assertThat(step.getStatus()).isEqualTo("SUCCESS");
         assertThat(step.getBusinessKey()).isEqualTo("PO-1");
+        assertThat(step.getDurationMs()).as("成功步的动作耗时落库（#134）").isEqualTo(12L);
+    }
+
+    /** #134：量不出来时是**空**，不是 0——「没测」与「测得就是 0 ms」在页面上是两件事（写 `—` / 写 `0 ms`）。 */
+    @Test
+    void recordWithoutMeasuredDurationLeavesItNull() {
+        when(messageStepMapper.selectOne(any())).thenReturn(null);
+
+        service.recordSuccess(3L, "msg-1", 2, "map", Map.of("orderNo", "PO-1"),
+                Map.of("orderNo", "PO-1"), "PO-1", 1, null);
+
+        ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
+        verify(messageStepMapper).insert(captor.capture());
+        assertThat(captor.getValue().getDurationMs()).isNull();
     }
 
     @Test
@@ -127,10 +141,11 @@ class MessageHistoryServiceTest {
         existing.setStatus("SUCCESS");
         when(messageStepMapper.selectOne(any())).thenReturn(existing);
 
-        service.recordFailure(3L, "msg-1", 3, "upsert", "boom", Map.of("orderNo", "PO-1"), "PO-1", 1);
+        service.recordFailure(3L, "msg-1", 3, "upsert", "boom", Map.of("orderNo", "PO-1"), "PO-1", 1, 34L);
 
         assertThat(existing.getStatus()).isEqualTo("FAILED");
         assertThat(existing.getError()).isEqualTo("boom");
+        assertThat(existing.getDurationMs()).as("失败步也记耗时（#134）").isEqualTo(34L);
         verify(messageStepMapper).updateById(existing);
     }
 
@@ -411,7 +426,7 @@ class MessageHistoryServiceTest {
     void otherActionSnapshotsKeepTheirOldBehaviour() {
         String tooBig = "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1);
 
-        service.recordSuccess(1L, "msg-1", 2, "map", Map.of("FCode", "C-1"), tooBig, "C-1", 1);
+        service.recordSuccess(1L, "msg-1", 2, "map", Map.of("FCode", "C-1"), tooBig, "C-1", 1, null);
 
         ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
         verify(messageStepMapper).insert(captor.capture());

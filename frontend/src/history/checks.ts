@@ -19,12 +19,15 @@
  *  10. 一条运行的消息步怎么取（#131）：走索引接口、按 total 追页、**没有上限**；
  *  11. 消息分组与步骤链与单步卡（#131）：消息的先后、步骤号升序、快照点、可访问名称、
  *      单步卡的事实格与「错误块保留换行、成功步不留空错误块」。
+ *  12. 动作耗时与运行耗时（#134）：步骤链与单步卡两处同源、毫秒与秒两档、**量不出来写 `—`**（不是 `0 ms`），
+ *      运行行那一格是**运行级**耗时（`finishedAt - startedAt`，跑着写「运行中」）。
  */
 import {
-  chainNodes, chainSummary, countItems, countsParts, countsText, describeFilters, detailPath, emptyFilters,
+  chainNodes, chainSummary, countItems, countsParts, countsText, describeFilters, detailPath, durationText,
+  emptyFilters,
   filterNote, firstLine, hasAnyFilter, HISTORY_MODES, isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf,
   listCountText, listEmptyCopy, listHint, listQuery, listTitle, matchedKeysView, messageChip, noSelection,
-  runDetail, runMessages, runRows, runStepsPages, runStepsPath, selectRun, selectStep, shortId,
+  runCostText, runDetail, runMessages, runRows, runStepsPages, runStepsPath, selectRun, selectStep, shortId,
   stampOf, statusChip, statusParam, statusPlaceholder, stepCardView, stepRows, summaryQuery,
   DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
@@ -208,12 +211,13 @@ const steps: MessageStep[] = [
   },
 ]
 
-eq('运行行一次算好（芯片 / 任务名 / 两个时刻 / 错误首行）', runRows(runs, jobs), [{
+eq('运行行一次算好（芯片 / 任务名 / 两个时刻 / 运行耗时 / 错误首行）', runRows(runs, jobs), [{
   run: runs[0],
   chip: { kind: 'bad', label: 'FAILED' },
   jobTitle: '#7 MDM 编码回写（B6 链）',
   started: '2026-09-17 09:12:31',
   finished: '2026-09-17 09:12:34',
+  cost: '3.0 s',
   errLine: 'boom',
   counts: [{ text: '—', bad: false }],
   keys: [],
@@ -306,14 +310,16 @@ eq('**没有上限**：两万步也就是 40 页，不是「只取前 N 个」',
 //     夹具因此照索引的形状摆——步骤链上那两个小点问的就是这两格。
 const runStepData: MessageStep[] = [
   // 索引接口给的是 **id 升序**（运行的步骤顺序）；这里仍按 id 打乱摆，考的是分组自己会归一
-  { id: 95, runId: 12, messageId: 'msg-B', step: 3, actionName: 'upsert', status: 'SUCCESS', businessKey: 'SO-B' },
+  { id: 95, runId: 12, messageId: 'msg-B', step: 3, actionName: 'upsert', status: 'SUCCESS', businessKey: 'SO-B',
+    durationMs: 1500 },
   { id: 94, runId: 12, messageId: 'msg-A', step: 5, actionName: 'push', status: 'FAILED', businessKey: 'SO-A',
     error: '约束冲突\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)',
-    hasInputSnapshot: true, hasDataSnapshot: false, createdAt: '2026-09-17T09:12:35', attempt: 2 },
+    hasInputSnapshot: true, hasDataSnapshot: false, createdAt: '2026-09-17T09:12:35', attempt: 2,
+    durationMs: 210 },
   { id: 93, runId: 12, messageId: 'msg-B', step: 1, actionName: 'read', status: 'SUCCESS', businessKey: 'SO-B',
-    hasInputSnapshot: true, hasDataSnapshot: true, createdAt: '2026-09-17T09:12:34' },
+    hasInputSnapshot: true, hasDataSnapshot: true, createdAt: '2026-09-17T09:12:34', durationMs: 38 },
   { id: 91, runId: 12, messageId: 'msg-A', step: 3, actionName: '  ', status: 'SUCCESS', businessKey: '  ',
-    hasInputSnapshot: false, hasDataSnapshot: false, createdAt: null },
+    hasInputSnapshot: false, hasDataSnapshot: false, createdAt: null, durationMs: null },
 ]
 const msgs = runMessages(runStepData)
 eq('消息按落库先后排（接口的 id 倒序先翻回来）', msgs.map((m) => m.messageId), ['msg-A', 'msg-B'])
@@ -362,8 +368,8 @@ eq('布尔缺了（老接口 / 没给）当没落，不编一个亮着的点出�
     .slice(1).map((n) => [n.hasInput, n.hasData]),
   [[false, false]])
 eq('没有动作名的那一格写破折号', chain[1].action, '—')
-eq('可访问名称写清步骤号 / 动作 / 状态 / 两个快照点',
-  chain[2].label, '步骤 5 · 动作 push · 状态 FAILED · 输入快照 有 · 数据快照 无')
+eq('可访问名称写清步骤号 / 动作 / 状态 / 耗时 / 两个快照点',
+  chain[2].label, '步骤 5 · 动作 push · 状态 FAILED · 耗时 210 ms · 输入快照 有 · 数据快照 无')
 eq('入口那格的可访问名称',
   chain[0].label, '步骤 0 · 任务输入 · context[0] · 本次运行的触发报文')
 eq('没有消息时链上只剩入口那一格，不整块抽掉', chainNodes(null, null).length, 1)
@@ -373,11 +379,12 @@ eq('链头右端那句：几步 + 入口动作',
 const card = stepCardView(msgs[0].steps[1])
 eq('单步卡：步骤号 / 动作 / 状态芯片',
   [card?.n, card?.action, card?.chip], [5, 'push', { kind: 'bad', label: 'FAILED' }])
-eq('单步卡的事实格：尝试 / 落库 / 输出（失败步没写上下文）', card?.facts,
-  [{ label: '尝试', value: '2' }, { label: '落库', value: '2026-09-17 09:12:35' },
+eq('单步卡的事实格：尝试 / 耗时 / 落库 / 输出（失败步没写上下文）', card?.facts,
+  [{ label: '尝试', value: '2' }, { label: '耗时', value: '210 ms' },
+    { label: '落库', value: '2026-09-17 09:12:35' },
     { label: '输出', value: 'context[5]（未写）' }])
 eq('成功步写「输出 context[N]」不带「未写」',
-  stepCardView(msgs[1].steps[0])?.facts[2].value, 'context[1]')
+  stepCardView(msgs[1].steps[0])?.facts[3].value, 'context[1]')
 eq('错误块**整份保留换行**（堆栈要能直接贴给开发）', card?.error,
   '约束冲突\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)')
 eq('只把第一行切出来加粗，其余原样',
@@ -391,7 +398,40 @@ eq('尝试次数缺了给 1（与消息步行同一个口径）',
   stepCardView(msgs[1].steps[0])?.attempt, 1)
 eq('没选中步骤时不出单步卡', stepCardView(null), null)
 
-// 12. 快照面板的三种降级（#132）：口径全在 `snapshot.ts` —— 什么算非 JSON、什么算空、
+// 12. 动作耗时（#134）：三处显示的是同一份口径（都走 `durationText`），**量不出来写 `—` 而不是 `0 ms`**——
+//     「没测」与「测得就是 0 ms」是两个数，混起来正是 ADR-0016 决策 7 拒绝的那种含糊。
+eq('未落库 / 量不出来的耗时写破折号',
+  [durationText(null), durationText(undefined), durationText(NaN), durationText(-1)],
+  ['—', '—', '—', '—'])
+eq('测得就是 0 ms 就写 0 ms（与「没测」分得开）', durationText(0), '0 ms')
+eq('毫秒档照原型', [durationText(38), durationText(620), durationText(999)], ['38 ms', '620 ms', '999 ms'])
+eq('两档的边界一处说话（999.6 归到秒，不印成 `1000 ms`）',
+  [durationText(999.4), durationText(999.6)], ['999 ms', '1.0 s'])
+eq('上到秒就换档、一位小数', [durationText(1000), durationText(1200), durationText(3100)],
+  ['1.0 s', '1.2 s', '3.1 s'])
+eq('步骤链每个节点都带耗时的字（入口那格不是某一步，不铺）',
+  chain.map((n) => n.cost), ['—', '—', '210 ms'])
+eq('没测过的那一步（老数据）链上写破折号', chain[1].cost, '—')
+eq('同一步在链上与单步卡上是同一个值（两处同源，不可能不一致）',
+  [chain[2].cost, card?.facts.find((f) => f.label === '耗时')?.value], ['210 ms', '210 ms'])
+eq('单步卡上没测过的那一步也写破折号',
+  stepCardView(msgs[0].steps[0])?.facts[1].value, '—')
+
+// 运行行那一格是**运行级**耗时（票面把「运行行」单列成一处时取的口径，与原型 `run.cost` 一致）：
+// 它不是动作耗时（那个只包住一个动作），所以不跟上面两处比同一个数，只钉「跑着 / 没结束 / 缺时刻」三档。
+eq('运行耗时按 finishedAt - startedAt 算', runCostText({
+  status: 'SUCCESS', startedAt: '2026-09-17T09:12:31', finishedAt: '2026-09-17T09:12:34',
+}), '3.0 s')
+eq('还在跑的运行写「运行中」（不是 0 ms）',
+  runCostText({ status: 'RUNNING', startedAt: '2026-09-17T09:12:31', finishedAt: null }), '运行中')
+eq('结束了却没有结束时刻的运行写破折号',
+  runCostText({ status: 'FAILED', startedAt: '2026-09-17T09:12:31', finishedAt: null }), '—')
+eq('缺开始时刻 / 时刻读不出来时也写破折号',
+  [runCostText({ status: 'SUCCESS', startedAt: null, finishedAt: '2026-09-17T09:12:34' }),
+    runCostText({ status: 'SUCCESS', startedAt: '不是时刻', finishedAt: '2026-09-17T09:12:34' })],
+  ['—', '—'])
+
+// 13. 快照面板的三种降级（#132）：口径全在 `snapshot.ts` —— 什么算非 JSON、什么算空、
 //     多长算超长。组件与真机脚本都从它取，界面里不再各判一遍。
 eq('超长的界线就是那条 TEXT 列的上限（#127）', SNAPSHOT_TEXT_CAP, 65535)
 eq('超长那一档只画前 8 KB 的原文', SNAPSHOT_PREVIEW_CHARS, 8192)
@@ -444,7 +484,7 @@ eq('超长那一档注明共多少字符、截到多少',
   '超长快照：共 65536 字符，超过 64 KB 的列上限（#127）——这里只画前 8192 字符。')
 eq('刚好到上限不算超长（界线是列上限本身）', readSnapshot('x'.repeat(SNAPSHOT_TEXT_CAP)).kind, 'text')
 
-// 13. 展开层数与键路径搜索（#132）：ADR-0016 决策 10 那处有意偏离的落法——
+// 14. 展开层数与键路径搜索（#132）：ADR-0016 决策 10 那处有意偏离的落法——
 //     不引 `<mark>`，改成「按路径过滤 + 把命中分支整个展开」。
 eq('展开层数三档、原型同序', [...SNAPSHOT_DEPTHS],
   [{ value: '1', label: '1 层' }, { value: '2', label: '2 层' }, { value: 'all', label: '全部' }])

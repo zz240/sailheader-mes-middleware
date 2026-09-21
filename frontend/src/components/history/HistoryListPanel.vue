@@ -44,6 +44,9 @@
           <div class="hc-r-sub">
             <span>开始 {{ row.started }}</span>
             <span>结束 {{ row.finished }}</span>
+            <!-- 运行耗时（#134）：运行级口径（`finishedAt - startedAt`），与消息步上的动作耗时不是同一个量。
+                 未结束写「运行中」、缺时刻写「—」，都不编成 `0 ms` -->
+            <span>耗时 {{ row.cost }}</span>
             <!-- 规模摘要（#130）：`N 消息 · M 步`，失败步为 0 时那一段整个不写（票面：不许有「失败 0」噪声）。
                  切段与「哪一段算失败」都在 console.ts 一处判完，这里只负责上色 -->
             <span class="hc-r-counts">

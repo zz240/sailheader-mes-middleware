@@ -82,6 +82,7 @@
                error,
                created_at,
                attempt,
+               duration_ms,
                business_key,
                CASE WHEN input_snapshot IS NOT NULL AND TRIM(input_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_input_snapshot,
                CASE WHEN data_snapshot IS NOT NULL AND TRIM(data_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_data_snapshot
