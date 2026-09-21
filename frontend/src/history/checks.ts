@@ -16,7 +16,7 @@
  *   7. 选中态：三样（运行 / 消息 / 步骤）都对上才算选中，右详情的路径从它推出来；
  *   8. 任务名的写法与面板计数；
  *   9. 计数条与每运行摘要（#130）；
- *  10. 一条运行的消息步取多少（#131）：100 不再是天花板，真截断时必须把话说出来；
+ *  10. 一条运行的消息步怎么取（#131）：走索引接口、按 total 追页、**没有上限**；
  *  11. 消息分组与步骤链与单步卡（#131）：消息的先后、步骤号升序、快照点、可访问名称、
  *      单步卡的事实格与「错误块保留换行、成功步不留空错误块」。
  */
@@ -24,9 +24,9 @@ import {
   chainNodes, chainSummary, countItems, countsParts, countsText, describeFilters, detailPath, emptyFilters,
   filterNote, firstLine, hasAnyFilter, HISTORY_MODES, isRunSelected, isStepSelected, jobOptionLabel, jobTitleOf,
   listCountText, listEmptyCopy, listHint, listQuery, listTitle, matchedKeysView, messageChip, noSelection,
-  runDetail, runMessages, runRows, runStepsNote, runStepsPages, runStepsQuery, selectRun, selectStep, shortId,
+  runDetail, runMessages, runRows, runStepsPages, runStepsPath, selectRun, selectStep, shortId,
   stampOf, statusChip, statusParam, statusPlaceholder, stepCardView, stepRows, summaryQuery,
-  DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_MAX, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
+  DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
 import type { Job, JobRun, MessageStep } from '../types.ts'
 
@@ -287,30 +287,28 @@ eq('没有这条运行的摘要时写破折号（不是 0 消息 · 0 步）',
   runRows(runs, jobs, [{ ...summaryOf(1, 0), runId: 999 }]).map((r) => r.counts.map((p) => p.text)),
   [['—']])
 
-// 10. 一条运行的消息步取多少（#131：那个「只取前 100 个」的上限必须显式）
-eq('取消息步一页顶格（与后端 safeSize 的上限同一个数）', RUN_STEPS_PAGE, 100)
-eq('查询串带 runId 与分页', runStepsQuery(12, 2), 'runId=12&page=2&size=100')
-eq('刚好一页就只取一页', runStepsPages(100), 1)
+// 10. 一条运行的消息步怎么取（#131：那个「只取前 100 个」的隐藏上限在这一票里去掉了）
+eq('一页 500：索引行不带快照，一次能多拿一点', RUN_STEPS_PAGE, 500)
+eq('取一条运行的消息步走索引那条路（runId 在路径里，不是查询参数）',
+  runStepsPath(12, 2), '/history/runs/12/steps?page=2&size=500')
+eq('刚好一页就只取一页', runStepsPages(500), 1)
 eq('一条都没有也要问一次（才知道「真的没有」）', runStepsPages(0), 1)
-eq('多一条就追第二页（100 那个数不再是天花板）', runStepsPages(101), 2)
-eq('库里最大的一条运行（720 步）追 8 页', runStepsPages(720), 8)
-eq('撞上上限时页数封顶（剩下的靠界面把那句话说出来）', runStepsPages(RUN_STEPS_MAX + 1), 10)
-eq('没截断时界面上一个字都不写', runStepsNote(100, 100), '')
-eq('截断时把「共多少 / 带了多少 / 上限」一起说出来（不许静默）',
-  runStepsNote(1000, 2400),
-  '这条运行共 2400 个消息步，界面只带了前 1000 个（上限 1000）——不再静默截断（#131）。剩下的在消息步检索模式里按条件查。')
+eq('多一条就追第二页', runStepsPages(501), 2)
+eq('库里最大的一条运行（720 步）两次拿完', runStepsPages(720), 2)
+eq('**没有上限**：两万步也就是 40 页，不是「只取前 N 个」', runStepsPages(20_000), 40)
 
-// 11. 消息切换与步骤链（#131）
+// 11. 消息切换与步骤链（#131）。索引那条路的行只带「快照落没落」两个布尔（没有快照原文），
+//     夹具因此照索引的形状摆——步骤链上那两个小点问的就是这两格。
 const runStepData: MessageStep[] = [
-  // 接口给的是 id 倒序：这里刻意按倒序摆，考的是「分组时有没有翻回来」
+  // 索引接口给的是 **id 升序**（运行的步骤顺序）；这里仍按 id 打乱摆，考的是分组自己会归一
   { id: 95, runId: 12, messageId: 'msg-B', step: 3, actionName: 'upsert', status: 'SUCCESS', businessKey: 'SO-B' },
   { id: 94, runId: 12, messageId: 'msg-A', step: 5, actionName: 'push', status: 'FAILED', businessKey: 'SO-A',
     error: '约束冲突\n\tat com.example.A.b(A.java:1)\n\tat com.example.A.a(A.java:2)',
-    inputSnapshot: '{"a":1}', dataSnapshot: null, createdAt: '2026-09-17T09:12:35', attempt: 2 },
+    hasInputSnapshot: true, hasDataSnapshot: false, createdAt: '2026-09-17T09:12:35', attempt: 2 },
   { id: 93, runId: 12, messageId: 'msg-B', step: 1, actionName: 'read', status: 'SUCCESS', businessKey: 'SO-B',
-    inputSnapshot: '{"reportNo":"R1"}', dataSnapshot: '[{"x":1}]', createdAt: '2026-09-17T09:12:34' },
+    hasInputSnapshot: true, hasDataSnapshot: true, createdAt: '2026-09-17T09:12:34' },
   { id: 91, runId: 12, messageId: 'msg-A', step: 3, actionName: '  ', status: 'SUCCESS', businessKey: '  ',
-    inputSnapshot: null, dataSnapshot: '   ', createdAt: null },
+    hasInputSnapshot: false, hasDataSnapshot: false, createdAt: null },
 ]
 const msgs = runMessages(runStepData)
 eq('消息按落库先后排（接口的 id 倒序先翻回来）', msgs.map((m) => m.messageId), ['msg-A', 'msg-B'])
@@ -351,8 +349,13 @@ eq('选中态只落在选中的那一步上', chain.map((n) => n.selected), [fal
 eq('刚点开运行、选中态里还没有步骤时，链上亮的也是归一之后的第 1 步（原型 open-run 的先归一）',
   chainNodes(msgs[0], runDetail(runStepData, selectRun(12)).step).map((n) => n.selected),
   [false, true, false])
-eq('两个快照点亮不亮按快照落没落（空白不算落）',
+eq('两个快照点亮不亮按索引回的那两个布尔（索引里没有快照原文）',
   chain.slice(1).map((n) => [n.hasInput, n.hasData]), [[false, false], [true, false]])
+eq('布尔缺了（老接口 / 没给）当没落，不编一个亮着的点出来',
+  chainNodes({ messageId: 'm', businessKey: '无业务键', failed: 0, chip: { kind: 'ok', label: '全通' },
+    steps: [{ id: 1, runId: 1, messageId: 'm', step: 1, status: 'SUCCESS' }] }, null)
+    .slice(1).map((n) => [n.hasInput, n.hasData]),
+  [[false, false]])
 eq('没有动作名的那一格写破折号', chain[1].action, '—')
 eq('可访问名称写清步骤号 / 动作 / 状态 / 两个快照点',
   chain[2].label, '步骤 5 · 动作 push · 状态 FAILED · 输入快照 有 · 数据快照 无')

@@ -437,51 +437,32 @@ export function detailPath(selection: HistorySelection): string {
   return `#${selection.runId} · 消息 ${shortId(selection.messageId)} · 步骤 ${selection.step}`
 }
 
-/* ── 一条运行的消息步取多少（#131） ───────────────────────────────── */
-
-/** 取一条运行的消息步时一页多少条——与后端 `safeSize` 的上限（100）对齐，一页顶格取。 */
-export const RUN_STEPS_PAGE = 100
+/* ── 一条运行的消息步怎么取（#131） ───────────────────────────────── */
 
 /**
- * 一条运行最多取回多少步（#131 把票面那个「只取前 100 个」的隐藏上限**显式化**）。
+ * 取一条运行的消息步时一页多少条。
  *
- * 票面给了两条路：给出提示，或去掉上限。这里**两条都走**——常见运行一次取全（上限远在它之上，
- * 实测库里最大的一条运行 720 步：`/history/runs/summary` 逐页扫 2682 条运行得到），
- * 而真遇到病态大运行时不至于把页面拖死；真撞上上限时 {@link runStepsNote} 会把话说出来，
- * 「静默」这一条就此消失。
+ * 与列表那一侧的 100 不是同一个数：这里走的是**消息步索引**接口
+ * （`/history/runs/{id}/steps`），一行只有画界面要的那几列、**不带两个 TEXT 快照**，
+ * 所以后端那边这一页的上限是 1000。500 是「一页顶格的一半」——大运行少几次往返，
+ * 又不至于一次回一个太胖的响应。
  */
-export const RUN_STEPS_MAX = 1000
+export const RUN_STEPS_PAGE = 500
 
-/** 取某一条运行某一页消息步的查询串（按 id 倒序，与列表接口同一套分页口径）。 */
-export function runStepsQuery(runId: number, page: number): string {
-  const params = new URLSearchParams()
-  params.set('runId', String(runId))
-  params.set('page', String(page))
-  params.set('size', String(RUN_STEPS_PAGE))
-  return params.toString()
+/** 取某一条运行某一页消息步索引的路径（顺序由后端定：**按 id 升序**，也就是这条运行的步骤顺序）。 */
+export function runStepsPath(runId: number, page: number): string {
+  return `/history/runs/${runId}/steps?page=${page}&size=${RUN_STEPS_PAGE}`
 }
 
 /**
  * 接口回了 `total` 之后要追几页。
  *
- * 只回页数、不回「截没截断」——「截断了没有」是**手里有多少 vs 接口说有多少**比出来的，
- * 界面拿 {@link runStepsNote} 从两个数直接算；多回一个布尔字段就是同一个判决的第二份定义
- * （而且那一份没人读，只有测试读）。
+ * **没有上限**：票面那个「展开一条运行只取前 100 个消息步」的隐藏上限在这一票里是**去掉**的
+ * （不是调大）——索引接口一行不带快照，720 步的运行整条 100 KB 上下，一次拿得动；
+ * 界面因此永远显示完整的消息与步骤链，不需要再拿一句提示去解释「你看到的不是全部」。
  */
 export function runStepsPages(total: number): number {
-  return Math.min(Math.max(1, Math.ceil(total / RUN_STEPS_PAGE)), Math.ceil(RUN_STEPS_MAX / RUN_STEPS_PAGE))
-}
-
-/**
- * 截断那句话（**没截断给空串**，界面据此整块不铺）：界面只在「拿到的比接口说的少」时才开口。
- *
- * 说的不只是「截断了」，还包括「本来有多少」与「为什么」——只写一个上限数字，等于把
- * 「你看的是残缺的」这件事又说了一半。
- */
-export function runStepsNote(loaded: number, total: number): string {
-  if (total <= loaded) return ''
-  return `这条运行共 ${total} 个消息步，界面只带了前 ${loaded} 个（上限 ${RUN_STEPS_MAX}）`
-    + '——不再静默截断（#131）。剩下的在消息步检索模式里按条件查。'
+  return Math.max(1, Math.ceil(total / RUN_STEPS_PAGE))
 }
 
 /* ── 消息切换与步骤链（#131） ─────────────────────────────────────── */
@@ -568,9 +549,15 @@ export function runDetail(steps: readonly MessageStep[], selection: HistorySelec
   return { messages, index, message, step }
 }
 
-/** 快照点：这一格的两个小点里对应的那个亮不亮（空串与纯空白都算「没落」）。 */
-function hasSnapshot(text?: string | null): boolean {
-  return !!text && !!text.trim()
+/**
+ * 快照点：这一格的两个小点里对应的那个亮不亮。
+ *
+ * 问的是**索引接口回的那个布尔**（#131 `hasInputSnapshot` / `hasDataSnapshot`）——索引里没有快照
+ * 原文（两个 TEXT 列不取），「落没落」由后端那条 SQL 判（`IS NOT NULL AND TRIM(...) <> ''`，
+ * 空白算没落）。判据只有那一处，界面不再拿快照文本自己再判一遍。
+ */
+function hasSnapshot(flag?: boolean | null): boolean {
+  return !!flag
 }
 
 /** 步骤链上的一格（原型 `chainHTML` 里那个循环的一轮）。 */
@@ -626,8 +613,8 @@ export function chainNodes(message: RunMessage | null, current: MessageStep | nu
   for (const step of message.steps) {
     const chip = statusChip(step.status)
     const action = step.actionName?.trim() || '—'
-    const hasInput = hasSnapshot(step.inputSnapshot)
-    const hasData = hasSnapshot(step.dataSnapshot)
+    const hasInput = hasSnapshot(step.hasInputSnapshot)
+    const hasData = hasSnapshot(step.hasDataSnapshot)
     nodes.push({
       n: step.step,
       head: `步骤 ${step.step}`,

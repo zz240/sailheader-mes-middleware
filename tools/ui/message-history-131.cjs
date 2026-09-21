@@ -4,8 +4,10 @@
  * 票面（#128 子票 / ADR-0016 决策 4、5）：
  *   消息 chips（短 id + 业务键 + 「全通 / 失败 N 步」，数量为 1 时仍显示）、步骤链（从
  *   `context[0] 任务输入` 起每步一格、两个快照点、失败步可辨、选中态、可访问名称写全）、
- *   单步卡（状态 / 动作 / 尝试次数 / 时刻 / 错误块保留换行），以及把「展开一条运行只取
- *   前 100 个消息步」那个隐藏上限**显式化**。
+ *   单步卡（状态 / 动作 / 尝试次数 / 时刻 / 错误块保留换行），以及把那句「展开一条运行只取
+ *   前 100 个消息步」的隐藏上限**去掉**（票面给的两条路里选了「去掉」：右详情改走
+ *   `/history/runs/{id}/steps` 那条**索引进接口**，一行不带两个 TEXT 快照，于是整条运行
+ *   一次拿得动，不再有截断，也就没有什么「提示」要写）。
  *
  * 对着这些断言：
  *   一、**运行 → 消息 → 步骤链 → 单步卡**走通（票面的真机验收项）：点一条运行，chips 上
@@ -17,16 +19,16 @@
  *   五、单步卡的内容与**消息步列表里那一行**一致（切换模式，点一行，逐格比）；
  *   六、失败步的错误块在、**换行与原文一模一样**（`white-space: pre-wrap`），
  *      成功步**没有**空错误块；
- *   七、超过 100 步的运行：界面**不再只取前 100 步**（真的追了 page=2…），消息数与链上
- *      步数仍与接口对得上；只有真撞上取步上限时才出现那句提示（正常库上不出现）；
- *   八、真撞上取步上限（把接口的 `total` 拦下来报 5000、每页都回第 1 页那份）：追满 10 页
- *      就停，并把「共多少 / 带了前多少 / 上限」写在右栏——票面「要么给出提示」的那一半。
+ *   七、超过一页（500 步）的运行：右栏走的是索引那条路、真的追了第二页、接口一条不差地
+ *      给了全部步，消息 chips 与链上步数仍与接口对得上，而且**索引行里没有快照原文**
+ *      （这正是它便宜的原因），界面上也没有任何「截断提示」。
  *
  * 跑法（playwright 是本目录自带的，先 `npm i` 一次就行）：
  *   cd tools/ui && node message-history-131.cjs
- * 跑之前前端 dev server（5173）与后端（8080）都要在。
+ * 跑之前前端 dev server（5173）与后端（8080）都要在；**后端要是还没重启**（没有那条索引路径），
+ * 脚本开头会探一次接口并打一行 SKIP（证据在 HistoryControllerTest / MessageHistoryMapperTest）。
  *
- * 库里数据不够那几段（一条运行都没有 / 没有失败步 / 没有超过 100 步的运行 / 没有多行错误）
+ * 库里数据不够那几段（一条运行都没有 / 没有失败步 / 没有超过一页的运行 / 没有多行错误）
  * 时打印 SKIP 并跳过，其余照跑（与 #111/#112/#129/#130/#136 同一套口径）。
  */
 const fs = require('fs')
@@ -50,7 +52,7 @@ let requests = []
 const seq = () => requests.length
 const stepUrlsSince = since => requests.slice(since).map(r => r.url)
 const runStepUrlsFor = runId => requests
-  .map(r => r.url).filter(url => url.includes(`runId=${runId}`))
+  .map(r => r.url).filter(url => url.includes(`/history/runs/${runId}/steps`))
 
 async function settle(page, ms = 4000) {
   const start = requests.length
@@ -63,8 +65,8 @@ async function settle(page, ms = 4000) {
 
 /**
  * 等右栏把这条运行的消息步**追完**：不是「第一条请求回来之后 350ms」，而是
- * 「这条 runId 的请求数不再涨、右栏也不再是占位」——`settle()` 那套在 720 步（8 页）这种
- * 运行上不够用，会在第 3 页还在路上时就去数 chips（脚本最重要的一段就成了看运气）。
+ * 「这条 runId 的请求数不再涨、右栏也不再是占位」——`settle()` 那套在要追好几页的运行上不够用，
+ * 会在下一页还在路上时就去数 chips（脚本最重要的一段就成了看运气）。
  */
 async function waitForRunSteps(page, runId, ms = 20000) {
   const deadline = Date.now() + ms
@@ -86,7 +88,7 @@ async function waitForList(page) {
 
 /** 右栏的消息步取完（或落到空态 / 出错）——链与卡都在那之后才谈得上。 */
 async function waitForDetail(page) {
-  await page.waitForSelector('.hc-mchip, .hc-chain-note, .hc-dbody .hc-list-empty, .hc-dbody .hc-errbox',
+  await page.waitForSelector('.hc-mchip, .hc-dbody .hc-list-empty, .hc-dbody .hc-errbox',
     { timeout: 30000 })
 }
 
@@ -96,14 +98,24 @@ async function apiGet(pathAndQuery) {
   return res.ok && body && body.code === 'OK' ? body.data : null
 }
 
-/** 一条运行的全部消息步（与界面同一套追页口径：一页 100，最多 10 页）。 */
+/** 带状态码的那一版：用来分辨「后端还没有这条路径（404）」与「真的返回了」。 */
+async function apiStatus(pathAndQuery) {
+  const res = await fetch(`${API}${pathAndQuery}`)
+  const body = await res.json().catch(() => null)
+  return { status: res.status, data: res.ok && body && body.code === 'OK' ? body.data : null }
+}
+
+/**
+ * 一条运行的全部消息步，**直接打右栏那条索引接口**（`/history/runs/{id}/steps`）当独立裁判：
+ * 界面走的是同一条路、同一套追页口径（一页 500，**没有上限**）。
+ */
 async function allRunSteps(runId) {
-  const first = await apiGet(`/history/steps?runId=${runId}&page=1&size=100`)
+  const first = await apiGet(`/history/runs/${runId}/steps?page=1&size=500`)
   if (!first) return null
   const all = [...first.records]
-  const pages = Math.min(Math.ceil(first.total / 100), 10)
+  const pages = Math.max(1, Math.ceil(first.total / 500))
   for (let p = 2; p <= pages && all.length < first.total; p += 1) {
-    const next = await apiGet(`/history/steps?runId=${runId}&page=${p}&size=100`)
+    const next = await apiGet(`/history/runs/${runId}/steps?page=${p}&size=500`)
     if (!next || !next.records.length) break
     all.push(...next.records)
   }
@@ -190,13 +202,26 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.on('request', req => {
     const url = req.url()
-    if (url.includes('/api/history/steps') && url.includes('runId=')) requests.push({ url })
+    if (url.includes('/api/history/runs/') && url.includes('/steps')) requests.push({ url })
   })
 
   await page.goto(`${APP}/history`, { waitUntil: 'networkidle' })
   await page.waitForSelector('.hc-page', { timeout: 20000 })
   await waitForList(page)
   fs.mkdirSync(shots, { recursive: true })
+
+  // 后端还是旧进程时（没有 #131 那条 `/history/runs/{id}/steps`）下面全部 SKIP：
+  // 说清楚证据在哪儿，别把 404 当成界面问题（与 #111/#112/#136 同一套口径）
+  {
+    const probeRun = (await apiGet('/history/runs?page=1&size=1') || {}).records?.[0]
+    const probe = probeRun ? await apiStatus(`/history/runs/${probeRun.id}/steps?size=1`) : null
+    if (!probe || probe.status !== 200) {
+      skip('整段（后端没有 /history/runs/{id}/steps：'
+        + `实测 HTTP ${probe ? probe.status : '连不上'}；重启后端即可，#131 的证据在 `
+        + 'HistoryControllerTest#listsRunStepIndex 与 MessageHistoryMapperTest#pagesRunStepIndexWithoutSnapshots）')
+      return
+    }
+  }
 
   // ── 一、运行 → 消息 → 步骤链 → 单步卡（票面的真机验收项） ──
   let firstRunId = null
@@ -446,69 +471,32 @@ async function main() {
         const walked = await waitForRunSteps(page, bigRun.runId)
         check('右栏把这条运行的消息步取完了（不是还在追页的时候就数数）', walked)
         const urls = stepUrlsSince(before)
-        check(`这条运行有 ${bigRun.stepCount} 步，界面**追了第二页**（100 不再是天花板）`,
+        check(`这条运行有 ${bigRun.stepCount} 步，右栏走的是**索引**那条路（一行不带快照）`,
+          urls.length > 0 && urls.every(u => /\/history\/runs\/\d+\/steps/.test(u)), urls.join(' '))
+        check(`超过一页（500）时真的追了第二页——「只取前 100 个」那个天花板没了`,
           urls.some(u => /[?&]page=2/.test(u)), urls.join(' '))
 
         const steps = await allRunSteps(bigRun.runId)
         const messages = groupMessages(steps)
+        check('索引行里没有快照原文（那两个 TEXT 列不该出现在这条路上）',
+          steps.every(s => !('dataSnapshot' in s) && !('inputSnapshot' in s)),
+          Object.keys(steps[0] || {}).join(','))
+        check('索引行带「快照落没落」两个布尔（步骤链上那两个小点亮不亮靠它）',
+          steps.every(s => typeof s.hasInputSnapshot === 'boolean' && typeof s.hasDataSnapshot === 'boolean'),
+          Object.keys(steps[0] || {}).join(','))
+        check('接口把这条运行的消息步**一条不差**地给了（没有截断这回事）',
+          steps.length === bigRun.stepCount, `接口 ${steps.length} vs 行摘要 ${bigRun.stepCount}`)
         const chips = await chipsOnScreen(page).count()
         check('超过 100 步时消息 chips 仍与接口的消息数一致（不是只有前 100 步里的那几条）',
           chips === messages.length, `界面 ${chips} vs 接口 ${messages.length}`)
         const nodes = await chainNodesOnScreen(page).count()
         check('步骤链的节点数仍等于该消息的消息步数 + 入口那格',
           nodes === messages[0].steps.length, `界面 ${nodes} vs 接口 ${messages[0].steps.length}`)
-        check('没撞上取步上限时，界面上一个字都不提截断（那句话只在真截断时出现）',
+        check('界面上不再有「截断提示」这种东西（上限是去掉的，不是换了个说法）',
           await page.locator('.hc-chain-note').count() === 0,
           String(await page.locator('.hc-chain-note').count()))
         await page.screenshot({ path: path.join(shots, 'history-131-big-run.png') })
       }
-    }
-  }
-
-  // ── 八、真撞上取步上限：界面上把那句话说出来（票面「要么给出提示」的那一半） ──
-  // 库里没有超过 1000 步的运行（最大的一条 720），所以把接口拦下来改 `total`：报 5000、
-  // 且每页都回第 1 页那份记录——页面于是会一路追到上限，正好把「追到上限就停」与
-  // 「把那句话写在脸上」两件事一次测掉（paste-sample-115 也是这么拦接口的）。
-  {
-    await ensureRunsMode(page)
-    // 先整页重开：上一段按业务键筛过，重开才是「无筛选的第 1 页」——要拦的那条运行得从
-    // 重开之后的列表里读（点同一行不再重复取是这一票的有意行为，`stepsRunId` 那道门）
-    await page.reload({ waitUntil: 'networkidle' })
-    await waitForList(page)
-    const rowCount = await page.locator('.hc-ritem').count()
-    if (rowCount === 0) {
-      skip('截断提示那一段（列表里没有运行）')
-    } else {
-      const target = Number((await page.locator('.hc-ritem .hc-r-id').first().innerText()).replace(/[^0-9]/g, ''))
-      let firstPage = null
-      await page.route(/\/api\/history\/steps\?/, async route => {
-        const url = new URL(route.request().url())
-        if (url.searchParams.get('runId') !== String(target)) return route.continue()
-        const res = await route.fetch()
-        const body = await res.json()
-        if (url.searchParams.get('page') === '1') {
-          firstPage = body.data.records || []
-          // 这条运行真的一条消息步都没有：别把它编出来（那一段有自己的断言）
-          if (!firstPage.length) return route.fulfill({ response: res, json: body })
-        }
-        body.data.total = 5000
-        if (firstPage) body.data.records = firstPage
-        return route.fulfill({ response: res, json: body })
-      })
-      const before = seq()
-      await page.locator('.hc-ritem').first().click()
-      await waitForDetail(page)
-
-      const note = page.locator('.hc-chain-note')
-      check('接口说这条运行有 5000 步时，右栏把「共多少 / 带了前多少 / 上限」写在脸上（不再静默截断）',
-        await note.count() === 1 && (await note.innerText()).includes('5000')
-          && (await note.innerText()).includes('前 1000 个')
-          && (await note.innerText()).includes('上限 1000'),
-        (await note.innerText().catch(() => '')).replace(/\n/g, ' '))
-      const walked = stepUrlsSince(before).filter(u => u.includes(`runId=${target}`))
-      check('追到上限（10 页）就停，不是一直问下去', walked.length === 10, String(walked.length))
-      await page.screenshot({ path: path.join(shots, 'history-131-truncated.png') })
-      await page.unroute(/\/api\/history\/steps\?/)
     }
   }
 }

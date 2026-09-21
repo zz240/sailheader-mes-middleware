@@ -229,12 +229,6 @@
 .hc-cstat-bad { color: var(--danger-ink); }
 .hc-cstat-warn { color: var(--warn-ink); }
 .hc-cstat-run { color: var(--muted); }
-/* 取步上限那句话（#131）：只在真的截断时出现 */
-.hc-chain-note {
-  margin-top: 8px; padding: 7px 10px; border-radius: var(--radius);
-  border: 1px solid color-mix(in oklch, var(--warn) 30%, var(--border));
-  background: var(--warn-soft); color: var(--warn-ink); font-size: var(--fs-meta);
-}
 
 /* 单步卡 */
 .hc-card {

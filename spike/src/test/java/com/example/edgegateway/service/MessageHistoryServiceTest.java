@@ -9,6 +9,7 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.MessageStepIndex;
 import com.example.edgegateway.model.RunStepSummary;
 import com.example.edgegateway.model.RunStepTotals;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -198,6 +199,45 @@ class MessageHistoryServiceTest {
 
         List<?> records = (List<?>) result.get("records");
         assertThat(((MessageStep) records.get(0)).getJobId()).isNull();
+    }
+
+    /**
+     * #131：一条运行的消息步索引按页取，runId 原样下推给那条投影查询（不把整库的步拉回来再筛）。
+     */
+    @Test
+    void runStepIndexPagesByRun() {
+        JobRun run = new JobRun();
+        run.setId(3L);
+        when(jobRunMapper.selectList(any())).thenReturn(List.of(run));
+        MessageStepIndex row = new MessageStepIndex();
+        row.setId(1L);
+        when(messageStepMapper.pageRunStepIndex(any(), any())).thenAnswer(inv -> {
+            Page<MessageStepIndex> page = inv.getArgument(0);
+            page.setRecords(List.of(row));
+            page.setTotal(1);
+            return page;
+        });
+
+        Map<String, Object> result = service.runStepIndex(3L, 2, 500);
+
+        assertThat(result.get("total")).isEqualTo(1L);
+        assertThat((List<?>) result.get("records")).hasSize(1);
+        verify(messageStepMapper).pageRunStepIndex(any(), eq(3L));
+    }
+
+    /**
+     * 运行不存在时给 404（与 getRun 同一个口径）：界面上只会拿列表里的 id 来问，
+     * 真问到不存在的 id 是调用方错了——安静地回一个空列表会把「运行没了」装成「这条运行没有步」。
+     */
+    @Test
+    void runStepIndexRejectsMissingRun() {
+        when(jobRunMapper.selectList(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.runStepIndex(404L, 1, 500))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("404");
+
+        verify(messageStepMapper, never()).pageRunStepIndex(any(), any());
     }
 
     @Test

@@ -116,9 +116,6 @@
             </div>
           </div>
 
-          <!-- 取步上限（#131）：只在「拿到的比接口说的少」时才出现——静默截断在这一票里消失 -->
-          <div v-if="stepsNote" class="hc-chain-note" role="note">{{ stepsNote }}</div>
-
           <StepDetailCard :step="detail.step" />
         </template>
       </div>
@@ -130,7 +127,7 @@
 import { computed } from 'vue'
 import StepDetailCard from './StepDetailCard.vue'
 import {
-  chainNodes, chainSummary, detailPath, jobTitleOf, runDetail, runStepsNote, shortId, stampOf, statusChip,
+  chainNodes, chainSummary, detailPath, jobTitleOf, runDetail, shortId, stampOf, statusChip,
   type HistorySelection,
 } from '../../history/console'
 import type { Job, JobRun, MessageStep } from '../../types'
@@ -143,8 +140,6 @@ const props = defineProps<{
   steps: MessageStep[]
   stepsLoading: boolean
   stepsError: string
-  /** 接口说的这条运行一共多少步——比 `steps.length` 大就是撞上了取步上限。 */
-  stepsTotal: number
   /** 取这条运行失败时的说法（消息步模式下点一行会按需去取它所属的运行）。 */
   runError?: string
 }>()
@@ -159,5 +154,4 @@ const jobTitle = computed(() => (props.run ? jobTitleOf(props.jobs, props.run.jo
 /** 当前消息与当前步骤的归一（选中的对不上就落到第 1 条 / 第 1 步）只在 console.ts 里判一次。 */
 const detail = computed(() => runDetail(props.steps, props.selection))
 const nodes = computed(() => chainNodes(detail.value.message, detail.value.step))
-const stepsNote = computed(() => runStepsNote(props.steps.length, props.stepsTotal))
 </script>

@@ -17,6 +17,12 @@ import java.util.Map;
 @RequestMapping("/api/history")
 public class HistoryController {
 
+    /** 列表接口一页最多多少条（整行带两个 TEXT 快照，见 {@link #safeSize(int)}）。 */
+    private static final int LIST_MAX_SIZE = 100;
+
+    /** 消息步索引一页最多多少条（#131）：索引行不带快照，能宽十倍。 */
+    private static final int INDEX_MAX_SIZE = 1000;
+
     private final MessageHistoryService messageHistoryService;
 
     public HistoryController(MessageHistoryService messageHistoryService) {
@@ -53,6 +59,24 @@ public class HistoryController {
     @GetMapping("/runs/{id}")
     public JobRun getRun(@PathVariable Long id) {
         return messageHistoryService.getRun(id);
+    }
+
+    /**
+     * 一条运行的**消息步索引**（#131）：右详情一次把这条运行的全部消息步拿回去，画消息 chips、
+     * 步骤链与单步卡。
+     *
+     * <p>与 {@link #listSteps} 的分工：那条是**检索面**（跨运行按任务 / 状态 / 业务键找步，
+     * 最新在上，整行带快照）；这条是**一条运行的步骤顺序**（id 升序，只有画界面要的那几列，
+     * 两个 TEXT 快照列不取——理由见 {@code MessageStepIndex}）。上一票那个「展开一条运行只取
+     * 前 100 个消息步」的隐藏上限就死在这里：索引行小到可以一次拿全。</p>
+     *
+     * <p>{@code size} 的上限比列表那一侧宽十倍（1000）：列表一行要带快照，这里不带。</p>
+     */
+    @GetMapping("/runs/{id}/steps")
+    public Map<String, Object> listRunStepIndex(@PathVariable Long id,
+                                                @RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "500") int size) {
+        return messageHistoryService.runStepIndex(id, safePage(page), safeSize(size, INDEX_MAX_SIZE));
     }
 
     /**
@@ -109,7 +133,12 @@ public class HistoryController {
         return Math.max(page, 1);
     }
 
+    /** 列表接口一页的上限：整行（带两个 TEXT 快照）读回来，100 条已经不小。 */
     private int safeSize(int size) {
-        return Math.min(Math.max(size, 1), 100);
+        return safeSize(size, LIST_MAX_SIZE);
+    }
+
+    private int safeSize(int size, int max) {
+        return Math.min(Math.max(size, 1), max);
     }
 }

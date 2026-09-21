@@ -2,6 +2,7 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.MessageStepIndex;
 import com.example.edgegateway.service.MessageHistoryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -117,6 +119,70 @@ class HistoryControllerTest {
         mockMvc.perform(get("/api/history/runs/summary").param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summaries").isEmpty());
+    }
+
+    /**
+     * #131：一条运行的消息步索引（右详情用）。runId 走路径，page / size 原样传给服务层——
+     * 索引行不带快照，所以这一页能给得比列表宽（列表那侧封顶 100，这里 1000）。
+     */
+    @Test
+    void listsRunStepIndex() throws Exception {
+        MessageStepIndex row = new MessageStepIndex();
+        row.setId(2L);
+        row.setRunId(9L);
+        row.setStep(3);
+        row.setStatus("FAILED");
+        row.setHasInputSnapshot(true);
+        row.setHasDataSnapshot(false);
+        when(messageHistoryService.runStepIndex(anyLong(), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 1L, "records", List.of(row)));
+
+        mockMvc.perform(get("/api/history/runs/9/steps").param("page", "2").param("size", "1000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].status").value("FAILED"))
+                .andExpect(jsonPath("$.data.records[0].hasInputSnapshot").value(true))
+                .andExpect(jsonPath("$.data.records[0].hasDataSnapshot").value(false));
+
+        verify(messageHistoryService).runStepIndex(eq(9L), eq(2), eq(1000));
+    }
+
+    /** 不传分页时给「一页尽量多」的默认值：右详情要一次拿全，不是列表那侧的每页 20。 */
+    @Test
+    void runStepIndexDefaultsToOneBigPage() throws Exception {
+        when(messageHistoryService.runStepIndex(anyLong(), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 0L, "records", List.of()));
+
+        mockMvc.perform(get("/api/history/runs/9/steps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+
+        verify(messageHistoryService).runStepIndex(eq(9L), eq(1), eq(500));
+    }
+
+    /** 这一页宽，但也不是无界：索引接口自己的上限（1000）与列表那侧（100）分开管。 */
+    @Test
+    void runStepIndexClampsSize() throws Exception {
+        when(messageHistoryService.runStepIndex(anyLong(), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 0L, "records", List.of()));
+
+        mockMvc.perform(get("/api/history/runs/9/steps").param("size", "999999"))
+                .andExpect(status().isOk());
+
+        verify(messageHistoryService).runStepIndex(eq(9L), eq(1), eq(1000));
+    }
+
+    /** 索引这条路径别被 `/runs/{id}` 抢走（多一段路径，两边的匹配互不影响）。 */
+    @Test
+    void runStepIndexPathIsNotSwallowedByRunDetail() throws Exception {
+        when(messageHistoryService.runStepIndex(anyLong(), anyInt(), anyInt()))
+                .thenReturn(Map.of("total", 0L, "records", List.of()));
+
+        mockMvc.perform(get("/api/history/runs/9/steps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isEmpty());
+
+        verify(messageHistoryService, never()).getRun(anyLong());
     }
 
     @Test

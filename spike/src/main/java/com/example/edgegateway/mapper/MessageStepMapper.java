@@ -1,7 +1,9 @@
 package com.example.edgegateway.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.MessageStepIndex;
 import com.example.edgegateway.model.RunStepSummary;
 import com.example.edgegateway.model.RunStepTotals;
 import org.apache.ibatis.annotations.Mapper;
@@ -11,6 +13,18 @@ import java.util.List;
 
 @Mapper
 public interface MessageStepMapper extends BaseMapper<MessageStep> {
+
+    /**
+     * 一条运行的**消息步索引**，按页取（#131）：右详情要的那几列，**不含两个 TEXT 快照列**
+     * （理由见 {@link MessageStepIndex}）。
+     *
+     * <p>顺序按 id 升序——这是一条运行的**步骤顺序**；运行列表与消息步检索那边的「最新在上」
+     * （{@code orderByDesc(id)}）是检索面的口径，不是这里。</p>
+     *
+     * <p>落在 XML 里（`mapper/MessageStepMapper.xml`），与这个 mapper 的另外两条自定义查询同一个家：
+     * 同一个实体的自定义 SQL 分两处放，读的人会以为口径不一样。</p>
+     */
+    Page<MessageStepIndex> pageRunStepIndex(Page<MessageStepIndex> page, @Param("runId") Long runId);
 
     /**
      * 把这一批运行的消息数 / 消息步数 / 失败步数聚合出来（#130），一次查询，不是每行一次。

@@ -48,7 +48,6 @@
         :steps="runSteps"
         :steps-loading="runStepsLoading"
         :steps-error="runStepsError"
-        :steps-total="runStepsTotal"
         :run-error="runError"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
@@ -79,7 +78,7 @@ import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
 import { api, ApiError } from '../api/client'
 import {
-  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runStepsPages, runStepsQuery, selectRun,
+  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runStepsPages, runStepsPath, selectRun,
   selectStep, statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
@@ -112,7 +111,7 @@ const runError = ref('')
  * （右栏不区分「我是在哪个模式里点开的」）。同一运行内换步骤**不重复取**（`stepsRunId`）。
  */
 const runSteps = ref<MessageStep[]>([])
-/** 接口说的这条运行一共多少步：比 `runSteps.length` 大就是撞上了取步上限（票面：不许静默截断）。 */
+/** 接口说的这条运行一共多少步：只用来算要追几页（没有上限，界面也不拿它说「截断」）。 */
 const runStepsTotal = ref(0)
 const runStepsLoading = ref(false)
 const runStepsError = ref('')
@@ -298,12 +297,12 @@ function retryRunSteps() {
  * 取一条运行的**全部**消息步（#131）。
  *
  * 票面把「展开一条运行只取前 100 个消息步」这个隐藏上限判了死刑：要么给提示、要么去掉。
- * 这里两条都走——先取一页（一页顶格 100），接口回 `total` 之后再按 {@link runStepsPages}
- * 把剩下的页追回来，所以「100 步」不再是天花板；只有真撞上 `RUN_STEPS_MAX` 那种病态大运行时
- * 才停下来，而那时右栏会把「一共多少 / 带了多少」写在脸上（`runStepsTotal` 传下去）。
+ * 这里是**去掉**——走的是消息步索引接口（`/history/runs/{id}/steps`，一行不带那两个 TEXT 快照），
+ * 先取一页（500），接口回 `total` 之后再按 {@link runStepsPages} 把剩下的页追回来，**没有上限**。
+ * 一条 720 步的运行（实测库里最大的一条）整条索引 100 KB 上下、两次往返拿完；右栏因此永远显示
+ * 完整的消息与步骤链，「失败 N 步」也就不可能撒谎。
  *
- * 一次点击顶多十来条请求（实测库里最大的一条运行 720 步 = 8 页），换来的是右栏的数字与
- * 列表里那条运行的摘要对得上——「只取前 100 步」那种半个运行会让 chips 上的「失败 N 步」撒谎。
+ * 要快照本身是另一条路：点开某一步再按 id 取整行（`/history/steps/{id}`），#132 的快照面板接那一头。
  */
 async function loadRunSteps(runId: number) {
   const token = ++stepsToken
@@ -313,12 +312,12 @@ async function loadRunSteps(runId: number) {
   runStepsTotal.value = 0
   stepsRunId.value = runId
   try {
-    const first = await api<Page<MessageStep>>(`/history/steps?${runStepsQuery(runId, 1)}`)
+    const first = await api<Page<MessageStep>>(runStepsPath(runId, 1))
     if (token !== stepsToken) return
     runStepsTotal.value = first.total
     const all = [...first.records]
     for (let page = 2; page <= runStepsPages(first.total) && all.length < first.total; page += 1) {
-      const next = await api<Page<MessageStep>>(`/history/steps?${runStepsQuery(runId, page)}`)
+      const next = await api<Page<MessageStep>>(runStepsPath(runId, page))
       if (token !== stepsToken) return
       if (!next.records.length) break
       all.push(...next.records)

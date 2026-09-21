@@ -11,6 +11,7 @@ import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.model.MessageStepIndex;
 import com.example.edgegateway.model.RunStepSummary;
 import com.example.edgegateway.model.RunStepTotals;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -451,6 +452,30 @@ public class MessageHistoryService {
                         .in(JobRun::getId, runIds))
                 .forEach(run -> jobIds.put(run.getId(), run.getJobId()));
         records.forEach(step -> step.setJobId(step.getRunId() == null ? null : jobIds.get(step.getRunId())));
+    }
+
+    /**
+     * 一条运行的**消息步索引**（#131）：右详情（消息 chips + 步骤链 + 单步卡）要的那几列，
+     * **不含两个 TEXT 快照列**——合上票面那句「展开一条运行只取前 100 个消息步」的隐藏上限，
+     * 靠的不是把上限调大，而是把一行从「几十 KB」压到「两百字节」：一条 720 步的运行
+     * （实测库里最大的一条）整条索引 100 KB 上下，一次全拿得动，不必再截断。
+     *
+     * <p>要看快照本身，点开那一步再按 id 取整行（{@link #getStep}）——#132 的快照面板走这条路。</p>
+     *
+     * <p>运行不存在时与 {@link #getRun} 同一个口径（404）：界面上只会拿运行列表里的 id 来问，
+     * 真问到不存在的 id 是调用方错了，不该安静地回一个空列表（那会把「运行没了」装成
+     * 「这条运行没有步」）。存在性只查 id 一列——{@code job_run} 上也挂着 TEXT 快照列，
+     * 整行读回来是白读（与 {@link #attachRunJobIds} 同一个理由）。</p>
+     */
+    public Map<String, Object> runStepIndex(Long runId, int page, int size) {
+        List<JobRun> found = jobRunMapper.selectList(new LambdaQueryWrapper<JobRun>()
+                .select(JobRun::getId)
+                .eq(JobRun::getId, runId));
+        if (found.isEmpty()) {
+            throw new NoSuchElementException("运行不存在: " + runId);
+        }
+        Page<MessageStepIndex> result = messageStepMapper.pageRunStepIndex(new Page<>(page, size), runId);
+        return pageOf(result.getTotal(), result.getRecords());
     }
 
     public JobRun getRun(Long id) {

@@ -62,8 +62,18 @@ export interface MessageStep {
   step: number
   actionName?: string | null
   status: string
+  /**
+   * 两个快照原文。**只有「列表」与「详情」两条路带它们**（`/history/steps`、`/history/steps/{id}`）；
+   * 右详情走的是索引那条路（`/history/runs/{id}/steps`，见下），那条**不取这两列**（TEXT，单条上限 64 KB）。
+   */
   dataSnapshot?: string | null
   inputSnapshot?: string | null
+  /**
+   * 快照落没落（#131）：索引那条路用这两格回答「步骤链上那两个小点亮不亮」——
+   * 快照本身不在索引里，点开某一步再按 id 取整行（#132 的快照面板走那条）。
+   */
+  hasDataSnapshot?: boolean
+  hasInputSnapshot?: boolean
   error?: string | null
   createdAt?: string | null
   attempt?: number | null

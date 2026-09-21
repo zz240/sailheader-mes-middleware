@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!--
-  消息步的自定义查询（#130）：按运行聚合出「消息数 / 消息步数 / 失败步数」。
+  消息步的自定义查询：按运行聚合出「消息数 / 消息步数 / 失败步数」（#130），
+  以及一条运行的消息步索引（#131）。
 
   为什么落 XML 而不是注解散装：`summarizeByRunIds` 要遍历 runIds（<foreach>），注解里写不动；
-  `summarizeMatchingRuns` 虽说没有 foreach，但与它同一件事的两个方向（按 id 名单 / 按运行条件），
-  分两处放只会让人以为口径不一样。列名与 DTO 字段名靠 MyBatis 的下划线转驼峰对上，改名字要两边一起改。
+  同一个实体的自定义 SQL 分两处放，读的人会以为口径不一样。列名与 DTO 字段名靠 MyBatis 的
+  下划线转驼峰对上，改名字要两边一起改（对不上时是**空值**而不是报错，所以必须写死在一起）。
 -->
 <mapper namespace="com.example.edgegateway.mapper.MessageStepMapper">
 
@@ -57,6 +58,36 @@
                             WHERE k.run_id = r.id AND k.business_key LIKE #{businessKeyPattern})
             </if>
         </where>
+    </select>
+
+    <!--
+      一条运行的**消息步索引**（#131）：右详情一次要这条运行的全部步，但**两个快照列一个都不取**。
+      它们是 TEXT（单条上限 64 KB，#127），快照大小由目标端决定、本地拦不住——整行读回来就是让
+      「点开一条运行」的价格由第三方响应体定价。这里只回画得出界面的那几列，快照落没落由两个布尔列
+      回答（步骤链上那两个小点就是这个信息），要看快照本身再按 id 单独取整行（#132）。
+
+      空白算没落（TRIM）：界面上那两个点的判据是「有没有可用内容」，与写库时的口径一致
+      （`toJson` 不会写空白，但老数据 / 手工改过的行可能有）。
+
+      ORDER BY id：这是一条运行的**步骤顺序**。运行列表与消息步检索那边的 `ORDER BY id DESC`
+      是检索面的口径（最新在上），别把两边对齐——右详情的步骤链要从入口往后读。
+    -->
+    <select id="pageRunStepIndex" resultType="com.example.edgegateway.model.MessageStepIndex">
+        SELECT id,
+               run_id,
+               message_id,
+               step,
+               action_name,
+               status,
+               error,
+               created_at,
+               attempt,
+               business_key,
+               CASE WHEN input_snapshot IS NOT NULL AND TRIM(input_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_input_snapshot,
+               CASE WHEN data_snapshot IS NOT NULL AND TRIM(data_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_data_snapshot
+        FROM message_step
+        WHERE run_id = #{runId}
+        ORDER BY id
     </select>
 
 </mapper>
