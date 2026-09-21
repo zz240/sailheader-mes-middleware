@@ -28,7 +28,12 @@ import {
   stampOf, statusChip, statusParam, statusPlaceholder, stepCardView, stepRows, summaryQuery,
   DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
+import {
+  DEFAULT_SNAPSHOT_DEPTH, LONG_VALUE_CHARS, SNAPSHOT_DEPTHS, SNAPSHOT_DEEP_ALL, SNAPSHOT_PREVIEW_CHARS,
+  SNAPSHOT_TEXT_CAP, deepOf, filterSnapshot, isLongValue, longPreview, readSnapshot, snapshotSides, treeDeep,
+} from './snapshot.ts'
 import type { Job, JobRun, MessageStep } from '../types.ts'
+import type { SnapshotValue } from './snapshot.ts'
 
 declare const process: { exitCode?: number }
 
@@ -385,6 +390,164 @@ eq('只有空白的错误也当没有', stepCardView({ ...msgs[0].steps[1], erro
 eq('尝试次数缺了给 1（与消息步行同一个口径）',
   stepCardView(msgs[1].steps[0])?.attempt, 1)
 eq('没选中步骤时不出单步卡', stepCardView(null), null)
+
+// 12. 快照面板的三种降级（#132）：口径全在 `snapshot.ts` —— 什么算非 JSON、什么算空、
+//     多长算超长。组件与真机脚本都从它取，界面里不再各判一遍。
+eq('超长的界线就是那条 TEXT 列的上限（#127）', SNAPSHOT_TEXT_CAP, 65535)
+eq('超长那一档只画前 8 KB 的原文', SNAPSHOT_PREVIEW_CHARS, 8192)
+
+eq('空白当「没落」，不是「空对象」——与步骤链上那两个点同一个口径',
+  ['', '   ', '\n', null, undefined].map((raw) => readSnapshot(raw).kind),
+  ['missing', 'missing', 'missing', 'missing', 'missing'])
+eq('「没落」那一档不编任何说明（原型的 missing 是 fixture 写的现场解释，生产里没有这条信息）',
+  [readSnapshot('').note, readSnapshot('').text, readSnapshot('').value, readSnapshot('').emptyLabel],
+  ['', '', undefined, ''])
+
+eq('合法 JSON 走格式化树那一档',
+  ['{"a":1}', ' {"a":1}\n', '[]', '{}'].map((raw) => readSnapshot(raw).kind),
+  ['json', 'json', 'empty', 'empty'])
+eq('解析出来的值原样交给树', readSnapshot('{"a":[1,2]}').value, { a: [1, 2] })
+eq('标量 JSON 也是 JSON（树里那格「（标量）」）',
+  ['123', '"x"', 'true', 'null'].map((raw) => readSnapshot(raw).kind),
+  ['json', 'json', 'json', 'json'])
+eq('JSON 那一档不写降级说明', readSnapshot('{"a":1}').note, '')
+eq('原文照留（复制那一头要的是它，不是解析结果）',
+  [readSnapshot('{"a":1}').raw, readSnapshot('hello').raw], ['{"a":1}', 'hello'])
+
+eq('非 JSON 文本不当 JSON 解析、原样显示',
+  [readSnapshot('hello world').kind, readSnapshot('hello world').text],
+  ['text', 'hello world'])
+eq('半截 JSON 也是非 JSON 文本（不是「解析失败就当空」）',
+  ['{"a":', '{a:1}', 'undefined'].map((raw) => readSnapshot(raw).kind),
+  ['text', 'text', 'text'])
+eq('非 JSON 那一档把后果写出来（回填只认 JSON 值，下游取到空）',
+  readSnapshot('hello').note,
+  '非 JSON 文本：解析不出 JSON 值，断点续投回填时它进不了上下文，下游引用该步只会取到空（#90 / #123 口径）。')
+
+eq('空对象给出明确提示（不是一片空白）',
+  [readSnapshot('{}').emptyLabel, readSnapshot('{ }').emptyLabel, readSnapshot('[]').emptyLabel],
+  ['空对象 {}', '空对象 {}', '空数组 []'])
+eq('空那一档的说明写清「合法但是空的」与它的后果',
+  [readSnapshot('{}').note, readSnapshot('[]').note],
+  ['空对象 {}：这一份快照是合法 JSON，但一个字段都没有——下游按路径取它下面的值只会拿到空（#90 口径）。',
+    '空数组 []：这一份快照是合法 JSON，但一项都没有——下游按下标取它里面的值只会拿到空（#90 口径）。'])
+eq('空那一档照样把结果给树（`{}` 也要画出来，不是只留一句提示）', readSnapshot('{}').value, {})
+
+const hugeSnap = 'x'.repeat(SNAPSHOT_TEXT_CAP + 1)
+eq('超过列上限就是超长那一档（**不**尝试解析）', readSnapshot(hugeSnap).kind, 'oversized')
+eq('超长只把前 8 KB 交给界面（页面不卡死）',
+  [readSnapshot(hugeSnap).text.length, readSnapshot(hugeSnap).value], [SNAPSHOT_PREVIEW_CHARS, undefined])
+eq('超长那一档原文全文还在手里（复制走全文，不是截断那半段）',
+  readSnapshot(hugeSnap).raw.length, SNAPSHOT_TEXT_CAP + 1)
+eq('超长那一档注明共多少字符、截到多少',
+  readSnapshot(hugeSnap).note,
+  '超长快照：共 65536 字符，超过 64 KB 的列上限（#127）——这里只画前 8192 字符。')
+eq('刚好到上限不算超长（界线是列上限本身）', readSnapshot('x'.repeat(SNAPSHOT_TEXT_CAP)).kind, 'text')
+
+// 13. 展开层数与键路径搜索（#132）：ADR-0016 决策 10 那处有意偏离的落法——
+//     不引 `<mark>`，改成「按路径过滤 + 把命中分支整个展开」。
+eq('展开层数三档、原型同序', [...SNAPSHOT_DEPTHS],
+  [{ value: '1', label: '1 层' }, { value: '2', label: '2 层' }, { value: 'all', label: '全部' }])
+eq('默认两层（原型 `state.depth = 2`）', DEFAULT_SNAPSHOT_DEPTH, '2')
+eq('库的 deep 比「层数」大一（库判的是 `node.level >= deep`，根那行是 0 层）',
+  [deepOf('1'), deepOf('2'), deepOf('all')], [2, 3, SNAPSHOT_DEEP_ALL])
+eq('搜了就整个展开（不然命中藏在折叠里——决策 10 的「自动展开到命中路径」）',
+  [treeDeep('2', 'handle'), treeDeep('2', ''), treeDeep('2', '   ')], [SNAPSHOT_DEEP_ALL, 3, 3])
+
+const treeData: SnapshotValue = {
+  FCode: 'SH-CODE-0001',
+  nested: { handle: 'MD-SH-0001', other: 2 },
+  codes: [{ handle: 'a' }, { keep: 'b' }],
+}
+/** 按路径取一格：断言里要看的都是原值，不重新算一遍（那样就成了同义反复）。 */
+function atPath(value: unknown, ...keys: string[]): unknown {
+  return keys.reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], value)
+}
+
+eq('没搜就是原值（一个键都不动）', filterSnapshot(treeData, '').value, treeData)
+eq('只留命中的分支与它的祖先，别的键整个不见',
+  filterSnapshot(treeData, 'nested.handle').value, { nested: { handle: 'MD-SH-0001' } })
+eq('命中数 = 路径含这个片段的节点数（照原型 walk 里那个 onMatch 数）',
+  filterSnapshot(treeData, 'handle').matches, 2)
+eq('大小写不敏感（原型 toLowerCase 那一句）', filterSnapshot(treeData, 'HANDLE').matches, 2)
+eq('一条都不命中时树是空的、命中数是 0（空容器，不是 `undefined`——那不是「没有快照」那一档）',
+  filterSnapshot(treeData, 'zzz'), { value: {}, matches: 0, arraysTrimmed: false })
+eq('命中数是 0 的数组根给空数组（同型容器，不是 `undefined`）',
+  filterSnapshot([{ handle: 'a' }], 'zzz').value, [])
+eq('命中的值原样保留（树里看到的、复制的都是原值）',
+  atPath(filterSnapshot(treeData, 'handle').value, 'nested', 'handle'), 'MD-SH-0001')
+eq('片段命中那一格时，它下面整棵子树都留下（路径是前缀匹配，孩子自然也含这个片段）',
+  filterSnapshot(treeData, 'nested').value, { nested: { handle: 'MD-SH-0001', other: 2 } })
+eq('数组被裁过就折成原下标做键的对象（不然界面上的 [0] 与快照里的 [7] 不是一回事）',
+  atPath(filterSnapshot(treeData, 'handle').value, 'codes'), { 0: { handle: 'a' } })
+eq('折过数组这件事要标出来（说明里得交代一句）',
+  filterSnapshot(treeData, 'handle').arraysTrimmed, true)
+eq('数组整个留下时还是数组，也不必交代',
+  [filterSnapshot({ codes: [{ handle: 'a' }] }, 'handle').value,
+    filterSnapshot({ codes: [{ handle: 'a' }] }, 'handle').arraysTrimmed],
+  [{ codes: [{ handle: 'a' }] }, false])
+eq('标量快照没有键路径可搜：原样留着（「搜不了」不是「被搜没了」）',
+  filterSnapshot('hello', 'zzz'), { value: 'hello', matches: 0, arraysTrimmed: false })
+
+const snapStep = {
+  id: 94,
+  runId: 12,
+  messageId: 'msg-A',
+  step: 5,
+  status: 'FAILED',
+  inputSnapshot: '{"FCode":"SH-1","nested":{"handle":"MD-1"}}',
+  dataSnapshot: 'not json at all',
+}
+const sidesPlain = snapshotSides(snapStep, '')
+eq('两块：输入在前、数据在后（原型 `.snaps` 的并排顺序）',
+  sidesPlain.map((s) => s.which), ['input', 'data'])
+eq('两块的标题与去向照原型',
+  sidesPlain.map((s) => [s.title, s.where]),
+  [['输入快照', '进入本步的报文'], ['数据快照', '本步输出 → context[5]']])
+eq('输入那一块给树、数据那一块走非 JSON 降级',
+  sidesPlain.map((s) => s.read.kind), ['json', 'text'])
+eq('没搜索时树就是原值', sidesPlain[0].tree, { FCode: 'SH-1', nested: { handle: 'MD-1' } })
+eq('没搜索时两块都没有搜索那句话', sidesPlain.map((s) => s.searchNote), ['', ''])
+eq('复制：JSON 那一块给格式化后的 JSON（不是原文那一行）',
+  sidesPlain[0].copyText, '{\n  "FCode": "SH-1",\n  "nested": {\n    "handle": "MD-1"\n  }\n}')
+eq('复制：非 JSON 那一块写「复制原文」（写「复制 JSON」是撒谎）',
+  sidesPlain.map((s) => s.copyLabel), ['复制 JSON', '复制原文'])
+eq('复制那一格有档位（组件按它分派，不拿展示文案当判据）',
+  sidesPlain.map((s) => s.copyKind), ['json', 'text'])
+eq('复制：原文那一块给的就是原文', sidesPlain[1].copyText, 'not json at all')
+eq('「原始文本」那一档给的是整份格式化 JSON（与树那份分开）',
+  sidesPlain[0].rawText, '{\n  "FCode": "SH-1",\n  "nested": {\n    "handle": "MD-1"\n  }\n}')
+eq('搜索只改树，不改「原始文本」那一份（那是整份，不是过滤后的那半份）',
+  snapshotSides(snapStep, 'handle')[0].rawText, sidesPlain[0].rawText)
+eq('没落那一块不铺复制按钮（没有东西可复制）',
+  [snapshotSides({ ...snapStep, inputSnapshot: '' }, '')[0].copyLabel,
+    snapshotSides({ ...snapStep, inputSnapshot: '' }, '')[0].copyKind],
+  ['', ''])
+eq('空对象那一块照样复制（`{}` 也是合法的 JSON）',
+  snapshotSides({ ...snapStep, inputSnapshot: '{}' }, '')[0].copyText, '{}')
+eq('没有这一步就一块都不铺', snapshotSides(null, ''), [])
+
+const sidesSearched = snapshotSides(snapStep, 'handle')
+eq('搜索后树是过滤过的', sidesSearched[0].tree, { nested: { handle: 'MD-1' } })
+eq('搜索那句写在**每一块**里（各自数自己的命中）',
+  sidesSearched.map((s) => s.searchNote),
+  ['“handle” 命中 1 处键路径，命中分支已自动展开', '“handle”：这一段不是 JSON 文本，没有键路径可搜。'])
+eq('非 JSON 那一块也得回一句（搜索框是两块共用的，敲了字一点反应都没有像坏了）',
+  snapshotSides(snapStep, 'handle')[1].searchNote, '“handle”：这一段不是 JSON 文本，没有键路径可搜。')
+eq('没落那一块不回话（那一块本来就没东西可搜）',
+  snapshotSides({ ...snapStep, inputSnapshot: '' }, 'handle')[0].searchNote, '')
+eq('折过数组就补一句口径（`{"7": …}` 与 `[7]` 是一回事）',
+  snapshotSides({ ...snapStep, inputSnapshot: '{"rows":[{"handle":"a"},{"x":1}]}' }, 'handle')[0].searchNote,
+  '“handle” 命中 1 处键路径，命中分支已自动展开 · 数组按原下标保留为键（界面上写成对象）')
+eq('搜索那几句不吃空白（`  handle  ` 与 `handle` 同一件事）',
+  snapshotSides(snapStep, '  handle  ')[0].searchNote, sidesSearched[0].searchNote)
+
+eq('长值的界线是 72 字（原型那 72）', LONG_VALUE_CHARS, 72)
+eq('只有字符串谈得上「长值」',
+  [isLongValue('x'.repeat(80)), isLongValue('x'.repeat(72)), isLongValue(80), isLongValue({ a: 1 })],
+  [true, false, false, false])
+eq('长值截断后带引号带省略号（与库里那份 `"…"` 写法对齐）',
+  [longPreview('x'.repeat(80)), longPreview('abc')], [`"${'x'.repeat(72)}…"`, '"abc"'])
 
 console.log(`\n# ${passed} passed, ${failed} failed`)
 if (failed > 0) {

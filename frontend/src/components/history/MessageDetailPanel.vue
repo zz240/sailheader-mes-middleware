@@ -116,7 +116,13 @@
             </div>
           </div>
 
-          <StepDetailCard :step="detail.step" />
+          <StepDetailCard
+            :step="detail.step"
+            :step-row="stepRow"
+            :step-row-loading="stepRowLoading"
+            :step-row-error="stepRowError"
+            @retry-step-row="emit('retry-step-row')"
+          />
         </template>
       </div>
     </div>
@@ -127,8 +133,8 @@
 import { computed } from 'vue'
 import StepDetailCard from './StepDetailCard.vue'
 import {
-  chainNodes, chainSummary, detailPath, jobTitleOf, runDetail, shortId, stampOf, statusChip,
-  type HistorySelection,
+  chainNodes, chainSummary, detailPath, jobTitleOf, shortId, stampOf, statusChip,
+  type HistorySelection, type RunDetail,
 } from '../../history/console'
 import type { Job, JobRun, MessageStep } from '../../types'
 
@@ -136,22 +142,32 @@ const props = defineProps<{
   run: JobRun | null
   jobs: Job[]
   selection: HistorySelection
-  /** 这条运行的消息步（#131 由页面在选中运行后取回；两个模式共用同一份）。 */
-  steps: MessageStep[]
+  /**
+   * 「选中了什么」**归一之后**的那一份（消息 / 下标 / 当前步骤）：由页面算一次传下来，
+   * 与它按 id 取整行用的是同一份——面板不再自己算第二遍（`runDetail` 里那次归一只有一处）。
+   */
+  detail: RunDetail
   stepsLoading: boolean
   stepsError: string
   /** 取这条运行失败时的说法（消息步模式下点一行会按需去取它所属的运行）。 */
   runError?: string
+  /**
+   * 归一之后那一步的**整行**（#132 的快照面板要的是它：索引那条路上没有快照原文）。
+   * 三态：`stepRowLoading` / `stepRowError` / 两者都没有时的这一格。
+   */
+  stepRow: MessageStep | null
+  stepRowLoading: boolean
+  stepRowError: string
 }>()
 
 const emit = defineEmits<{
   'select-step': [step: MessageStep]
   'retry-steps': []
+  'retry-step-row': []
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))
 const jobTitle = computed(() => (props.run ? jobTitleOf(props.jobs, props.run.jobId) : ''))
-/** 当前消息与当前步骤的归一（选中的对不上就落到第 1 条 / 第 1 步）只在 console.ts 里判一次。 */
-const detail = computed(() => runDetail(props.steps, props.selection))
-const nodes = computed(() => chainNodes(detail.value.message, detail.value.step))
+/** 步骤链的节点：入口那格 + 当前消息的每一步（归一之后的那一步判选中态）。 */
+const nodes = computed(() => chainNodes(props.detail.message, props.detail.step))
 </script>

@@ -45,12 +45,16 @@
         :run="selectedRun"
         :jobs="jobs"
         :selection="selection"
-        :steps="runSteps"
+        :detail="runDetailView"
         :steps-loading="runStepsLoading"
         :steps-error="runStepsError"
         :run-error="runError"
+        :step-row="stepRow"
+        :step-row-loading="stepRowLoading"
+        :step-row-error="stepRowError"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
+        @retry-step-row="retryStepRow"
       />
     </main>
 
@@ -71,15 +75,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import HistoryFilters from '../components/history/HistoryFilters.vue'
 import HistoryCountsBar from '../components/history/HistoryCountsBar.vue'
 import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
 import { api, ApiError } from '../api/client'
 import {
-  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runStepsPages, runStepsPath, selectRun,
-  selectStep, statusParam, summaryQuery,
+  DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runDetail, runStepsPages,
+  runStepsPath, selectRun, selectStep, statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
@@ -119,10 +123,71 @@ const runStepsError = ref('')
 const stepsRunId = ref<number | null>(null)
 /** 取运行的响应可能乱序回来（连点两行）：token 一换，旧响应就作废。 */
 let runToken = 0
-/** 同一条：取消息步的响应也可能乱序回来（连点两行）。 */
+/** 取消息步的响应也可能乱序回来（连点两行）。 */
 let stepsToken = 0
 /** 同一条：取列表的响应也可能乱序回来（连点两下模式开关）。 */
 let loadToken = 0
+
+/**
+ * 选中那一步的**整行**（#132 的快照面板要的是它）。
+ *
+ * 索引那条路（`/history/runs/{id}/steps`）一行不带两个 TEXT 快照——那是它便宜的原因；
+ * 快照本身按 id 另取整行（`/history/steps/{id}`），#131 的 ADR 补记把这一刀切在这儿：
+ * 「列表要宽、详情要深」。**只在选中那一步的 id 变了才取**：同一步不重复取，
+ * 连点两下链上同一格不会发两次请求。
+ */
+const stepRow = ref<MessageStep | null>(null)
+const stepRowError = ref('')
+const stepRowLoading = ref(false)
+/** 手里这份整行是哪一步的（`null` = 还没取）；与 `currentStep` 比一下就知道要不要取。 */
+const stepRowId = ref<number | null>(null)
+/** 取整行的响应也可能乱序回来（连着点两格）。 */
+let stepToken = 0
+
+/**
+ * 归一之后的右详情（消息 / 下标 / 当前步骤）：**只算这一处**，右栏渲染与「按 id 取整行」
+ * 都从它取——`runDetail` 里那次归一（选中的不在就落到第 1 条 / 第 1 步）因此只有一份说法。
+ */
+const runDetailView = computed(() => runDetail(runSteps.value, selection.value))
+const currentStep = computed(() => runDetailView.value.step)
+
+watch(() => currentStep.value?.id ?? null, (id) => {
+  if (id === null) {
+    stepRow.value = null
+    stepRowError.value = ''
+    stepRowId.value = null
+    return
+  }
+  if (stepRowId.value === id) return
+  void loadStepRow(id)
+})
+
+/** 选中那一步的整行（带两份快照原文）：404 / 接口挂了都在这里说话，界面那侧给「重试」。 */
+async function loadStepRow(stepId: number) {
+  const token = ++stepToken
+  stepRowLoading.value = true
+  stepRowError.value = ''
+  stepRowId.value = stepId
+  try {
+    const step = await api<MessageStep>(`/history/steps/${stepId}`)
+    if (token !== stepToken) return
+    stepRow.value = step
+  } catch (e) {
+    if (token !== stepToken) return
+    stepRow.value = null
+    stepRowError.value = e instanceof ApiError ? e.message : String(e)
+    // 没取到就当没取过：按「重试」或者下次再点到这一步会重来一次（与消息步那条同一个做法）
+    stepRowId.value = null
+  } finally {
+    if (token === stepToken) stepRowLoading.value = false
+  }
+}
+
+/** 快照那块上的重试：重取当前这一步的整行。 */
+function retryStepRow() {
+  const step = currentStep.value
+  if (step) void loadStepRow(step.id)
+}
 
 async function loadJobs() {
   try {

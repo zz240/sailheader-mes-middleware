@@ -1,5 +1,5 @@
 /*
- * 消息历史页（#129 骨架 / #130 计数条 / #136 消息步检索 / #131 消息切换与步骤链）：
+ * 消息历史页（#129 骨架 / #130 计数条 / #136 消息步检索 / #131 消息切换与步骤链 / #132 快照面板）：
  * 双栏控制台的骨架、列表、计数条与右详情。
  *
  * 令牌全部来自 `styles/tokens.css`——本页**零新增令牌**（ADR-0016「风险」③）：
@@ -262,3 +262,106 @@
   line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg);
 }
 .hc-step-err pre b { color: var(--danger-ink); }
+
+/* ── 快照面板（#132，原型 `.sc-tools` `.snaps` `.snap` `.note` `.jrow`） ─────────
+   格式化树本身是 `vue-json-pretty`（ADR-0016 决策 10：不引新依赖、不自己画树），
+   所以这一段管两件事：面板自己的形状，以及把库那份硬编码配色压回本页令牌。 */
+.hc-sctools {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sunken);
+}
+.hc-sctool { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hc-sctool-l { font-size: var(--fs-meta); color: var(--muted); letter-spacing: .02em; white-space: nowrap; cursor: help; }
+.hc-spacer { flex: 1 1 auto; }
+/* 工具栏上的小按钮（原型 `.btn .btn-sm`）：本页只有这一处用到，不搬那套 btn 类名进来 */
+.hc-sbtn {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--muted); font: inherit; font-size: var(--fs-meta); padding: 3px 8px; min-height: 24px; cursor: pointer;
+}
+.hc-sbtn:hover { background: var(--fg-soft); border-color: color-mix(in oklch, var(--fg) 32%, var(--border)); color: var(--fg); }
+.hc-sbtn[aria-pressed="true"] {
+  background: var(--fg-tint); border-color: color-mix(in oklch, var(--fg) 26%, var(--border));
+  color: var(--fg); font-weight: 600;
+}
+/* 展开层数那个分段（原型 `.seg`）。**不复用 `.hc-seg`**：那个名字已经被筛选条上的
+   `el-radio-group` 占了，这里给它加边框会连带把模式开关画成另一个样子。 */
+.hc-dseg { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.hc-dseg .hc-sbtn { border: 0; border-radius: 0; min-height: 26px; }
+.hc-dseg .hc-sbtn + .hc-sbtn { border-left: 1px solid var(--border); }
+.hc-sq {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  padding: 4px 8px; min-height: 28px; width: 178px; color: var(--fg);
+  font-family: var(--font-mono); font-size: var(--fs-meta);
+}
+.hc-sq::placeholder { color: var(--muted); }
+.hc-sq:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.hc-snaps { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 12px; }
+/* 窄屏（右栏被挤到 700px 以下）两块竖排：并排时每块只剩两百多像素，树就只剩缩进可看（原型 620px 断点同义） */
+@media (max-width: 1000px) {
+  .hc-snaps { grid-template-columns: minmax(0, 1fr); }
+}
+.hc-snap {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  min-width: 0; overflow: hidden; display: flex; flex-direction: column;
+}
+.hc-snaphead { padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-sunken); }
+.hc-snaphr { display: flex; align-items: center; gap: 7px; }
+.hc-snapt { font-size: 12.5px; font-weight: 620; }
+.hc-snapw { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.hc-snapcp { margin-left: auto; }
+.hc-snapbody { padding: 4px 0 8px; min-width: 0; }
+/* 树那一格自己横滚：长值不换行（行数与展开层数才对得上），要看全了一是「展开 N 字」二是横滚 */
+.hc-stree { min-width: 0; overflow-x: auto; }
+.hc-stree-empty { padding: 14px 12px; color: var(--muted); font-size: 12px; }
+.hc-sraw {
+  margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: var(--fs-meta);
+  line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg);
+}
+/* 每一块底部那句口径（原型 `.note`）：正常档走 sanken 底，降级那几档走 warn 底 */
+.hc-snote {
+  display: flex; gap: 7px; align-items: flex-start; padding: 8px 12px; border-top: 1px solid var(--border);
+  font-size: var(--fs-meta); color: var(--muted); background: var(--bg-sunken);
+}
+.hc-snote-warn { background: var(--warn-soft); color: var(--warn-ink); }
+.hc-snote code {
+  color: var(--fg); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0 4px; font-size: 11px;
+}
+.hc-schip {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 10px;
+  border: 1px solid currentColor; border-radius: var(--radius-sm); padding: 0 5px;
+}
+.hc-slegend { border-top: 1px solid var(--border); }
+.hc-snote-src { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+/* 长值：一行先截到 72 字，右边那个按钮把它整段摊开（票面「长值截断可查」）。
+   值那一格里的按钮**摆在行里**，不用库那个绝对定位的 actions 覆盖层——它压在行右端，
+   会把「展开 N 字」盖住（实测点不着）。 */
+.hc-jcell { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.hc-jlong { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.hc-jlong-v { overflow-wrap: anywhere; }
+.hc-jmore, .hc-jact {
+  font-family: var(--font-mono); font-size: 10px; color: var(--muted); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 5px; white-space: nowrap; cursor: pointer;
+}
+.hc-jmore:hover, .hc-jact:hover { color: var(--fg); border-color: color-mix(in oklch, var(--fg) 30%, var(--border)); }
+/* 一格的「复制值」：平时透明，hover / 聚焦那一行才浮出来（原型 `.jacts` 同一套，平时不铺满屏按钮）。
+   用透明度而不是 `display`：位置一直留着，hover 时行不会跳。 */
+.hc-jact { opacity: 0; transition: opacity .12s ease; }
+.vjs-tree-node:hover .hc-jact,
+.vjs-tree-node:focus-within .hc-jact { opacity: 1; }
+
+/* 库那份硬编码配色（`#1890ff` / `#e6f7ff`）压回本页令牌：本页零新增令牌（ADR-0016 风险③） */
+.hc-stree .vjs-tree { font-family: var(--font-mono); font-size: 12px; color: var(--fg); }
+.hc-stree .vjs-tree-node { min-height: 22px; }
+.hc-stree .vjs-tree-node:hover,
+.hc-stree .vjs-tree-node.is-highlight { background: var(--fg-soft); }
+.hc-stree .vjs-tree-node:focus-within { background: var(--fg-soft); }
+.hc-stree .vjs-value-number { color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.hc-stree .vjs-value-boolean { color: var(--warn-ink); }
+.hc-stree .vjs-value-null,
+.hc-stree .vjs-value-undefined,
+.hc-stree .vjs-comment,
+.hc-stree .vjs-node-index { color: var(--muted); }
+.hc-stree .vjs-tree-brackets:hover,
+.hc-stree .vjs-carets:hover { color: var(--accent); }
