@@ -215,6 +215,10 @@ export interface DiffBlocker {
  *
  * 三种结果：`{ start }` 两侧都有可对照的快照（去调 {@link snapshotDiff}）；
  * `{ blocker }` 说清挡在哪儿（第一步 / 哪一侧缺哪种快照）。**两者互斥**。
+ *
+ * 两侧的行给不全时：**没有上一步**（`prev === null`，这一步就是这条消息的第一步）与
+ * **本步那一行还不在手里**（`current === null`）是两件事，说的也是两句话——
+ * 把后者说成「这是第一步」就是撒谎（取数还没回来 / 这一步的行根本没取到时最容易撞上）。
  */
 export function stepDiffStart(
   prev: Row | null,
@@ -222,12 +226,18 @@ export function stepDiffStart(
   meta: { prevAction?: string; nextAction?: string } = {},
 ): { start: DiffStarter | null; blocker: DiffBlocker | null } {
   const at = (row: Row | null, action?: string): string => `步骤 ${row?.step ?? '?'}${action ? ` ${action}` : ''}`
-  if (!prev || !current) {
+  if (!current) {
+    return {
+      start: null,
+      blocker: { state: 'none', text: '这一步的整行还没在手里，暂时没法对照。' },
+    }
+  }
+  if (!prev) {
     return {
       start: null,
       blocker: {
         state: 'none',
-        text: `步骤 ${current?.step ?? '?'} 是这条消息的第一步，没有上一步可对照。`,
+        text: `步骤 ${current.step} 是这条消息的第一步，没有上一步可对照。`,
       },
     }
   }

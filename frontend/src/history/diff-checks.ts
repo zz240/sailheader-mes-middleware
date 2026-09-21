@@ -274,6 +274,18 @@ function shape(rows: readonly DiffRow[]): string[] {
 }
 
 {
+  // 「本步那一行还没在手里」与「这是第一步」是两件事：前者说成后者就是撒谎
+  const prev = row(1, '{"order_no":"A-1"}', 10)
+  const { start, blocker } = stepDiffStart(prev, null)
+  eq('本步的行还没到手：不给起点', start, null)
+  eq('本步的行还没到手：说法与「第一步」分得开',
+    blocker?.text, '这一步的整行还没在手里，暂时没法对照。')
+  const both = stepDiffStart(null, null)
+  eq('两侧都没有时也说「还没在手里」，不是「第一步」',
+    both.blocker?.text, '这一步的整行还没在手里，暂时没法对照。')
+}
+
+{
   const prev = row(1, '{"order_no":"A-1"}', 10)
   const current = row(2, null, 20)
   const { start, blocker } = stepDiffStart(prev, current, { prevAction: 'READ_SQL', nextAction: 'push-qc' })
