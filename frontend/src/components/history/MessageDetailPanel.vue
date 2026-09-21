@@ -121,7 +121,11 @@
             :step-row="stepRow"
             :step-row-loading="stepRowLoading"
             :step-row-error="stepRowError"
+            :prev-step-row="prevStepRow"
+            :prev-step-row-loading="prevStepRowLoading"
+            :prev-step-row-error="prevStepRowError"
             @retry-step-row="emit('retry-step-row')"
+            @retry-prev-row="emit('retry-prev-row')"
           />
         </template>
       </div>
@@ -158,12 +162,20 @@ const props = defineProps<{
   stepRow: MessageStep | null
   stepRowLoading: boolean
   stepRowError: string
+  /**
+   * **上一步**的整行（#133 的「与上一步对照」要它的数据快照）：与 `stepRow` 走同一条按 id 取整行的
+   * 路，三态也一样。当前这一步本来就是这条消息的第一步时给 `null`（页面不会为它发请求）。
+   */
+  prevStepRow: MessageStep | null
+  prevStepRowLoading: boolean
+  prevStepRowError: string
 }>()
 
 const emit = defineEmits<{
   'select-step': [step: MessageStep]
   'retry-steps': []
   'retry-step-row': []
+  'retry-prev-row': []
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))

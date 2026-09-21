@@ -52,9 +52,13 @@
         :step-row="stepRow"
         :step-row-loading="stepRowLoading"
         :step-row-error="stepRowError"
+        :prev-step-row="prevStepRow"
+        :prev-step-row-loading="prevStepRowLoading"
+        :prev-step-row-error="prevStepRowError"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
         @retry-step-row="retryStepRow"
+        @retry-prev-row="retryPrevStepRow"
       />
     </main>
 
@@ -86,6 +90,7 @@ import {
   runStepsPath, selectRun, selectStep, statusParam, summaryQuery,
   type HistoryMode, type HistorySelection, type RunFilters,
 } from '../history/console'
+import { previousStepOf } from '../history/diff'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
 const jobs = ref<Job[]>([])
@@ -133,16 +138,41 @@ let loadToken = 0
  *
  * 索引那条路（`/history/runs/{id}/steps`）一行不带两个 TEXT 快照——那是它便宜的原因；
  * 快照本身按 id 另取整行（`/history/steps/{id}`），#131 的 ADR 补记把这一刀切在这儿：
- * 「列表要宽、详情要深」。**只在选中那一步的 id 变了才取**：同一步不重复取，
+ * 「列表要宽、详情要深」。**只在「手里这行不是要的那一行」时才取**：同一步不重复取，
  * 连点两下链上同一格不会发两次请求。
  */
 const stepRow = ref<MessageStep | null>(null)
 const stepRowError = ref('')
 const stepRowLoading = ref(false)
-/** 手里这份整行是哪一步的（`null` = 还没取）；与 `currentStep` 比一下就知道要不要取。 */
-const stepRowId = ref<number | null>(null)
+/**
+ * 手里这份整行是**哪一行**（`消息 id#步骤 id`；`null` = 还没取）。
+ *
+ * 键带上消息 id 是有原因的：消息的步骤号都从 1 起、步骤行的 id 也各不相同，但「同一个步骤号
+ * 出现在两条消息里」是常态——只按步骤号去重的话，从 A 消息的第 1 步换到 B 消息的第 1 步时
+ * 会被当成「还是那一步」而不重取，右栏继续铺 A 那份快照。真机脚本第一版就是这么抓到的。
+ */
+const stepRowKey = ref<string | null>(null)
 /** 取整行的响应也可能乱序回来（连着点两格）。 */
 let stepToken = 0
+
+/** 一行（或「该取哪一行」）的键：消息 + 步骤行 id。两处调用同一个写法，避免口径分家。 */
+function rowKeyOf(row: Pick<MessageStep, 'id' | 'messageId'>): string {
+  return `${row.messageId}#${row.id}`
+}
+
+/**
+ * **上一步**的整行（#133 的「与上一步对照」要它的数据快照）。
+ *
+ * 与 `stepRow` 完全对称的一套（同一个接口、同一个去重位、同一套乱序 token）：上一步的快照不在
+ * 索引那条路里，所以它是**第二个**按 id 取整行的请求——选中一格最多两次请求（ADR-0016 决策 6
+ * 那套「一次点击一次请求，不按行补拉」在这里仍然守着：不随消息步数增长）。
+ * 当前这一步是这条消息的第一步时这一套是空的（`prevStepRow === null` = 没有上一步，不是取数失败）。
+ */
+const prevStepRow = ref<MessageStep | null>(null)
+const prevStepRowError = ref('')
+const prevStepRowLoading = ref(false)
+const prevStepRowKey = ref<string | null>(null)
+let prevStepToken = 0
 
 /**
  * 归一之后的右详情（消息 / 下标 / 当前步骤）：**只算这一处**，右栏渲染与「按 id 取整行」
@@ -151,42 +181,107 @@ let stepToken = 0
 const runDetailView = computed(() => runDetail(runSteps.value, selection.value))
 const currentStep = computed(() => runDetailView.value.step)
 
-watch(() => currentStep.value?.id ?? null, (id) => {
-  if (id === null) {
+/**
+ * 换一步（或者换消息）就该重取整行。
+ *
+ * **键是「哪条消息 + 哪一步」**，不是单独一个步骤号：消息的步骤号从 1 起，两条消息的第 1 步
+ * 步骤号一模一样——只盯步骤号的话，从一条消息的第 1 步换到另一条消息的第 1 步时这个 watch 不响，
+ * 右栏会继续铺上一条消息那一行（快照、对照全错位）。`/history/steps/{id}` 那一行是按 id 取的，
+ * 所以 id 变了才是真的换了东西。
+ */
+watch(() => {
+  const step = currentStep.value
+  return step ? rowKeyOf(step) : null
+}, (key) => {
+  if (key === null) {
     stepRow.value = null
     stepRowError.value = ''
-    stepRowId.value = null
+    stepRowKey.value = null
+    prevStepRow.value = null
+    prevStepRowError.value = ''
+    prevStepRowLoading.value = false
+    prevStepRowKey.value = null
     return
   }
-  if (stepRowId.value === id) return
-  void loadStepRow(id)
+  const step = currentStep.value
+  if (!step) return
+  if (stepRowKey.value !== key) void loadStepRow(step)
+  const prev = previousStepOf(runDetailView.value.message, step)
+  if (!prev) {
+    // 这条消息的第一步：**没有上一步**，连请求都不发（界面上那一档说的是「没有上一步可对照」）
+    prevStepRow.value = null
+    prevStepRowError.value = ''
+    prevStepRowLoading.value = false
+    prevStepRowKey.value = null
+    return
+  }
+  if (prevStepRowKey.value !== rowKeyOf(prev)) void loadPrevStepRow(prev)
 })
 
-/** 选中那一步的整行（带两份快照原文）：404 / 接口挂了都在这里说话，界面那侧给「重试」。 */
-async function loadStepRow(stepId: number) {
+/**
+ * 选中那一步的整行（带两份快照原文）：404 / 接口挂了都在这里说话，界面那侧给「重试」。
+ *
+ * 失败时**把上一次那一行留着**（不清空）：清掉的话「与上一步对照」（#133）会当场变成
+ * 「没有数据快照，没法对照」——把一次取数失败说成「这一步本来就没有快照」，
+ * 那是这个页面最不该犯的错（快照那一侧本来就有自己的取数三态在说这件事）。
+ */
+async function loadStepRow(row: Pick<MessageStep, 'id' | 'messageId'>) {
+  const key = rowKeyOf(row)
   const token = ++stepToken
   stepRowLoading.value = true
   stepRowError.value = ''
-  stepRowId.value = stepId
+  stepRowKey.value = key
   try {
-    const step = await api<MessageStep>(`/history/steps/${stepId}`)
+    const step = await api<MessageStep>(`/history/steps/${row.id}`)
     if (token !== stepToken) return
     stepRow.value = step
   } catch (e) {
     if (token !== stepToken) return
-    stepRow.value = null
     stepRowError.value = e instanceof ApiError ? e.message : String(e)
     // 没取到就当没取过：按「重试」或者下次再点到这一步会重来一次（与消息步那条同一个做法）
-    stepRowId.value = null
+    stepRowKey.value = null
   } finally {
     if (token === stepToken) stepRowLoading.value = false
+  }
+}
+
+/**
+ * **上一步**的整行（#133 的对照要它的数据快照）：与 {@link loadStepRow} 走同一条按 id 取整行的路
+ * ——索引那条路上没有快照原文，而上一步与上上步都是「按 id 取一次」。
+ *
+ * 「上一步是谁」由 `diff` 那两个纯函数判（同一条消息、步骤号升序里紧邻的前一个），
+ * 这里只负责取；同一行不重复取（`prevStepRowKey` 就是那个去重位），响应乱序由 token 作废。
+ */
+async function loadPrevStepRow(row: Pick<MessageStep, 'id' | 'messageId'>) {
+  const key = rowKeyOf(row)
+  const token = ++prevStepToken
+  prevStepRowLoading.value = true
+  prevStepRowError.value = ''
+  prevStepRowKey.value = key
+  try {
+    const step = await api<MessageStep>(`/history/steps/${row.id}`)
+    if (token !== prevStepToken) return
+    prevStepRow.value = step
+  } catch (e) {
+    if (token !== prevStepToken) return
+    prevStepRow.value = null
+    prevStepRowError.value = e instanceof ApiError ? e.message : String(e)
+    prevStepRowKey.value = null
+  } finally {
+    if (token === prevStepToken) prevStepRowLoading.value = false
   }
 }
 
 /** 快照那块上的重试：重取当前这一步的整行。 */
 function retryStepRow() {
   const step = currentStep.value
-  if (step) void loadStepRow(step.id)
+  if (step) void loadStepRow(step)
+}
+
+/** 对照那一档上的重试：重取**上一步**的整行（当前那一步没坏，不连累它一起重取）。 */
+function retryPrevStepRow() {
+  const prev = previousStepOf(runDetailView.value.message, currentStep.value)
+  if (prev) void loadPrevStepRow(prev)
 }
 
 async function loadJobs() {

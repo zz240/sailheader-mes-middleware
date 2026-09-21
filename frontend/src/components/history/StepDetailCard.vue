@@ -14,12 +14,16 @@
       </span>
     </div>
 
-    <!-- 快照面板（#132）：这一票只做两块快照的显示侧降级，不碰 #127（写库那条可靠性的路） -->
+    <!-- 快照面板（#132 两块快照 + #133 与上一步对照）：这一票只做显示侧的降级与对照，不碰 #127（写库那条可靠性的路） -->
     <SnapshotPanel
       :step-row="stepRow"
       :loading="stepRowLoading"
       :error="stepRowError"
+      :prev-step-row="prevStepRow"
+      :prev-loading="prevStepRowLoading"
+      :prev-error="prevStepRowError"
       @retry="emit('retry-step-row')"
+      @retry-prev-row="emit('retry-prev-row')"
     />
 
     <!-- 错误块：**原样保留换行**（堆栈直接贴给开发）；成功步没有错误 → 整块不铺，不留空块 -->
@@ -50,9 +54,16 @@ const props = defineProps<{
   stepRow: MessageStep | null
   stepRowLoading: boolean
   stepRowError: string
+  /**
+   * **上一步**的整行（#133 的「与上一步对照」要它的数据快照）：与上面那一行走同一条按 id 取整行的路，
+   * 所以也是三态。这一步本来就是这条消息的第一步时给 `null`（那时压根不发这次请求）。
+   */
+  prevStepRow: MessageStep | null
+  prevStepRowLoading: boolean
+  prevStepRowError: string
 }>()
 
-const emit = defineEmits<{ 'retry-step-row': [] }>()
+const emit = defineEmits<{ 'retry-step-row': []; 'retry-prev-row': [] }>()
 
 const card = computed(() => stepCardView(props.step))
 </script>

@@ -129,6 +129,29 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
     搜索降级为「过滤 + 自动展开到命中路径」，放弃原型里的行内 `<mark>` 高亮——该库只有
     `deep` / `showLength` / `highlightSelectedNode`，做不了高亮也做不了 diff；对照块本来就是路径对齐的
     **表格**而非树，自绘。契约说「保留交互可供性」，这一处是明知故犯，记在这里而不是留在代码里。
+    **补记（#133 落地时）**：这一条在这里补完，都是实现时才看清的、下一个人一定会再撞一次的东西：
+    ①**视图那一段（并排 / 只看输入 / 只看数据 / 与上一步对照）落到 `SnapshotPanel` 上**，
+    四档一份 `view` state（原型 `state.snapView` 同义）；这一票把后三档补齐（#132 只铺了并排两块）。
+    ②**两块快照始终都算、只切显示（`v-show`），不按视图过滤数组**。过滤那版（`view` 一变就让
+    `sides` 少一块、甚至一次变空）会让 `v-for` 把整棵子树销毁重建——`vue-json-pretty` 的折叠态记在
+    组件实例上，用户在树上手工折起来的节点当场被摊开。真机脚本「切到对照再切回来」那一项就是这么
+    抓到的（连对照那一档也用 `v-show`：`v-if` 一关一开同样会重建另一侧）。
+    ③**「只看某一块」是可见性，不是「在不在 DOM 里」**：断言与无障碍都按 `:visible` 走，
+    DOM 里两块一直都在（同一条理由，DOM 一没状态就没）。
+    ④**上一步的整行走的是与当前那一步同一条路**（`/history/steps/{id}`，#131 补记那条「列表要宽、
+    详情要深」）：索引那条路上没有快照原文，上一步也得按 id 取一次——**选中一格最多两次请求**，
+    不随消息步数增长。这一步本来就是这条消息的第一步时不发那次请求。
+    ⑤**去重键是「消息 + 步骤行 id」，不是步骤号**：消息的步骤号都从 1 起，两条消息的第 1 步步骤号
+    一模一样；只按步骤号去重的话，从 A 消息第 1 步换到 B 消息第 1 步会被当成「还是那一步」而不重取，
+    右栏继续铺 A 那份快照。
+    ⑥**对照的口径落在自己的纯模块里**（`frontend/src/history/diff.ts`）：`readSnapshot` 只回答
+    「这份快照是哪一档」，「能不能对照、要说什么」由 `stepDiffStart` 判（第一步 / 哪一侧没落 /
+    非 JSON / 超长各有各的说法），「逐路径判决」由 `snapshotDiff` 算，自测在同目录 `diff-checks.ts`
+    （99 条，含两侧类型不同、空容器、按下标错位那几个边界）。
+    ⑦**三处有意与原型不同**：空容器那两格印 `{}` / `[]` 而不是搬 `OBJ / ARR` 那套类型徽标
+    （决策 10 已经否掉自绘树，这一格同理）；长值那两格只截断 + 给整值的 `title`，不搬原型每行
+    两个「展开 N 字」按钮（一张表上太吵）；两侧都是空容器时那一格按 `JSON.stringify` 判成
+    **一条改**（`{}` → `[]`，与「空容器记一格」同一条口径）。
     **补记（#132 落地时）**：这句话怎么落地，连同这一票踩到的四处，一并记在这儿：
     ① 搜索 = **按路径子串过滤数据 + 把 `deep` 顶到全展开**，并给组件换 `:key` 整棵重挂——库里那份折叠态
     是**按路径**记的，不重挂的话「命中分支自动展开」会被上一次的手动折叠盖掉。命中数照原型 `walk` 里
@@ -216,7 +239,8 @@ ADR-0013 把控制台统一到原型那套视觉体系，分三期落地，并�
   只多 `--ok-ink` 与 `--font-display`，都不搬）
 - 现有实现：`frontend/src/views/HistoryView.vue`；
   `frontend/src/history/console.ts` + `frontend/src/history/snapshot.ts`（#132 的口径）+
-  `frontend/src/history/checks.ts`（纯模块那侧的断言）；
+  `frontend/src/history/diff.ts`（#133 的对照口径）+
+  `frontend/src/history/checks.ts` / `frontend/src/history/diff-checks.ts`（纯模块那侧的断言）；
   `frontend/src/components/history/`（`MessageDetailPanel` / `StepDetailCard` / `SnapshotPanel`…）；
   `spike/src/main/java/com/example/edgegateway/web/HistoryController.java`；
   `spike/src/main/java/com/example/edgegateway/model/MessageStep.java`
