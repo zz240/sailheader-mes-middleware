@@ -78,6 +78,10 @@ powershell -File tools/shadow-site/verify-scenario.ps1 -SkipWrite   # 只跑读�
 B6 的回写闭环真机成立（`step 4` 从链上响应取到 `handle` → `step 5` MERGE 回写 20 行 `MDM_Code.FHandle`）；
 B1 链已还原成现场最常见的「先推上云、再落本地库」顺序（不再靠调换顺序绕 #126）。
 
+**2026-09-22 复验（#123 回归，同一套真机环境）：`verify-scenario.ps1` 33 项通过 / 0 失败 + `verify-b1.ps1` 19 项通过 / 0 失败。**
+B6 那 4 项「回写从链上读」的断言（`step 3` 注册 → `step 4` 取 `results[0].handle` → `step 5` MERGE 20 行 `FHandle`）全绿；
+B1 的 19 项含「拔网攒队列 → 恢复补齐」与「设备离线记 STALE」两段。
+
 | 链 | 入口 | 验到了什么 |
 |---|---|---|
 | A5 | SQL Server 读（轮询） | 5 张采购单逐字段对上（含 `CLOSED→"2"` 与中文备注往返）；`batchSize=2` **分 3 批走 `OFFSET/FETCH`**；水位推进到 5；**重跑 0 条新增** |
@@ -210,5 +214,5 @@ node tools/shadow-site/modbus-bridge.cjs                       # 采集桥（管
 | B1 设备侧 | **已手工验收**（见上节：224 行看板数据 / 断网续传 / 质量位）；**尚未脚本化**——把「起替身 + 起桥 + 断言」并进 `verify-scenario.ps1` 是下一步 |
 | A5/A7 的「整份大报文」变体 | 本轮走展平；整份报文要先把「明细数组放进一条报文的映射」跑通（JSON 聚合 + `$parse`） |
 | #126 的修复 | **已并入 #123**：`HTTP_CALL` 不再换掉消息体，B1 链不必靠「调顺序」绕（单测/链路测试覆盖） |
-| 标识回写 | **已并入 #123**：`FHandle` 从链上响应回写 `dbo.MDM_Code`，B6 链加回写断言与 `write-handle` 步；**真机复验待跑**（改这条时手边没有 docker 环境） |
+| 标识回写 | **已并入 #123 并真机复验**：`FHandle` 从链上响应回写 `dbo.MDM_Code`，B6 链加回写断言与 `write-handle` 步；2026-09-20 与 2026-09-22 两次复验均 33 项绿（原先写的「真机复验待跑」已作废——那次改完当天就在同一套环境复验过） |
 | 幂等键组合 | 本轮用 `CONCAT` 展平成一列；产品原生支持多列仍是候选票 |
