@@ -1,5 +1,6 @@
 package com.example.edgegateway.service;
 
+import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.MappingSampleMapper;
 import com.example.edgegateway.model.MappingSample;
 import com.example.edgegateway.model.MappingSampleKind;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -23,12 +25,14 @@ import static org.mockito.Mockito.when;
 class MappingSampleServiceTest {
 
     private MappingSampleMapper mapper;
+    private ActionMapper actionMapper;
     private MappingSampleService service;
 
     @BeforeEach
     void setUp() {
         mapper = mock(MappingSampleMapper.class);
-        service = new MappingSampleService(mapper);
+        actionMapper = mock(ActionMapper.class);
+        service = new MappingSampleService(mapper, actionMapper);
     }
 
     /** 第一行就是原文本身：不存推出来的字段清单（清单是原文的纯函数，原文还能给试算用）。 */
@@ -113,6 +117,15 @@ class MappingSampleServiceTest {
         service.clearOfJob(3L);
 
         verify(mapper).delete(any());
+        verify(actionMapper).delete(any()); // 任务没了，它下面的动作行也跟着走（不留孤儿行）
+    }
+
+    /** 没给任务 id 就什么都不删（调用方传空不该误伤全表）。 */
+    @Test
+    void clearsNothingWithoutAJobId() {
+        service.clearOfJob(null);
+
+        verifyNoInteractions(mapper, actionMapper);
     }
 
     /** 一格的身份缺一不可：缺了就是调用方的错，不能静默写出一行谁都认不出来的样例。 */

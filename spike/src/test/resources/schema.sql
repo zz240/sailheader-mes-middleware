@@ -93,6 +93,17 @@ CREATE INDEX IF NOT EXISTS idx_msg_step_run ON message_step (run_id);
 CREATE INDEX IF NOT EXISTS idx_msg_step_message ON message_step (message_id);
 CREATE INDEX IF NOT EXISTS idx_msg_step_business ON message_step (business_key);
 
+-- V3__mapping_sample.sql：编辑器里**粘进来的**那份样例落库（#119），一格一行
+CREATE TABLE IF NOT EXISTS mapping_sample (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    kind VARCHAR(16) NOT NULL,
+    ref_id BIGINT NOT NULL,
+    sample_json TEXT NOT NULL,
+    updated_at DATETIME,
+    CONSTRAINT uk_mapping_sample UNIQUE (job_id, kind, ref_id)
+);
+
 CREATE TABLE IF NOT EXISTS mapping_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     site_id BIGINT NOT NULL,

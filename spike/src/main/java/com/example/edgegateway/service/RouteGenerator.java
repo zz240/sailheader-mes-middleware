@@ -283,7 +283,7 @@ public class RouteGenerator {
                     // #79 分批 + keyset 分页：读水位 → 循环（读一批 → split 行 → 整批成功才推进水位）→ 直到扫完
                     LoopDefinition loop = current
                             .process(ex -> prepareRead(ex, job, read, action.getActionIndex(), action.getName()))
-                            .loopDoWhile(ex -> moreBatches(ex));
+                            .loopDoWhile(this::moreBatches);
                     current = loop.process(ex -> readBatch(ex, job, read))
                             .split(ExpressionBuilder.bodyExpression());
                     inBatchLoop = true;

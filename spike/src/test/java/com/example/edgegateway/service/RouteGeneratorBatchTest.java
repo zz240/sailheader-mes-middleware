@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -53,7 +54,6 @@ class RouteGeneratorBatchTest {
         ds.setURL("jdbc:h2:mem:batcher" + System.nanoTime() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
         ds.setUser("sa");
         h2Jdbc = new JdbcTemplate(ds);
-        h2Jdbc.execute("create table if not exists watermark (job_key varchar(64) primary key, wm_value bigint not null)");
         h2Jdbc.execute("create table if not exists po_order (id bigint primary key auto_increment, order_no varchar(32), status varchar(16), updated_at datetime null)");
         h2Jdbc.execute("create table if not exists po_receipt (order_no varchar(64) primary key, id bigint, updated_at datetime null)");
         for (int i = 1; i <= 7; i++) {
@@ -61,7 +61,7 @@ class RouteGeneratorBatchTest {
                     "PO-" + i, "ACTIVE", "2026-08-14 10:" + zeroPad(i) + ":00");
         }
 
-        watermarkStore = new RecordingWatermarkStore(new JdbcTemplate(ds));
+        watermarkStore = new RecordingWatermarkStore();
         dataSourceManager = mock(DataSourceManager.class);
         when(dataSourceManager.get(1L)).thenReturn(ds);
         when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
@@ -176,7 +176,7 @@ class RouteGeneratorBatchTest {
         assertThat(h2Jdbc.queryForObject("select count(*) from po_receipt", Integer.class)).isEqualTo(7);
 
         // 清空水位后整表重跑：按业务键 order_no upsert，重复执行不产生重复行
-        h2Jdbc.update("delete from watermark");
+        watermarkStore.reset();
         run(job, actions);
 
         assertThat(h2Jdbc.queryForObject("select count(*) from po_receipt", Integer.class)).isEqualTo(7);
@@ -203,18 +203,30 @@ class RouteGeneratorBatchTest {
         }
     }
 
-    /** 记录每次水位提交，验证"每批推进/批失败只丢该批"。 */
-    private static class RecordingWatermarkStore extends WatermarkStore {
+    /**
+     * 测试替身：记下每次水位提交（验证"每批推进/批失败只丢该批"），水位本身放内存里。
+     *
+     * <p>不去复刻生产那条 upsert SQL——那是 {@code MybatisWatermarkStore} 的职责，
+     * 由 {@code MybatisWatermarkStoreTest} 对着真库验。</p>
+     */
+    private static class RecordingWatermarkStore implements WatermarkStore {
         final List<Long> puts = new ArrayList<>();
+        private final Map<String, Long> values = new HashMap<>();
 
-        RecordingWatermarkStore(org.springframework.jdbc.core.JdbcTemplate jdbc) {
-            super(jdbc);
+        @Override
+        public long get(String key) {
+            return values.getOrDefault(key, 0L);
         }
 
         @Override
         public void put(String key, long value) {
             puts.add(value);
-            super.put(key, value);
+            values.put(key, value);
+        }
+
+        /** 清掉水位（模拟"删掉水位行"）：整表重跑那条用例用它。 */
+        void reset() {
+            values.clear();
         }
     }
 }

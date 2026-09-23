@@ -1,7 +1,9 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.MappingSampleMapper;
+import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.MappingSample;
 import com.example.edgegateway.model.MappingSampleKind;
 import org.springframework.stereotype.Service;
@@ -23,15 +25,18 @@ import java.time.LocalDateTime;
  * <p>所以「保存什么，下次打开就是什么」；粘了但不保存（取消）什么都不留，与编辑器里其它东西一个口径。
  * 探测那份不落库：它随时能再取一次，存它等于把同一份报文在库里放两遍。</p>
  *
- * <p>删除动作用 {@link #clearOfAction}、删任务用 {@link #clearOfJob} 顺手把样例行带走——不留孤儿行。</p>
+ * <p>删除动作用 {@link #clearOfAction}、删任务用 {@link #clearOfJob}：**样例行**顺手带走；
+ * 删任务时**动作行**（{@code job_action}）也一并带走——两处都不留孤儿行。</p>
  */
 @Service
 public class MappingSampleService {
 
     private final MappingSampleMapper mapper;
+    private final ActionMapper actionMapper;
 
-    public MappingSampleService(MappingSampleMapper mapper) {
+    public MappingSampleService(MappingSampleMapper mapper, ActionMapper actionMapper) {
         this.mapper = mapper;
+        this.actionMapper = actionMapper;
     }
 
     /** 某一格存过的那份原文；没存过是 null（调用方据此退回探测那条路）。 */
@@ -89,12 +94,13 @@ public class MappingSampleService {
         }
     }
 
-    /** 删任务时清掉整个任务的样例行。 */
+    /** 删任务时清掉整个任务的样例行和动作行。 */
     public void clearOfJob(Long jobId) {
         if (jobId == null) {
             return;
         }
         mapper.delete(new LambdaQueryWrapper<MappingSample>().eq(MappingSample::getJobId, jobId));
+        actionMapper.delete(new LambdaQueryWrapper<Action>().eq(Action::getJobId, jobId));
     }
 
     private MappingSample find(Long jobId, MappingSampleKind kind, Long refId) {
