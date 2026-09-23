@@ -270,7 +270,6 @@ public class RouteGenerator {
         ProcessorDefinition<?> current = route;
         boolean inSplit = false;
         boolean inBatchLoop = false;
-        ReadSqlConfig batchRead = null;
         for (Action action : actions) {
             ActionKind kind = action.getType();
             ActionConfig config = ActionConfig.from(kind, action.getAddition());
@@ -287,7 +286,6 @@ public class RouteGenerator {
                     current = loop.process(ex -> readBatch(ex, job, read))
                             .split(ExpressionBuilder.bodyExpression());
                     inBatchLoop = true;
-                    batchRead = read;
                 } else {
                     // 无水位列：全量单次读（不分批、不推进水位），保留原语义
                     String sql = read.sql();
@@ -312,19 +310,13 @@ public class RouteGenerator {
             }
             current = appendFragment(current, action, config, job);
         }
-        if (inBatchLoop && batchRead != null) {
+        if (inBatchLoop) {
             // 先结束 split（把一批的行处理完），再提交该批水位；批失败时不会走到这一步，从而实现"批失败只丢该批"
-            ReadSqlConfig read = batchRead;
             current = ((SplitDefinition) current).end();
-            current = current.process(ex -> updateWatermark(ex, job, read));
+            current = current.process(ex -> updateWatermark(ex, job));
             current = ((LoopDefinition) current).end();
-            inSplit = false;
         } else if (inSplit) {
             current = ((SplitDefinition) current).end();
-            if (batchRead != null) {
-                ReadSqlConfig read = batchRead;
-                current = current.process(ex -> updateWatermark(ex, job, read));
-            }
         }
         return current;
     }
@@ -716,8 +708,13 @@ public class RouteGenerator {
         settleStepDuration(exchange);
     }
 
-    /** 整批处理成功后才推进水位（持久化）；批失败时不执行，实现"批失败只丢该批"。 */
-    private void updateWatermark(Exchange exchange, Job job, ReadSqlConfig read) {
+    /**
+     * 整批处理成功后才推进水位（持久化）；批失败时不执行，实现"批失败只丢该批"。
+     *
+     * <p>不需要动作配置：批内水位早由 {@link #readBatch} 算好写进 {@code edge.readWatermark}（#79 曾带过
+     * 一个 {@code ReadSqlConfig} 参数，但从加上那天起函数体就没引用过——清理时去掉）。</p>
+     */
+    private void updateWatermark(Exchange exchange, Job job) {
         Long value = exchange.getProperty(WATERMARK, Long.class);
         if (value != null) {
             watermarkStore.put("job:" + job.getId(), value);
