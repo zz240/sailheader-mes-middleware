@@ -8,6 +8,7 @@ import com.example.edgegateway.mapper.JobRunMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
+import com.example.edgegateway.model.BatchStamp;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
@@ -325,13 +326,15 @@ class RouteGeneratorAttemptTest {
 
         @Override
         public void recordSuccess(Long runId, String messageId, Integer step, String actionName,
-                                  Object input, Object data, String businessKey, int attempt, Long durationMs) {
+                                  Object input, Object data, String businessKey, int attempt, Long durationMs,
+                                  BatchStamp batch) {
             successes.add(new Recorded(messageId, step, "SUCCESS", attempt, durationMs));
         }
 
         @Override
         public void recordFailure(Long runId, String messageId, Integer step, String actionName,
-                                  String error, Object input, String businessKey, int attempt, Long durationMs) {
+                                  String error, Object input, String businessKey, int attempt, Long durationMs,
+                                  BatchStamp batch) {
             failures.add(new Recorded(messageId, step, "FAILED", attempt, durationMs));
         }
 

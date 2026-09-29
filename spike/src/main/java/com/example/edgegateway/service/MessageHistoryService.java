@@ -8,6 +8,7 @@ import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
+import com.example.edgegateway.model.BatchStamp;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
@@ -57,8 +58,24 @@ public class MessageHistoryService {
     public static final String RESUME_FROM = "edge.resumeFromStep";
     /** 断点续跑的上游上下文：{@code Map<Integer step, Object data>}，值取上游 SUCCESS 消息步的 data_snapshot（#90）。 */
     public static final String RESUME_CONTEXT = "edge.resumeContext";
-    /** READ_SQL 源动作在失败（未产生任何源行）时用作消息占位 id，让失败也能落一条 FAILED 消息步。 */
+    /**
+     * 当前消息的**批号**（{@code edge.batchMessageId}）：这一步所属的那一批的编号（#139 / ADR-0017）。
+     *
+     * <p>读库那条路**每读一批现生成一个**（`RouteGenerator.readBatch`），这一批的每条源行共用它，
+     * 并随消息在链上**继承到下一个基数变化动作为止**。它还有第二个用途：读库动作在**读到第一批之前**
+     * 就失败时，一条源行都没产生，失败步拿它当**占位消息标识**（那一步没有消息可挂）。
+     * MQ 消费 / 任务输入那些链没有它（`null`）——那些链永远不出现批次。</p>
+     */
     public static final String BATCH_MSG_ID = "edge.batchMessageId";
+    /**
+     * 当前消息的**批内序号**（#139，{@code edge.batchSeq}）：从 {@code 1} 起（「这批里第几条」）。
+     *
+     * <p>它不是「这一步的批号」（那是 {@link #BATCH_MSG_ID}），而是这条消息在那一批里的位置。
+     * 读库那条路**不设它**——读取批里「第几条」没有额外语义，那些行留空（空不是 0）；拆分与合并设。</p>
+     */
+    public static final String BATCH_SEQ = "edge.batchSeq";
+    /** 当前消息的**父消息标识**（#139，{@code edge.parentMessageId}）：从哪条消息拆出来的，拆分动作设。 */
+    public static final String PARENT_MESSAGE_ID = "edge.parentMessageId";
 
     public static final String SUCCESS = "SUCCESS";
     public static final String FAILED = "FAILED";
@@ -132,23 +149,28 @@ public class MessageHistoryService {
     /**
      * 记一条成功消息步。{@code durationMs} 是这一步的**动作耗时**（#134，毫秒）；
      * 量不出来时传 {@code null}——不编 0（「没测」与「测得就是 0 ms」在页面上是两件事）。
+     *
+     * <p>{@code batch} 是这一行的**批次戳**（#139：批号 / 批内序号 / 父消息标识）。两条写库的路
+     * （成功、失败）都带它——只记一条路的话，「哪几条是同一批」在失败那一格上就断了。</p>
      */
     public void recordSuccess(Long runId, String messageId, Integer step, String actionName,
-                              Object input, Object data, String businessKey, int attempt, Long durationMs) {
-        record(runId, messageId, step, actionName, SUCCESS, data, input, null, businessKey, attempt, durationMs);
+                              Object input, Object data, String businessKey, int attempt, Long durationMs,
+                              BatchStamp batch) {
+        record(runId, messageId, step, actionName, SUCCESS, data, input, null, businessKey, attempt, durationMs, batch);
     }
 
     /**
-     * 记一条失败消息步（失败步也记耗时：#134 里最该看耗时的往往就是失败的那一步）。
+     * 记一条失败消息步（失败步也记耗时：#134 里最该看耗时的往往就是失败的那一步；批次戳同上）。
      */
     public void recordFailure(Long runId, String messageId, Integer step, String actionName,
-                              String error, Object input, String businessKey, int attempt, Long durationMs) {
-        record(runId, messageId, step, actionName, FAILED, null, input, error, businessKey, attempt, durationMs);
+                              String error, Object input, String businessKey, int attempt, Long durationMs,
+                              BatchStamp batch) {
+        record(runId, messageId, step, actionName, FAILED, null, input, error, businessKey, attempt, durationMs, batch);
     }
 
     private void record(Long runId, String messageId, Integer step, String actionName, String status,
                         Object data, Object input, String error, String businessKey, int attempt,
-                        Long durationMs) {
+                        Long durationMs, BatchStamp batch) {
         if (runId == null || messageId == null || step == null) {
             return;
         }
@@ -168,6 +190,7 @@ public class MessageHistoryService {
         entity.setAttempt(attempt);
         entity.setDurationMs(durationMs);
         entity.setBusinessKey(businessKey);
+        entity.applyBatch(batch);
         if (existing == null) {
             entity.setCreatedAt(LocalDateTime.now());
             messageStepMapper.insert(entity);
@@ -528,6 +551,12 @@ public class MessageHistoryService {
                 ex.setProperty(RESUME_CONTEXT, resumeContext);
                 // 断点续跑沿用原业务键，重投后的消息步仍按同一业务实体分组/检索
                 ex.setProperty(BUSINESS_KEY, step.getBusinessKey());
+                // #139：批次戳也沿用——重投是**同一个消息步的重跑**，它属于哪一批、从哪条消息来都不变。
+                // 断点续跑路由跳过了读库那一步（`step < resumeFrom`），批号因此不是现生成的：不沿下来
+                // 的话这几行的 batch_id 是空的，右详情会把一条本来在某批里的链画成「单条 · 不是一批」。
+                ex.setProperty(BATCH_MSG_ID, step.getBatchId());
+                ex.setProperty(BATCH_SEQ, step.getBatchSeq());
+                ex.setProperty(PARENT_MESSAGE_ID, step.getParentMessageId());
             });
             failIfExchangeFailed(result);
         } catch (Exception e) {
@@ -622,23 +651,6 @@ public class MessageHistoryService {
     }
 
     // ---------- 工具 ----------
-
-    /** 从消息数据提取业务键：支持点分 JSON 路径与单段列名。 */
-    public static String extractBusinessKey(Object data, String businessKey) {
-        if (businessKey == null || businessKey.isBlank()) {
-            return null;
-        }
-        Object value = data;
-        for (String part : businessKey.split("\\.")) {
-            if (value instanceof Map<?, ?> map) {
-                value = map.get(part);
-            } else {
-                value = null;
-                break;
-            }
-        }
-        return value == null ? null : String.valueOf(value);
-    }
 
     private Map<String, Object> pageOf(long total, List<?> records) {
         return Map.of("total", total, "records", records);

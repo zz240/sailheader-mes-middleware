@@ -46,6 +46,7 @@
         :jobs="jobs"
         :selection="selection"
         :detail="runDetailView"
+        :run-steps="runSteps"
         :steps-loading="runStepsLoading"
         :steps-error="runStepsError"
         :run-error="runError"

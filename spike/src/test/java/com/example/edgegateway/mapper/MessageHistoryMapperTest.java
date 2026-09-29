@@ -266,6 +266,30 @@ class MessageHistoryMapperTest {
         assertThat(rows.get(1).getDurationMs()).isNull();
     }
 
+    /**
+     * #139：索引行带上**批号**（右详情按它把同一步上的消息归成一批），而 V5 之前落库的老行那一格是
+     * **空**——空 = 「这一步没有批次」，不是「这条自己一批」，界面上那两档画法不同。
+     *
+     * <p>批内序号与父消息标识**不进**索引：这一票的界面用不到（拆分 / 合并那两票要用再说），
+     * 而索引行贵在「只有几十到两百字节」那条口径。</p>
+     */
+    @Test
+    void runStepIndexCarriesBatchIdAndKeepsOldRowsEmpty() {
+        JobRun run = insertRun(7L, "SUCCESS");
+        MessageStep stamped = insertFullStep(run.getId(), "msg-a", 1, "SUCCESS", null, null, null);
+        stamped.setBatchId("batch-A");
+        stamped.setBatchSeq(2);
+        stamped.setParentMessageId("parent-1");
+        messageStepMapper.updateById(stamped);
+        insertFullStep(run.getId(), "msg-b", 2, "SUCCESS", null, null, null); // 老数据：没有批次
+
+        List<MessageStepIndex> rows = messageStepMapper.pageRunStepIndex(new Page<>(1, 10), run.getId())
+                .getRecords();
+
+        assertThat(rows.get(0).getBatchId()).isEqualTo("batch-A");
+        assertThat(rows.get(1).getBatchId()).as("老行留空，不编一个「自己一批」出来").isNull();
+    }
+
     /** 分页按 id 升序翻：第 2 页接在第 1 页后面，不漏不重。 */
     @Test
     void runStepIndexPagesInStepOrder() {

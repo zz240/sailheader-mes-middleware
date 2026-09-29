@@ -54,6 +54,14 @@ public class MessageStepIndex {
     /** 业务键（如单号），可为空；界面写「无业务键」。 */
     private String businessKey;
 
+    /**
+     * 这一步所属的**批号**（#139）：右详情按它把同一步上的消息归成一批（批号变了的那一步画批徽标）。
+     *
+     * <p>它在索引里的理由与 {@code durationMs} 一样：一个 VARCHAR(64) 的标量，不像两个 TEXT 快照列
+     * 那样按第三方响应体定价，带上它不违反「索引行只有几十到两百字节」那条。</p>
+     */
+    private String batchId;
+
     /** 这一步落了输入快照没有（空白算没落——与界面上那两个小点同一个判据）。 */
     private Boolean hasInputSnapshot;
 
@@ -146,6 +154,14 @@ public class MessageStepIndex {
 
     public void setBusinessKey(String businessKey) {
         this.businessKey = businessKey;
+    }
+
+    public String getBatchId() {
+        return batchId;
+    }
+
+    public void setBatchId(String batchId) {
+        this.batchId = batchId;
     }
 
     public Boolean getHasInputSnapshot() {

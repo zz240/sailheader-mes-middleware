@@ -2,8 +2,9 @@
 
 用真浏览器（Playwright）跑在**真的前端 + 真的后端**上的验收脚本：一个脚本一个功能点，
 每个都对着当时那张票的验收项写。纯模块那侧的断言在 `frontend/src/mapping/checks.ts`、
-`frontend/src/history/checks.ts`、`frontend/src/history/diff-checks.ts`（#133 那一票的对照口径）
-与 `frontend/src/history/redeliver-checks.ts`（#135 那一票的重投口径；
+`frontend/src/history/checks.ts`、`frontend/src/history/diff-checks.ts`（#133 那一票的对照口径）、
+`frontend/src/history/redeliver-checks.ts`（#135 那一票的重投口径）与
+`frontend/src/history/batch-checks.ts`（#139 那一票的批次口径：按批分组 / 组头文案 / 单条那档；
 都不碰 DOM、不发请求，`node --experimental-strip-types` 直接跑）；
 这里管的是「界面上真点一遍会怎样」——DOM、发出去的请求、后端返回的问题。
 

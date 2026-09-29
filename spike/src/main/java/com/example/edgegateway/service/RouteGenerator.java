@@ -14,6 +14,7 @@ import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
+import com.example.edgegateway.model.BatchStamp;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;
 import com.example.edgegateway.model.Job;
@@ -37,7 +38,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -293,7 +293,8 @@ public class RouteGenerator {
                             .process(ex -> {
                                 ex.setProperty(MessageHistoryService.ACTION_INDEX, action.getActionIndex());
                                 ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
-                                ex.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
+                                // 不分批那条路：一次读 = 一批，所以批号打在这里（#139）
+                                ex.setProperty(MessageHistoryService.BATCH_MSG_ID, ElementMessageFactory.newBatchId());
                                 beginStep(ex); // #134：计时起点打在读库之前
                             })
                             .to("sql:" + sql + "?dataSource=#edge-ds-" + read.dataSourceId() + "&outputType=SelectList")
@@ -557,13 +558,29 @@ public class RouteGenerator {
     }
 
     private void beginMessage(Exchange ex, String businessKeyConfig) {
-        ex.setProperty(MessageHistoryService.MESSAGE_ID, UUID.randomUUID().toString());
-        String existing = ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class);
-        String key = existing != null
-                ? existing
-                : MessageHistoryService.extractBusinessKey(ex.getMessage().getBody(), businessKeyConfig);
-        ex.setProperty(MessageHistoryService.BUSINESS_KEY, key);
-        ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
+        // 元素 → 已初始化消息：消息标识、业务键、父消息标识、批内序号都归那个 module 管（#139）。
+        // 读库这条路上父消息与批内序号都是空的（一行一条消息、读取批没有「第几条」的语义）。
+        ElementMessageFactory.InitializedMessage message = ElementMessageFactory.of(
+                ex.getMessage().getBody(),
+                ElementMessageFactory.ElementSpec.read(
+                        businessKeyConfig, ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class)));
+        ex.setProperty(MessageHistoryService.MESSAGE_ID, message.messageId());
+        ex.setProperty(MessageHistoryService.BUSINESS_KEY, message.businessKey());
+        ex.setProperty(MessageHistoryService.STEP_INPUT, message.body());
+    }
+
+    /**
+     * 这一行的**批次戳**（#139）：批号取自 exchange 上当前那个（随消息在链上**继承到下一个基数变化
+     * 动作为止**），批内序号与父消息标识由基数变化动作用自己写进 exchange（读库那条路两个都空）。
+     *
+     * <p>读库那档「每读一批一个新号」落在 {@link #readBatch} 上：一批里的每条源行共用同一个号，
+     * 于是「哪几条是同一批」在库里答得出来。</p>
+     */
+    private BatchStamp batchStamp(Exchange ex) {
+        return new BatchStamp(
+                ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class),
+                ex.getProperty(MessageHistoryService.BATCH_SEQ, Integer.class),
+                ex.getProperty(MessageHistoryService.PARENT_MESSAGE_ID, String.class));
     }
 
     private void recordSuccessStep(Exchange ex, Action action, Object input) {
@@ -593,7 +610,7 @@ public class RouteGenerator {
         messageHistory.recordSuccess(runId, messageId, action.getActionIndex(), action.getName(),
                 input, data,
                 ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class), attemptsOnSuccess(ex),
-                durationMs);
+                durationMs, batchStamp(ex));
     }
 
     private void recordFailure(Exchange ex) {
@@ -616,7 +633,9 @@ public class RouteGenerator {
                     attemptsOnFailure(ex),
                     // #134：失败步也记耗时——而且这里拿到的是**最后一次尝试**的动作耗时
                     // （异常回调里已经结算过，退避等待不在里面）
-                    stepDuration(ex));
+                    stepDuration(ex),
+                    // #139：失败步也带批次戳——只记成功那条路的话，「哪几条是同一批」在失败那一格上就断了
+                    batchStamp(ex));
         }
     }
 
@@ -676,19 +695,32 @@ public class RouteGenerator {
         return context;
     }
 
-    /** 读水位（进入循环前）：从缓存库取上次位置，作为本批次的下界（epoch 毫秒 / 自增值）。 */
+    /**
+     * 读水位（进入循环前）：从缓存库取上次位置，作为本批次的下界（epoch 毫秒 / 自增值）。
+     *
+     * <p>这里也先打一个批号：读库在**读第一批之前**就失败时（水位库连不上、SQL 语法错），一条源行都没
+     * 产生，失败步要用它当占位消息标识（{@link #recordFailure}）。真正的批号由 {@link #readBatch}
+     * 每批现给一个——这个只作兜底，不指望它分组（ADR-0017 决策 3）。</p>
+     */
     private void prepareRead(Exchange exchange, Job job, ReadSqlConfig read, int actionIndex, String actionName) {
         exchange.setProperty(MessageHistoryService.ACTION_INDEX, actionIndex);
         exchange.setProperty(MessageHistoryService.ACTION_NAME, actionName);
-        exchange.setProperty(MessageHistoryService.BATCH_MSG_ID, UUID.randomUUID().toString());
+        exchange.setProperty(MessageHistoryService.BATCH_MSG_ID, ElementMessageFactory.newBatchId());
         long value = watermarkStore.get("job:" + job.getId());
         exchange.setProperty(WATERMARK, value);
         // 让首批至少执行一次（do-while 语义下无副作用；while 语义下需要先入循环）
         exchange.setProperty(HAS_MORE, true);
     }
 
-    /** 读一批：keyset 分页（谓词 + ORDER BY 列 + LIMIT batchSize），计算批内水位并标记是否还有下一批。 */
+    /**
+     * 读一批：keyset 分页（谓词 + ORDER BY 列 + LIMIT batchSize），计算批内水位并标记是否还有下一批。
+     *
+     * <p>**读库每读一批一个新批号**（#139）：批号打在进入本批 split 之前，于是这一批的每条源行
+     * 共用同一个号（split 会把 exchange 属性拷给子 exchange）。一批一个号而不是一次运行一个号，
+     * 是「哪几条是同一批」在库里答得出来的前提（ADR-0017 决策 2）。</p>
+     */
     private void readBatch(Exchange exchange, Job job, ReadSqlConfig read) {
+        exchange.setProperty(MessageHistoryService.BATCH_MSG_ID, ElementMessageFactory.newBatchId());
         // #134：起点与结算都打在**这一批**上（`prepareRead` 在循环外只跑一次，起点放那儿的话
         // 第二批起就量的是第一批那个数）。读库失败时起点已经在，异常回调照样结算得出来。
         beginStep(exchange);

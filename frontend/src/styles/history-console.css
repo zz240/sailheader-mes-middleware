@@ -235,6 +235,30 @@
 /* 步骤链节点上的动作耗时（#134）：与状态同字号同字体，但恒为灰——耗时本身没有好坏档（照原型） */
 .hc-ccost { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
 
+/* ── 批次（#139，ADR-0017）：链节点上的小批徽标 + 单条那档 + 展开后的那一组 ── */
+
+/* 小批徽标：**只标「这一步是一批」**（不摊开成员），点它展开/收起这一组。
+   它坐在链节点那一格的步骤号旁边——链的长度与节点数因此一个都不变。 */
+.hc-bbadge {
+  flex: 0 0 auto; padding: 0 6px; height: 16px; line-height: 15px;
+  border-radius: 999px; border: 1px solid var(--accent-line); background: var(--accent-soft);
+  color: var(--accent-strong); font-size: 10px; cursor: pointer;
+}
+.hc-bbadge:hover { border-color: var(--accent); }
+.hc-bbadge[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+
+/* 单条那档：某一步上这条消息自己一组——虚线框（借入口那格同一档写法）+ 那一句。
+   读库直连 / MQ 消费 / 任务输入这些链永远不会出现批次，它们就该长这样（决策 10）。 */
+.hc-cbtn-single { border-style: dashed; }
+.hc-cbtn-single .hc-cl-single { max-width: none; }
+
+/* 展开后的那一组：组头 + 同批一颗 chip 一条。它铺在**链下面**、不在那条横排里——
+   链自己横滚，把一整组塞进链上就没有地方放组头了。 */
+.hc-batch { padding: 10px 12px; border-top: 1px solid var(--border); }
+.hc-batch .hc-bhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hc-batch .hc-bt { font-size: 12px; font-weight: 620; }
+.hc-batch .hc-bchips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
 /* 单步卡 */
 .hc-card {
   margin-top: 12px; border: 1px solid var(--border);

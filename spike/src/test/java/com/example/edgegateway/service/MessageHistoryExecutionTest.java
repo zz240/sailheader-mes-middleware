@@ -805,6 +805,134 @@ class MessageHistoryExecutionTest {
     }
 
     /**
+     * #139：**批号逐行落库，并在链上继承到下一个基数变化动作为止**。
+     *
+     * <p>跑一条真链（READ_SQL 分批读 3 行、批大小 2 + FIELD_MAP），断言库里那几行消息步：</p>
+     * <ul>
+     *   <li>每一行都带当前批号（读取批也带——今天它只活在运行期的交换器属性里，一个字节都没落库）；</li>
+     *   <li>**读库每读一批一个新号**：同批的两条（PO-1 / PO-2）同号，下一批（PO-3）换号；</li>
+     *   <li>批号**继承**：同一条消息在下一个动作（FIELD_MAP）那一步还是同一个号——链上没有基数变化动作，
+     *       所以从头到尾不换手（拆分 / 合并那两个动作才换，见 ADR-0017 决策 2、3）；</li>
+     *   <li>批内序号与父消息标识**留空**：它们只在拆分与合并时写，读取批里「第几条」没有额外语义。</li>
+     * </ul>
+     */
+    @Test
+    void batchedReadStampsEveryRowWithItsBatchAndInheritsItDownTheChain() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(18L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select id, order_no from po_order where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id",
+                        "businessKey", "order_no", "batchSize", 2)),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules", List.of(
+                        Map.of("sourceStep", 1, "source", "order_no", "target", "order_no")))));
+
+        DriverManagerDataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:readBatchStamp;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        execute(h2, "create table po_order(id bigint primary key, order_no varchar(64))",
+                "insert into po_order(id, order_no) values (1,'PO-1'), (2,'PO-2'), (3,'PO-3')");
+        when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        context.getRegistry().bind("edge-ds-1", h2);
+
+        buildRoutes(context, history, job, actions);
+        try {
+            context.createProducerTemplate().requestBody("direct:job-18", Map.of());
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runOf(18L);
+        assertThat(run).as("运行没起来: " + describeRuns(18L)).isNotNull();
+        List<MessageStep> all = stepsOf(run);
+        assertThat(all).as("3 条源行 × 2 个动作 | " + describeSteps()).hasSize(6);
+        assertThat(all).allSatisfy(step -> assertThat(step.getBatchId())
+                .as("每一行消息步都带当前批号 | " + describeSteps()).isNotBlank());
+        assertThat(all).allSatisfy(step -> assertThat(step.getBatchSeq())
+                .as("批内序号只在拆分与合并时写，读取批留空").isNull());
+        assertThat(all).allSatisfy(step -> assertThat(step.getParentMessageId())
+                .as("这条链上没有拆分，父消息标识留空").isNull());
+
+        Map<String, List<MessageStep>> byBusinessKey = all.stream()
+                .collect(Collectors.groupingBy(MessageStep::getBusinessKey));
+        assertThat(byBusinessKey.keySet()).containsExactlyInAnyOrder("PO-1", "PO-2", "PO-3");
+        byBusinessKey.values().forEach(stepsOfOneMessage -> {
+            assertThat(stepsOfOneMessage).hasSize(2);
+            assertThat(stepsOfOneMessage).extracting(MessageStep::getBatchId)
+                    .as("批号在链上继承：这条消息的每一步同号")
+                    .containsOnly(stepsOfOneMessage.getFirst().getBatchId());
+        });
+
+        String firstBatch = byBusinessKey.get("PO-1").getFirst().getBatchId();
+        assertThat(byBusinessKey.get("PO-2").getFirst().getBatchId())
+                .as("同一读取批的两条消息共用一个批号").isEqualTo(firstBatch);
+        assertThat(byBusinessKey.get("PO-3").getFirst().getBatchId())
+                .as("读库每读一批一个新号：下一批换号 | " + describeSteps()).isNotEqualTo(firstBatch);
+    }
+
+    /**
+     * #139：**失败那条路也带批号**——只记成功那一侧的话，「哪几条是同一批」在失败那一格上就断了，
+     * 而失败的那一条往往正是要看的那一条。
+     *
+     * <p>批大小 2、共 3 行：第 1 批（PO-1 / PO-2）走通，第 2 批（PO-3）的 FIELD_MAP 抛错。
+     * 第 2 批的读步与失败步必须是**同一个批号**（同一条消息、同一次读），而且与第 1 批不同号。</p>
+     */
+    @Test
+    void failedStepInABatchCarriesThatBatchsId() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(19L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", 1L,
+                        "sql", "select id, order_no from po_order where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id",
+                        "businessKey", "order_no", "batchSize", 2)),
+                action(2, ActionKind.FIELD_MAP, Map.of("mode", "EXPRESSION",
+                        "expression", "$s_1.id > 2 ? $error('boom on batch2') : $s_1.id")));
+
+        DriverManagerDataSource h2 = new DriverManagerDataSource(
+                "jdbc:h2:mem:readBatchFailStamp;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        execute(h2, "create table po_order(id bigint primary key, order_no varchar(64))",
+                "insert into po_order(id, order_no) values (1,'PO-1'), (2,'PO-2'), (3,'PO-3')");
+        when(dataSourceManager.get(1L)).thenReturn(h2);
+        when(dataSourceManager.dialect(1L)).thenReturn(SqlDialects.of(DataSourceType.MYSQL));
+        context.getRegistry().bind("edge-ds-1", h2);
+
+        buildRoutes(context, history, job, actions);
+        try {
+            assertThatThrownBy(() -> context.createProducerTemplate().requestBody("direct:job-19", Map.of()))
+                    .as("失败链应向调用方抛异常").isInstanceOf(Exception.class);
+        } finally {
+            context.stop();
+        }
+
+        JobRun run = runOf(19L);
+        assertThat(run).as("运行没起来: " + describeRuns(19L)).isNotNull();
+        List<MessageStep> runSteps = stepsOf(run);
+        MessageStep failed = runSteps.stream().filter(s -> "FAILED".equals(s.getStatus())).findFirst()
+                .orElseThrow(() -> new AssertionError("没有 FAILED 步 | " + describeSteps()));
+        MessageStep readOfSameMessage = runSteps.stream()
+                .filter(s -> s.getStep() == 1 && s.getMessageId().equals(failed.getMessageId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("失败那条消息的读步不在 | " + describeSteps()));
+
+        assertThat(failed.getBatchId()).as("失败步也带批号").isNotBlank();
+        assertThat(failed.getBatchId()).as("同一条消息、同一次读：读步与失败步同一个号")
+                .isEqualTo(readOfSameMessage.getBatchId());
+        assertThat(runSteps.stream()
+                .filter(s -> !s.getMessageId().equals(failed.getMessageId()))
+                .map(MessageStep::getBatchId)
+                .distinct()
+                .toList())
+                .as("失败那批的号与走通那批分开 | " + describeSteps())
+                .doesNotContain(failed.getBatchId());
+    }
+
+    /**
      * #134：某一步**成功之后**、在步骤之外出的错（落运行 / 推水位那几处不在任何动作片段里），
      * 不该把「上一步开始到现在」算成那一步的耗时——那是个看着像模像样的错数。
      *

@@ -69,6 +69,10 @@
       空白算没落（TRIM）：界面上那两个点的判据是「有没有可用内容」，与写库时的口径一致
       （`toJson` 不会写空白，但老数据 / 手工改过的行可能有）。
 
+      `batch_id` 在索引里（#139）：右详情按它把同一步上的消息归成一批（批号变了的那一步画批徽标），
+      而这一页是整个运行的消息步——按批分组这件事因此在前端算得出来，不用另一条接口。
+      批内序号与父消息标识**不在**这里：这一票的界面用不到它们（拆分与合并那两票要用再说）。
+
       ORDER BY id：这是一条运行的**步骤顺序**。运行列表与消息步检索那边的 `ORDER BY id DESC`
       是检索面的口径（最新在上），别把两边对齐——右详情的步骤链要从入口往后读。
     -->
@@ -84,6 +88,7 @@
                attempt,
                duration_ms,
                business_key,
+               batch_id,
                CASE WHEN input_snapshot IS NOT NULL AND TRIM(input_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_input_snapshot,
                CASE WHEN data_snapshot IS NOT NULL AND TRIM(data_snapshot) &lt;&gt; '' THEN 1 ELSE 0 END AS has_data_snapshot
         FROM message_step

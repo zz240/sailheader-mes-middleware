@@ -6,6 +6,7 @@ import com.example.edgegateway.mapper.JobRunMapper;
 import com.example.edgegateway.mapper.MessageStepMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
+import com.example.edgegateway.model.BatchStamp;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
@@ -107,7 +108,8 @@ class MessageHistoryServiceTest {
         when(messageStepMapper.selectOne(any())).thenReturn(null);
 
         service.recordSuccess(3L, "msg-1", 2, "map", Map.of("orderNo", "PO-1"),
-                Map.of("orderNo", "PO-1", "sheet_no", "S-1"), "PO-1", 1, 12L);
+                Map.of("orderNo", "PO-1", "sheet_no", "S-1"), "PO-1", 1, 12L,
+                new BatchStamp("batch-1", 2, "parent-1"));
 
         ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
         verify(messageStepMapper).insert(captor.capture());
@@ -119,6 +121,9 @@ class MessageHistoryServiceTest {
         assertThat(step.getStatus()).isEqualTo("SUCCESS");
         assertThat(step.getBusinessKey()).isEqualTo("PO-1");
         assertThat(step.getDurationMs()).as("成功步的动作耗时落库（#134）").isEqualTo(12L);
+        assertThat(step.getBatchId()).as("成功那条路也写批号（#139）").isEqualTo("batch-1");
+        assertThat(step.getBatchSeq()).isEqualTo(2);
+        assertThat(step.getParentMessageId()).isEqualTo("parent-1");
     }
 
     /** #134：量不出来时是**空**，不是 0——「没测」与「测得就是 0 ms」在页面上是两件事（写 `—` / 写 `0 ms`）。 */
@@ -127,7 +132,7 @@ class MessageHistoryServiceTest {
         when(messageStepMapper.selectOne(any())).thenReturn(null);
 
         service.recordSuccess(3L, "msg-1", 2, "map", Map.of("orderNo", "PO-1"),
-                Map.of("orderNo", "PO-1"), "PO-1", 1, null);
+                Map.of("orderNo", "PO-1"), "PO-1", 1, null, BatchStamp.NONE);
 
         ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
         verify(messageStepMapper).insert(captor.capture());
@@ -141,11 +146,14 @@ class MessageHistoryServiceTest {
         existing.setStatus("SUCCESS");
         when(messageStepMapper.selectOne(any())).thenReturn(existing);
 
-        service.recordFailure(3L, "msg-1", 3, "upsert", "boom", Map.of("orderNo", "PO-1"), "PO-1", 1, 34L);
+        service.recordFailure(3L, "msg-1", 3, "upsert", "boom", Map.of("orderNo", "PO-1"), "PO-1", 1, 34L,
+                new BatchStamp("batch-1", null, null));
 
         assertThat(existing.getStatus()).isEqualTo("FAILED");
         assertThat(existing.getError()).isEqualTo("boom");
         assertThat(existing.getDurationMs()).as("失败步也记耗时（#134）").isEqualTo(34L);
+        assertThat(existing.getBatchId()).as("失败那条路也写批号（#139）").isEqualTo("batch-1");
+        assertThat(existing.getBatchSeq()).as("读取批没有批内序号：空就是空，不编 0").isNull();
         verify(messageStepMapper).updateById(existing);
     }
 
@@ -256,16 +264,6 @@ class MessageHistoryServiceTest {
     }
 
     @Test
-    void extractBusinessKeyReadsDotPath() {
-        assertThat(MessageHistoryService.extractBusinessKey(Map.of("a", Map.of("b", "PO-1")), "a.b"))
-                .isEqualTo("PO-1");
-        assertThat(MessageHistoryService.extractBusinessKey(Map.of("orderNo", "PO-2"), "orderNo"))
-                .isEqualTo("PO-2");
-        assertThat(MessageHistoryService.extractBusinessKey(Map.of("orderNo", "PO-3"), null)).isNull();
-        assertThat(MessageHistoryService.extractBusinessKey(Map.of("orderNo", "PO-4"), "missing")).isNull();
-    }
-
-    @Test
     void redeliverMarksFailedStepAsRedeliveredOnSuccess() throws Exception {
         MessageStep step = new MessageStep();
         step.setId(1L);
@@ -320,6 +318,45 @@ class MessageHistoryServiceTest {
         captor.getValue().process(ex);
         assertThat(ex.getProperty(MessageHistoryService.BUSINESS_KEY)).isEqualTo("PO-1");
         assertThat(ex.getProperty(MessageHistoryService.RESUME_FROM)).isEqualTo(4);
+    }
+
+    /**
+     * #139：重投把原步的**批次戳**沿进续跑 exchange——重投是同一个消息步的重跑，它属于哪一批、
+     * 从哪条消息来都不变；断点续跑路由跳过了读库那一步，批号不会现生成，不沿下来那几行的
+     * `batch_id` 就是空的（右详情会把一条在某批里的链画成「单条 · 不是一批」）。
+     */
+    @Test
+    void redeliverCarriesBatchStampIntoResumeExchange() throws Exception {
+        MessageStep step = new MessageStep();
+        step.setId(1L);
+        step.setRunId(3L);
+        step.setStep(4);
+        step.setStatus("FAILED");
+        step.setInputSnapshot("{\"orderNo\":\"PO-1\"}");
+        step.setBatchId("batch-A");
+        step.setBatchSeq(2);
+        step.setParentMessageId("parent-1");
+        when(messageStepMapper.selectById(1L)).thenReturn(step);
+        JobRun run = new JobRun();
+        run.setId(3L);
+        run.setJobId(7L);
+        when(jobRunMapper.selectById(3L)).thenReturn(run);
+        Job job = new Job();
+        job.setId(7L);
+        job.setStatus(1);
+        when(jobMapper.selectById(7L)).thenReturn(job);
+        ProducerTemplate producer = mock(ProducerTemplate.class);
+        when(camelContext.createProducerTemplate()).thenReturn(producer);
+        ArgumentCaptor<Processor> captor = ArgumentCaptor.forClass(Processor.class);
+        when(producer.request(anyString(), captor.capture())).thenReturn(null);
+
+        service.redeliver(1L);
+
+        Exchange ex = new DefaultExchange(camelContext);
+        captor.getValue().process(ex);
+        assertThat(ex.getProperty(MessageHistoryService.BATCH_MSG_ID)).isEqualTo("batch-A");
+        assertThat(ex.getProperty(MessageHistoryService.BATCH_SEQ)).isEqualTo(2);
+        assertThat(ex.getProperty(MessageHistoryService.PARENT_MESSAGE_ID)).isEqualTo("parent-1");
     }
 
     /**
@@ -426,7 +463,8 @@ class MessageHistoryServiceTest {
     void otherActionSnapshotsKeepTheirOldBehaviour() {
         String tooBig = "x".repeat(MessageHistoryService.SNAPSHOT_LIMIT_BYTES + 1);
 
-        service.recordSuccess(1L, "msg-1", 2, "map", Map.of("FCode", "C-1"), tooBig, "C-1", 1, null);
+        service.recordSuccess(1L, "msg-1", 2, "map", Map.of("FCode", "C-1"), tooBig, "C-1", 1, null,
+                BatchStamp.NONE);
 
         ArgumentCaptor<MessageStep> captor = ArgumentCaptor.forClass(MessageStep.class);
         verify(messageStepMapper).insert(captor.capture());

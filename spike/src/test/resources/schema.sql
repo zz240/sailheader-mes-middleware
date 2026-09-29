@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS message_step (
     attempt INT NOT NULL DEFAULT 1,
     duration_ms BIGINT,
     business_key VARCHAR(255),
+    -- V5__message_step_batch.sql：批次身份三格（#139）——批号、批内序号、父消息标识
+    batch_id VARCHAR(64),
+    batch_seq INT,
+    parent_message_id VARCHAR(64),
     CONSTRAINT uk_msg_step_run_msg_step UNIQUE (run_id, message_id, step)
 );
 
@@ -92,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_job_run_job ON job_run (job_id);
 CREATE INDEX IF NOT EXISTS idx_msg_step_run ON message_step (run_id);
 CREATE INDEX IF NOT EXISTS idx_msg_step_message ON message_step (message_id);
 CREATE INDEX IF NOT EXISTS idx_msg_step_business ON message_step (business_key);
+CREATE INDEX IF NOT EXISTS idx_msg_step_batch ON message_step (batch_id);
 
 -- V3__mapping_sample.sql：编辑器里**粘进来的**那份样例落库（#119），一格一行
 CREATE TABLE IF NOT EXISTS mapping_sample (
