@@ -339,9 +339,76 @@ class AggregateActionExecutionTest {
     // ---------- 脚手架 ----------
 
     private Action aggregate(int index) {
+        return aggregate(index, HTTP_DS, "/register", "handle");
+    }
+
+    private Action aggregate(int index, long dataSourceId) {
+        return aggregate(index, dataSourceId, "/register", "handle");
+    }
+
+    private Action aggregate(int index, long dataSourceId, String path, String attachAs) {
         return action(index, ActionKind.AGGREGATE, Map.of(
-                "dataSourceId", HTTP_DS, "path", "/register", "method", "POST",
-                "bodyField", "items", "resultKeyField", "code", "attachAs", "handle"));
+                "dataSourceId", dataSourceId, "path", path, "method", "POST",
+                "bodyField", "items", "resultKeyField", "code", "attachAs", attachAs));
+    }
+
+    /**
+     * **同一批发给两个不同的终端**：一条链上叠两个合并动作，各自绑自己的出口，各自对同一批各发**一次**。
+     *
+     * <p>这是「一个合并动作 = 一个出口」的正面回答（#142 落地后的追问）：第二个合并动作攒的是第一个
+     * 扇回之后的那批消息——**每条带着第一个目标回填的那一片**，所以第二个出口收到的 items 里有
+     * {@code handle}。要让第二个出口只看到干净的子消息，就在两个合并之间插一道 FIELD_MAP 把它挑掉。</p>
+     */
+    @Test
+    void twoAggregatesSendTheSameBatchToOneTargetEach() throws Exception {
+        AtomicInteger secondCalls = new AtomicInteger();
+        AtomicReference<String> secondRequest = new AtomicReference<>();
+        HttpServer second = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        second.createContext("/", exchange -> {
+            secondCalls.incrementAndGet();
+            secondRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] body = ("[{\"code\":\"PO-1\",\"receipt\":\"R1\"},{\"code\":\"PO-2\",\"receipt\":\"R2\"},"
+                    + "{\"code\":\"PO-3\",\"receipt\":\"R3\"}]").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        second.start();
+        DataSource secondTarget = new DataSource();
+        secondTarget.setId(4L);
+        secondTarget.setType(DataSourceType.HTTP);
+        secondTarget.setAddress("http://127.0.0.1:" + second.getAddress().getPort());
+        secondTarget.setAddition(Map.of());
+        when(dataSourceMapper.selectById(4L)).thenReturn(secondTarget);
+        httpResponse.set("[{\"code\":\"PO-1\",\"handle\":\"H1\"},{\"code\":\"PO-2\",\"handle\":\"H2\"},"
+                + "{\"code\":\"PO-3\",\"handle\":\"H3\"}]");
+
+        Job job = job(37L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.READ_SQL, Map.of("dataSourceId", DB_DS, "businessKey", "order_no",
+                        "sql", "select id, order_no from po_order where {watermark}",
+                        "watermarkType", "SEQUENCE", "watermarkColumn", "id", "batchSize", 10)),
+                aggregate(2, HTTP_DS, "/register", "handle"),
+                aggregate(3, 4L, "/receipt", "receipt"));
+        try {
+            run(job, actions);
+
+            assertThat(httpCalls.get()).as("第一个终端只收到一次（整批）").isEqualTo(1);
+            assertThat(secondCalls.get()).as("第二个终端也只收到一次（同一批）").isEqualTo(1);
+            assertThat(lastRequest.get()).as("第一个报文是 3 条子消息").contains("\"order_no\":\"PO-1\"");
+            assertThat(secondRequest.get())
+                    .as("第二个报文是同一个批（3 条），而且带着第一个目标回填的那一片")
+                    .contains("\"order_no\":\"PO-1\"")
+                    .contains("\"handle\":\"H1\"");
+
+            JobRun run = onlyRun();
+            assertThat(run.getStatus()).isEqualTo("SUCCESS");
+            assertThat(stepsAt(run.getId(), 2)).as("第一个合并：摘要行 + 3 条").hasSize(4);
+            assertThat(stepsAt(run.getId(), 3)).as("第二个合并：摘要行 + 3 条").hasSize(4);
+            assertThat(stepsAt(run.getId(), 3)).allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
+        } finally {
+            second.stop(0);
+        }
     }
 
     /**
