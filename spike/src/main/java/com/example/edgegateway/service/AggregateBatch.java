@@ -105,7 +105,7 @@ final class AggregateBatch {
             return List.of((Object) map);
         }
         if (response == null) {
-            throw new IllegalStateException("合并的响应是空的，没法按配对字段扇回");
+            throw new IllegalStateException("响应是空的，没法按配对字段扇回");
         }
         return List.of(response);
     }

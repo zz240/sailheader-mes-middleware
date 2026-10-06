@@ -34,6 +34,7 @@ export type ActionType =
   // 拆分（#140）：一条消息里的一个数组摊成 N 条子消息，是基数变化动作（1 → N）
   | 'SPLIT'
   | 'AGGREGATE'
+  | 'FANOUT'
 
 export interface Action {
   id: number

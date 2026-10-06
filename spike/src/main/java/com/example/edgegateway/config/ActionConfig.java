@@ -10,7 +10,7 @@ import java.util.Map;
  */
 public sealed interface ActionConfig
         permits MqConsumeConfig, ReadSqlConfig, FieldMappingConfig,
-        WriteUpsertConfig, HttpCallConfig, MqPublishConfig, SplitConfig, AggregateConfig {
+        WriteUpsertConfig, HttpCallConfig, MqPublishConfig, SplitConfig, AggregateConfig, FanoutConfig {
 
     ActionKind type();
 
@@ -30,6 +30,7 @@ public sealed interface ActionConfig
             case MQ_PUBLISH -> MqPublishConfig.from(map);
             case SPLIT -> SplitConfig.from(map);
             case AGGREGATE -> AggregateConfig.from(map);
+            case FANOUT -> FanoutConfig.from(map);
         };
     }
 }

@@ -83,11 +83,11 @@ public class MessageHistoryService {
      */
     public static final String SUMMARY_MESSAGE_PREFIX = "batch:";
     /**
-     * 合并那一批的**承运单**（#142）挂在 exchange 上的属性名：打包重发那条路由与
-     * {@link #redeliverBatch} 用它把「这一批哪几条消息、各自那一片是什么」交给出站那一段；
-     * 失败时统一的记账路也按它给这一批每条补记一行 FAILED。
+     * 合并那一批的**成员清单**（#142）挂在 exchange 上的属性名：扇回、出站失败时的逐条补记、
+     * 以及打包重发那条路由都用它把「这一批哪几条消息、各自那一片是什么」传下去。
+     * 名字的唯一定义在这儿（路由生成器只是引它）。
      */
-    public static final String AGGREGATE_CARRIERS = "edge.aggregateCarriers";
+    public static final String BATCH_MANIFEST = "edge.batchManifest";
 
     public static final String SUCCESS = "SUCCESS";
     public static final String FAILED = "FAILED";
@@ -607,7 +607,7 @@ public class MessageHistoryService {
             throw new IllegalStateException("这不是合并动作的摘要行（消息标识应为 " + SUMMARY_MESSAGE_PREFIX
                     + "<批号>）: " + summaryStepId);
         }
-        if (!FAILED.equals(summary.getStatus())) {
+        if (!FAILED.equals(summary.getStatus()) && !batchHasFailure(summary)) {
             throw new IllegalStateException("仅整批失败的那一批可重发: " + summaryStepId);
         }
         JobRun oldRun = jobRunMapper.selectById(summary.getRunId());
@@ -615,8 +615,9 @@ public class MessageHistoryService {
         if (job == null || job.getStatus() == null || job.getStatus() != 1) {
             throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法重发这一批");
         }
-        if (!hasAggregateAction(job.getId(), summary.getStep())) {
-            throw new IllegalStateException("这一步不是合并动作——整批重发只长在合并那一步上: " + summaryStepId);
+        if (!hasBatchOutlet(job.getId(), summary.getStep())) {
+            throw new IllegalStateException("这一步不是出站动作（摘要行只落在 HTTP_CALL / MQ_PUBLISH 那一步上）："
+                    + summaryStepId);
         }
         List<MessageStep> members = batchMembers(summary);
         if (members.isEmpty()) {
@@ -639,7 +640,7 @@ public class MessageHistoryService {
                 // 新运行里那两行记成「摘要行 + 这一批的每条」：消息标识与批号沿用原批（同一个批次的重发）
                 ex.setProperty(MESSAGE_ID, summary.getMessageId());
                 ex.setProperty(BATCH_MSG_ID, summary.getBatchId());
-                ex.setProperty(AGGREGATE_CARRIERS, carriers);
+                ex.setProperty(BATCH_MANIFEST, carriers);
             });
             failIfExchangeFailed(result);
         } catch (Exception e) {
@@ -657,29 +658,55 @@ public class MessageHistoryService {
         return newRun;
     }
 
-    /** 这一批的**消息行**（同运行 + 同步骤 + 同批号，去掉摘要行自己），按攒批序号排。 */
+    /**
+     * 这一批的**消息行**（同运行 + 同批号、去掉摘要行），取**最后记过的那一步**、按攒批序号排。
+     *
+     * <p>为什么要「最后那一步」而不是摘要行那一步：失败可能落在**下游**——出站成功、扇回那一步配不上时，
+     * 每条消息的行记在**扇回**那一步上。重发要按那些行把「各自那一片」重新装回承运单。</p>
+     */
     private List<MessageStep> batchMembers(MessageStep summary) {
-        return messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
+        List<MessageStep> rows = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
                         .eq(MessageStep::getRunId, summary.getRunId())
-                        .eq(MessageStep::getStep, summary.getStep())
                         .eq(MessageStep::getBatchId, summary.getBatchId()))
                 .stream()
                 .filter(row -> row.getMessageId() != null && !row.getMessageId().startsWith(SUMMARY_MESSAGE_PREFIX))
+                .toList();
+        int lastStep = rows.stream().mapToInt(MessageStep::getStep).max().orElse(Integer.MIN_VALUE);
+        return rows.stream()
+                .filter(row -> row.getStep() == lastStep)
                 .sorted(Comparator.comparing(MessageStep::getBatchSeq,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
     }
 
-    /** 这一步是不是合并动作（决定有没有「打包重发」那条路由可用）。 */
-    private boolean hasAggregateAction(Long jobId, Integer step) {
+    /**
+     * 这一批里有没有失败的行（跨步骤看）：出站那一步失败时摘要行自己就是 FAILED；
+     * **下游（扇回）那一步失败**时摘要行是 SUCCESS，但这一批整体没成——重发要重新打一次请求
+     * （拿旧响应重新配一遍没有意义：同一份响应配第二次还是同一份结果）。
+     */
+    private boolean batchHasFailure(MessageStep summary) {
+        return messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
+                        .eq(MessageStep::getRunId, summary.getRunId())
+                        .eq(MessageStep::getBatchId, summary.getBatchId()))
+                .stream()
+                .anyMatch(row -> FAILED.equals(row.getStatus()));
+    }
+
+    /**
+     * 这一步是不是**出站动作**、而且这条链上真有合并动作（决定有没有「打包重发」那条路由可用）：
+     * 摘要行落在出站那一步（ADR-0017 决策 6 的修订），所以重发也只认那一步。
+     */
+    private boolean hasBatchOutlet(Long jobId, Integer step) {
         if (step == null) {
             return false;
         }
-        return actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                        .eq(Action::getJobId, jobId)
-                        .eq(Action::getActionIndex, step))
-                .stream()
-                .anyMatch(a -> a.getType() == ActionKind.AGGREGATE);
+        List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
+                .eq(Action::getJobId, jobId));
+        boolean outlet = actions.stream()
+                .filter(a -> step.equals(a.getActionIndex()))
+                .anyMatch(a -> a.getType() == ActionKind.HTTP_CALL || a.getType() == ActionKind.MQ_PUBLISH);
+        boolean hasAggregate = actions.stream().anyMatch(a -> a.getType() == ActionKind.AGGREGATE);
+        return outlet && hasAggregate;
     }
 
     /**

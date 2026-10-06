@@ -1,23 +1,25 @@
 /**
- * 批次口径（#139）：右详情按批分组、组头文案、某一步能不能重发、单条那一档。
+ * 批次口径（#139 起，**#142 对称改造后再修订**）：右详情按批分组、组头文案、某一步能不能重发、单条那一档。
  *
  * **纯模块**：不碰 DOM、不发请求、**也不带自测**——自测在 `history/batch-checks.ts`
  * （本仓的规矩：纯模块与它的检查分开，见 `mapping/draft.ts` + `mapping/checks.ts`）。
  *
- * 口径出自 ADR-0017（批次身份）与 #139 票面，压成四条：
+ * 口径出自 ADR-0017 与 #142，压成五条：
  *
  * 1. **批次是「某一步上的分组」，不是消息的属性**（决策 1）：同一条消息在动作 1 与动作 3 上可以属
- *    不同批次，所以分组键是「步骤号 + 批号」，不是批号本身。
- * 2. **批号每执行一次现生成，随消息在链上继承到下一个基数变化动作为止**（决策 2）：界面上只在
- *    **这一步换了号**的地方画批徽标，中间那些步骤不画。
- * 3. **一次请求的报文只存一份**（决策 6）：合并动作多记一条**摘要行**（`message_id` 是
- *    `batch:<批号>`）。`读取批` 与 `发送批` 就是按这条摘要行分的——有摘要行的那一组是**发送**那一档。
+ *    不同批次，所以分组键是「步骤号 + 批号」。
+ * 2. **批号每执行一次现生成，随消息在链上继承到下一个基数变化动作为止**（决策 2/3）：界面上只在
+ *    读库那种「这一步换了号」的地方画批徽标，中间那些步骤不画。
+ * 3. **一次请求的报文只存一份**（决策 6 的修订版）：那一批在**出站**动作上有一条**摘要行**
+ *    （`message_id` 是 `batch:<批号>`）。摘要行落在哪一步、成员落在哪一步**不必是同一步**：
+ *    合并只打包（N→1，一个号在这一步转手）、出站发一次（摘要行在这儿）、扇回摊回原来那 N 条
+ *    （1→N，**不换号**，所以它仍属同一个批号）。于是「这一批」是**按批号**成立的，不是「某一步上的那一组」。
  * 4. **某一步上这条消息自己一组**就是「单条 · 不是一批」（决策 10）：读库直连、MQ 消费、任务输入
- *    这些链永远不会出现批次，它们就该长这样，不给用户「这一批只有一条」的错觉。
+ *    这些链永远不会出现批次，它们就该长这样。
+ * 5. **「重发这一批」长在摘要行那一组上**（决策 7 的修订版）：一次点击 = 一次请求；多目标时
+ *    每个出站动作各有一条摘要行 → 各一个按钮，点谁重发谁。
  *
- * **不在这里判的**：单条消息步能不能断点重投（那是 `history/redeliver.ts` 的 `canRedeliver`，
- * #135 的口径）；这一票也不铺「重发这一批」那个按钮——它只长在**合并**那一档的组头上、且只在
- * 该批失败时铺（ADR-0017 决策 7），合并动作是后面那一票的事。判据在这儿、按钮到那一票再接。
+ * **不在这里判的**：单条消息步能不能断点重投（那是 `history/redeliver.ts` 的 `canRedeliver`，#135 的口径）。
  */
 import type { MessageStep } from '../types'
 
@@ -36,18 +38,18 @@ export const SINGLE_NOTE = '单条 · 不是一批'
 /**
  * 「重发这一批」那一档（ADR-0017 决策 7）：一次点击 = 一次请求，绝不摆 N 个「重投这一条」。
  *
- * **判据按数据判**（见 {@link batchRedeliver}），但这一票的后端还产不出这样的组——组里要有**摘要行**
- * 才算发送批，而摘要行是合并动作记的（#142）。所以这一票的界面上这一档铺不出来，按钮由 #142 接。
+ * **判据按数据判**（见 {@link batchRedeliver}）：这一批得有**摘要行**（合并 + 出站之后才有），
+ * 而且这一批里**有失败**（出站那一步失败、或下游扇回失败）——后者也算：重发要重新打一次请求。
  */
 export interface BatchRedeliver {
-  /** 这一批几条。 */
+  /** 这一批几条消息。 */
   count: number
   label: string
 }
 
 /** 同一步上、同一批的那组消息。 */
 export interface BatchGroup {
-  /** 步骤号（批次是「某一步上的分组」）。 */
+  /** 步骤号（分组键的一半）。 */
   step: number
   /** 批号；`null` = 这一步上没有批次（MQ 消费 / 任务输入那些链）。 */
   batchId: string | null
@@ -56,29 +58,29 @@ export interface BatchGroup {
   members: MessageStep[]
   /** 这一组几行（= `members.length`，含摘要行）。 */
   total: number
-  /** 这一批的**摘要行**（合并动作上承载整份请求与整份响应的那一条）；读取批没有，为 `null`。 */
+  /** 这一批的**摘要行**（整份请求与整份响应的那一条）；不在这一组里时是 `null`。 */
   summary: MessageStep | null
   /**
-   * 这一批**几条消息**（= `total` 去掉摘要行）。
+   * 这一批**几条消息**（= 该批号下非摘要行的**不同消息标识**数，跨步骤去重）。
    *
-   * 「一次请求 N 条」与「重发这一批（N 条）」数的是**消息**，不是行：摘要行是这一批的摘要，
-   * 它自己也有一颗 chip（ADR-0017 决策 10），但它不是一条发出去的消息——把它算进去，
-   * 组头会说「一次请求 3 条」而界面上只有 2 颗消息 chip。
+   * 「一次请求 N 条」与「重发这一批（N 条）」数的是**消息**，不是行：同一条消息在打包 / 出站 / 扇回
+   * 这几步各有一行，摘要行也不是一条发出去的消息。早期版本按「这一组几行」数，会多数。
    */
   messages: number
-  /** 这一批里**几条消息**失败（摘要行的状态不算消息的失败）。 */
+  /** 这一批里**几条消息**失败（该批号下任一失败行所属的不同消息标识数）。 */
   failed: number
-  /** 组头那一句（`读取批 · 一次请求 N 条 · 失败 M 条` / 单条那档）。 */
+  /** 组头那一句（`读取批/发送批 · 一次请求 N 条 · 失败 M 条` / 单条那档）。 */
   head: string
 }
 
 /**
  * 链上这一格与它所属的那一批。
  *
- * - `batch`：**这一步换了号**且这一批不止一条 → 链节点带小批徽标，点开是一组 chip；
+ * - `batch`：这一步属于**发送批**（打包 / 出站 / 扇回这几步都算，因为它们是同一个批号），
+ *   或者读库那种**换了号**的那一步 → 链节点带小批徽标，点开是一组 chip；
  * - `single`：这一格上这条消息**自己一组** → 画虚线框，写「单条 · 不是一批」；
- * - `plain`：中间那些步骤（批号没换）→ 什么都不画；`group` 为 `null` 时也是它（**没有数据就不下结论**：
- *   一条运行的消息步还没取回来时，不能凭空说「这一步不是一批」）。
+ * - `plain`：中间那些步骤（读库批号没换）→ 什么都不画；`group` 为 `null` 时也是它
+ *   （**没有数据就不下结论**：一条运行的消息步还没取回来时，不能凭空说「这一步不是一批」）。
  */
 export interface NodeBatch {
   tier: 'batch' | 'single' | 'plain'
@@ -99,7 +101,7 @@ export function batchKey(of: Pick<MessageStep, 'step' | 'batchId'>): string {
   return `${of.step}\u0000${normalizeBatchId(of.batchId) ?? ''}`
 }
 
-/** 这一行是不是**摘要行**（合并动作上承载整份请求与整份响应的那条，ADR-0017 决策 6）。 */
+/** 这一行是不是**摘要行**（出站动作上承载整份请求与整份响应的那条，ADR-0017 决策 6）。 */
 export function isSummaryRow(step: Pick<MessageStep, 'messageId'>): boolean {
   return step.messageId?.startsWith(SUMMARY_MESSAGE_PREFIX) ?? false
 }
@@ -107,7 +109,7 @@ export function isSummaryRow(step: Pick<MessageStep, 'messageId'>): boolean {
 /**
  * 组头那一句：`读取批 · 一次请求 N 条 · 失败 M 条`。
  *
- * `读取批` 与 `发送批` 的区别只有一处说法（摘要行在不在这一组里）；单条那档不写「一次请求」，
+ * `读取批` 与 `发送批` 的区别是**这一批有没有出站摘要行**；单条那档不写「一次请求」，
  * 因为**它不是一批**——那正是这一档要挡住的那种错觉（ADR-0017 决策 10）。
  * `messages` / `failed` 数的都是**消息**（不含摘要行，见 {@link BatchGroup#messages}）。
  */
@@ -116,12 +118,7 @@ export function batchHead(kind: BatchKind, messages: number, failed: number): st
   return `${kind === 'send' ? '发送批' : '读取批'} · 一次请求 ${messages} 条 · 失败 ${failed} 条`
 }
 
-/**
- * 一条运行的消息步**按批分组**（同一步 + 同批号一组）。
- *
- * 顺序照步骤号升序；同一步里按这一组第一行的落库先后（`id`）排——界面上的组头因此与步骤链同向。
- * 同一个批号在多个步骤上出现时是**多个组**（批号是继承来的，分组只在某一步上成立，决策 1）。
- */
+/** 一条运行的消息步**按批分组**（同一步 + 同批号一组），组头文案与档位按**批号**统一判。 */
 export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
   const groups = new Map<string, BatchGroup>()
   for (const step of [...steps].sort((a, b) => a.id - b.id)) {
@@ -136,17 +133,39 @@ export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
     }
     group.members.push(step)
   }
+
+  // 批号维度的两件事：这一批有没有摘要行（可能在**别的**步骤上）、这一批有哪些消息（跨步骤去重）
+  const summaryBatches = new Set<string>()
+  const messageIds = new Map<string, Set<string>>()
+  const failedIds = new Map<string, Set<string>>()
+  for (const step of steps) {
+    const batchId = normalizeBatchId(step.batchId)
+    if (batchId === null) continue
+    if (isSummaryRow(step)) {
+      summaryBatches.add(batchId)
+      continue
+    }
+    if (!messageIds.has(batchId)) messageIds.set(batchId, new Set())
+    messageIds.get(batchId)!.add(step.messageId)
+    if (step.status === 'FAILED') {
+      if (!failedIds.has(batchId)) failedIds.set(batchId, new Set())
+      failedIds.get(batchId)!.add(step.messageId)
+    }
+  }
+
   for (const group of groups.values()) {
     group.total = group.members.length
-    const messages = group.members.filter((member) => !isSummaryRow(member))
     group.summary = group.members.find(isSummaryRow) ?? null
-    group.messages = messages.length
-    group.failed = messages.filter((member) => member.status === 'FAILED').length
-    // **一条一组 = 不是一批**（ADR-0017 决策 10 要挡的正是「这一批只有一条」那种错觉）：批大小 1 的
-    // 读库链、MQ 消费、任务输入都落这一档——界面上画虚线框，而不是一个只有一颗 chip 的组头
-    //（那样的组头点开与不点开一模一样，还凭空多出一个「批」字）。
-    // 一组以上再看有没有摘要行：有 = 这一批在合并动作上发过（决策 6），没有 = 读取批。
-    group.kind = group.total <= 1 ? 'single' : (group.summary ? 'send' : 'read')
+    const batchId = group.batchId
+    const hasSummary = batchId !== null && summaryBatches.has(batchId)
+    // 没有批号的那几档（MQ 消费 / 任务输入 / 读库直连的空批）就按本组自己的行进算
+    group.messages = batchId === null ? group.total : (messageIds.get(batchId)?.size ?? 0)
+    group.failed = batchId === null
+      ? group.members.filter((member) => member.status === 'FAILED').length
+      : (failedIds.get(batchId)?.size ?? 0)
+    // **这一批有出站摘要行 = 发送批**（决策 6）：即便这一组只有一条（出站那一行摘要），它也是发送批，
+    // 不然「重发这一批」那颗按钮挂在一个写着「单条 · 不是一批」的组上
+    group.kind = hasSummary ? 'send' : (group.total <= 1 ? 'single' : 'read')
     group.head = batchHead(group.kind, group.messages, group.failed)
   }
   return [...groups.values()].sort((a, b) => a.step - b.step
@@ -170,12 +189,12 @@ export function batchGroupAt(
 /**
  * 链上这一格画成什么（批徽标 / 虚线框 / 什么都不画）。
  *
- * `previous` 是这条消息**链上的上一步**（入口那格不是某一步，所以它是 `null`）：批号与它不同才算
- * 「这一步换了号」——中间那些步骤不画批徽标（决策 2）。
- *
- * **一条一组按「不是一批」画**（决策 10）：批大小 1 的读库批在库里确实带着批号，但它没有「一组 chip」
- * 可看——组头点开与不点开一模一样。所以这一档画虚线框写「单条 · 不是一批」，而不是一个只有一颗
- * chip 的批。要「哪几条一起读进来的」这件事，把读库那一步的批大小调大就有了。
+ * - **发送批**：打包 / 出站 / 扇回这几步是同一个批号（扇回**不换号**），所以这几格都标——
+ *   摘要行只在其中一格上，但「这一批」是整段（否则用户得猜哪一格能点开）。
+ * - **读取批**：只在**换了号**的那一步标（`previous` 是链上的上一步；批号与它不同才算换了号），
+ *   中间那些步骤不标（决策 2）。
+ * - **一条一组**（没有摘要行、也没有别的成员）按「不是一批」画（决策 10）：批大小 1 的读库批在库里
+ *   确实带着批号，但它没有「一组 chip」可看——要「哪几条一起读进来的」，把读库那一步的批大小调大。
  */
 export function nodeBatch(
   previous: Pick<MessageStep, 'batchId'> | null,
@@ -184,28 +203,30 @@ export function nodeBatch(
 ): NodeBatch {
   const group = batchGroupAt(groups, current)
   if (!group) return { tier: 'plain', group: null }
+  if (group.kind === 'send') return { tier: 'batch', group }
   if (group.kind === 'single') return { tier: 'single', group }
   const changed = normalizeBatchId(previous?.batchId) !== normalizeBatchId(current.batchId)
   return { tier: changed ? 'batch' : 'plain', group }
 }
 
 /**
- * 「重发这一批（N 条）」那一档：**只有发送批（合并）且这一批里有失败**才铺
- * （ADR-0017 决策 7 —— 合并之前的步骤仍是逐条重投，那一档归 `redeliver.ts`）。
+ * 「重发这一批（N 条）」那一档：**这一批有摘要行、而且这一批里有失败**才铺
+ * （ADR-0017 决策 7 的修订版 —— 按钮只长在**摘要行那一组**上，也就是出站那一步；
+ * 合并之前的步骤仍是逐条重投，那一档归 `redeliver.ts`）。
  *
- * <p>判据是**数据**判的，不是「现在有没有合并动作」判的——库里有摘要行的那一组（发送批）本来就该长
- * 这个按钮。#142 之前不会有这样的数据，所以界面上暂时铺不出来。</p>
+ * <p>失败可能发生在**下游**（出站成功、扇回那一步配不上）：那时摘要行自己是 SUCCESS，但这一批整体
+ * 没成——重发的动作仍是「再打一次请求」（不是拿旧响应重新配一遍：同一份响应配第二次还是同一份结果）。</p>
  */
 export function batchRedeliver(group: BatchGroup | null): BatchRedeliver | null {
-  if (!group || group.kind !== 'send' || group.failed <= 0) return null
+  if (!group || group.kind !== 'send' || !group.summary || group.failed <= 0) return null
   // N 数的是**消息**：摘要行不是一条发出去的消息（它只是这一批的摘要），别把它算进重发条数
   return { count: group.messages, label: `重发这一批（${group.messages} 条）` }
 }
 
 /**
- * 按批重发的接口路径（#142）：`{id}` 是那一批的**摘要行**消息步 id。
+ * 按批重发的接口路径（#142）：`{id}` 是那一批的**摘要行**的消息步 id（出站那一步的那一行）。
  *
- * 一次调用 = 一次请求（整批重发）；合并之前的步骤仍是逐条重投（那是 `redeliver.ts` 那条路）。
+ * 一次调用 = 一次请求（重发整批）；合并之前的步骤仍是逐条重投（那是 `redeliver.ts` 那条路）。
  */
 export function redeliverBatchPath(summaryStepId: number): string {
   return `/history/batches/${summaryStepId}/redeliver`

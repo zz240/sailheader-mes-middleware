@@ -1,6 +1,7 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.AggregateConfig;
+import com.example.edgegateway.config.FanoutConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.FieldMappingRule;
 import com.example.edgegateway.config.SplitConfig;
@@ -71,6 +72,13 @@ public final class ChainConsistencyValidator {
                 }
                 continue;
             }
+            if (action.getType() == ActionKind.FANOUT) {
+                String problem = checkFanoutSourceStep(action, indexes);
+                if (problem != null) {
+                    problems.add(problem);
+                }
+                continue;
+            }
             if (action.getType() != ActionKind.FIELD_MAP) {
                 continue;
             }
@@ -117,6 +125,24 @@ public final class ChainConsistencyValidator {
             return null; // 未声明 = 拆当前消息体，链上引用无从谈起
         }
         String problem = stepProblem("sourceStep", step, action.getActionIndex(), indexes);
+        return problem == null ? null : location(action) + " 的 " + problem;
+    }
+
+    /**
+     * 扇回的来源步骤（#142）：**必填**（它必须知道去哪儿取回应），且必须指向链中**存在且序号更早**的动作
+     * ——与拆分的 {@code sourceStep} 同一条口径、同一批闸口（写时 400 / {@code /validate} / 启用前）。
+     *
+     * <p>为什么不能省：扇回的来源指错时，运行期那一步会「取不到回应」当场失败，但那是**跑起来才知道**；
+     * 配置期拦下来才符合既有那套。</p>
+     */
+    private static String checkFanoutSourceStep(Action action, Set<Integer> indexes) {
+        FanoutConfig fanout;
+        try {
+            fanout = FanoutConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
+        } catch (RuntimeException e) {
+            return location(action) + " 扇回配置无法解析: " + e.getMessage();
+        }
+        String problem = stepProblem("sourceStep", fanout.sourceStep(), action.getActionIndex(), indexes);
         return problem == null ? null : location(action) + " 的 " + problem;
     }
 

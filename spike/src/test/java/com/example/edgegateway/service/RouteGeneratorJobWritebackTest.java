@@ -285,6 +285,7 @@ class RouteGeneratorJobWritebackTest {
             case MQ_PUBLISH -> "publish";
             case SPLIT -> "split";
             case AGGREGATE -> "aggregate";
+            case FANOUT -> "fanout";
         });
         action.setAddition(addition);
         return action;

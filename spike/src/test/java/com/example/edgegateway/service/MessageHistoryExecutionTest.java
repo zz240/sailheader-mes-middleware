@@ -1238,6 +1238,7 @@ class MessageHistoryExecutionTest {
             case MQ_PUBLISH -> "publish";
             case SPLIT -> "split";
             case AGGREGATE -> "aggregate";
+            case FANOUT -> "fanout";
         });
         action.setType(kind);
         action.setAddition(addition);
