@@ -70,6 +70,23 @@ powershell -File tools/shadow-site/verify-scenario.ps1              # 33 项断�
 powershell -File tools/shadow-site/verify-scenario.ps1 -SkipWrite   # 只跑读侧（A5/A4/A7/A4PUSH；B6 自 #123 起含回写）
 ```
 
+### 拆分动作的真机验收（#140）
+
+```powershell
+powershell -File tools/shadow-site/verify-split-140.ps1              # 21 项断言：一份报文 -> 头一行 + 子 N 行
+powershell -File tools/shadow-site/verify-split-140.ps1 -KeepJob    # 跑完留着任务，便于去界面看消息历史
+```
+
+**这条链不依赖 SQL Server（1433）与 MES 替身（9100）**：源是本机 MySQL 的 `mes_db`（A2 那条主数据源），
+落点是同容器里的 `board_db`（脚本自己建 `bom_head_t` / `bom_line_t` 两张表）。链是：
+`READ_SQL`（头表 join 子表 + `JSON_ARRAYAGG` 聚成一列字符串）→ `FIELD_MAP`（`mode=EXPRESSION`，用 `` 把那一列
+还原成**真数组**）→ **`SPLIT`（#140 拆分动作）** → `FIELD_MAP` → `WRITE_UPSERT`。
+
+它验的是拆分动作那一票的口径：拆出来的 N 条子消息各记一行、**五样齐全**（消息标识 / 业务键 /
+批内序号 / 父消息标识 / 批号）、**批号在拆分这一步换手**，以及拆完之后逐条落库、水位推进后重跑幂等。
+
+**结果（2026-10-06 复验；真 MySQL + 真网关 + 真前端）：21 项通过 / 0 失败。**
+
 可重复跑：每段先清该任务的水位与替身记录（B6 段还先把 `MDM_Code.FHandle` 清空），所以连跑两次结果一致（改动前实测连跑多次 29/29；B6 回写的 4 项断言见 #123）。
 
 **结果（2026-09-19 复验；真 SQL Server 2022 + 真 MySQL + 真 RabbitMQ/MES 替身）：29 项通过 / 0 失败**
