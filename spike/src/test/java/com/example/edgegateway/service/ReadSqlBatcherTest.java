@@ -75,6 +75,31 @@ class ReadSqlBatcherTest {
         assertThat(batcher.batchSql(read, mysql)).endsWith("LIMIT " + ReadSqlConfig.DEFAULT_BATCH_SIZE);
     }
 
+    /**
+     * 配了水位列、但 SQL 里没有 {@code {watermark}}（谓词无处可放：聚合查询、或源表没有可用的水位列）时，
+     * 批查询**仍然会排序分页**（{@code ORDER BY 水位列 LIMIT batchSize}），但**没有参数占位符**。
+     *
+     * <p>两件事各有一处结论：</p>
+     * <ul>
+     *   <li>「仍分页、却没有谓词」意味着每批读回同一页、水位不动 → 运行期**无限循环**。
+     *       所以这种配置由 {@link ReadSqlConfig#validate()} 在配置期拒掉（见
+     *       {@code watermarkColumnWithoutPlaceholderRejected}）。</li>
+     *   <li>「没有占位符」意味着读批**不能绑参数**——真机上无条件绑 bound 时报
+     *       {@code Parameter index out of range (1 > number of parameters, which is 0)}；
+     *       路由侧因此按「SQL 里有没有 {@code ?}」决定绑不绑。</li>
+     * </ul>
+     */
+    @Test
+    void sqlWithoutWatermarkPlaceholderStillPaginatesButCarriesNoParameter() {
+        ReadSqlConfig read = new ReadSqlConfig(1L, "select count(*) as n from po_order",
+                "SEQUENCE", "id", null, 3);
+
+        String sql = batcher.batchSql(read, mysql);
+
+        assertThat(sql).isEqualTo("select count(*) as n from po_order ORDER BY id LIMIT 3");
+        assertThat(sql).as("没有占位符就没有参数可绑（路由侧据此决定不传 bound）").doesNotContain("?");
+    }
+
     @Test
     void invalidBatchSizeGivesLocatableError() {
         ReadSqlConfig read = new ReadSqlConfig(1L, "select * from po_order where {watermark}",
@@ -177,6 +202,29 @@ class ReadSqlBatcherTest {
         assertThatThrownBy(read::validate)
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("{watermark}");
+    }
+
+    /**
+     * 反向那一半（#140 真机抓到的死循环）：配了水位列、SQL 里却没有 {@code {watermark}} 作谓词的落点。
+     *
+     * <p>这一档批查询仍会 {@code ORDER BY 水位列 LIMIT batchSize}，但每批读回同一页、水位不动，
+     * 「读满一页 → 还有下一批」恒真 → 无限循环。配置期必须拒掉，别等运行期挂住。</p>
+     */
+    @Test
+    void watermarkColumnWithoutPlaceholderRejected() {
+        ReadSqlConfig read = new ReadSqlConfig(1L, "select count(*) as n from po_order",
+                "SEQUENCE", "id", null, 3);
+        assertThatThrownBy(read::validate)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("{watermark}")
+                .hasMessageContaining("去掉水位列");
+    }
+
+    @Test
+    void watermarkColumnWithPlaceholderPasses() {
+        ReadSqlConfig read = new ReadSqlConfig(1L, "select * from po_order where {watermark}",
+                "SEQUENCE", "id", null, 3);
+        read.validate(); // 不抛即可
     }
 
     private Map<String, Object> row(String key, Object value) {

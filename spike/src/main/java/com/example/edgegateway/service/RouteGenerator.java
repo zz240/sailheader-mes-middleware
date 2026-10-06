@@ -891,7 +891,12 @@ public class RouteGenerator {
                 ? readSqlBatcher.formatTimeBound(current, ScheduleConfig.from(job).zone())
                 : current;
         String sql = readSqlBatcher.batchSql(read, requireDialect(read.dataSourceId()));
-        List<Map<String, Object>> rows = new JdbcTemplate(ds).queryForList(sql, bound);
+        // SQL 里没有 `{watermark}`（调 batchSql 时没法把谓词塞进去，比如源表没有可用的水位列、
+        // 或者查询本身是聚合的）时就没有参数可绑：照旧传 bound 会报「Parameter index out of range」。
+        // 有占位符才有参数，这一格跟着 SQL 走，不跟着配置走。
+        List<Map<String, Object>> rows = sql.contains("?")
+                ? new JdbcTemplate(ds).queryForList(sql, bound)
+                : new JdbcTemplate(ds).queryForList(sql);
         long newWatermark = readSqlBatcher.newBatchWatermark(read, rows, current, ScheduleConfig.from(job).zone());
         exchange.getMessage().setBody(rows);
         exchange.setProperty(WATERMARK, newWatermark);

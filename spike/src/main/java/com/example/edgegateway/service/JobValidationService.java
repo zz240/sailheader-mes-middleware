@@ -79,8 +79,13 @@ public class JobValidationService {
         return new ValidationResult(errors.isEmpty(), errors, warnings);
     }
 
+    /**
+     * 这个动作种类是否引用数据源。**不含 FIELD_MAP 与 SPLIT**：字段映射与拆分是在链上干活的动作，
+     * 不连任何库/队列/HTTP——把它们也算进来的话，一个合法的拆分动作会被报成「缺少 dataSourceId」
+     * （真机第一次跑这条链就是这么被拦下的）。
+     */
     private boolean hasDataSource(ActionKind kind) {
-        return kind != ActionKind.FIELD_MAP;
+        return kind != ActionKind.FIELD_MAP && kind != ActionKind.SPLIT;
     }
 
     private void validateRemoteAction(Action action, List<ValidationResult.Issue> errors) {

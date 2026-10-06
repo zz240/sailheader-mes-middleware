@@ -234,4 +234,43 @@ class JobValidationServiceTest {
         assertThat(result.valid()).isTrue();
         assertThat(result.errors()).isEmpty();
     }
+
+    // ---------- 拆分动作（#140）：不引用数据源，也不该被报缺 dataSourceId ----------
+
+    private Action split(int index, int sourceStep) {
+        Action action = new Action();
+        action.setName("split");
+        action.setType(ActionKind.SPLIT);
+        action.setActionIndex(index);
+        action.setAddition(Map.of(
+                "sourceStep", sourceStep, "sourcePath", "lines", "elementKey", "itemCode"));
+        return action;
+    }
+
+    @Test
+    void splitActionIsNotReportedAsMissingDataSource() {
+        // 真机第一次跑这条链就是被这条误报拦下的：拆分与字段映射一样在链上干活，不连任何库
+        when(actionService.list(1L)).thenReturn(List.of(
+                remote("SELECT * FROM po_order", Map.of()),
+                split(2, 1)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.errors())
+                .as("拆分动作不该被报「缺少 dataSourceId」")
+                .noneMatch(e -> e.message().contains("dataSourceId"));
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void splitActionWithDanglingSourceStepIsReported() {
+        when(actionService.list(1L)).thenReturn(List.of(
+                remote("SELECT * FROM po_order", Map.of()),
+                split(2, 9)));
+
+        ValidationResult result = service.validate(1L);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.errors()).anyMatch(e -> e.message().contains("sourceStep=9"));
+    }
 }

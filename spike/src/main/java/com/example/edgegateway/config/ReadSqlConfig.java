@@ -16,6 +16,13 @@ import java.util.regex.Pattern;
  *   <li>{@code TIMESTAMP}＝刷量/全量（按更新时间 upsert）：谓词 {@code col >= :#lastRun}，水位取批内 max(col)（不用墙钟 now），
  *       幂等、无边界漏单、可安全重跑；下游按业务键 upsert。</li>
  * </ul>
+ *
+ * <p><b>{@code {watermark}} 是整个**谓词**的占位符，不是值占位符</b>：写法只有
+ * {@code … where {watermark}}，框架按策略替换成 {@code 水位列 > ?} / {@code 水位列 >= ?}
+ * 并配 {@code ORDER BY 水位列 LIMIT batchSize}。别自己再写列名与比较符
+ * （写成 {@code and h.FModifyDate >= {watermark}} 会替换成
+ * {@code h.FModifyDate >= h.FModifyDate >= ?}——恒不成立，一条也读不回来且不报错，
+ * #140 真机就是这么空转的）。</p>
  */
 public record ReadSqlConfig(
         Long dataSourceId,
@@ -79,6 +86,18 @@ public record ReadSqlConfig(
         }
         if (sql != null && sql.contains("{watermark}") && (watermarkColumn == null || watermarkColumn.isBlank())) {
             throw new IllegalArgumentException("SQL 使用了 {watermark} 占位就必须指定水位列 watermarkColumn");
+        }
+        // 反过来那一半：配了水位列、SQL 里却没有 {watermark} 作为谓词的落点。
+        // 这一档**运行期会无限循环**，所以必须在配置期拒掉：批查询仍会按水位列排序分页
+        // （{@code ORDER BY 水位列 LIMIT batchSize}），但每一批读回来的都是同一页、水位永远不动，
+        // 于是「读满一页 → 还有下一批」恒真，一路读到天荒地老（#140 真机第一次跑就是这么卡住的：
+        // 读批还先撞上「没有占位符却绑了参数」的参数越界，把真正的死循环盖住了）。
+        if (watermarkColumn != null && !watermarkColumn.isBlank() && sql != null && !sql.contains("{watermark}")) {
+            throw new IllegalArgumentException(
+                    "配了水位列 watermarkColumn 就必须在 SQL 里用 {watermark} 标记谓词的位置"
+                            + "（它会被替换成 `" + watermarkColumn + " > ?` 之类，并配 ORDER BY + LIMIT 分批）；"
+                            + "本次查询没有谓词可放（如聚合查询），请**去掉水位列**改用全量单次读取，"
+                            + "否则每批读到的是同一页、水位不动，会一直循环下去: " + watermarkColumn);
         }
         if (businessKey != null && !businessKey.isBlank() && !businessKey.matches("[A-Za-z0-9_]+")) {
             throw new IllegalArgumentException("业务键应为源表列名（字母/数字/下划线，点号/空格非法）: " + businessKey);
