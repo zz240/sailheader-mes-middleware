@@ -87,8 +87,11 @@ public class RouteGenerator {
      * k 条带的是同一个数（去重靠父消息标识）。
      */
     private static final String BATCH_EXPECTED = "edge.batchExpected";
-    /** 合并动作攒到的那批**承运单**（#142）；挂在批 exchange 上：请求失败时按它给这一批每条补记 FAILED。 */
-    private static final String AGGREGATE_CARRIERS = "edge.aggregateCarriers";
+    /**
+     * 合并动作攒到的那批**承运单**（#142）；挂在批 exchange 上：请求失败时按它给这一批每条补记 FAILED。
+     * 名字的唯一定义在 {@link MessageHistoryService#AGGREGATE_CARRIERS}——打包重发那条路由也要用它。
+     */
+    private static final String AGGREGATE_CARRIERS = MessageHistoryService.AGGREGATE_CARRIERS;
     /** 合并的请求体（#142）：{@code {"<bodyField>": [ …每条消息自己那一片… ]}}，出站前挂这儿（消息体要留给扇回）。 */
     private static final String AGGREGATE_REQUEST = "edge.aggregateRequest";
 
@@ -136,7 +139,86 @@ public class RouteGenerator {
             builders.add(buildPollingEntry(job, sorted));
         }
         builders.add(buildResumeRoute(job, sorted));
+        // 合并动作另外多一条**打包重发**路由（#142）：整批重发要在同一个 HTTP 出口上发一次，
+        // 而出口（数据源、路径、方法、认证）是构建期解析的，所以它归路由——没有合并动作的链不建这条
+        for (Action action : sorted) {
+            if (action.getType() == ActionKind.AGGREGATE) {
+                builders.add(buildBatchResend(job, action,
+                        (AggregateConfig) ActionConfig.from(ActionKind.AGGREGATE, action.getAddition())));
+            }
+        }
         return builders;
+    }
+
+    /**
+     * 「打包重发」路由（#142 / ADR-0017 决策 7）：把摘要行上存下来的**整份请求**按同一个动作再发一次，
+     * **一次调用 = 一次请求**。入口 {@code direct:job-<id>-batch-resend-<合并动作序号>} 由
+     * {@link MessageHistoryService#redeliverBatch} 调用，带上「这一批哪几条消息、各自那一片是什么」。
+     *
+     * <p>出口与 {@code HTTP_CALL} 那一段同一套（{@code composeUrl} + Bearer），失败面也一样：交给
+     * {@code onException} 记 FAILED（那时消息标识已是摘要行、批号是原批，加上承运单就能给这一批每条补记一行）。</p>
+     */
+    private RouteBuilder buildBatchResend(Job job, Action action, AggregateConfig aggregate) {
+        int index = action.getActionIndex();
+        DataSource ds = dataSourceMapper.selectById(aggregate.dataSourceId());
+        HttpDataSourceConfig http = (HttpDataSourceConfig) DataSourceConfig.from(ds.getType(), ds.getAddition());
+        String url = composeUrl(ds.getAddress(), aggregate.path());
+        String auth = http.token() == null || http.token().isBlank() ? null : "Bearer " + http.token();
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                configureErrorHandling(this, job, false);
+                from("direct:job-" + job.getId() + "-batch-resend-" + index)
+                        .routeId("batch-resend-" + job.getId() + "-" + index)
+                        .process(ex -> {
+                            ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+                            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+                            beginStep(ex); // #134：计时起点打在出站之前
+                            ex.getMessage().setHeader(Exchange.HTTP_METHOD, aggregate.method());
+                            ex.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
+                            if (auth != null) {
+                                ex.getMessage().setHeader("Authorization", auth);
+                            }
+                        })
+                        .marshal().json()
+                        .to(url)
+                        .process(ex -> settleBatchResend(ex, action, aggregate, index));
+            }
+        };
+    }
+
+    /**
+     * 打包重发成功之后的收尾（#142）：配对，并在**新运行**里记摘要行与这一批每条各一行。
+     *
+     * <p>配不上就抛——交给统一的记账路（摘要行 + 这一批每条都记 FAILED，同因），与链上那条路同一个口径。</p>
+     */
+    private void settleBatchResend(Exchange ex, Action action, AggregateConfig aggregate, int index) {
+        List<AggregateBatch.Carrier> carriers = ex.getProperty(AGGREGATE_CARRIERS, List.class);
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
+        String raw = responseText(ex);
+        Object response = HttpCallResponse.parse(raw);
+        messageHistory.requireCaptureFitsSnapshot(index, response);
+        Map<String, Object> paired = AggregateBatch.pair(response, aggregate.resultKeyField(), carriers);
+        List<String> missing = carriers.stream()
+                .filter(carrier -> !paired.containsKey(carrier.messageId()))
+                .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("重发的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
+                    + aggregate.resultKeyField() + "）");
+        }
+        Long durationMs = stepDuration(ex);
+        messageHistory.recordSuccess(runId, MessageHistoryService.SUMMARY_MESSAGE_PREFIX + batchId, index,
+                action.getName(), ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class), response, null,
+                attemptsOnSuccess(ex), durationMs, new BatchStamp(batchId, null, null));
+        int seq = 0;
+        for (AggregateBatch.Carrier carrier : carriers) {
+            seq++;
+            messageHistory.recordSuccess(runId, carrier.messageId(), index, action.getName(), carrier.body(),
+                    paired.get(carrier.messageId()), carrier.businessKey(), attemptsOnSuccess(ex), durationMs,
+                    new BatchStamp(batchId, seq, carrier.parentMessageId()));
+        }
     }
 
     /**

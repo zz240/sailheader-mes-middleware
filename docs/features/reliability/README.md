@@ -19,6 +19,7 @@
   - 于是被跳过的上游步骤仍可被下游规则引用（如 FIELD_MAP 的 `sourceStep=1`），不再因 `$s_1` 未定义而**静默映射出空**（这是以前写库/推送型链之外的主要缺口）。
   - 快照按 **JSON 值**还原：对象 / 数组 / 标量都回填（HTTP 响应可以就是数组或标量——#123 起 `HTTP_CALL` 的响应也走这条路），只有解析不出来的**非 JSON 文本**不进上下文。
   - 边界：上游步骤无快照（失败步、被跳步、非 JSON 文本快照）→ **该步骤不进上下文**（属性照常投递，值为空 `Map`），下游引用仍是空，行为与现状一致；`context[0]` 语义保持不变（= 本次重投 body，即该步 `inputSnapshot`）。
+  - **合并的重投粒度（#142 / ADR-0017 决策 7）**：合并那一步只做**整批重发**——一次点击 = 一次请求（`POST /api/history/batches/{摘要行 id}/redeliver`，从摘要行的 `input_snapshot` 取回整份报文原样再发一次；新运行里摘要行与这一批每条各记一行，旧的那一批标 `REDELIVERED`）。**合并之前**的步骤仍是逐条断点重投（上面那条），界面上因此在合并档组头摆「重发这一批（N 条）」、不摆 N 个「重投这一条」。
   - **捕获内容的容量闸（#123 口径 4，界线 #141）**：`HTTP_CALL` 的响应大小由目标端决定，装不下 `message_step.data_snapshot`（**MEDIUMTEXT，16777215 字节 = 16 MB**，迁移 `V6__snapshot_mediumtext.sql`）时该动作**显式失败并给出可读错误**，绝不写半截 JSON（半截的上游快照会让续投在解析处报出离现场很远的错）。其余动作的快照行为不变；容量不再单独放宽，**界线跟着列宽走**——`MessageHistoryService.SNAPSHOT_LIMIT_BYTES` 与列型同源（#141 之前是 `TEXT` 的 65535 字节，会出「动作成功却被判失败」，见 ADR-0015）。
   - **失败就报失败（#108）**：`redeliver` 投递后检查返回 exchange（`getException()` / `EXCEPTION_CAUGHT` / `isFailed()`），失败即抛"重投失败：<根因>"且**不改**原步状态。`ProducerTemplate.request(uri, processor)` 不重抛 exchange 上的异常，少了这道检查就会出现"接口返回 OK + 原步 `REDELIVERED`，而新 run 是 `FAILED`"（实测 run 301/302）。
   - **界面入口（#135）**：消息历史页的单步卡底部——**只有 `FAILED` 的消息步铺「从步骤 N 断点重投」**（其余状态摆一句「为什么不能投」）；弹窗写清消息 id / 业务键 / 步骤号 / 动作 / 状态，二次确认、进行中按钮 pending 且不可连点、Esc 关闭，成功后原步 `REDELIVERED` 且**列表与详情同时刷新**，接口报错时错误铺在弹窗里、按钮恢复可点（口径与文案在纯模块 `frontend/src/history/redeliver.ts`，自测 `redeliver-checks.ts`）。

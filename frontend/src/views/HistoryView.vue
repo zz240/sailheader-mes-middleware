@@ -57,11 +57,13 @@
         :prev-step-row-loading="prevStepRowLoading"
         :prev-step-row-error="prevStepRowError"
         :redeliver-pending="redeliverPending"
+        :batch-redeliver-pending="batchRedeliverPending"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
         @retry-step-row="retryStepRow"
         @retry-prev-row="retryPrevStepRow"
         @redeliver="openRedeliver"
+        @redeliver-batch="onRedeliverBatch"
       />
     </main>
 
@@ -110,12 +112,21 @@ import {
   REDELIVER_TIMEOUT_MS,
 } from '../history/redeliver'
 import { previousStepOf } from '../history/diff'
+import {
+  batchRedeliver, batchRedeliverDone, redeliverBatchPath, type BatchGroup,
+} from '../history/batch'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
 /** 断点重投接口的应答（后端只回这两格：原步的新状态与它的 id）。 */
 interface RedeliverResult {
   status: string
   stepId: number
+}
+
+/** 整批重发接口的应答（#142）：新运行的状态与 id。 */
+interface BatchRedeliverResult {
+  status: string
+  runId: number
 }
 
 const jobs = ref<Job[]>([])
@@ -210,6 +221,8 @@ const redeliverVisible = ref(false)
 const redeliverTarget = ref<{ step: MessageStep; businessKey: string } | null>(null)
 /** 这一投正在路上：入口与确认按钮 pending 且不可连点，弹窗也不许关。 */
 const redeliverPending = ref(false)
+/** 整批重发（#142）在路上：发送批组头上那个按钮按在原地，别让人连点两下发两遍。 */
+const batchRedeliverPending = ref(false)
 /** 接口那句错误（空串 = 这一投还没失败过）；成功一次就清掉。 */
 const redeliverError = ref('')
 /**
@@ -344,6 +357,34 @@ function openRedeliver() {
   redeliverTarget.value = { step, businessKey: runDetailView.value.message?.businessKey ?? '' }
   redeliverError.value = ''
   redeliverVisible.value = true
+}
+
+/**
+ * **按批重发**（#142 / ADR-0017 决策 7）：合并那一档组头上的按钮——**一次点击 = 一次请求**。
+ *
+ * 与逐条重投（下面那条弹窗）分开是有意的：合并之前的数据仍是逐条重投，合并那一步只认整批，
+ * 界面上也因此不摆 N 个「重投这一条」的按钮（那会变成「点 N 次把整批发 N 遍」）。
+ * 目标那一行由纯模块判（{@link batchRedeliver}），这里只管发请求与刷新。
+ */
+async function onRedeliverBatch(group: BatchGroup) {
+  const target = batchRedeliver(group)
+  const summary = group.summary
+  if (!target || !summary || batchRedeliverPending.value) return
+  batchRedeliverPending.value = true
+  try {
+    const done = await api<BatchRedeliverResult>(redeliverBatchPath(summary.id), {
+      method: 'POST',
+      // 与逐条重投同一条口径：到点当成一次失败，界面不停留在 pending
+      signal: AbortSignal.timeout(REDELIVER_TIMEOUT_MS),
+    })
+    ElMessage.success(batchRedeliverDone(target.count, done.runId))
+    // 双刷 + 保住选中态：与逐条重投同一处刷新口径（原批那几行会变成 REDELIVERED）
+    await refreshAfterRedeliver({ step: summary, businessKey: summary.businessKey ?? '' })
+  } catch (e) {
+    ElMessage.error(e instanceof ApiError ? e.message : String(e))
+  } finally {
+    batchRedeliverPending.value = false
+  }
 }
 
 /**

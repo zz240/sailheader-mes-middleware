@@ -14,7 +14,7 @@
  */
 import {
   BATCH_BADGE, SINGLE_NOTE, SUMMARY_MESSAGE_PREFIX, batchGroupAt, batchGroups, batchHead, batchKey,
-  batchRedeliver, isSummaryRow, nodeBatch, normalizeBatchId,
+  batchRedeliver, batchRedeliverDone, isSummaryRow, nodeBatch, normalizeBatchId, redeliverBatchPath,
 } from './batch.ts'
 import type { MessageStep } from '../types.ts'
 
@@ -163,6 +163,11 @@ eq('发送批全成时不铺（没什么可重发的）',
     step({ id: 1, messageId: 'm-1', step: 4, batchId: 'batch-C' }),
     step({ id: 2, messageId: 'm-2', step: 4, batchId: 'batch-C' }),
   ])[0]), null)
+eq('按批重发的接口路径指向**摘要行**那一条（一次点击 = 一次请求）',
+  redeliverBatchPath(77), '/history/batches/77/redeliver')
+eq('重发成功那一句带上条数与新运行',
+  [batchRedeliverDone(2, 31), batchRedeliverDone(2, null)],
+  ['已重发这一批（2 条），新运行 #31', '已重发这一批（2 条）'])
 
 /* ── 7. 归一与计数那两句 ─────────────────────────────────────────── */
 

@@ -141,7 +141,9 @@
             <BatchGroupChips
               v-if="openGroup"
               :group="openGroup"
+              :pending="batchRedeliverPending"
               @select-step="emit('select-step', $event)"
+              @redeliver-batch="emit('redeliver-batch', $event)"
             />
           </div>
 
@@ -211,6 +213,8 @@ const props = defineProps<{
   prevStepRowError: string
   /** 断点重投正在路上（#135）：入口按钮 pending 且不可连点。 */
   redeliverPending?: boolean
+  /** 这一批的**整批重发**正在路上（#142）：发送批组头上那个按钮 pending。 */
+  batchRedeliverPending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -219,6 +223,7 @@ const emit = defineEmits<{
   'retry-step-row': []
   'retry-prev-row': []
   redeliver: []
+  'redeliver-batch': [group: BatchGroup]
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))

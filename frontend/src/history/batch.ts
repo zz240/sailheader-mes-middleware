@@ -201,3 +201,17 @@ export function batchRedeliver(group: BatchGroup | null): BatchRedeliver | null 
   // N 数的是**消息**：摘要行不是一条发出去的消息（它只是这一批的摘要），别把它算进重发条数
   return { count: group.messages, label: `重发这一批（${group.messages} 条）` }
 }
+
+/**
+ * 按批重发的接口路径（#142）：`{id}` 是那一批的**摘要行**消息步 id。
+ *
+ * 一次调用 = 一次请求（整批重发）；合并之前的步骤仍是逐条重投（那是 `redeliver.ts` 那条路）。
+ */
+export function redeliverBatchPath(summaryStepId: number): string {
+  return `/history/batches/${summaryStepId}/redeliver`
+}
+
+/** 按批重发成功后那一句（说的是这一批几条 + 新运行，界面不写死状态文案）。 */
+export function batchRedeliverDone(count: number, runId: number | null): string {
+  return `已重发这一批（${count} 条）${runId == null ? '' : `，新运行 #${runId}`}`
+}

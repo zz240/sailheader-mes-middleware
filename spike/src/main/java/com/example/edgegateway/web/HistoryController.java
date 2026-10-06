@@ -129,6 +129,21 @@ public class HistoryController {
                 "stepId", step.getId());
     }
 
+    /**
+     * **按批重发**（#142 / ADR-0017 决策 7）：一次点击 = 一次请求。
+     *
+     * <p>{@code id} 是那一批的**摘要行**（{@code message_id = batch:<批号>}）的消息步 id——整份请求与
+     * 整份响应都只在它身上（决策 6），所以重发从它取报文；同批每条消息在新运行里各记一行，
+     * 旧的那一批标 {@code REDELIVERED}。</p>
+     */
+    @PostMapping("/batches/{id}/redeliver")
+    public Map<String, Object> redeliverBatch(@PathVariable Long id) {
+        JobRun run = messageHistoryService.redeliverBatch(id);
+        return Map.of(
+                "status", run.getStatus(),
+                "runId", run.getId());
+    }
+
     private int safePage(int page) {
         return Math.max(page, 1);
     }
