@@ -30,7 +30,7 @@
 - 每个动作完成后写入 `context[actionIndex] = 输出`；HTTP 动作的输出就是**解析后的响应**
   （JSON 对象 → `Map`、数组 → `List`、非 JSON → 原样字符串、空响应体 → `null`），
   且出站后链上消息体**保持为本次请求体**（#123 / #126）——想继续往下传响应，就显式引用该动作序号；
-  捕获内容不截断：装不下 `message_step` 快照列时该动作**显式失败**（列容量本身是 #127，见 ADR-0015）；
+  捕获内容不截断：装不下 `message_step` 快照列时该动作**显式失败**（列容量跟着列宽走 = `MEDIUMTEXT` 16 MB，见 ADR-0015 / #141）；
 - `READ_SQL` 的 split 后，每个子 exchange 的 `context[readIndex]` = 该行数据；
 - `SPLIT`（#140）的 split 后，每个子 exchange 的 `context[splitIndex]` = **自己那个元素**（拆之前是整片数组）；
   子消息各有自己的消息标识与业务键，并带父消息标识（谱系）、批内序号与批号（批次，见 ADR-0017）。

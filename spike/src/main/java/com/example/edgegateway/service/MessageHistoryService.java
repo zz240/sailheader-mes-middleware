@@ -483,7 +483,8 @@ public class MessageHistoryService {
             return;
         }
         Map<Long, Long> jobIds = new HashMap<>();
-        // 只要 id 与 jobId 两列：job_run 上还挂着两个 TEXT 快照列，整行读回来纯属白读（#127 那两列）
+        // 只要 id 与 jobId 两列：job_run 上还挂着快照列（`input_snapshot`，MEDIUMTEXT，最大 16 MB）与 error，
+        // 整行读回来纯属白读（#141）
         jobRunMapper.selectList(new LambdaQueryWrapper<JobRun>()
                         .select(JobRun::getId, JobRun::getJobId)
                         .in(JobRun::getId, runIds))

@@ -231,8 +231,8 @@ class MessageHistoryMapperTest {
 
     /**
      * 索引大快照也照样读得动（这一票的**理由**）：60 KB 的快照在 `message_step` 里是允许的
-     * （TEXT 上限 64 KB），而索引那条 SQL 根本不碰那两列。这条用真 SQL 钉住「不取就不会被它拖住」
-     * ——取整行那条路（检索面）在这一列上是要付钱的。
+     * （列是 `MEDIUMTEXT`，单条上限 16 MB，#141），而索引那条 SQL 根本不碰那两列。这条用真 SQL 钉住
+     * 「不取就不会被它拖住」——取整行那条路（检索面）在这一列上是要付钱的。
      */
     @Test
     void runStepIndexIgnoresHugeSnapshots() {

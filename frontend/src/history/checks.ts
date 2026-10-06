@@ -435,7 +435,8 @@ eq('缺开始时刻 / 时刻读不出来时也写破折号',
 // 13. 快照面板的三种降级（#132）：口径全在 `snapshot.ts` —— 什么算非 JSON、什么算空、
 //     多长算超长。组件与真机脚本都从它取，界面里不再各判一遍。
 eq('超长的界线就是那条 MEDIUMTEXT 列的上限（#141）', SNAPSHOT_TEXT_CAP, 16777215)
-eq('界线的人话与那个数同源（说明里写的是它）', SNAPSHOT_CAP_LABEL, '16 MB')
+eq('界线的人话由那个数推出来（说明里写的就是它）',
+  SNAPSHOT_CAP_LABEL, Math.round(SNAPSHOT_TEXT_CAP / 1024 / 1024) + ' MB')
 eq('超长那一档只画前 8 KB 的原文', SNAPSHOT_PREVIEW_CHARS, 8192)
 
 eq('空白当「没落」，不是「空对象」——与步骤链上那两个点同一个口径',

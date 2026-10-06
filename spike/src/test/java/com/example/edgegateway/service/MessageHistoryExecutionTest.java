@@ -599,9 +599,11 @@ class MessageHistoryExecutionTest {
                 action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")));
         stubConsumeDataSource();
 
-        // 300 KB 量级的一条报文（旧列型上这一条会被判 Data too long，动作成功却被记成失败）。
+        // 300 KB 量级的一条报文（旧列型上这一条会被判 Data too long，动作成功却被记成失败；#141 起列是 MEDIUMTEXT）。
         String report = "{\"lines\":[" + "{\"FSeq\":1},".repeat(30_000) + "{\"FSeq\":30000}]}";
-        assertThat(report.length()).as("这条报文比旧列型的上限大").isGreaterThan(65_535);
+        assertThat(report.length()).as("这条报文比旧列型的上限大、又在新列容量之内")
+                .isGreaterThan(65_535)
+                .isLessThan(MessageHistoryService.SNAPSHOT_LIMIT_BYTES);
         httpBody.set(report);
         HttpServer mes = startHttpTarget();
         stubHttpDataSource(2L, mes);

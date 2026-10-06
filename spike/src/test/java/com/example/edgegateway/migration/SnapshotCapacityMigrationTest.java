@@ -41,8 +41,11 @@ class SnapshotCapacityMigrationTest {
     private static final String USER = System.getProperty("edge.test.mysql.user", "root");
     private static final String PASSWORD = System.getProperty("edge.test.mysql.password", "root");
 
-    /** 临时库名（固定：每个用例前重建，跑完删）。**绝不碰 edge_gateway**。 */
-    private static final String SCRATCH = "edge_gateway_snapshot_probe";
+    /**
+     * 临时库名：**每次运行都不一样**（只删自己刚建的那个，既不碰别人的库，也免得并行构建互相踩）。
+     * **绝不碰 edge_gateway**。
+     */
+    private static final String SCRATCH = "edge_gateway_snapshot_probe_" + Long.toHexString(System.nanoTime());
 
     private static final String MIGRATION = "db/migration/V6__snapshot_mediumtext.sql";
 
