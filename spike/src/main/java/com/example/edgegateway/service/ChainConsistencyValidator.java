@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.SplitConfig;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 
@@ -12,11 +13,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 动作链 sourceStep 引用一致性校验（#89）：FIELD_MAP 顶层规则的 {@code sourceStep} 必须指向链中存在的、
- * 序号更早的动作（{@code 0} = 任务输入，恒合法）。
+ * 动作链 sourceStep 引用一致性校验（#89）：FIELD_MAP 顶层规则的 {@code sourceStep} 与拆分动作
+ * （#140）的 {@code sourceStep} 必须指向链中存在的、序号更早的动作（{@code 0} = 任务输入，恒合法）。
  *
- * <p>本类只治 FIELD_MAP.sourceStep（bodySourceStep 的写时校验在 {@code ActionService.checkBodySourceStep}，
- * 链级悬空仍靠运行时显式失败兜底）。同一套规则挂三处：写时（{@link ActionService} 新增/修改 FIELD_MAP → 400）、
+ * <p>本类只治「跨步骤引用的两个来源」——{@code FIELD_MAP} 顶层规则的 {@code sourceStep} 与拆分动作
+ * （#140）的 {@code sourceStep}；{@code bodySourceStep} 的写时校验在
+ * {@code ActionService.checkBodySourceStep}（判据同一份 {@code stepProblem}，链级悬空仍靠运行时
+ * 显式失败兜底）。同一套规则挂三处：写时（{@link ActionService} 新增/修改 FIELD_MAP 或拆分 → 400）、
  * {@code POST /api/jobs/{id}/validate}（{@link JobValidationService} → errors）、
  * 路由启用/重建前（{@link RouteRegistry} → 抛错并交由 {@link RouteLifecycle} 自动停用），
  * 覆盖写时管不到的两类：删除被引用动作留下的悬空引用、动作重排造成的错位。</p>
@@ -48,7 +51,17 @@ public final class ChainConsistencyValidator {
         }
         List<String> problems = new ArrayList<>();
         for (Action action : actions) {
-            if (action.getType() != ActionKind.FIELD_MAP || action.getActionIndex() == null) {
+            if (action.getActionIndex() == null) {
+                continue;
+            }
+            if (action.getType() == ActionKind.SPLIT) {
+                String problem = checkSplitSourceStep(action, indexes);
+                if (problem != null) {
+                    problems.add(problem);
+                }
+                continue;
+            }
+            if (action.getType() != ActionKind.FIELD_MAP) {
                 continue;
             }
             List<FieldMappingRule> rules;
@@ -73,6 +86,55 @@ public final class ChainConsistencyValidator {
     }
 
     /**
+     * 拆分的来源步骤（#140）：{@code sourceStep} 可空（空 = 取当前消息体），填了就必须指向链中**存在且
+     * 序号更早**的动作——与 FIELD_MAP 的 sourceStep 同一条口径、同一批闸口。
+     *
+     * <p>为什么不能省这道校验：拆分的来源指错时，运行期那一步会「取不到数据」当场失败，
+     * 但那是**跑起来才知道**；配置期拦下来才符合既有那套（写时 400 / {@code /validate} / 启用前）。</p>
+     *
+     * @return 一条问题描述（定位已拼好），没有问题时 {@code null}
+     */
+    private static String checkSplitSourceStep(Action action, Set<Integer> indexes) {
+        SplitConfig split;
+        try {
+            split = SplitConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
+        } catch (RuntimeException e) {
+            // 与字段映射那一档同一处理：存量脏配置报成问题，不抛出去（否则 /validate 500）
+            return location(action) + " 拆分配置无法解析: " + e.getMessage();
+        }
+        Integer step = split.sourceStep();
+        if (step == null) {
+            return null; // 未声明 = 拆当前消息体，链上引用无从谈起
+        }
+        String problem = stepProblem("sourceStep", step, action.getActionIndex(), indexes);
+        return problem == null ? null : location(action) + " 的 " + problem;
+    }
+
+    /**
+     * 一条跨步骤引用的问题描述（不含定位）——**一处判据**：三个消费方（字段映射的规则、拆分的
+     * {@code sourceStep}、以及写时那条 {@code bodySourceStep}）问的是同一个问题「这一步能不能指向那一步」，
+     * 两个判据与两句文案因此只写在这一处，不各写一遍。
+     *
+     * @param field                这个问题挂在哪个配置字段上（进错误文案，如 {@code sourceStep} / {@code bodySourceStep}）
+     * @param step                 被引用的动作序号
+     * @param actionIndex          发起引用的那个动作的序号；只知道「哪些更早」而不知道自己的序号时给 null
+     * @param earlierActionIndexes 链上存在的动作序号（用来判悬空；{@code 0} = 任务输入恒合法）
+     * @return 问题描述，没有问题（或未声明引用）时 {@code null}
+     */
+    static String stepProblem(String field, Integer step, Integer actionIndex, Set<Integer> earlierActionIndexes) {
+        if (step == null) {
+            return null; // 未声明引用：字段映射当任务输入（0）、拆分当当前消息体，都恒合法
+        }
+        if (actionIndex != null && step >= actionIndex) {
+            return field + "=" + step + " 必须指向执行顺序更早的动作（当前序号 " + actionIndex + "）";
+        }
+        if (step != JOB_INPUT_STEP && !earlierActionIndexes.contains(step)) {
+            return field + "=" + step + " 在动作链中不存在，请填上游动作序号";
+        }
+        return null;
+    }
+
+    /**
      * 一份规则表的 sourceStep 检查——链级校验（上面那个 {@link #check(List)}）与「校验配置」的草稿校验
      * （#103）共用这一份，不各写一遍。
      *
@@ -86,16 +148,9 @@ public final class ChainConsistencyValidator {
         }
         List<SourceStepProblem> problems = new ArrayList<>();
         for (FieldMappingRule rule : rules) {
-            Integer step = rule.sourceStep();
-            if (step == null) {
-                continue; // 未声明 = 任务输入（0），恒合法（「漏写」这条提示由草稿校验另出，#103）
-            }
-            if (actionIndex != null && step >= actionIndex) {
-                problems.add(new SourceStepProblem(rule, "sourceStep=" + step
-                        + " 必须指向执行顺序更早的动作（当前序号 " + actionIndex + "）"));
-            } else if (step != JOB_INPUT_STEP && !earlierActionIndexes.contains(step)) {
-                problems.add(new SourceStepProblem(rule, "sourceStep=" + step
-                        + " 在动作链中不存在，请填上游动作序号"));
+            String problem = stepProblem("sourceStep", rule.sourceStep(), actionIndex, earlierActionIndexes);
+            if (problem != null) {
+                problems.add(new SourceStepProblem(rule, problem));
             }
         }
         return problems;

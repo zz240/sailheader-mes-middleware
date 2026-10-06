@@ -185,8 +185,10 @@ public class ActionService {
         if (request.type() == ActionKind.MQ_PUBLISH) {
             checkBodySourceStep(request, existing);
         }
-        if (request.type() == ActionKind.FIELD_MAP) {
-            checkMappingSourceSteps(jobId, request, existing);
+        // 跨步骤引用写时就拦：字段映射的 rules.sourceStep 与拆分的 sourceStep 走同一份链一致性校验
+        // （#89 / #140），报 400 而不是等到跑起来才「取不到数据」
+        if (request.type() == ActionKind.FIELD_MAP || request.type() == ActionKind.SPLIT) {
+            checkCrossStepReferences(jobId, request, existing);
         }
         // 包含当前请求：新增时 +1，更新时按自身种类替换
         long mqConsume = existing.stream().filter(a -> a.getType() == ActionKind.MQ_CONSUME).count();
@@ -206,27 +208,29 @@ public class ActionService {
         }
     }
 
-    /** bodySourceStep 必填且必须指向链中存在的、序号更早的动作（显式声明"发哪一步的输出"，防静默发错）。 */
+    /**
+     * {@code bodySourceStep} 必填且必须指向链中存在的、序号更早的动作（显式声明"发哪一步的输出"，防静默发错）。
+     *
+     * <p>判据与另外两处共用 {@link ChainConsistencyValidator#stepProblem}：三个消费方问的是同一个问题
+     * 「这一步能不能指向那一步」。</p>
+     */
     private void checkBodySourceStep(ActionRequest request, List<Action> existing) {
-        Map<String, Object> addition = request.addition().toMap();
-        Object rawStep = addition.get("bodySourceStep");
+        Object rawStep = request.addition().toMap().get("bodySourceStep");
         int bodyStep = rawStep == null ? 0 : Integer.parseInt(rawStep.toString());
-        if (request.index() != null && bodyStep >= request.index()) {
-            throw new IllegalArgumentException(
-                    "bodySourceStep=" + bodyStep + " 必须指向执行顺序更早的动作（当前序号 " + request.index() + "）");
-        }
         Set<Integer> indexes = existing.stream().map(Action::getActionIndex).collect(Collectors.toSet());
         if (request.index() != null) {
             indexes.add(request.index());
         }
-        if (!indexes.contains(bodyStep)) {
-            throw new IllegalArgumentException(
-                    "bodySourceStep=" + bodyStep + " 在动作链中不存在，请填上游动作序号（如 FIELD_MAP）");
+        // 任务输入（0）不在动作表里，但恒可引用
+        indexes.add(0);
+        String problem = ChainConsistencyValidator.stepProblem("bodySourceStep", bodyStep, request.index(), indexes);
+        if (problem != null) {
+            throw new IllegalArgumentException(problem);
         }
     }
 
-    /** FIELD_MAP 规则的 sourceStep 必须指向链中存在的、序号更早的动作（#89 T1）。 */
-    private void checkMappingSourceSteps(Long jobId, ActionRequest request, List<Action> existing) {
+    /** FIELD_MAP 规则的 sourceStep / 拆分的 sourceStep 必须指向链中存在的、序号更早的动作（#89 / #140）。 */
+    private void checkCrossStepReferences(Long jobId, ActionRequest request, List<Action> existing) {
         List<Action> candidate = new ArrayList<>(existing);
         candidate.add(toAction(jobId, request));
         List<String> problems = ChainConsistencyValidator.check(candidate);

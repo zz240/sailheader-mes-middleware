@@ -4,6 +4,7 @@ import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.MqConsumeConfig;
 import com.example.edgegateway.config.MqPublishConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
+import com.example.edgegateway.config.SplitConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
@@ -512,6 +513,62 @@ class ActionServiceTest {
         Action saved = service.add(1L, mapRequest(1, 0));
 
         assertThat(saved.getType()).isEqualTo(ActionKind.FIELD_MAP);
+    }
+
+    // ---------- 拆分动作来源步骤的写时校验（#140，与字段映射同一条闸口） ----------
+
+    private ActionRequest splitRequest(Integer index, Integer sourceStep) {
+        Map<String, Object> addition = new java.util.LinkedHashMap<>();
+        if (sourceStep != null) {
+            addition.put("sourceStep", sourceStep);
+        }
+        addition.put("sourcePath", "lines");
+        addition.put("elementKey", "itemCode");
+        return new ActionRequest("拆明细", ActionKind.SPLIT, index, SplitConfig.from(addition));
+    }
+
+    @Test
+    void rejectsSplitSourceStepNotInChain() {
+        jobExists();
+
+        assertThatThrownBy(() -> service.add(1L, splitRequest(2, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=1")
+                .hasMessageContaining("不存在");
+    }
+
+    @Test
+    void rejectsSplitSourceStepNotEarlier() {
+        jobExists();
+
+        assertThatThrownBy(() -> service.add(1L, splitRequest(2, 2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceStep=2")
+                .hasMessageContaining("执行顺序更早");
+    }
+
+    @Test
+    void addsSplitWithEarlierSourceStep() {
+        jobExists();
+        when(actionMapper.selectList(any())).thenReturn(List.of(existingAction(1, ActionKind.READ_SQL)));
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+
+        Action saved = service.add(1L, splitRequest(2, 1));
+
+        assertThat(saved.getType()).isEqualTo(ActionKind.SPLIT);
+    }
+
+    @Test
+    void addsSplitWithoutSourceStepBecauseItSplitsTheCurrentBody() {
+        jobExists();
+        when(actionMapper.selectCount(any())).thenReturn(0L);
+        when(actionMapper.insert(any(Action.class))).thenReturn(1);
+
+        Action saved = service.add(1L, splitRequest(1, null));
+
+        assertThat(saved.getType()).isEqualTo(ActionKind.SPLIT);
+        assertThat(saved.getAddition()).doesNotContainKey("sourceStep");
     }
 
     // ---------- 动作变更后自动重建路由 ----------

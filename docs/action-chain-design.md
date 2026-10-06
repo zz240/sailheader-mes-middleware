@@ -15,6 +15,7 @@
 | `WRITE_UPSERT` | MySQL 幂等 upsert | 任意 | 数据源 + tableName + idempotencyKey |
 | `HTTP_CALL` | 调 HTTP 接口 | 任意 | 数据源（根地址）+ path + method + 鉴权 |
 | `MQ_PUBLISH` | 发 MQ 消息 | 任意 | 数据源（broker）+ queue/exchange + routingKey + bodySourceStep（必填） |
+| `SPLIT` | 拆分：一条消息里的数组摊成 N 条子消息（1 → N，基数变化） | 任意 | sourceStep（可空：空 = 拆当前消息体）+ sourcePath（可空：空 = 来源本身就是数组）+ elementKey（必填：子消息的业务键取自元素里的哪个字段）+ keepParent（缺省 true：外层字段是否摊平进子消息） |
 
 设计要点：
 
@@ -31,6 +32,9 @@
   且出站后链上消息体**保持为本次请求体**（#123 / #126）——想继续往下传响应，就显式引用该动作序号；
   捕获内容不截断：装不下 `message_step` 快照列时该动作**显式失败**（列容量本身是 #127，见 ADR-0015）；
 - `READ_SQL` 的 split 后，每个子 exchange 的 `context[readIndex]` = 该行数据；
+- `SPLIT`（#140）的 split 后，每个子 exchange 的 `context[splitIndex]` = **自己那个元素**（拆之前是整片数组）；
+  子消息各有自己的消息标识与业务键，并带父消息标识（谱系）、批内序号与批号（批次，见 ADR-0017）。
+  来源解析不出来（步骤被跳过 / 路径断了 / 取到的不是数组）时该步**显式失败**，不静默拆出 0 条；
 - 字段映射规则引用改为结构化 `sourceStep + sourcePath`（不再拼接路径字符串），`sourceStep` 默认等于"前一个动作的序号"（迁移时按原链推断）；
 - `MQ_PUBLISH` 的请求体来源 = `bodySourceStep`（**必填**，显式指向链中存在的更早动作，校验期检查；发布时该步无输出——如被断点跳过——则执行失败，不静默发旧值）；`HTTP_CALL` 直接使用当前 body（上一步输出）；
 - 重排/删除动作后，依赖规则的 `sourceStep` 由**校验期报警**兜底（#89）：写时（`ActionService` 新增/修改 FIELD_MAP → 400）、`/validate`（errors 阻断启用）、路由启用/重建/启动重载前（`RouteRegistry.enable` 闸口 → 失败经 `RouteLifecycle` 自动停用 + 摘除路由/调度 + 写 `job.lastError`）三处共用 `ChainConsistencyValidator`，要求 sourceStep 指向链中**存在且序号更早**的动作（`0` = 任务输入）；前端联动改写为可选后续（T2' 引用清单）。

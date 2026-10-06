@@ -191,6 +191,25 @@
           <el-form-item label="业务键路径"><el-input v-model="kindForm.businessKey" placeholder="如 data.orderNo（按业务分组/检索）" /></el-form-item>
         </template>
 
+        <template v-if="actionForm.type === 'SPLIT'">
+          <el-form-item label="来源步骤">
+            <el-input-number v-model="kindForm.sourceStep" :min="0"
+              placeholder="留空 = 拆当前消息体；填了则取该步骤的输出" />
+          </el-form-item>
+          <el-form-item label="来源路径">
+            <el-input v-model="kindForm.sourcePath" placeholder="留空 = 来源本身就得是数组；如 lines / data.items" />
+          </el-form-item>
+          <el-form-item label="元素键">
+            <el-input v-model="kindForm.elementKey" placeholder="必填：子消息的业务键取自元素里的哪个字段，如 itemCode" />
+          </el-form-item>
+          <el-form-item label="保留外层字段">
+            <el-switch v-model="kindForm.keepParent" />
+            <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
+              父消息的字段是否摊平进子消息（只影响子消息内容，不影响谱系）
+            </span>
+          </el-form-item>
+        </template>
+
         <template v-if="actionForm.type === 'MQ_PUBLISH'">
           <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="如 edge.notify（需绑定目标队列）" /></el-form-item>
           <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="缺省=queue" /></el-form-item>
@@ -264,7 +283,7 @@ import { api, ApiError } from '../api/client'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
-const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP']
+const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP', 'SPLIT']
 
 const jobs = ref<Job[]>([])
 const sites = ref<SiteInfo[]>([])
@@ -364,7 +383,8 @@ async function onWorkbenchSaved(config: Record<string, any>) {
   }
 }
 
-const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP')
+/** 拆分与字段映射在链上干活，不引用数据源；其余动作都要选一个。 */
+const kindNeedsDataSource = computed(() => actionForm.type !== 'FIELD_MAP' && actionForm.type !== 'SPLIT')
 
 const filteredDataSources = computed(() => {
   const typeFilter: Record<string, string[]> = {
@@ -496,6 +516,9 @@ function resetKindFields() {
   kindForm.dataSourceId = filteredDataSources.value[0]?.id
   // MQ_CONSUME exchange 类型缺省 direct（ADR-0010）；切换类型时重置回缺省
   if (actionForm.type === 'MQ_CONSUME') kindForm.exchangeType = 'direct'
+  // 拆分缺省摊平外层字段（与后端 SplitConfig 的缺省一致）：开关一进来就是"开"，
+  // 别让用户以为关着——后端在字段缺失时也是 true
+  if (actionForm.type === 'SPLIT') kindForm.keepParent = true
 }
 
 function openActionCreate() {

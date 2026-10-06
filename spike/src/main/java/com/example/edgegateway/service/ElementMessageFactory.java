@@ -72,6 +72,22 @@ public final class ElementMessageFactory {
         }
     }
 
+    /**
+     * 一个拆分元素 → 一条子消息（#140）：**取 {@link ElementSpec#split} 那一档**——父消息标识、外层
+     * 字段继承、批内序号三样都要，序号按元素在数组里的位置从 1 起。
+     *
+     * <p>它单独有个入口，是为了让调用方（路由生成器）不必自己拼 {@link ElementSpec}：
+     * 「拆出来的子消息要编号」这件事是拆分这一档的固有语义，谁调用都不该漏（漏了就是
+     * {@code batch_seq} 全空、右详情里那批 chip 没有序号）。</p>
+     *
+     * @param position 元素在数组里的位置（**从 1 起**）
+     */
+    public static InitializedMessage splitChild(Object element, String elementKeyConfig, String parentMessageId,
+                                                Object parentBody, boolean keepParentFields, int position) {
+        return initialize(element,
+                ElementSpec.split(elementKeyConfig, parentMessageId, parentBody, keepParentFields), position);
+    }
+
     /** 现生成一个批号：每一次基数变化动作执行生成一个；读库那档每读一批一个（#139 / ADR-0017 决策 2）。 */
     public static String newBatchId() {
         return UUID.randomUUID().toString();
@@ -95,6 +111,32 @@ public final class ElementMessageFactory {
     }
 
     /**
+     * 按点分路径取值，**路径遍历只此一处**：{@link #businessKey}（元素 → 业务键）与路由生成器
+     * 解析拆分来源（{@code sourcePath}）问的是同一件事，写法不该有两份。
+     *
+     * <p>段先当 Map 的键；纯数字段在 List 上当下标（{@code lines.0.code} 这种——只有来源路径用得上，
+     * 业务键只认纯名字段）。走不通（中间不是 Map/List、下标越界、键不存在）回 {@code null}，
+     * 不抛：取不到就是取不到，由调用方决定怎么说这句话。</p>
+     */
+    public static Object valueAt(Object data, String path) {
+        if (path == null || path.isBlank()) {
+            return data;
+        }
+        Object value = data;
+        for (String part : path.split("\\.")) {
+            if (value instanceof Map<?, ?> map) {
+                value = map.get(part);
+            } else if (value instanceof List<?> list && part.matches("\\d+")) {
+                int index = Integer.parseInt(part);
+                value = index < list.size() ? list.get(index) : null;
+            } else {
+                return null;
+            }
+        }
+        return value;
+    }
+
+    /**
      * 从消息数据里提业务键：支持点分 JSON 路径与单段列名。
      *
      * <p>它是「元素 → 消息」这一步算出来的（原先在 {@code MessageHistoryService} 上），所以住在这里；
@@ -104,15 +146,7 @@ public final class ElementMessageFactory {
         if (config == null || config.isBlank()) {
             return null;
         }
-        Object value = data;
-        for (String part : config.split("\\.")) {
-            if (value instanceof Map<?, ?> map) {
-                value = map.get(part);
-            } else {
-                value = null;
-                break;
-            }
-        }
+        Object value = valueAt(data, config);
         return value == null ? null : String.valueOf(value);
     }
 

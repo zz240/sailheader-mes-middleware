@@ -114,4 +114,72 @@ class ChainConsistencyValidatorTest {
                 .contains("动作 2（field_map）")
                 .contains("无法解析");
     }
+
+    // ---------- 拆分动作的来源步骤（#140） ----------
+
+    private Map<String, Object> split(Integer sourceStep, String elementKey) {
+        Map<String, Object> addition = new LinkedHashMap<>();
+        if (sourceStep != null) {
+            addition.put("sourceStep", sourceStep);
+        }
+        addition.put("sourcePath", "lines");
+        addition.put("elementKey", elementKey);
+        return addition;
+    }
+
+    @Test
+    void passesSplitSourceStepPointingAtAnEarlierAction() {
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.READ_SQL, Map.of()),
+                action(2, ActionKind.SPLIT, split(1, "itemCode"))));
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void splitWithoutSourceStepIsFineBecauseItSplitsTheCurrentBody() {
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of()),
+                action(2, ActionKind.SPLIT, split(null, "itemCode"))));
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void reportsSplitSourceStepPointingAtItselfOrLater() {
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.READ_SQL, Map.of()),
+                action(2, ActionKind.SPLIT, split(2, "itemCode"))));
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.getFirst())
+                .contains("动作 2（split）")
+                .contains("sourceStep=2")
+                .contains("更早");
+    }
+
+    @Test
+    void reportsSplitSourceStepThatNoLongerExists() {
+        // 被引用的那个动作已删（或重排后序号变了）：链级校验要拦下来，不能等跑起来才炸
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.READ_SQL, Map.of()),
+                action(3, ActionKind.SPLIT, split(2, "itemCode"))));
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.getFirst())
+                .contains("动作 3（split）")
+                .contains("sourceStep=2")
+                .contains("不存在");
+    }
+
+    @Test
+    void reportsUnparseableSplitConfigInsteadOfThrowing() {
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(2, ActionKind.SPLIT, Map.of("sourceStep", "abc", "elementKey", "itemCode"))));
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.getFirst())
+                .contains("动作 2（split）")
+                .contains("无法解析");
+    }
 }
