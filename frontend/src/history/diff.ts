@@ -15,7 +15,7 @@
  * **连弱处一起接受**（票面明说）：数组中间插入或删除会让后续下标全判成「改」——本期不做 LCS /
  * 键对齐的语义 diff。这是**叶子路径级**对照，不是语义级，界面上的口径说明照这句写。
  */
-import { readSnapshot, type SnapshotValue } from './snapshot.ts'
+import { SNAPSHOT_CAP_LABEL, readSnapshot, type SnapshotValue } from './snapshot.ts'
 import type { MessageStep } from '../types.ts'
 
 /* ── 一个判决 ─────────────────────────────────────────────────────── */
@@ -197,7 +197,7 @@ function usable(read: ReturnType<typeof readSnapshot>): boolean {
 function reasonOf(read: ReturnType<typeof readSnapshot>): string {
   if (read.kind === 'missing') return '没有数据快照：失败步、被跳步与运行中的步骤都不写快照，MQ 入口动作也不记成功步快照'
   if (read.kind === 'text') return '的数据快照不是 JSON 文本，没有键路径可对照'
-  if (read.kind === 'oversized') return `的数据快照超过 64 KB 的列上限（#127），这里只画了前一段，对照不了`
+  if (read.kind === 'oversized') return `的数据快照超过 ${SNAPSHOT_CAP_LABEL} 的列上限（#141），这里只画了前一段，对照不了`
   return ''
 }
 

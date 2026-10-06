@@ -356,7 +356,7 @@
         <span>·</span>
         <span>失败即停、重试退避、从失败步断点续跑<code>ADR-0003</code></span>
         <span>·</span>
-        <span>快照以 <code>message_step</code> 的 TEXT 列存储，上限 64 KB<code>#127</code></span>
+        <span>快照以 <code>message_step</code> 的 MEDIUMTEXT 列存储，上限 16 MB<code>#141</code></span>
       </p>
     </div>
     <div class="counts" aria-label="当前数据集计数">
@@ -448,7 +448,7 @@
 (function () {
   'use strict';
 
-  var CAP = 65535; /* message_step.data_snapshot / input_snapshot：TEXT，65535 字节（#127） */
+  var CAP = 16777215; /* message_step.data_snapshot / input_snapshot：MEDIUMTEXT，16777215 字节 = 16 MB（#141） */
 
   /* ── 演示数据：取自本仓可靠性流与 #90 / #108 / #123 的记录场景 ── */
   var RUNS = [
@@ -984,7 +984,7 @@
     var b = bytesOf(payload), pct = Math.min(100, (b / CAP) * 100);
     var keys = text ? 0 : (isCont(raw) ? Object.keys(raw).length : 1);
     return '<div class="meter"><span class="meter-bar"><i class="' + (pct > 50 ? 'hot' : '') + '" style="width:' + Math.max(2, pct) + '%"></i></span>'
-      + '<span class="meter-txt">' + (text ? '文本' : keys + (isArr(raw) ? ' 项' : ' 键')) + ' · ' + fmtBytes(b) + ' / 上限 64 KB</span></div>';
+      + '<span class="meter-txt">' + (text ? '文本' : keys + (isArr(raw) ? ' 项' : ' 键')) + ' · ' + fmtBytes(b) + ' / 上限 16 MB</span></div>';
   }
 
   function rawTextHTML(text, which) {

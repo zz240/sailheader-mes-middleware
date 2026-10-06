@@ -436,7 +436,7 @@ class MessageHistoryServiceTest {
     /**
      * #123 口径 4：捕获内容（HTTP 响应，大小由目标端决定）装不下快照列时**显式失败**，不写半截 JSON——
      * 写半截的话，断点续投会拿着一个语法都不完整的上游快照去重建 context，报出来的错离现场十万八千里。
-     * 列容量本身归 #127。
+     * 界线本身跟着列宽走（#141 起是 MEDIUMTEXT 的 16 MB），这里只用常量，不重复写数。
      */
     @Test
     void oversizedCaptureFailsExplicitlyInsteadOfWritingHalfSnapshot() {
@@ -457,7 +457,7 @@ class MessageHistoryServiceTest {
 
     /**
      * 这道闸只给捕获内容：其余动作的快照行为一概不变（超容量时照旧写库报 Data too long、动作失败）。
-     * 把列本身改大、或让这些也显式失败，都归 #127，不在本票内。
+     * 让这些也显式失败不在 #141 内（本票只抬列宽：TEXT → MEDIUMTEXT）。
      */
     @Test
     void otherActionSnapshotsKeepTheirOldBehaviour() {

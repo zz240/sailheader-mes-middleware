@@ -67,7 +67,7 @@ export interface MessageStep {
   status: string
   /**
    * 两个快照原文。**只有「列表」与「详情」两条路带它们**（`/history/steps`、`/history/steps/{id}`）；
-   * 右详情走的是索引那条路（`/history/runs/{id}/steps`，见下），那条**不取这两列**（TEXT，单条上限 64 KB）。
+   * 右详情走的是索引那条路（`/history/runs/{id}/steps`，见下），那条**不取这两列**（MEDIUMTEXT，单条上限 16 MB）。
    */
   dataSnapshot?: string | null
   inputSnapshot?: string | null

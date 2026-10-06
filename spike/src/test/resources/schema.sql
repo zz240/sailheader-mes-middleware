@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS job_run (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     job_id BIGINT NOT NULL,
     status VARCHAR(16) NOT NULL,
-    input_snapshot TEXT,
+    -- V6__snapshot_mediumtext.sql：承载报文的三列提到 MEDIUMTEXT（#141，16 MB 上限）
+    input_snapshot MEDIUMTEXT,
     error TEXT,
     started_at TIMESTAMP,
     finished_at TIMESTAMP
@@ -78,8 +79,9 @@ CREATE TABLE IF NOT EXISTS message_step (
     step INT NOT NULL,
     action_name VARCHAR(255),
     status VARCHAR(16) NOT NULL,
-    data_snapshot TEXT,
-    input_snapshot TEXT,
+    -- V6__snapshot_mediumtext.sql：承载报文的三列提到 MEDIUMTEXT（#141，16 MB 上限）
+    data_snapshot MEDIUMTEXT,
+    input_snapshot MEDIUMTEXT,
     error TEXT,
     created_at TIMESTAMP,
     attempt INT NOT NULL DEFAULT 1,

@@ -249,7 +249,7 @@
         <span>
           <b>输入快照</b>＝进入本步时的报文 / 上下文；<b>数据快照</b>＝本步输出，写入
           <code>context[本步序号]</code>，下游用 <code>sourceStep</code> 引用。
-          两份都是 <code>message_step</code> 的 TEXT 列（上限 64 KB，<code>#127</code>）。
+          两份都是 <code>message_step</code> 的 MEDIUMTEXT 列（上限 16 MB，<code>#141</code>）。
         </span>
       </div>
     </div>

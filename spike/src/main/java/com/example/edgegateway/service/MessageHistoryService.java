@@ -82,10 +82,17 @@ public class MessageHistoryService {
     public static final String REDELIVERED = "REDELIVERED";
 
     /**
-     * 消息步快照列（{@code data_snapshot} / {@code input_snapshot}，TEXT）的字节上限。
-     * 超过它的快照按失败处理而不是截断（#123 口径 4）；把列本身改大是 #127。
+     * 消息步快照列（{@code data_snapshot} / {@code input_snapshot}）的字节上限：**{@code MEDIUMTEXT} 的
+     * 16777215 字节（16 MB）**。
+     *
+     * <p>与列宽**同一个数**是有意的（#141）：它跟着
+     * {@code db/migration/V6__snapshot_mediumtext.sql} 走——迁移把承载报文的三列提到 {@code MEDIUMTEXT}，
+     * 这里就写 {@code MEDIUMTEXT} 的上限。只有列型再变时才动这个数，**别单独调它**（调了就是三处各说各话：
+     * 代码、产品 schema、迁移）。</p>
+     *
+     * <p>超过它的快照按失败处理而不是截断（#123 口径 4）。放宽这道界线本身是 #141（原 #127）。</p>
      */
-    static final int SNAPSHOT_LIMIT_BYTES = 65_535;
+    static final int SNAPSHOT_LIMIT_BYTES = 16_777_215;
 
     private final JobRunMapper jobRunMapper;
     private final MessageStepMapper messageStepMapper;
@@ -205,7 +212,8 @@ public class MessageHistoryService {
      * 重建 context，报出来的错离现场十万八千里。
      *
      * <p>只给捕获路径调用。其余动作的快照行为一概不变（本地自己的数据，超容量时照旧由写库报
-     * {@code Data too long}、动作失败）：换更可读的说法、放宽这里的容量，都归 #127。</p>
+     * {@code Data too long}、动作失败）——这道闸的**行为**没变，变的只是界线：列提到 {@code MEDIUMTEXT}
+     * 之后 {@link #SNAPSHOT_LIMIT_BYTES} 跟着抬到 16 MB（#141）。</p>
      */
     void requireCaptureFitsSnapshot(Integer step, Object captured) {
         String json = toJson(captured);
@@ -215,7 +223,7 @@ public class MessageHistoryService {
         int bytes = json.getBytes(StandardCharsets.UTF_8).length;
         if (bytes > SNAPSHOT_LIMIT_BYTES) {
             throw new SnapshotTooLargeException("消息步 " + step + " 的 data_snapshot 有 " + bytes
-                    + " 字节，超过快照列容量 " + SNAPSHOT_LIMIT_BYTES + " 字节：按失败处理，不写半截（#123 / #127）");
+                    + " 字节，超过快照列容量 " + SNAPSHOT_LIMIT_BYTES + " 字节：按失败处理，不写半截（#123 / #141）");
         }
     }
 

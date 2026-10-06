@@ -11,12 +11,19 @@ import type { MessageStep } from '../types'
 /* ── 三种降级的界线 ───────────────────────────────────────────────── */
 
 /**
- * 超长的界线：`message_step` 那条 TEXT 列的上限（65535 字节，#127）。
+ * 超长的界线：`message_step` 那条 MEDIUMTEXT 列的上限（16777215 字节 = 16 MB，#141）。
  *
  * 与列上限**同一个数**是有意的：正常链路写进来的快照永远进不了超长那一档，它是留给
  * 「别的东西写进去的 / 列被改宽之后」的护栏——也就是「页面不卡死」这句话的兜底。
+ *
+ * 这里数的是**字符**（`String.length`）而列上限数的是**字节**：快照能落库就说明它没超列的字节上限，
+ * 于是这一档只剩「页面渲染得动吗」这一个问题——按字符数拦更省事也够用（中文最多差 3 倍，
+ * 16 MB 的护栏留得起这点余量）。列型再变时这个数跟着变（#141 起它是 MEDIUMTEXT 的上限）。
  */
-export const SNAPSHOT_TEXT_CAP = 65535
+export const SNAPSHOT_TEXT_CAP = 16_777_215
+
+/** 上面那个数写在人话里的样子（超长那一档的说明要用它，只在这一处写）。 */
+export const SNAPSHOT_CAP_LABEL = '16 MB'
 
 /**
  * 超长那一档实际画多少字符（8 KB）。
@@ -136,7 +143,7 @@ function emptyNote(label: string): string {
  * 读一份快照原文，判它落在哪一档。
  *
  * 四步，顺序不能换：**空白**（没落）→ **超长**（不解析，直接截断）→ **JSON.parse**（失败即非 JSON 文本）
- * → **空容器**。超长排在最前是有意的：解析一份 64 KB 以上的文本本身就是这一档要防的事。
+ * → **空容器**。超长排在最前是有意的：解析一份 16 MB 级的文本本身就是这一档要防的事。
  */
 export function readSnapshot(raw?: string | null): SnapshotRead {
   const text = raw ?? ''
@@ -150,7 +157,7 @@ export function readSnapshot(raw?: string | null): SnapshotRead {
       text: text.slice(0, SNAPSHOT_PREVIEW_CHARS),
       value: undefined,
       emptyLabel: '',
-      note: `超长快照：共 ${text.length} 字符，超过 64 KB 的列上限（#127）`
+      note: `超长快照：共 ${text.length} 字符，超过 ${SNAPSHOT_CAP_LABEL} 的列上限（#141）`
         + `——这里只画前 ${SNAPSHOT_PREVIEW_CHARS} 字符。`,
     }
   }

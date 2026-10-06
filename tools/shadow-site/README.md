@@ -141,10 +141,12 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/jobs/<A7BIG id>/e
 所以 `JsonataFunctions.parseJson()` 是新加的（签名 `<j:j>`；已经是 Map/List 就原样返回；坏 JSON 抛错不静默），
 配 5 个单测（`JsonataParseFunctionTest`）。**没有它，「一单多行 → 一条报文」这个形状根本编不出来。**
 
-> **踩到的硬限制（已开票 #127）**：`message_step.data_snapshot/input_snapshot` 与 `job_run.input_snapshot`
+> **踩到的硬限制（#127，已由 #141 修）**：`message_step.data_snapshot/input_snapshot` 与 `job_run.input_snapshot`
 > 是 MySQL `TEXT`（64 KB）。3000 行那份（382 KB）第一次跑直接 FAILED：
 > `Data truncation: Data too long for column 'data_snapshot'`——**已执行成功的动作被记成失败**，目标端也收不到。
-> 本轮把三列临时改成 `MEDIUMTEXT` 才跑通；产品侧应走迁移（票里给了 A/B/C 三个方向）。
+> 本轮为了跑通把三列手工改成 `MEDIUMTEXT`（就是上面这条记录）；**产品侧现在走迁移**
+> `V6__snapshot_mediumtext.sql`（三列提到 `MEDIUMTEXT` = 16 MB，幂等），
+> 新站点按迁移建库就是对的列型，**不再需要任何手工操作**；已经手工改宽过的库上执行是 no-op。
 
 **这条形状与展平那条的取舍**：整份报文把 3240 行压成 3 条消息（网络/请求数少、报文完整），代价是重试放大
 （一份 344 KB 失败就整份重推）与水位粒度只能到报告级；展平那条是一行一条消息（重试精确到行、水位到行），代价是消息数多。

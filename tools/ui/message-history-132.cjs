@@ -482,16 +482,16 @@ async function main() {
     await page.waitForTimeout(250)
     await page.screenshot({ path: path.join(shots, 'history-132-degrade-text-empty.png') })
 
-    // ③ 超长：> 64 KB（列上限，见 #127）
+    // ③ 超长：> 16 MB（列上限 = MEDIUMTEXT，见 #141）
     patch = null
     await clickNode(page, other)
-    patch = { input: 'x'.repeat(65536), data: '{"codes":[]}' }
+    patch = { input: 'x'.repeat(16777216), data: '{"codes":[]}' }
     await clickNode(page, si)
     const hugeRaw = await rawOf(page, 'input').innerText()
     const hugeNote = await degradeNoteOf(page, 'input').innerText()
     check('降级③超长：只画前 8 KB（页面因此不会卡死）', hugeRaw.length === 8192, String(hugeRaw.length))
     check('降级③注明共多少字符、截到多少',
-      hugeNote.includes('超长快照') && hugeNote.includes('共 65536 字符') && hugeNote.includes('只画前 8192 字符'),
+      hugeNote.includes('超长快照') && hugeNote.includes('共 16777216 字符') && hugeNote.includes('只画前 8192 字符'),
       hugeNote)
     await page.screenshot({ path: path.join(shots, 'history-132-degrade-huge.png') })
 

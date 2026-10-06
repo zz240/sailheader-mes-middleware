@@ -32,8 +32,9 @@ import {
   DEFAULT_MODE, RUN_STATUSES, RUN_STEPS_PAGE, STATUS_ANY, STATUS_BAD, STATUS_OK, STATUS_WARN,
 } from './console.ts'
 import {
-  DEFAULT_SNAPSHOT_DEPTH, LONG_VALUE_CHARS, SNAPSHOT_DEPTHS, SNAPSHOT_DEEP_ALL, SNAPSHOT_PREVIEW_CHARS,
-  SNAPSHOT_TEXT_CAP, deepOf, filterSnapshot, isLongValue, longPreview, readSnapshot, snapshotSides, treeDeep,
+  DEFAULT_SNAPSHOT_DEPTH, LONG_VALUE_CHARS, SNAPSHOT_CAP_LABEL, SNAPSHOT_DEPTHS, SNAPSHOT_DEEP_ALL,
+  SNAPSHOT_PREVIEW_CHARS, SNAPSHOT_TEXT_CAP, deepOf, filterSnapshot, isLongValue, longPreview, readSnapshot,
+  snapshotSides, treeDeep,
 } from './snapshot.ts'
 import type { Job, JobRun, MessageStep } from '../types.ts'
 import type { SnapshotValue } from './snapshot.ts'
@@ -433,7 +434,8 @@ eq('缺开始时刻 / 时刻读不出来时也写破折号',
 
 // 13. 快照面板的三种降级（#132）：口径全在 `snapshot.ts` —— 什么算非 JSON、什么算空、
 //     多长算超长。组件与真机脚本都从它取，界面里不再各判一遍。
-eq('超长的界线就是那条 TEXT 列的上限（#127）', SNAPSHOT_TEXT_CAP, 65535)
+eq('超长的界线就是那条 MEDIUMTEXT 列的上限（#141）', SNAPSHOT_TEXT_CAP, 16777215)
+eq('界线的人话与那个数同源（说明里写的是它）', SNAPSHOT_CAP_LABEL, '16 MB')
 eq('超长那一档只画前 8 KB 的原文', SNAPSHOT_PREVIEW_CHARS, 8192)
 
 eq('空白当「没落」，不是「空对象」——与步骤链上那两个点同一个口径',
@@ -481,7 +483,7 @@ eq('超长那一档原文全文还在手里（复制走全文，不是截断那�
   readSnapshot(hugeSnap).raw.length, SNAPSHOT_TEXT_CAP + 1)
 eq('超长那一档注明共多少字符、截到多少',
   readSnapshot(hugeSnap).note,
-  '超长快照：共 65536 字符，超过 64 KB 的列上限（#127）——这里只画前 8192 字符。')
+  '超长快照：共 16777216 字符，超过 16 MB 的列上限（#141）——这里只画前 8192 字符。')
 eq('刚好到上限不算超长（界线是列上限本身）', readSnapshot('x'.repeat(SNAPSHOT_TEXT_CAP)).kind, 'text')
 
 // 14. 展开层数与键路径搜索（#132）：ADR-0016 决策 10 那处有意偏离的落法——

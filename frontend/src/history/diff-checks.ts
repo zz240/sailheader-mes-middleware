@@ -22,6 +22,7 @@ import {
   stepDiffStart, DIFF_ABSENT, DIFF_LABELS, DIFF_NOTE, DIFF_STATUSES, DIFF_VALUE_CHARS,
   type DiffRow,
 } from './diff.ts'
+import { SNAPSHOT_CAP_LABEL, SNAPSHOT_TEXT_CAP } from './snapshot.ts'
 import type { MessageStep } from '../types.ts'
 
 declare const process: { exitCode?: number }
@@ -314,12 +315,12 @@ function shape(rows: readonly DiffRow[]): string[] {
 }
 
 {
-  const huge = `"${'x'.repeat(70000)}"`
+  const huge = `"${'x'.repeat(SNAPSHOT_TEXT_CAP + 1)}"`
   const prev = row(1, '{"a":1}', 10)
   const current = row(2, huge, 20)
   const { blocker } = stepDiffStart(prev, current, { nextAction: 'push-qc' })
-  ok('超长那一档照实说（并指向 #127）',
-    !!blocker && blocker.text.includes('超过 64 KB') && blocker.text.includes('#127'))
+  ok('超长那一档照实说（并指向 #141）',
+    !!blocker && blocker.text.includes(`超过 ${SNAPSHOT_CAP_LABEL}`) && blocker.text.includes('#141'))
 }
 
 {

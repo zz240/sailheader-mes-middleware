@@ -540,7 +540,7 @@ class MessageHistoryExecutionTest {
 
     /**
      * #123 口径 4：响应大到装不下快照列 → 该动作**显式失败**且错误可读（不是一句 SQL 的 Data too long），
-     * 也不落半截快照。放宽容量本身归 #127。
+     * 也不落半截快照。界线跟着列宽走（#141 起是 MEDIUMTEXT 的 16 MB），这道闸的行为没变。
      */
     @Test
     void oversizedHttpResponseFailsTheStepWithReadableError() throws Exception {
@@ -572,6 +572,50 @@ class MessageHistoryExecutionTest {
                     .contains("data_snapshot")
                     .contains(String.valueOf(MessageHistoryService.SNAPSHOT_LIMIT_BYTES));
             assertThat(failed.getDataSnapshot()).as("绝不写半截").isNull();
+        } finally {
+            context.stop();
+            mes.stop(0);
+        }
+    }
+
+    /**
+     * #141：同一条链、同一个「大小由目标端决定」的响应，只是这一次落在抬起来的列容量之内——
+     * **动作成功、运行成功、快照是完整 JSON**（不是半截、也没被截断）。
+     *
+     * <p>与上一条是一对：界线从 64 KB 抬到 16 MB，而 #123 那道闸的**行为**（显式失败、绝不写半截）没变。
+     * 列型本身在真 MySQL 上验（`SnapshotCapacityMigrationTest`）——H2 的 TEXT 是 CLOB，
+     * 旧界线在 H2 上复现不出来。</p>
+     */
+    @Test
+    void bigCapturePayloadLandsWholeAndTheRunSucceeds() throws Exception {
+        DefaultCamelContext context = new DefaultCamelContext();
+        MessageHistoryService history = service(context);
+        bindInMemory();
+        Job job = job(25L);
+        List<Action> actions = List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", 1L, "queue", "mes.to.edge")),
+                action(2, ActionKind.FIELD_MAP, Map.of("rules",
+                        List.of(Map.of("sourceStep", 0, "source", "FCode", "target", "FCode")))),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")));
+        stubConsumeDataSource();
+
+        // 300 KB 量级的一条报文（旧列型上这一条会被判 Data too long，动作成功却被记成失败）。
+        String report = "{\"lines\":[" + "{\"FSeq\":1},".repeat(30_000) + "{\"FSeq\":30000}]}";
+        assertThat(report.length()).as("这条报文比旧列型的上限大").isGreaterThan(65_535);
+        httpBody.set(report);
+        HttpServer mes = startHttpTarget();
+        stubHttpDataSource(2L, mes);
+        try {
+            buildRoutes(context, history, job, actions);
+            context.createProducerTemplate().requestBody("direct:job-25", Map.of("FCode", "C-1"));
+
+            JobRun run = runOf(25L);
+            assertThat(run.getStatus()).as("这一次是成功，不是「动作成功却被判失败」").isEqualTo("SUCCESS");
+            MessageStep captured = stepOf(stepsOf(run), 3);
+            assertThat(captured.getStatus()).isEqualTo("SUCCESS");
+            assertThat(captured.getDataSnapshot()).as("快照是完整报文：尾巴还在，长度也对得上")
+                    .hasSizeGreaterThan(65_535)
+                    .endsWith("{\"FSeq\":30000}]}");
         } finally {
             context.stop();
             mes.stop(0);
