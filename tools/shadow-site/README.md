@@ -110,6 +110,9 @@ B1 的 19 项含「拔网攒队列 → 恢复补齐」与「设备离线记 STAL
 | **A2MQ** | **MES 主动发 MQ** | 消息经 `MQ_CONSUME` → 映射 → **SQL Server `MERGE`**：首次落行，**同键再发换值 → 原地更新、仍 1 行** |
 | **A4PUSH** | **工位终端直推 HTTP** | `POST /api/external/jobs/{id}/trigger`（`X-API-Key`）→ 请求体成为**链首输入**（`sourceStep=0`）→ 映射 → MES 收到 `reportKey = WO-SH-0009#10`；**错 key 返回 401** |
 | **A7BIG** | SQL Server 读（整份报文） | SQL 侧 `FOR JSON PATH` 聚合 + 映射侧 `$parse`/`$map`：**3000 行 / 344 KB 一条报文**推通（0.3 s）；为此补了产品函数 `$parse`（并撞出 #127 的 64 KB 快照限制） |
+| **B6-BATCH** | SQL Server 读（一批） | `#143`：20 条码**一次请求**（读库那一步的批大小就是「一次请求几条」）、响应按 `FCode` 扇回**原来那 20 条消息**、逐条回写 `MDM_Code.FHandle`；摘要行（整份请求 + 整份响应）落在**出站**那一步 |
+| **A2-HL** | MySQL 读（头 + 子件聚合） | `#143`：一份报文 → `bom_head_t` **头一行** + `bom_line_t` **子 N 行**（走 `SPLIT`）；历史里父子谱系（子行的父消息标识 = 拆分那一行的消息标识）与批号（拆分处换手）都看得见 |
+| **B6-BULK** | SQL Server 读（1000 行一批） | `#143`：现场量级 **1000 条码只发 1 次请求**（报文 ≈ 80 KB 完整落进摘要行）、1000 行逐行回写 |
 
 **期望基线已固化**（实测报文原文，以后回归照它比）：`expected/a5-purchase-orders.json`（5 条）、
 `expected/a4-work-reports.json`（6 条）、`expected/a7-qc-details.json`（240 条 / 187 KB）、
@@ -154,6 +157,52 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/jobs/<A7BIG id>/e
 
 **顺带量到的事实**：目标库不可达时每条消息要等 HikariCP `connectionTimeout`（默认 30 s）才失败一次，
 `retryCount=1` 的一条消息就是 60 s（清场前 job 75 / run 314 实测）——联调时别当成卡死。
+
+## 批量注册 / 头行分表 / 1000 条量级的真机验收（#143）
+
+`#142` 的对称设计（合并只打包 → 链上现成出站动作发一次 → 扇回摊回原来那几条）在真机上到底能不能用，
+由这一票回答。两条命令覆盖**接口**与**界面**两侧：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-scenario.ps1   # 79 项（含 #143 新增 46 项）
+cd tools/ui; node batch-redeliver-143.cjs                                        # 界面那一半：一次点击 = 一次请求
+powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-split-140.ps1   # 21 项（#140 不回归）
+powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-b1.ps1          # 19 项（设备侧不回归）
+```
+
+**它验的四件事**（新链由 `seed-scenario.ps1` 建：`SH-B6-Register-Batch` / `SH-B6-Register-Bulk` /
+`SH-A2-Bom-Head-Lines`）：
+
+| 验收项 | 怎么验的 | 结果 |
+|---|---|---|
+| 20 条码**一次请求** + N 行逐行回写 + 逐条归因 | 替身收到 **1** 次 `id-register`、body 里 20 条码； `MDM_Code` 20 行 `FHandle` 与替身返回的 handle 逐条相等；扇回那一步 20 行各带自己的业务键与自己的 handle | ✓ 12 项 |
+| A2 头行分表：头一行 + 子 N 行（2 份报文 → 2 头 + 6 子），父子谱系与批号在历史里 | `bom_head_t` / `bom_line_t` 行数与字段；拆分那一行（输入父报文、输出子件数组）；4 条子行的父消息标识 = 那一行的消息标识、批号 1 个且与上游不同、批内序号 1..4。**页面级**（`batch-redeliver-143.cjs`）：子件的链从步骤 6 起（它是拆分新造的消息）、子件那一格带批徽标、点开是「读取批 · 一次请求 4 条 · 失败 0 条」与那 4 个编号，父消息链上拆分那一格的**数据快照原文里就是那 4 条子件** | ✓ 13 项 + 页面 6 项 |
+| 失败路径：目标端 500 → 整批同因 `FAILED` → 一次点击只发一次请求 | 出站那一步 1 行摘要 + 20 行同因 FAILED（各自带业务键）；水位不推进、库里没写；`POST /api/history/batches/{摘要行 id}/redeliver` 之后替身只多 1 次请求、旧批标 `REDELIVERED`、新运行 SUCCESS | ✓ 11 项 |
+| 1000 条量级：只发 1 次、报文完整落历史 | 1 次请求装 1000 条码；摘要行 `input_snapshot` ≈ 80 KB / 1000 项、`data_snapshot` 1000 项（用快照面板那条 `GET /api/history/steps/{id}` 读回来）；1000 行回写 | ✓ 10 项 |
+
+**结果（2026-10-07，真 SQL Server 2022 + 真 MySQL + 真网关 8080 + 真前端 5173 + MES 替身 9100）**：
+`verify-scenario.ps1` **79 项通过 / 0 失败**（含 #143 新增 46 项，连跑三次结果一致）、
+`batch-redeliver-143.cjs` **29 项通过 / 0 失败**（界面：重发按钮那一档 + A2 头行分表那一档的谱系与批号）、
+`verify-split-140.ps1` 21 项、
+`verify-b1.ps1` 19 项全绿（不回归）；**全量测试**：`mvn test` **623 项 / 0 失败 / BUILD SUCCESS**、
+前端纯模块自测 617 + 213 + 102 + 42 + 46 全绿、`vue-tsc --noEmit` 干净。
+可重复跑：1000 条那一段自己造数、自己收尾（含 `DELETE /__handles` 清替身账本），所以连跑两次结果一致。
+
+### 真机才发现的三件事（都在 issue #143 上记着，本票不改产品代码）
+
+1. **「一次请求 N 条」多算一条**：合并打包出来那一条**信封消息**（`AGGREGATE` 自己记的那一行，
+   消息标识是新生成的、不是摘要行）也带着这一批的批号，于是 `history/batch.ts` 按「该批号下非摘要行的
+   不同消息标识数」数出来是 **21**，而现场只有 **20** 条码——组头因此出现「一次请求 21 条 · 失败 20 条」
+   这种自相矛盾。纯模块自测的 fixture 里没有打包那一行，所以只有真机才撞得到；
+   `tools/ui/batch-redeliver-143.cjs` 把现状钉住了（修掉之后那几条断言会一起变红）。
+2. **整批重发不跑下游**：`redeliverBatch` 只把摘要行上那份报文**再发一次**并把响应扇回记账
+   （`direct:job-<id>-batch-resend-<出站序号>` 这条路由里只有出站与配对），**出站之后的动作不再执行**。
+   在 B6 这条链上就是：重发之后目标端收到了，但**写回 `MDM_Code.FHandle` 的那一步不会补跑**——
+   「回写闭环」恰好在重发按钮存在的那一幕断掉。要不要「重发后接着跑下游」得先定口径。
+3. **重发接口返回的 `status` 是创建那一刻的快照**：`POST /api/history/batches/{id}/redeliver` 回
+   `{"status":"RUNNING","runId":N}`，而同一次调用里那条运行其实已经 `SUCCESS`（`finishRun` 更新的是
+   另取的一份实体）。库里是对的、界面读回来也是对的，只有那个响应字段在说假话；
+   `BatchRedeliverTest` 之所以断言到 `SUCCESS`，是因为它的假 mapper 返回同一个对象实例。
 
 ## 那台 SQL Server 是什么
 
@@ -230,6 +279,9 @@ node tools/shadow-site/modbus-bridge.cjs                       # 采集桥（管
 
 | 项 | 说明 |
 |---|---|
+| **整批重发不跑下游**（#143 真机发现） | `redeliverBatch` 只把摘要行那份报文**再发一次**、把响应扇回记账，**出站之后的动作不执行**——B6 批量这条链上就是「重发之后 `FHandle` 不写回」。要不要「重发后接着跑下游」得先定口径 |
+| **「一次请求 N 条」多算一条**（#143 真机发现） | 合并打包出来那条**信封消息**也带着这一批的批号，`history/batch.ts` 数出来是 21，而现场只有 20 条码；纯模块 fixture 里没有打包那一行，所以只有真机撞得到。修它要连 `batch-checks.ts` 一起改 |
+| **重发接口的 `status` 字段**（#143 真机发现） | `POST /api/history/batches/{id}/redeliver` 回的是**创建那一刻**那个对象（`RUNNING`），库里那条运行其实已经 `SUCCESS`；界面读回来是对的，只有响应里那个字段在说假话 |
 | B1 设备侧 | **已手工验收**（见上节：224 行看板数据 / 断网续传 / 质量位）；**尚未脚本化**——把「起替身 + 起桥 + 断言」并进 `verify-scenario.ps1` 是下一步 |
 | A5/A7 的「整份大报文」变体 | 本轮走展平；整份报文要先把「明细数组放进一条报文的映射」跑通（JSON 聚合 + `$parse`） |
 | #126 的修复 | **已并入 #123**：`HTTP_CALL` 不再换掉消息体，B1 链不必靠「调顺序」绕（单测/链路测试覆盖） |

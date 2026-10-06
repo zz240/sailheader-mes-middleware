@@ -131,6 +131,32 @@ CREATE TABLE IF NOT EXISTS dev_alarm (
     cleared    TINYINT DEFAULT 0
 );
 
+/* A2 「头行分表」落点（#143 真机验收）：一份报文 -> 头一行 + 子 N 行（走 SPLIT 拆出去逐条落库）。
+   放这里是因为**新机器上任务创建时目标表就得存在**（`verify-scenario.ps1` 里那份 `CREATE ... IF NOT EXISTS`
+   只是让那一段能单独跑，两边**逐列保持一致**；列型与 `verify-split-140.ps1` 里那份相同）。 */
+CREATE TABLE IF NOT EXISTS bom_head_t (
+    FBOMNo     VARCHAR(64) NOT NULL PRIMARY KEY,   -- 幂等键
+    FMoldNo    VARCHAR(64),
+    FVersion   VARCHAR(32),
+    FLineCount INT,
+    FBatchId   VARCHAR(64),
+    FModifyDate DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS bom_line_t (
+    FLineKey        VARCHAR(128) NOT NULL PRIMARY KEY,  -- FBOMNo#FSeq（CONCAT 展平）
+    FBOMNo          VARCHAR(64),
+    FSeq            INT,
+    FItemNumber     VARCHAR(64),
+    FQty            DECIMAL(18,4),
+    FUnit           VARCHAR(16),
+    FLineCount      INT,
+    -- 这三格与 verify-split-140.ps1 的 DDL 逐列一致（批次戳落在**消息历史**上，落点表里留空）
+    FBatchId        VARCHAR(64),
+    FBatchSeq       INT,
+    FParentMessageId VARCHAR(64)
+);
+
 SELECT 'mes_item' AS T, COUNT(*) AS cnt FROM mes_db.mes_item
 UNION ALL SELECT 'mes_bom_head', COUNT(*) FROM mes_db.mes_bom_head
 UNION ALL SELECT 'mes_bom_line', COUNT(*) FROM mes_db.mes_bom_line

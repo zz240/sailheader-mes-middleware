@@ -47,7 +47,8 @@ $dsNames = @{
 $jobNames = @('SH-A5-PO-to-MES', 'SH-A2-Item-to-CustomerERP', 'SH-A3-WorkOrder-to-CustomerERP',
               'SH-A4-Report-to-MES', 'SH-A7-QC-to-MES', 'SH-B6-ID-Register',
               'SH-A2MQ-Item-to-CustomerERP', 'SH-A4PUSH-Report-to-MES', 'SH-B1-DEVICE-UP',
-              'SH-A7BIG-Whole-Report')
+              'SH-A7BIG-Whole-Report', 'SH-B6-Register-Batch', 'SH-B6-Register-Bulk',
+              'SH-A2-Bom-Head-Lines')
 
 function Invoke-Api {
     param([string]$Method, [string]$Path, $Body)
@@ -355,8 +356,90 @@ $a7big = @(
 )
 $a7bigId = New-ScenarioJob -Name 'SH-A7BIG-Whole-Report' -Direction 'NORTH' -Remarks 'A7 big-payload variant: whole report (up to 3000 lines) aggregated in SQL, $parse + $map, one message per report' -Actions $a7big
 
+# ---------- B6 batch variant: the whole read batch in ONE request (#143) ----------
+# #142 made this shape possible: READ_SQL (a batch of codes) -> FIELD_MAP (one payload per code)
+# -> AGGREGATE (pack them into {"codes":[...]}) -> HTTP_CALL (sent once) -> FANOUT (pair the handles
+# back by FCode) -> FIELD_MAP -> WRITE_UPSERT (each row gets its own handle).
+# The read batch size IS the request size (ADR-0017 decision 5: the barrier is "the upstream read batch
+# finished"; there is no count threshold and no timeout), so batchSize=1000 sends the 20 shadow-site
+# codes in one request -- and the 1000-row bulk variant below in one request as well.
+function New-B6BatchActions {
+    param([string]$Sql, [int]$BatchSize = 1000)
+    return @(
+        @{ name = 'read-codes'; type = 'READ_SQL'; addition = @{
+            dataSourceId = $dsSqlServer; sql = $Sql
+            watermarkType = 'SEQUENCE'; watermarkColumn = 'FID'; businessKey = 'FCode'; batchSize = $BatchSize } },
+        @{ name = 'wrap-code'; type = 'FIELD_MAP'; addition = @{ rules = @(
+            @{ sourceStep = 1; source = 'FCode'; target = 'FCode'; transform = 'STRING' },
+            @{ sourceStep = 1; source = 'FObjectType'; target = 'objectType'; transform = 'STRING' },
+            @{ sourceStep = 1; source = 'FObjectNo'; target = 'objectNo'; transform = 'STRING' },
+            @{ sourceStep = 1; source = 'FBatch'; target = 'batch'; transform = 'STRING' }
+        ) } },
+        @{ name = 'pack-codes'; type = 'AGGREGATE'; addition = @{ bodyField = 'codes' } },
+        @{ name = 'push-register-batch'; type = 'HTTP_CALL'; addition = @{
+            dataSourceId = $dsMesHttp; path = '/mes/api/id-register'; method = 'POST' } },
+        # sourceStep 4 = the outlet: the stand-in answers {code,count,results:[{FCode,handle}]}
+        @{ name = 'fanout-handles'; type = 'FANOUT'; addition = @{
+            sourceStep = 4; sourcePath = 'results'; resultKeyField = 'FCode'; attachAs = 'registration' } },
+        @{ name = 'map-handle-batch'; type = 'FIELD_MAP'; addition = @{ rules = @(
+            @{ sourceStep = 1; source = 'FCode'; target = 'FCode'; transform = 'STRING' },
+            @{ sourceStep = 5; source = 'handle'; target = 'FHandle'; transform = 'STRING' }
+        ) } },
+        @{ name = 'write-handle-batch'; type = 'WRITE_UPSERT'; addition = @{
+            dataSourceId = $dsSqlServer; tableName = 'dbo.MDM_Code'; idempotencyKey = 'FCode' } }
+    )
+}
+
+$b6batch = New-B6BatchActions -Sql 'select FID, FCode, FObjectType, FObjectNo, FBatch from dbo.MDM_Code where {watermark}'
+$b6batchId = New-ScenarioJob -Name 'SH-B6-Register-Batch' -Direction 'NORTH' -Remarks 'B6 batch variant (#143): 20 codes registered in ONE request, per-row handle write-back' -Actions $b6batch
+
+# Same shape at the field scale (the B6 spec says 1000 codes per request). The BULK- rows are inserted and
+# dropped by verify-scenario.ps1; the prefix filter keeps this job independent of the 20 seeded codes.
+$b6bulk = New-B6BatchActions -Sql "select FID, FCode, FObjectType, FObjectNo, FBatch from dbo.MDM_Code where {watermark} and FCode like 'BULK-%'"
+$b6bulkId = New-ScenarioJob -Name 'SH-B6-Register-Bulk' -Direction 'NORTH' -Remarks 'B6 batch variant at 1000-row scale (#143): one request carries the whole read batch' -Actions $b6bulk
+
+# ---------- A2 head-and-lines variant: one report -> one head row + N line rows (#143) ----------
+# The shape the spec calls A2 head-and-lines: the SQL joins head and lines and aggregates the lines into
+# one JSON column, the mapping turns it back into a real array, then the SAME message writes the head row
+# and is split (SPLIT, #140) into one message per line before the line rows are written.
+$a2hl = @(
+    @{ name = 'read-bom'; type = 'READ_SQL'; addition = @{
+        dataSourceId = $dsMesDb
+        sql = "select h.FBOMNo, h.FMoldNo, h.FVersion, h.FModifyDate, count(l.FSeq) as FLineCount, JSON_UNQUOTE(JSON_ARRAYAGG(JSON_OBJECT('FSeq', l.FSeq, 'FItemNumber', l.FItemNumber, 'FQty', l.FQty, 'FUnit', l.FUnit))) as lines_json from mes_bom_head h join mes_bom_line l on l.FBOMNo = h.FBOMNo where {watermark} group by h.FBOMNo, h.FMoldNo, h.FVersion, h.FModifyDate"
+        watermarkType = 'TIMESTAMP'; watermarkColumn = 'FModifyDate'; businessKey = 'FBOMNo'; batchSize = 10 } },
+    @{ name = 'assemble-bom'; type = 'FIELD_MAP'; addition = @{
+        mode = 'EXPRESSION'; expression = '$merge([$s_1, {"lines": $parse($s_1.lines_json)}])' } },
+    # head row: only the head columns. WRITE_UPSERT writes every key of the body, so the body must not
+    # carry the lines array here (the array stays reachable as context[2] for the split below).
+    @{ name = 'map-head'; type = 'FIELD_MAP'; addition = @{ rules = @(
+        @{ sourceStep = 2; source = 'FBOMNo'; target = 'FBOMNo'; transform = 'STRING' },
+        @{ sourceStep = 2; source = 'FMoldNo'; target = 'FMoldNo'; transform = 'STRING' },
+        @{ sourceStep = 2; source = 'FVersion'; target = 'FVersion'; transform = 'STRING' },
+        @{ sourceStep = 2; source = 'FLineCount'; target = 'FLineCount'; transform = 'STRING' },
+        @{ sourceStep = 2; source = 'FModifyDate'; target = 'FModifyDate'; transform = 'DATE'; datePattern = 'yyyy-MM-dd HH:mm:ss' }
+    ) } },
+    @{ name = 'write-head'; type = 'WRITE_UPSERT'; addition = @{
+        dataSourceId = $dsBoardDb; tableName = 'bom_head_t'; idempotencyKey = 'FBOMNo' } },
+    @{ name = 'split-lines'; type = 'SPLIT'; addition = @{
+        sourceStep = 2; sourcePath = 'lines'; elementKey = 'FItemNumber'; keepParent = $true } },
+    @{ name = 'map-line'; type = 'FIELD_MAP'; addition = @{ rules = @(
+        @{ sourceStep = 5; source = 'FBOMNo'; target = 'FBOMNo'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FSeq'; target = 'FSeq'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FItemNumber'; target = 'FItemNumber'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FQty'; target = 'FQty'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FUnit'; target = 'FUnit'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FLineCount'; target = 'FLineCount'; transform = 'STRING' },
+        @{ sourceStep = 5; source = 'FSeq'; target = 'FLineKey'; transform = 'CONCAT';
+           parts = @(@{ path = 'FBOMNo' }, '#', @{ path = 'FSeq' }) }
+    ) } },
+    @{ name = 'write-lines'; type = 'WRITE_UPSERT'; addition = @{
+        dataSourceId = $dsBoardDb; tableName = 'bom_line_t'; idempotencyKey = 'FLineKey' } }
+)
+$a2hlId = New-ScenarioJob -Name 'SH-A2-Bom-Head-Lines' -Direction 'SOUTH' -Remarks 'A2 head-and-lines variant (#143): one report -> one head row + N line rows (SPLIT)' -Actions $a2hl
+
 Write-Host ''
 Write-Host ("ready. job ids: A5={0} A2={1} A3={2} A4={3} A7={4} B6={5} A2MQ={6} A4PUSH={7} B1={8} A7BIG={9}" -f $a5Id, $a2Id, $a3Id, $a4Id, $a7Id, $b6Id, $a2mqId, $a4pushId, $b1Id, $a7bigId)
+Write-Host ("            #143: B6BATCH={0} B6BULK={1} A2HL={2}" -f $b6batchId, $b6bulkId, $a2hlId)
 Write-Host ("execute one: Invoke-RestMethod -Method Post -Uri `"$BaseUrl/api/jobs/<id>/execute`" -ContentType 'application/json' -Body '{{}}'")
 Write-Host ("MES received: Invoke-RestMethod `"$MesMockBase/__received?limit=10`" | ConvertTo-Json -Depth 6")
 Write-Host ("runs       : Invoke-RestMethod `"$BaseUrl/api/history/runs?jobId=<id>`" | ConvertTo-Json -Depth 6")

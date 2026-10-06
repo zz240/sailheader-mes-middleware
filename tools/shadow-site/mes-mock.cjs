@@ -14,6 +14,8 @@
 //   GET    /__health                    存活 + 计数
 //   GET    /__received?path=&limit=     收到的原始请求（含时间戳、头、体）
 //   DELETE /__received                  清空收到的东西
+//   GET    /__handles                   已注册的 handle 账本（旁证）
+//   DELETE /__handles                   清空 handle 账本（#143：1000 条那一段验收跑完还原）
 //   POST   /__fault  {"mode":"500|503|429|timeout|slow","count":3,"delayMs":2000}
 //                                        注入故障：接下来 count 次请求按 mode 处理（count 省略=一直）
 //   GET    /__fault                     当前故障设置
@@ -87,6 +89,9 @@ const server = http.createServer((req, res) => {
             // 已注册的 handle 清单：**旁证**用（替身自己的账本）。回写是否真的发生，看链路——#123 之后
             // HTTP_CALL 的响应进 context[本动作序号]，B6 链的 write-handle 步快照里有 handle，库里
             // MDM_Code.FHandle 也能直接查（verify-scenario.ps1 就是这么断言的）。这里用来交叉核对。
+            // DELETE 清账本（#143）：1000 条那一段验收会注册 1000 个新码，不清掉的话「同一批 20 条码
+            // 的 B6 段」再跑一次就会看到 1020 个 handle、断言不再成立（脚本必须连跑两次结果一致）。
+            if (req.method === 'DELETE') { handles.clear(); return send(res, 200, { total: 0, handles: [] }); }
             return send(res, 200, {
                 total: handles.size,
                 handles: [...handles.entries()].map(([fCode, handle]) => ({ fCode, handle })),
