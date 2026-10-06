@@ -105,7 +105,7 @@ $readSql = "select h.FBOMNo, h.FMoldNo, h.FVersion, h.FModifyDate, " +
            "JSON_UNQUOTE(JSON_ARRAYAGG(JSON_OBJECT('FSeq', l.FSeq, 'FItemNumber', l.FItemNumber, " +
            "'FQty', l.FQty, 'FUnit', l.FUnit))) as lines_json " +
            "from mes_bom_head h join mes_bom_line l on l.FBOMNo = h.FBOMNo " +
-           "where h.FBOMNo = '$HeadKey' and {watermark}   /* 占位符替换的是**整个谓词**：框架会写成 h.FModifyDate >= ?，别自己再写列名与比较符 */ " +
+           "where h.FBOMNo = '$HeadKey' and {watermark} " +
            "group by h.FBOMNo, h.FMoldNo, h.FVersion, h.FModifyDate"
 
 # 装配（JSONata）：把 lines_json 那一列字符串还原成**真数组**，并在报文上留下父字段。
