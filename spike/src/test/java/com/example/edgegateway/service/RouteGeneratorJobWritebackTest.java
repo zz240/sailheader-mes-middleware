@@ -284,6 +284,7 @@ class RouteGeneratorJobWritebackTest {
             case MQ_CONSUME -> "consume";
             case MQ_PUBLISH -> "publish";
             case SPLIT -> "split";
+            case AGGREGATE -> "aggregate";
         });
         action.setAddition(addition);
         return action;

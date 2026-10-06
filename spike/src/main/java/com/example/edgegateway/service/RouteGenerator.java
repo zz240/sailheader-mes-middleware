@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import com.example.edgegateway.WatermarkStore;
 import com.example.edgegateway.config.ActionConfig;
+import com.example.edgegateway.config.AggregateConfig;
 import com.example.edgegateway.config.DataSourceConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.HttpCallConfig;
@@ -40,6 +41,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -79,12 +81,32 @@ public class RouteGenerator {
      * 而父消息是按配置（sourceStep + sourcePath）取到的那个对象——不是数组里的某个元素。
      */
     private static final String SPLIT_SOURCE = "edge.splitSource";
+    /**
+     * 这一行**本该**摊出几条消息（#142）：读库那批一行一条（没人写它，缺省 1），拆分动作在 split
+     * 之前改写成摊出来的条数。合并动作靠它判「这一批齐了没有」——按行去重后合计，所以同一行拆出来的
+     * k 条带的是同一个数（去重靠父消息标识）。
+     */
+    private static final String BATCH_EXPECTED = "edge.batchExpected";
+    /** 合并动作攒到的那批**承运单**（#142）；挂在批 exchange 上：请求失败时按它给这一批每条补记 FAILED。 */
+    private static final String AGGREGATE_CARRIERS = "edge.aggregateCarriers";
+    /** 合并的请求体（#142）：{@code {"<bodyField>": [ …每条消息自己那一片… ]}}，出站前挂这儿（消息体要留给扇回）。 */
+    private static final String AGGREGATE_REQUEST = "edge.aggregateRequest";
 
     private final DataSourceMapper dataSourceMapper;
     private final WatermarkStore watermarkStore;
     private final MessageHistoryService messageHistory;
     private final DataSourceManager dataSourceManager;
     private final ReadSqlBatcher readSqlBatcher;
+
+    /**
+     * 正在攒的批次（#142）：键 = {@code 运行 + 合并动作序号}。
+     *
+     * <p>为什么按「运行 + 动作」而不是按批号：到齐判定发生在**批 exchange** 上（读库那批的 split
+     * 收尾之后），而批 exchange 上的批号与**消息身上**的批号可能不是同一个（中间隔着一个拆分动作时，
+     * 消息带的是拆分换的那个号）。同一个动作在一次运行里同时只攒一批（读库循环是一批一批走的），
+     * 所以这个键就是「当前这一批」。攒完即删；运行结束（成功或失败）再按运行前缀扫一次兜底。</p>
+     */
+    private final Map<String, AggregateBatch> pendingBatches = new ConcurrentHashMap<>();
 
     public RouteGenerator(
             DataSourceMapper dataSourceMapper,
@@ -324,6 +346,19 @@ public class RouteGenerator {
                 // 处理的是**每条子消息**
                 openSplits++;
             }
+            if (kind == ActionKind.AGGREGATE) {
+                // 合并（#142）分两半，位置由「攒齐的边界 = 上游读取批读完那一刻」决定：
+                //  ① 前半段留在**当前这一层**（读库/拆分那几层扇出之内）——每条消息各来一次，记一张承运单；
+                //  ② 然后把扇出那几层收回来（= 这一批读完了），在**批 exchange** 上发一次，再摊回去给
+                //     后续动作逐条跑：扇回那一层就是新开的那个 split，所以 openSplits 记 1。
+                current = appendAggregateCollect(current, action);
+                while (openSplits > 0) {
+                    current = ((SplitDefinition) current).end();
+                    openSplits--;
+                }
+                current = appendAggregateFlush(current, action, (AggregateConfig) config);
+                openSplits = 1;
+            }
             current = appendFragment(current, action, config, job);
         }
         // 收尾按**嵌套的由内到外**顺序关闭。一条链上可能叠着多层：读库分批那层（loopDoWhile + split）
@@ -344,6 +379,205 @@ public class RouteGenerator {
             current = ((LoopDefinition) current).end();
         }
         return current;
+    }
+
+    /**
+     * 合并动作的**前半段**（#142）：把这条消息记成一张承运单，交进「这一批」的护栏。
+     *
+     * <p>它必须落在**当前这一层**（读库/拆分那几层扇出之内）：每条消息各来一次，攒齐才发。断点续投
+     * 跳过这一步时照样记单（标 {@code skipped}）——那一条不参与发送，但现场要还回去，它之后的步骤照跑
+     * （下游引用合并那一步的输出从 {@code edge.resumeContext} 拿）。</p>
+     */
+    private ProcessorDefinition<?> appendAggregateCollect(ProcessorDefinition<?> current, Action action) {
+        int index = action.getActionIndex();
+        return current.process(ex -> {
+            ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+            ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+            ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
+            collectForAggregate(ex, index);
+        });
+    }
+
+    /**
+     * 合并动作的**后半段**（#142）：在批 exchange 上**同步**发一次、记摘要行与每条自己那一行，
+     * 再把这一批摊回去给后续动作逐条跑（扇回那一层就是新开的那个 split）。
+     *
+     * <p>为什么不用 Camel 的 {@code aggregate} EIP：探针实测它「攒齐之后那一段」跑在别的线程上
+     * （{@code sendBody} 返回时一次都没发），而这一批的**水位推进**与**失败判定**都在 split 之后同步收尾——
+     * 异步化就会出「水位推了、请求还没发」「合并 5xx 了、这一批却算成功」（ADR-0017 决策 8）。</p>
+     */
+    private ProcessorDefinition<?> appendAggregateFlush(ProcessorDefinition<?> current, Action action,
+                                                        AggregateConfig aggregate) {
+        int index = action.getActionIndex();
+        DataSource ds = dataSourceMapper.selectById(aggregate.dataSourceId());
+        HttpDataSourceConfig http = (HttpDataSourceConfig) DataSourceConfig.from(ds.getType(), ds.getAddition());
+        String url = composeUrl(ds.getAddress(), aggregate.path());
+        String auth = http.token() == null || http.token().isBlank() ? null : "Bearer " + http.token();
+        return current
+                .process(ex -> prepareAggregate(ex, action, aggregate, index, auth))
+                .choice()
+                    .when(ex -> !Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class)))
+                        .marshal().json()
+                        .to(url)
+                .endChoice()
+                .end()
+                .process(ex -> settleAggregate(ex, action, aggregate, index))
+                // 扇回这一层**不在这里 end()**：后续动作要追加在它**里面**逐条跑，收尾那段按 openSplits
+                // 的层数统一退回（与读库/拆分那两层同一个记账法）
+                .split(ExpressionBuilder.bodyExpression())
+                    .process(this::restoreCarrier);
+    }
+
+    /** 攒批键：{@code 运行 + 合并动作序号}（同一次运行里，一个合并动作同时只攒一批，见那个字段的说明）。 */
+    private static String batchKey(Long runId, int index) {
+        return runId + ":" + index;
+    }
+
+    /**
+     * 把这条消息记成一张承运单（#142）。没有运行标识（还没 beginRun）时什么都不做——那种 exchange
+     * 也不会走到出站那一步。
+     */
+    private void collectForAggregate(Exchange ex, int index) {
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        if (runId == null) {
+            return;
+        }
+        String messageId = ex.getProperty(MessageHistoryService.MESSAGE_ID, String.class);
+        String parentMessageId = ex.getProperty(MessageHistoryService.PARENT_MESSAGE_ID, String.class);
+        Integer shares = ex.getProperty(BATCH_EXPECTED, Integer.class);
+        pendingBatches.computeIfAbsent(batchKey(runId, index), key -> new AggregateBatch())
+                .add(new AggregateBatch.Carrier(
+                        messageId,
+                        ex.getProperty(MessageHistoryService.BUSINESS_KEY, String.class),
+                        ex.getProperty(MessageHistoryService.BATCH_SEQ, Integer.class),
+                        parentMessageId,
+                        ex.getMessage().getBody(),
+                        // 上下文**拷一份**：split 出来的兄弟 exchange 可能共用同一个 Map，现场不能被别人改掉
+                        new LinkedHashMap<>(context(ex)),
+                        parentMessageId != null ? parentMessageId : messageId,
+                        shares == null ? 1 : shares,
+                        isResumeSkipped(ex, index)));
+    }
+
+    /**
+     * 出站前的一次性准备（#142）：判齐、转批号、组请求体、过容量闸。
+     *
+     * <p>三种情形：**这一批没产出消息**（读库读到空批）→ 什么都不做（既不请求也不摊回）；
+     * **整批被断点续投跳过** → 不请求，只把现场摊回去；**齐了** → 组 {@code {"<bodyField>": [ … ]}}、
+     * 过容量闸（装不下当场失败、绝不写半截），批号在这一步**转手**（合并是基数变化动作，ADR-0017 决策 2/3）。</p>
+     */
+    private void prepareAggregate(Exchange ex, Action action, AggregateConfig aggregate, int index, String auth) {
+        ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
+        ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
+        beginStep(ex); // #134：计时起点打在出站之前（整批共用这一个数）
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        AggregateBatch batch = runId == null ? null : pendingBatches.remove(batchKey(runId, index));
+        List<AggregateBatch.Carrier> carriers = batch == null ? List.of() : batch.carriers();
+        if (batch != null && batch.arrived() > 0 && !batch.complete()) {
+            // 凑不满：绝不静默发半批（ADR-0017 决策 8）。到这一步说明上游有条消息没走到这儿——
+            // 整次运行本来就是失败的，这里再把它说清楚一次，绝不发一份少了几条的报文出去
+            throw new IllegalStateException("合并这一步没凑齐一批：应当 " + batch.expected() + " 条，只到了 "
+                    + batch.arrived() + " 条——按失败处理，不发半批（#142）");
+        }
+        if (carriers.isEmpty()) {
+            ex.setProperty(AGGREGATE_CARRIERS, List.of());
+            ex.setProperty(SKIP_FLAG, true);
+            ex.getMessage().setBody(List.of());
+            return;
+        }
+        String batchId = ElementMessageFactory.newBatchId();
+        ex.setProperty(MessageHistoryService.BATCH_MSG_ID, batchId);
+        ex.setProperty(MessageHistoryService.MESSAGE_ID, MessageHistoryService.SUMMARY_MESSAGE_PREFIX + batchId);
+        ex.setProperty(MessageHistoryService.BATCH_SEQ, null);
+        ex.setProperty(AGGREGATE_CARRIERS, carriers);
+        if (batch.allSkipped()) {
+            ex.setProperty(SKIP_FLAG, true);
+            ex.getMessage().setBody(carriers);
+            return;
+        }
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put(aggregate.bodyField(), carriers.stream().map(AggregateBatch.Carrier::body).toList());
+        // 容量闸（#123 口径 4 / #141 的列容量）：整批报文装不下就当场失败、绝不写半截
+        messageHistory.requireCaptureFitsSnapshot(index, request);
+        ex.setProperty(AGGREGATE_REQUEST, request);
+        // 这一行的输入快照是**整批报文**（摘要行那一格）；失败时统一那条记账路会用它
+        ex.setProperty(MessageHistoryService.STEP_INPUT, request);
+        ex.setProperty(SKIP_FLAG, false);
+        ex.getMessage().setBody(request);
+        ex.getMessage().setHeader(Exchange.HTTP_METHOD, aggregate.method());
+        ex.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
+        if (auth != null) {
+            ex.getMessage().setHeader("Authorization", auth);
+        }
+    }
+
+    /**
+     * 出站之后（#142）：配对、记摘要行与每条自己那一行、把这一批摊回去。
+     *
+     * <p>**同成同败**：请求成功但有一条没配上（响应里没有它的业务键）也算整批失败——记完全部 FAILED
+     * 再抛出去，绝不留「看着成功其实只回了一部分」的行。摘要行承载**整份请求与整份响应**；同批每条
+     * 消息那一行只存自己那一片（自己的请求片段 + 配给自己的响应 + 攒批序号）。</p>
+     */
+    private void settleAggregate(Exchange ex, Action action, AggregateConfig aggregate, int index) {
+        List<AggregateBatch.Carrier> carriers = ex.getProperty(AGGREGATE_CARRIERS, List.class);
+        if (carriers == null || carriers.isEmpty()) {
+            ex.getMessage().setBody(List.of());
+            return;
+        }
+        if (Boolean.TRUE.equals(ex.getProperty(SKIP_FLAG, Boolean.class))) {
+            ex.getMessage().setBody(carriers); // 整批被跳过：不发也不记，只把现场摊回去
+            return;
+        }
+        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
+        String raw = responseText(ex);
+        Object response = HttpCallResponse.parse(raw);
+        messageHistory.requireCaptureFitsSnapshot(index, response);
+        Long durationMs = stepDuration(ex);
+        Map<String, Object> paired = AggregateBatch.pair(response, aggregate.resultKeyField(), carriers);
+        List<String> missing = carriers.stream()
+                .filter(carrier -> !paired.containsKey(carrier.messageId()))
+                .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
+                .toList();
+        if (!missing.isEmpty()) {
+            // 只有一条没配上也算整批失败（同成同败）：这里只抛，记账交给统一的失败那条路——
+            // 它会记摘要行 + 这一批每条各一行（见 recordFailure 里那段），不在这儿记第二遍
+            throw new IllegalStateException("合并的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
+                    + aggregate.resultKeyField() + "）");
+        }
+        messageHistory.recordSuccess(runId, MessageHistoryService.SUMMARY_MESSAGE_PREFIX + batchId, index,
+                action.getName(), ex.getProperty(AGGREGATE_REQUEST, Object.class), response, null,
+                attemptsOnSuccess(ex), durationMs, new BatchStamp(batchId, null, null));
+        List<AggregateBatch.Carrier> settled = new ArrayList<>();
+        int seq = 0;
+        for (AggregateBatch.Carrier carrier : carriers) {
+            seq++;
+            Object slice = paired.get(carrier.messageId());
+            messageHistory.recordSuccess(runId, carrier.messageId(), index, action.getName(),
+                    carrier.body(), slice, carrier.businessKey(), attemptsOnSuccess(ex), durationMs,
+                    new BatchStamp(batchId, seq, carrier.parentMessageId()));
+            settled.add(carrier.settled(seq, aggregate.attachAs(), slice, index));
+        }
+        ex.getMessage().setBody(settled);
+    }
+
+    /** 扇回：把承运单上的现场装回 exchange，后续动作照旧逐条跑（#142）。 */
+    private void restoreCarrier(Exchange ex) {
+        AggregateBatch.Carrier carrier = ex.getMessage().getBody(AggregateBatch.Carrier.class);
+        ex.setProperty(MessageHistoryService.MESSAGE_ID, carrier.messageId());
+        ex.setProperty(MessageHistoryService.BUSINESS_KEY, carrier.businessKey());
+        ex.setProperty(MessageHistoryService.BATCH_SEQ, carrier.batchSeq());
+        ex.setProperty(MessageHistoryService.PARENT_MESSAGE_ID, carrier.parentMessageId());
+        ex.setProperty(MessageHistoryService.STEP_INPUT, carrier.body());
+        ex.setProperty(CONTEXT, new LinkedHashMap<>(carrier.context()));
+        ex.getMessage().setBody(carrier.body());
+    }
+
+    /** 运行结束（成功或失败）时把这次运行还挂着的攒批清掉（#142）：半批留下的现场不该跟着实例过夜。 */
+    private void clearPendingBatches(Long runId) {
+        if (runId != null) {
+            pendingBatches.keySet().removeIf(key -> key.startsWith(runId + ":"));
+        }
     }
 
     /**
@@ -380,6 +614,9 @@ public class RouteGenerator {
                     //   elements —— "这一步拆出了几条"的现场（批内序号不靠它，那用 split 的迭代下标）。
                     // 不复用 edge.stepInput：它是"这一步的输入快照"，语义不同（那一格记的是父消息本身）
                     ex.setProperty(SPLIT_SOURCE, source);
+                    // 这一行本该摊出几条（#142）：合并动作判「齐了没有」要用它；同一行拆出来的 k 条
+                    // 带的是同一个数（去重靠父消息标识），写在进 split 之前——子 exchange 继承它
+                    ex.setProperty(BATCH_EXPECTED, elements.size());
                     // 这一行的输入是父消息（就是当下的消息体）、输出是子消息们（那片数组），
                     // 挂的是**父消息自己的标识**（它自己那一行，谱系上就是"父"），带的是**上游那个批号**
                     // （批号还没转手，这一段仍属上一批；MQ 入口那种没有上游批号的链，这一格就是空）。
@@ -618,8 +855,9 @@ public class RouteGenerator {
                 context.put(index, ex.getMessage().getBody());
                 ex.setProperty(CONTEXT, context);
             });
-            // 拆分这一档的片段整个在 appendSplit 里（记行 + 摊开 + 逐条初始化子消息），这里没有可加的
-            case SPLIT -> current;
+            // 拆分与合并这两档的片段整个在 appendSplit / appendChain 里（记行 + 摊开 / 攒齐 + 扇回），
+            // 这里没有可加的
+            case SPLIT, AGGREGATE -> current;
         };
     }
 
@@ -798,10 +1036,27 @@ public class RouteGenerator {
                     // #139：失败步也带批次戳——只记成功那条路的话，「哪几条是同一批」在失败那一格上就断了
                     batchStamp(ex));
         }
+        // 合并那一批（#142）：请求本身失败时，这一批**每条消息各记一行** FAILED（同因，各自带自己那一片），
+        // 摘要行由上一条路记（那时 MESSAGE_ID 已被置成 batch:<批号>）。两条路写同一行时是 upsert，不会重
+        List<AggregateBatch.Carrier> carriers = ex.getProperty(AGGREGATE_CARRIERS, List.class);
+        if (carriers != null && !carriers.isEmpty()) {
+            String error = rootMessage(ex);
+            int seq = 0;
+            for (AggregateBatch.Carrier carrier : carriers) {
+                seq++;
+                messageHistory.recordFailure(runId, carrier.messageId(), index,
+                        ex.getProperty(MessageHistoryService.ACTION_NAME, String.class), error,
+                        carrier.body(), carrier.businessKey(), attemptsOnFailure(ex),
+                        stepDuration(ex),
+                        new BatchStamp(ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class),
+                                seq, carrier.parentMessageId()));
+            }
+        }
     }
 
     private void finishRun(Exchange ex, String status, String error) {
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
+        clearPendingBatches(runId);
         if (runId != null) {
             messageHistory.finishRun(runId, status, error);
         }

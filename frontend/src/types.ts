@@ -33,6 +33,7 @@ export type ActionType =
   | 'READ_SQL' | 'WRITE_UPSERT' | 'HTTP_CALL' | 'MQ_CONSUME' | 'MQ_PUBLISH' | 'FIELD_MAP'
   // 拆分（#140）：一条消息里的一个数组摊成 N 条子消息，是基数变化动作（1 → N）
   | 'SPLIT'
+  | 'AGGREGATE'
 
 export interface Action {
   id: number

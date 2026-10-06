@@ -210,6 +210,32 @@
           </el-form-item>
         </template>
 
+        <template v-if="actionForm.type === 'AGGREGATE'">
+          <el-form-item label="路径">
+            <el-input v-model="kindForm.path" placeholder="必填：拼在数据源地址后面的那段，如 /mes/api/codes/batch" />
+          </el-form-item>
+          <el-form-item label="方法">
+            <el-select v-model="kindForm.method" style="width: 140px">
+              <el-option v-for="m in ['POST', 'PUT', 'PATCH']" :key="m" :label="m" :value="m" />
+            </el-select>
+            <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
+              合并出去的是整批报文，只认带 body 的方法（缺省 POST）
+            </span>
+          </el-form-item>
+          <el-form-item label="请求体字段名">
+            <el-input v-model="kindForm.bodyField" placeholder="必填：整批包成 {&quot;字段名&quot;: [ … 每条消息自己那一片 … ]}，如 codes" />
+          </el-form-item>
+          <el-form-item label="响应配对字段">
+            <el-input v-model="kindForm.resultKeyField" placeholder="必填：响应每一项里这个字段与消息的业务键相等就算配上，如 code" />
+          </el-form-item>
+          <el-form-item label="结果落进 body 的键">
+            <el-input v-model="kindForm.attachAs" placeholder="必填：配对到的那一份写进 body 的这个键，紧随其后的写库动作直接用，如 handle" />
+          </el-form-item>
+          <el-alert type="info" :closable="false" show-icon
+            title="攒齐的边界是上游读取批读完那一刻"
+            description="不做条数阈值：要限制单次发送条数就调读库那一步的批大小，一处生效。整批同成同败；这一批的整份报文只存一份（那一步上的摘要行）。" />
+        </template>
+
         <template v-if="actionForm.type === 'MQ_PUBLISH'">
           <el-form-item label="exchange"><el-input v-model="kindForm.exchange" placeholder="如 edge.notify（需绑定目标队列）" /></el-form-item>
           <el-form-item label="routingKey"><el-input v-model="kindForm.routingKey" placeholder="缺省=queue" /></el-form-item>
@@ -283,7 +309,7 @@ import { api, ApiError } from '../api/client'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
-const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP', 'SPLIT']
+const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP', 'SPLIT', 'AGGREGATE']
 
 const jobs = ref<Job[]>([])
 const sites = ref<SiteInfo[]>([])
@@ -519,6 +545,8 @@ function resetKindFields() {
   // 拆分缺省摊平外层字段（与后端 SplitConfig 的缺省一致）：开关一进来就是"开"，
   // 别让用户以为关着——后端在字段缺失时也是 true
   if (actionForm.type === 'SPLIT') kindForm.keepParent = true
+  // 合并缺省 POST（与后端 AggregateConfig 的缺省一致）：合并出去的是整批报文
+  if (actionForm.type === 'AGGREGATE') kindForm.method = 'POST'
 }
 
 function openActionCreate() {

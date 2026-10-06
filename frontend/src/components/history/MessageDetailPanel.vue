@@ -115,7 +115,7 @@
                       role="button"
                       tabindex="0"
                       :aria-expanded="entry.open"
-                      :aria-label="`这一步是一批（${entry.group?.total ?? 0} 条）：点开看这一批的消息`"
+                      :aria-label="`这一步是一批（${entry.group?.messages ?? 0} 条消息）：点开看这一批的消息`"
                       @click.stop="toggleBatch(entry.key)"
                       @keydown.enter.prevent.stop="toggleBatch(entry.key)"
                       @keydown.space.prevent.stop="toggleBatch(entry.key)"

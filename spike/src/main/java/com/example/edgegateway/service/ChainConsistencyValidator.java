@@ -1,5 +1,6 @@
 package com.example.edgegateway.service;
 
+import com.example.edgegateway.config.AggregateConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.FieldMappingRule;
 import com.example.edgegateway.config.SplitConfig;
@@ -61,6 +62,15 @@ public final class ChainConsistencyValidator {
                 }
                 continue;
             }
+            if (action.getType() == ActionKind.AGGREGATE) {
+                // 合并没有「来源步骤」可指（它攒的是**走到它这里的那批消息**），链级要管的是配置本身
+                // 能不能解析：脏配置报成问题而不是抛出去（与拆分那一档同一处理，否则 /validate 500）
+                String problem = checkAggregateConfig(action);
+                if (problem != null) {
+                    problems.add(problem);
+                }
+                continue;
+            }
             if (action.getType() != ActionKind.FIELD_MAP) {
                 continue;
             }
@@ -108,6 +118,23 @@ public final class ChainConsistencyValidator {
         }
         String problem = stepProblem("sourceStep", step, action.getActionIndex(), indexes);
         return problem == null ? null : location(action) + " 的 " + problem;
+    }
+
+    /**
+     * 合并动作的配置（#142）：链级只管「这份配置读不读得出来」——脏配置报成问题而不是抛出去
+     * （与拆分那一档同一处理，否则 {@code /validate} 直接 500）。
+     *
+     * <p>它没有源步骤：合并攒的是**走到它这里的那批消息**，所以那类「悬空引用」在它身上不存在；
+     * 六个字段的必填与取值边界（方法只能是带 body 的那几个、三个键得是纯字段名）归
+     * {@link AggregateConfig#validate()}，写时与 {@code /validate} 各自都会调到它。</p>
+     */
+    private static String checkAggregateConfig(Action action) {
+        try {
+            AggregateConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
+            return null;
+        } catch (RuntimeException e) {
+            return location(action) + " 合并配置无法解析: " + e.getMessage();
+        }
     }
 
     /**

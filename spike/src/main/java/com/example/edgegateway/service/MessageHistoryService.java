@@ -76,6 +76,12 @@ public class MessageHistoryService {
     public static final String BATCH_SEQ = "edge.batchSeq";
     /** 当前消息的**父消息标识**（#139，{@code edge.parentMessageId}）：从哪条消息拆出来的，拆分动作设。 */
     public static final String PARENT_MESSAGE_ID = "edge.parentMessageId";
+    /**
+     * **摘要行**的消息标识前缀（#142 / ADR-0017 决策 6）：合并动作上承载整份请求与整份响应的那一行，
+     * 值是 {@code batch:<批号>}（该列非空，且「运行 + 消息 + 步骤」要唯一——批号一次执行一个，够唯一）。
+     * 前端按同一个前缀认它（`frontend/src/history/batch.ts` 的 {@code SUMMARY_MESSAGE_PREFIX}）。
+     */
+    public static final String SUMMARY_MESSAGE_PREFIX = "batch:";
 
     public static final String SUCCESS = "SUCCESS";
     public static final String FAILED = "FAILED";

@@ -106,8 +106,11 @@ const sendBatch = batchGroups([
   step({ id: 3, messageId: `${SUMMARY_MESSAGE_PREFIX}batch-C`, step: 4, batchId: 'batch-C', status: 'FAILED' }),
 ])
 eq('有摘要行的那一组是发送批', sendBatch[0].kind, 'send')
-eq('发送批的组头文案', sendBatch[0].head, '发送批 · 一次请求 3 条 · 失败 2 条')
-eq('摘要行自己也算这一组的一员（与消息 chip 并排）', sendBatch[0].total, 3)
+eq('发送批的组头文案（「N 条」数的是消息，不含摘要行）', sendBatch[0].head, '发送批 · 一次请求 2 条 · 失败 1 条')
+eq('摘要行也是一颗 chip（与消息 chip 并排），但不计入「N 条」',
+  [sendBatch[0].total, sendBatch[0].messages, sendBatch[0].failed], [3, 2, 1])
+eq('摘要行认得出来（就一条前缀）', sendBatch[0].summary?.messageId, `${SUMMARY_MESSAGE_PREFIX}batch-C`)
+eq('读取批没有摘要行', oneReadBatch[0].summary, null)
 eq('摘要行的认出法就一条前缀', [isSummaryRow({ messageId: `${SUMMARY_MESSAGE_PREFIX}x` }),
   isSummaryRow({ messageId: 'm-1' })], [true, false])
 
@@ -153,8 +156,8 @@ eq('读取批那一档不铺「重发这一批」（合并之前的步骤仍是�
   batchRedeliver(oneReadBatch[0]), null)
 eq('单条那档更不铺', batchRedeliver(batchGroups([singleStep])[0]), null)
 eq('没有组就什么都不铺', batchRedeliver(null), null)
-eq('发送批且这一批有失败：一次点击 = 一次请求',
-  batchRedeliver(sendBatch[0]), { count: 3, label: '重发这一批（3 条）' })
+eq('发送批且这一批有失败：一次点击 = 一次请求，N 数的是消息',
+  batchRedeliver(sendBatch[0]), { count: 2, label: '重发这一批（2 条）' })
 eq('发送批全成时不铺（没什么可重发的）',
   batchRedeliver(batchGroups([
     step({ id: 1, messageId: 'm-1', step: 4, batchId: 'batch-C' }),

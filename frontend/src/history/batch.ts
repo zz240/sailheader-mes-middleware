@@ -52,11 +52,21 @@ export interface BatchGroup {
   /** 批号；`null` = 这一步上没有批次（MQ 消费 / 任务输入那些链）。 */
   batchId: string | null
   kind: BatchKind
-  /** 同一步上同批的**每一行**，按落库先后；界面上一条 chip 一行。 */
+  /** 同一步上同批的**每一行**，按落库先后；界面上一条 chip 一行（**摘要行也在里面**）。 */
   members: MessageStep[]
-  /** 这一批几条（= `members.length`，写出来是给组头文案用的）。 */
+  /** 这一组几行（= `members.length`，含摘要行）。 */
   total: number
-  /** 这一批里失败了几条。 */
+  /** 这一批的**摘要行**（合并动作上承载整份请求与整份响应的那一条）；读取批没有，为 `null`。 */
+  summary: MessageStep | null
+  /**
+   * 这一批**几条消息**（= `total` 去掉摘要行）。
+   *
+   * 「一次请求 N 条」与「重发这一批（N 条）」数的是**消息**，不是行：摘要行是这一批的摘要，
+   * 它自己也有一颗 chip（ADR-0017 决策 10），但它不是一条发出去的消息——把它算进去，
+   * 组头会说「一次请求 3 条」而界面上只有 2 颗消息 chip。
+   */
+  messages: number
+  /** 这一批里**几条消息**失败（摘要行的状态不算消息的失败）。 */
   failed: number
   /** 组头那一句（`读取批 · 一次请求 N 条 · 失败 M 条` / 单条那档）。 */
   head: string
@@ -99,10 +109,11 @@ export function isSummaryRow(step: Pick<MessageStep, 'messageId'>): boolean {
  *
  * `读取批` 与 `发送批` 的区别只有一处说法（摘要行在不在这一组里）；单条那档不写「一次请求」，
  * 因为**它不是一批**——那正是这一档要挡住的那种错觉（ADR-0017 决策 10）。
+ * `messages` / `failed` 数的都是**消息**（不含摘要行，见 {@link BatchGroup#messages}）。
  */
-export function batchHead(kind: BatchKind, total: number, failed: number): string {
+export function batchHead(kind: BatchKind, messages: number, failed: number): string {
   if (kind === 'single') return SINGLE_NOTE
-  return `${kind === 'send' ? '发送批' : '读取批'} · 一次请求 ${total} 条 · 失败 ${failed} 条`
+  return `${kind === 'send' ? '发送批' : '读取批'} · 一次请求 ${messages} 条 · 失败 ${failed} 条`
 }
 
 /**
@@ -117,20 +128,26 @@ export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
     const key = batchKey(step)
     let group = groups.get(key)
     if (!group) {
-      group = { step: step.step, batchId: normalizeBatchId(step.batchId), kind: 'single', members: [], total: 0, failed: 0, head: '' }
+      group = {
+        step: step.step, batchId: normalizeBatchId(step.batchId), kind: 'single', members: [],
+        total: 0, summary: null, messages: 0, failed: 0, head: '',
+      }
       groups.set(key, group)
     }
     group.members.push(step)
-    if (step.status === 'FAILED') group.failed += 1
   }
   for (const group of groups.values()) {
     group.total = group.members.length
+    const messages = group.members.filter((member) => !isSummaryRow(member))
+    group.summary = group.members.find(isSummaryRow) ?? null
+    group.messages = messages.length
+    group.failed = messages.filter((member) => member.status === 'FAILED').length
     // **一条一组 = 不是一批**（ADR-0017 决策 10 要挡的正是「这一批只有一条」那种错觉）：批大小 1 的
     // 读库链、MQ 消费、任务输入都落这一档——界面上画虚线框，而不是一个只有一颗 chip 的组头
     //（那样的组头点开与不点开一模一样，还凭空多出一个「批」字）。
     // 一组以上再看有没有摘要行：有 = 这一批在合并动作上发过（决策 6），没有 = 读取批。
-    group.kind = group.total <= 1 ? 'single' : (group.members.some(isSummaryRow) ? 'send' : 'read')
-    group.head = batchHead(group.kind, group.total, group.failed)
+    group.kind = group.total <= 1 ? 'single' : (group.summary ? 'send' : 'read')
+    group.head = batchHead(group.kind, group.messages, group.failed)
   }
   return [...groups.values()].sort((a, b) => a.step - b.step
     || (a.members[0]?.id ?? 0) - (b.members[0]?.id ?? 0))
@@ -181,5 +198,6 @@ export function nodeBatch(
  */
 export function batchRedeliver(group: BatchGroup | null): BatchRedeliver | null {
   if (!group || group.kind !== 'send' || group.failed <= 0) return null
-  return { count: group.total, label: `重发这一批（${group.total} 条）` }
+  // N 数的是**消息**：摘要行不是一条发出去的消息（它只是这一批的摘要），别把它算进重发条数
+  return { count: group.messages, label: `重发这一批（${group.messages} 条）` }
 }
