@@ -56,7 +56,7 @@ sequenceDiagram
 | 建任务 | 录入任务元信息 | `JobService.create`（`service/JobService.java:24`） | `JobService.validate`（:89） | JSON → `Job` 实体 | 必填/重名→400/409 |
 | 建/改动作 | 按类型填字段 | `ActionService.add`（`service/ActionService.java:47`）/ `update`（:67） | `ActionConfig.from().validate()` + `validateChain`（:169） | `Action` + `addition`（JSON 列） | MQ_CONSUME 只能链首、序号唯一、最多一个 CONSUME/水位 READ_SQL |
 | 配置校验 | 连通性+只读 SQL+北向字段存在性 | `JobValidationService.validate`（`service/JobValidationService.java:58`） | `validateRemoteAction`（:81）、`validateSql`（:104） | 无状态变更 | errors 阻断启用，warnings 仅提示 |
-| 启用 | 注册/移除路由 | `RouteRegistry.enable`（`service/RouteRegistry.java:52`）/ `disable`（:70） | `RouteGenerator.build`（`service/RouteGenerator.java:70`） | 配置 → Camel `RouteBuilder` | 注册失败→停用任务；启动 `reloadEnabledJobs`（:41）单个失败跳过 |
+| 启用 | 注册/移除路由 | `RouteRegistry.enable`（`service/RouteRegistry.java:52`）/ `disable`（:70） | `RouteGenerator.build`（`service/RouteGenerator.java:128`） | 配置 → Camel `RouteBuilder` | 注册失败→停用任务；启动 `reloadEnabledJobs`（:41）单个失败跳过 |
 
 配置强类型分派：`DataSourceRequest`/`ActionRequest` 用 `@JsonCreator` 手工分派（Jackson `EXTERNAL_PROPERTY` 对
 record 不可用），`DataSourceConfig.from` / `ActionConfig.from` 用 `rejectUnknownKeys` 拒绝未知键（DS-2）。

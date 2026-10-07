@@ -2,7 +2,7 @@
 
 产物：`field-mapping-canvas.html`（单文件高保真原型，可直接打开）
 
-演示场景取**真实数据**：来源 `spike/src/test/resources/json/erp测试数据.json`（ERP BOM 嵌套样例），目标与规则取 `docs/research/mapping-framework.md` §4.1–4.3（制品 → BOM / `mesBom`），规则形状对齐 `config/FieldMappingRule.java`，编译结果对齐 `mapping/JsonataRuleCompiler.java`。
+演示场景取**真实数据**：来源 `spike/src/test/resources/json/erp测试数据.json`（ERP BOM 嵌套样例），目标与规则取 `docs/research/mapping-framework.md` §4.1–4.3（制品 → BOM / `mesBom`），规则形状对齐 `config/action/FieldMappingRule.java`，编译结果对齐 `mapping/JsonataRuleCompiler.java`。
 
 ---
 

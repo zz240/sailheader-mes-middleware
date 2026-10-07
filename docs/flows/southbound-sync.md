@@ -41,10 +41,10 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:108`） | `from("spring-rabbitmq:<exchange>?exchangeType=<t>&queues=..&routingKey=<rk>&autoDeclare=true")`（缺省=数据源名/direct/queue，ADR-0010） | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
-| 保真 | 存消息体 | 入口 process（:119） | `context[1]` | 消息体 → 上下文 | — |
-| 映射 | 字段映射 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→FAILED 消息步 |
-| 写库 | 幂等 upsert | WRITE_UPSERT（`appendFragment`，`upsert` 在 `service/RouteGenerator.java:345`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，:357） | `Map` → JDBC | 失败→重试/FAILED 消息步 |
+| 消费 | 订阅队列 | `buildConsumerEntry`（`service/RouteGenerator.java:216`） | `from("spring-rabbitmq:<exchange>?exchangeType=<t>&queues=..&routingKey=<rk>&autoDeclare=true")`（缺省=数据源名/direct/queue，ADR-0010） | JSON 串 → `unmarshal().json()` → `Map` | `handled=true`（失败后不重投队列） |
+| 保真 | 存消息体 | 入口 process（`service/RouteGenerator.java:233`） | `context[1]` | 消息体 → 上下文 | — |
+| 映射 | 字段映射 | FIELD_MAP（`service/ActionFragment.java:55` 那段片段） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | `Map` → 目标对象 | 求值失败→FAILED 消息步 |
+| 写库 | 幂等 upsert | WRITE_UPSERT（`service/ActionFragment.java:77` 那段片段，`upsert` 在 `service/ReadWriteFragments.java:123`） | `insert into <table> (...) values (?) on duplicate key update ...`（`jdbcTemplate.update`，`service/ReadWriteFragments.java:125`） | `Map` → JDBC | 失败→重试/FAILED 消息步 |
 
 约束：一条链最多一个 `MQ_CONSUME`（链首）+ 最多一个带水位的 `READ_SQL`（配置期拦截，`ActionService.validateChain`）。
 `sourceKey`（映射历史隔离）按实际源动作推导：`MQ_CONSUME → mq:<queue>`、`READ_SQL → db:<table>`

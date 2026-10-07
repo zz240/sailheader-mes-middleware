@@ -40,12 +40,12 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 读库 | 增量读 | READ_SQL（`service/RouteGenerator.java:147` `appendChain`） | 同北向 | 行 `Map` | — |
-| 映射 | 字段映射 | FIELD_MAP | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→FAILED 消息步 |
-| HTTP 推送 | 推 MES | HTTP_CALL（`appendFragment`） | `marshal().json().to(url)` + `captureResponse`（响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→FAILED 消息步 |
-| MQ 发布 | 发通知 | MQ_PUBLISH（`appendFragment`） | `bodySourceStep` **必填**（发布哪一步的输出，通常 FIELD_MAP 序号）；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
+| 读库 | 增量读 | READ_SQL（`service/RouteGenerator.java:306` `appendChain`） | 同北向 | 行 `Map` | — |
+| 映射 | 字段映射 | FIELD_MAP（`service/ActionFragment.java:55`） | `JsonataRuleCompiler.compile` + `JsonataFieldMapper.apply` | 上下文 → 目标对象 | 失败→FAILED 消息步 |
+| HTTP 推送 | 推 MES | HTTP_CALL（`service/ActionFragment.java:95`） | `marshal().json().to(url)` + `captureResponse`（`service/ReadWriteFragments.java:161`，响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→FAILED 消息步 |
+| MQ 发布 | 发通知 | MQ_PUBLISH（`service/ActionFragment.java:133`） | `bodySourceStep` **必填**（发布哪一步的输出，通常 FIELD_MAP 序号）；`marshal().json()` → `spring-rabbitmq:<exchange>?routingKey=..&disableReplyTo=true` | `Map`→JSON→MQ | 失败→FAILED 消息步 |
 
-`bodySourceStep`（`service/RouteGenerator.java` MQ_PUBLISH 片段）显式取 `context[step]`——**不再有缺省推断**：
+`bodySourceStep`（`service/ActionFragment.java:133` MQ_PUBLISH 片段）显式取 `context[step]`——**不再有缺省推断**：
 `MqPublishConfig.validate` 要求必填（>0），`ActionService.validateChain` 要求指向链中**存在的、序号更早**的动作；
 片段内 `context[step]` 无输出（步骤未执行或被断点跳过）时**抛错中止**，宁可 FAILED 也不静默发布旧 body。
 `MqPublishConfig.validate` 要求显式 `exchange`；`routingKey` 缺省回落 `queue`。

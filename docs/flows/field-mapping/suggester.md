@@ -134,7 +134,7 @@ sequenceDiagram
    `Inference.datePattern` 会经 `MappingSuggestion.datePattern`（`MappingSuggestion.java:20`）带回调用方。
    它**不是** `DateTimeFormatter` 能认的 pattern，运行时 `ofPattern` 直接抛（`mapping/JsonataFunctions.java:63`，
    写在所有 try 之外）；编译期则把它拼成 `$dateFormat(x, "ISO-8601")`（`mapping/JsonataRuleCompiler.java:180-181`）。
-   **现在这条路径的终点变了**：`#111` 起配置期校验 `datePattern` 合法性是**错误**（`config/FieldMappingConfig.java:257-264`
+   **现在这条路径的终点变了**：`#111` 起配置期校验 `datePattern` 合法性是**错误**（`config/action/FieldMappingConfig.java:258-265`
    → `mapping/DatePatterns.java:44-62`），所以「采用了也存不下去」——保存直接被 400 拒掉。完整结论见建议表 F1。
 9. **`ISO-8601` 触发条件**：样本值形如 `2026-08-14T10:00:00Z` / 带毫秒 / 带偏移（正则 `TransformInferrer.java:35`），
    且**全部**样本都匹配才判 DATE（`:60-66`，`allMatch`）。
@@ -203,7 +203,7 @@ sequenceDiagram
 | **失败样例 B：任务不存在** | curl ① 把 `jobId` 改成 `999999` | HTTP 404，`{code:"NOT_FOUND", message:"任务不存在: 999999"}` | 走 `MappingSuggestionService.java:46-49` → `ApiExceptionHandler:28-31` |
 | **失败样例 C：`targets` 缺失** | curl ① 删掉 `targets` 字段 | HTTP 500，`{code:"INTERNAL_ERROR", ...}` —— **这是缺陷不是设计**（`MappingSuggestionService.java:60` NPE，见 N6） | 同一请求带 `"targets":[]` 则正常返回 `data=[]` |
 | **失败样例 D：数组名不相似** | curl ⑥ 把目标数组改成 `totally.unrelated.list` | `data=[]`（没有任何组建议） | 与 `RuleMappingSuggesterGroupTest.java:49-57` 一致；验证「不回退唯一数组」 |
-| **失败样例 E：ISO-8601 落到保存** | curl ⑤ 拿到 `datePattern="ISO-8601"`，把它写进一条 DATE 规则的 `datePattern` 后保存 | HTTP 400，错误里含「日期格式串不合法: ISO-8601（Unknown pattern letter: I）」 | `FieldMappingConfig.java:257-264` + `DatePatterns.java:49-59`（#111）；**这就是 F1「采用了也存不下去」** |
+| **失败样例 E：ISO-8601 落到保存** | curl ⑤ 拿到 `datePattern="ISO-8601"`，把它写进一条 DATE 规则的 `datePattern` 后保存 | HTTP 400，错误里含「日期格式串不合法: ISO-8601（Unknown pattern letter: I）」 | `FieldMappingConfig.java:258-265` + `DatePatterns.java:49-59`（#111）；**这就是 F1「采用了也存不下去」** |
 
 可复制的 curl（`①`，其余同上替换字段）：
 
@@ -284,7 +284,7 @@ python tools/evaluation/auto_fill_rate.py
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
-| **F1** 推断产出的 `"ISO-8601"` **不是合法的 `DateTimeFormatter` pattern**：`TransformInferrer.java:34`（旧文引 `TransformInferrer:34`，**复核一致**）的候选名会被 `MappingSuggestion.datePattern` 带出（`MappingSuggestion.java:20`），编译成 `$dateFormat(x, "ISO-8601")`（`JsonataRuleCompiler.java:180-181`，旧文引 `:140` **已漂移**）→ 运行时 `ofPattern("ISO-8601")` 抛 `Unknown pattern letter: I`（`JsonataFunctions.java:63`，旧文引 `:35` **已漂移**）→ FAILED。**原来的触发路径是旧编辑器建议面板上那个「采用」按钮（旧文引 `MappingEditor.vue:472`，该文件已随 #107 删除）**，界面上再没有地方把建议的 `datePattern` 写进规则；要恢复它得先把建议器接回界面（#98 D8 明确这一轮不接）。注意旧文那句「旧编辑器删掉之后无 UI 可达」在 **#111 之后不再成立**：日期格式有了**手输框**，手输一个非法 pattern 可达（`docs/features/field-mapping/README.md:57-60`） | 保留建议 **A（把该候选名改为合法目标 pattern，如 `yyyy-MM-dd'T'HH:mm:ss`）+ C（校验期校验 `datePattern` 合法性，兜住所有非法 pattern）**：接回建议器之前先把后端这两处修掉，否则接回来的第一天就会重演 | 样例含时区/毫秒的时间戳（如 `2026-08-14T10:00:00Z`）即触发 | 缺陷 | 字段映射 | **建议 C 已落地**（#111 / ADR-0012 决策 2：`config/FieldMappingConfig.java:257-264` + `mapping/DatePatterns.java:44-62` 把非法 `datePattern` 判成配置期**错误**，`Y`/`D` 这类陷阱字母也拦；有来源字段样例时再按样例值真跑一遍给警告）；**建议 A 仍待**——`TransformInferrer.java:34` 那个候选名至今还是 `ISO-8601`，而且**现在采用了也存不下去**（会被 C 那条校验在保存时以 400 拒掉，见造数表失败样例 E） |
+| **F1** 推断产出的 `"ISO-8601"` **不是合法的 `DateTimeFormatter` pattern**：`TransformInferrer.java:34`（旧文引 `TransformInferrer:34`，**复核一致**）的候选名会被 `MappingSuggestion.datePattern` 带出（`MappingSuggestion.java:20`），编译成 `$dateFormat(x, "ISO-8601")`（`JsonataRuleCompiler.java:180-181`，旧文引 `:140` **已漂移**）→ 运行时 `ofPattern("ISO-8601")` 抛 `Unknown pattern letter: I`（`JsonataFunctions.java:63`，旧文引 `:35` **已漂移**）→ FAILED。**原来的触发路径是旧编辑器建议面板上那个「采用」按钮（旧文引 `MappingEditor.vue:472`，该文件已随 #107 删除）**，界面上再没有地方把建议的 `datePattern` 写进规则；要恢复它得先把建议器接回界面（#98 D8 明确这一轮不接）。注意旧文那句「旧编辑器删掉之后无 UI 可达」在 **#111 之后不再成立**：日期格式有了**手输框**，手输一个非法 pattern 可达（`docs/features/field-mapping/README.md:57-60`） | 保留建议 **A（把该候选名改为合法目标 pattern，如 `yyyy-MM-dd'T'HH:mm:ss`）+ C（校验期校验 `datePattern` 合法性，兜住所有非法 pattern）**：接回建议器之前先把后端这两处修掉，否则接回来的第一天就会重演 | 样例含时区/毫秒的时间戳（如 `2026-08-14T10:00:00Z`）即触发 | 缺陷 | 字段映射 | **建议 C 已落地**（#111 / ADR-0012 决策 2：`config/action/FieldMappingConfig.java:258-265` + `mapping/DatePatterns.java:44-62` 把非法 `datePattern` 判成配置期**错误**，`Y`/`D` 这类陷阱字母也拦；有来源字段样例时再按样例值真跑一遍给警告）；**建议 A 仍待**——`TransformInferrer.java:34` 那个候选名至今还是 `ISO-8601`，而且**现在采用了也存不下去**（会被 C 那条校验在保存时以 400 拒掉，见造数表失败样例 E） |
 | **F3** 建议器**只为必填目标字段出建议**（`RuleMappingSuggester.java:58-60`，旧文引 `:58-60` **复核一致**），可选字段没有候选 | 待评估：可选字段也给建议（低分候选）或由前端 `required` 语义决定 | 与「建议覆盖全部目标字段」的使用直觉不符 | 业务改进 | 字段映射 | 待评估（补正：**数组目标不受此限**，见 N3） |
 | **F4** 数组组建议只看**数组名相似**（`RuleMappingSuggester.java:159-175`，旧文引 `:154-175` 覆盖整个方法，**基本一致**）：数组名不相似就完全没有组建议（不回退「唯一数组」）；children 一律同名启发（`field.name→field.name`，score 1.0，`:177-189`） | 待评估：数组名无匹配时回退「源中唯一数组」候选；children 附加相似度评分 | 组建议是层级映射的主要入口，漏检即回到手工配 | 业务改进 | 字段映射 | 待评估 |
 | **F5** 建议器**阈值 0.85 与 TOP_N=3 均不可配**（`RuleMappingSuggester.java:25、34-36`；旧文引 `:25,30-36` 并称「只有无参 `@Component`」——**复核后修正**：存在带参构造器 `:30-32`，但 Spring 走无参那个、全仓无 Bean 定义，结论不变） | 待评估：抽到配置（`edge.mapping.threshold` / `topN`） | 不同客户字段命名差异大，硬编码阈值无法调优 | 设计改进 | 字段映射 | 待评估 |

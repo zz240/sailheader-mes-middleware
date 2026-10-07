@@ -12,7 +12,7 @@
 - **强类型校验（DS-2）**：`DataSourceConfig` sealed interface（HTTP/MySQL/RabbitMQ 各自 record），`from()` 拒绝未知键（400）、`validate()` 做必填与取值校验；`DataSourceRequest` 按 `type` 手工分派（Jackson EXTERNAL_PROPERTY 对 record 不可用）。
 - **敏感字段存储**：MySQL 密码等目前为**明文**落库（代码无 AES/Cipher/MasterKey 实现，也无 `EDGE_MASTER_KEY`）；响应同样回显明文。凭证脱敏（DS-3）、密钥丢失恢复（DS-4）均未做。
 - **结构探测**：`StructureProbeService` 连库读表结构，失败回退样例 JSON；返回字段列表（名称/类型/可空/样例）供映射编辑器用。
-- **代码位置**：`config/DataSourceConfig*.java`（类型化配置）、`service/DataSourceService.java`、`service/ConnectionTester.java`、`service/StructureProbeService.java`、`web/DataSourceController.java`。
+- **代码位置**：`config/datasource/DataSourceConfig*.java`（类型化配置）、`service/DataSourceService.java`、`service/ConnectionTester.java`、`service/StructureProbeService.java`、`web/DataSourceController.java`。
 
 ## 决策时间线
 

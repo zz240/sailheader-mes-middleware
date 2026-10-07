@@ -81,14 +81,14 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 1 选 CONCAT | 把这一行的取值方式选成「拼接」 | `frontend/src/mapping/transforms.ts:154-155`（`applyTransform` 的 CONCAT 分支） | `applyTransform` | `row.transform = 'CONCAT'`；`parts` 取 `params.parts`，否则「上一行也是 CONCAT 就留着，不然给空数组」 | 无；空 `parts` 由后端报「CONCAT 转换需要 parts 片段」（`FieldMappingConfig.java:286-288`），前端 `isRowConfigured` 先把它挡在规则之外（`rows.ts:199-202`） |
+| 1 选 CONCAT | 把这一行的取值方式选成「拼接」 | `frontend/src/mapping/transforms.ts:154-155`（`applyTransform` 的 CONCAT 分支） | `applyTransform` | `row.transform = 'CONCAT'`；`parts` 取 `params.parts`，否则「上一行也是 CONCAT 就留着，不然给空数组」 | 无；空 `parts` 由后端报「CONCAT 转换需要 parts 片段」（`FieldMappingConfig.java:287-289`），前端 `isRowConfigured` 先把它挡在规则之外（`rows.ts:199-202`） |
 | 2 加片段 | 拼接里追加一段 | `MappingRowList.vue:308-311`（`addPart`）→ 按钮 `:713-715` | `addPart` | `row.parts` 追加 `{type: inArray ? 'path' : 'const', value: ''}`；同时 `markHumanEdited` 摘掉「自动」标记 | 无。顶层默认给**常量**片段、数组子行默认给**取值**片段（这一条与「自动匹配」的交互见建议表 N5） |
 | 3a 片段挂「常量」 | 这一段是写死的字面量 | 下拉 `MappingRowList.vue:648-662`；值输入框 `:663-669` | `choosePartKind` → `applyPartKind`（`parts.ts:100-104`） | 片段变 `{type:'const', value:''}`，路径清空、参数一并清掉 | 常量片段值为空串时，编译成 `""`（不报错），样例检查报「拼接里有 N 个空片段」（`MappingSampleChecks.java:436-439`） |
-| 3b 片段挂「直接取值」 | 这一段原样取一个来源字段 | 同一处下拉；路径选择框 `:670-681` | `applyPartKind` 的 default 分支（`parts.ts:124-128`） | `{type:'path', value:'<路径>'}`；`kind === 'STRING'` 时**不写** `transform`（老形状就是这样） | 没写 `path` 时结构校验报「拼接第 N 个片段：缺少来源字段 path」（`FieldMappingConfig.java:310-312`） |
+| 3b 片段挂「直接取值」 | 这一段原样取一个来源字段 | 同一处下拉；路径选择框 `:670-681` | `applyPartKind` 的 default 分支（`parts.ts:124-128`） | `{type:'path', value:'<路径>'}`；`kind === 'STRING'` 时**不写** `transform`（老形状就是这样） | 没写 `path` 时结构校验报「拼接第 N 个片段：缺少来源字段 path」（`FieldMappingConfig.java:311-313`） |
 | 3c 片段挂「数字转换」 | 这一段取回来再转成数字 | 同上 | `applyPartKind`（`parts.ts:124-128`，`kind === 'INT'` 写 `transform`） | `{path, transform:'INT'}` | 运行时 `$number("abc")` 会抛异常导致任务 FAILED（历史结论，来源：旧走查 P8 / ADR-0012 决策 8） |
-| 3d 片段挂「日期格式化」 | 这一段按格式串格式化 | 同一处下拉；参数面板 `MappingRowList.vue:687-694` | `choosePartKind` / `choosePartDatePattern`（`:324-327`）→ `applyPartKind`（`parts.ts:112-117`） | `{path, transform:'DATE', datePattern: normalizeDatePattern(...)}`；没给参数就用 `keptDate ?? DEFAULT_DATE_PATTERN` | 非法格式串是**错误**（结构校验 + 保存都拦）：`FieldMappingConfig.java:321-325` → `DatePatterns.problem`；编译器同一判据在 `JsonataRuleCompiler.java:241-243` |
-| 3e 片段挂「枚举映射」 | 这一段查键值表 | 同一处下拉；枚举表 `MappingRowList.vue:695-701` | `choosePartKind` / `onPartEnumMap`（`:339-342`）→ `applyPartKind`（`parts.ts:118-123`） | `{path, transform:'ENUM', enumMap}`；占位键（还没填键的格子）不进规则（`parts.ts:57-62` + `rows.ts:33-39`） | 表空时结构校验报「拼接第 N 个片段：枚举转换需要 enumMap」（`FieldMappingConfig.java:326-329`） |
-| 3f 片段挂「行号」 | 这一段是数组元素的行号 | 同一处下拉（顶层**置灰**，`:660`）；起始值面板 `:702-711` | `partKindDisabledReason` / `canUsePartKind`（`parts.ts:134-143`）；`applyPartKind`（`parts.ts:105-111`） | `{type:'path', value:'', transform:'INDEX', startAt}`——**不带 path** | 顶层拼接行上选它：界面不给（置灰），结构校验报（`FieldMappingConfig.java:313-317`），编译器也不放行（`JsonataRuleCompiler.java:250-254`），三处同一条理由 |
+| 3d 片段挂「日期格式化」 | 这一段按格式串格式化 | 同一处下拉；参数面板 `MappingRowList.vue:687-694` | `choosePartKind` / `choosePartDatePattern`（`:324-327`）→ `applyPartKind`（`parts.ts:112-117`） | `{path, transform:'DATE', datePattern: normalizeDatePattern(...)}`；没给参数就用 `keptDate ?? DEFAULT_DATE_PATTERN` | 非法格式串是**错误**（结构校验 + 保存都拦）：`FieldMappingConfig.java:322-326` → `DatePatterns.problem`；编译器同一判据在 `JsonataRuleCompiler.java:241-243` |
+| 3e 片段挂「枚举映射」 | 这一段查键值表 | 同一处下拉；枚举表 `MappingRowList.vue:695-701` | `choosePartKind` / `onPartEnumMap`（`:339-342`）→ `applyPartKind`（`parts.ts:118-123`） | `{path, transform:'ENUM', enumMap}`；占位键（还没填键的格子）不进规则（`parts.ts:57-62` + `rows.ts:33-39`） | 表空时结构校验报「拼接第 N 个片段：枚举转换需要 enumMap」（`FieldMappingConfig.java:327-330`） |
+| 3f 片段挂「行号」 | 这一段是数组元素的行号 | 同一处下拉（顶层**置灰**，`:660`）；起始值面板 `:702-711` | `partKindDisabledReason` / `canUsePartKind`（`parts.ts:134-143`）；`applyPartKind`（`parts.ts:105-111`） | `{type:'path', value:'', transform:'INDEX', startAt}`——**不带 path** | 顶层拼接行上选它：界面不给（置灰），结构校验报（`FieldMappingConfig.java:314-318`），编译器也不放行（`JsonataRuleCompiler.java:250-254`），三处同一条理由 |
 | 4 片段参数就地编辑 | 改格式串 / 改枚举表 / 改起始值 | `MappingRowList.vue:330-348` | `onPartDatePattern` / `onPartDateCommit` / `onPartEnumMap` / `onPartStartAt` | 直接写在片段那一格上（`part.datePattern ?? ''`、`part.enumMap`、`part.startAt`）；日期手输期间原样落、失焦/回车才 `normalizeDatePattern`（`:335-337`） | 组件自己一条错都不判（`MappingDateParams.vue:6`）；格式串合不合法只由后端那条只读接口说 |
 | 5 保存（前端 → 规则 JSON） | 把行收成 `rules` | `frontend/src/mapping/rows.ts:149-154` | `ruleFromRow` | `row.parts.filter(partFilled).map(partRuleOf)`；一个都没填够时 `delete rule.parts` | 前端不复制后端校验规则（`rows.ts:176-178` 的口径），能收就收、拒由后端拒 |
 | 6 编译 | `rules` → JSONata | `JsonataRuleCompiler.java:178` → `concatExpr:205-225` → `partExpr:233-263` | `concatExpr` / `partExpr` / `partPath` / `indexExpr` | `List<Object> parts` → `String.join(" & ", parts)`（`:224`） | 片段不是字符串也不是对象 → `拼接第 N 个片段：片段只能是字符串常量或一个对象`（`:217-218`）；`parts` 空 → `CONCAT 转换需要 parts 片段`（`:221-222`）；认不出的转换 → `:261-262` |
@@ -122,12 +122,12 @@ sequenceDiagram
   `JsonataRuleCompilerTest.legacyConcatPartsCompileByteForByteTheSame:456-467`（历史结论：该用例由
   #112 引入，本轮只读未运行）。前端侧的对应保证是 `partRuleOf(partFromRule(raw)) === raw`
   （`checks.ts:613-619`）。后端把规则读回来再写出去也不丢这一格：`toMap` 原样带回 `parts`
-  （`FieldMappingConfig.java:380-381`），往返用例 `JsonataRuleCompilerTest:317-336` 断言 `"BOM-"` 与
+  （`FieldMappingConfig.java:381-382`），往返用例 `JsonataRuleCompilerTest:317-336` 断言 `"BOM-"` 与
   `{"path":"product.productCode"}` 都在（历史结论，本轮未运行）。
 - **片段上的日期参数配错了是静默的（除非格式串本身非法）。** 运行时跑的是
   `JsonataFunctions.formatDate`：值解析不出来就**原样返回**、任务照样成功（`JsonataFunctions.java:43-49`），
   所以「片段上挂了个日期格式化但没生效」只在目标报文里看得见；能拦下来的只有格式串本身不合法那一档
-  （`DatePatterns.problem:49` / `isLegal:44-45`），判据在 `FieldMappingConfig.java:321-325`
+  （`DatePatterns.problem:49` / `isLegal:44-45`），判据在 `FieldMappingConfig.java:322-326`
   与编译器 `JsonataRuleCompiler.java:241-243`，两边是同一条。
 - **空片段那条是警告，注册在样例检查那一路。** `MappingDraftValidationService.sampleWarnings` 把它和
   「必填没配来源」「来源不在样例里」等放在一起（`MappingDraftValidationService.java:119-130` 的 `:127`），
@@ -149,7 +149,7 @@ sequenceDiagram
 - **`addOnce` 把同一条合成一条。** 结构校验按片段报一条，编译器在同一处也报逐字相同的一条
   （#112 起片段消息带序号，两边一模一样），服务那边用 `addOnce` 去重——界面上把一条错显示成两条，
   会让人以为有两个问题要改（`MappingDraftValidationService.java:94-105`，
-  `FieldMappingConfig.java:120-121` 也点了这一条）。
+  `FieldMappingConfig.java:121-122` 也点了这一条）。
 - **「拼接行」是一个特例。** 普通行「点一下来源」写的是 `row.source`，而拼接行的「来源」就是它的片段，
   所以自动匹配单独走 `fillBlankConcatPart`（`fast-config.ts:502-512`、`:610-627`），
   并且 `isBlankRow` 对拼接行改用「还有没有等路径的片段」判（`:529`）。
@@ -230,7 +230,7 @@ sequenceDiagram
 ```
 
 组节点那一条只写 `source` / `iterate` / `children`：组节点不参与片段编译，结构校验对它是先走组那几条
-就 `continue`（`FieldMappingConfig.java:220-236`）。
+就 `continue`（`FieldMappingConfig.java:221-237`）。
 
 ### 失败样例
 
@@ -284,8 +284,8 @@ mvn -f spike/pom.xml test -Dtest=JsonataRuleCompilerTest,MappingDraftValidationS
 | **M1** 旧走查把 #112 只记成一行覆盖样例：「拼接片段上的五种片段转换（#112：直接取值 / 数字转换 / 日期格式化 / 枚举映射 / 行号）」（旧正文「测试数据与造数指导」末行），没有本形态的独立走查 | 已按映射形态拆出本文件，覆盖结论保留在「测试数据与造数指导」表里；事实由 `JsonataRuleCompilerTest.concatPartsCarryTheirOwnTransform` 与 `MappingDraftValidationServiceTest.validPartTransformsAreAccepted` 佐证 | 「一行一个目标字段」与「一段一个片段转换」是两种不同的配置心智，混在一个文件里读不出边界 | 文档偏差 | 字段映射 | 已闭环 |
 | **M2** 旧正文「关键实现」只有一句「`&`（CONCAT）」，`&` 与 `+` 同级左结合、行号片段必须加括号这条最容易踩的坑没写 | 已迁到本文件「关键实现」首条，并给出编译处行号（`JsonataRuleCompiler.java:256-259`）与用例（`JsonataRuleCompilerTest.java:522-524`） | 不括起来整条拼接一跑到就炸，而产物面板上看不出问题 | 文档偏差 | 字段映射 | 已闭环 |
 | **M3** 空片段那条警告的口径（#104 起就有）散在功能页与测试里，旧走查没搬：`parts` 里有空串常量片段、或路径片段的值是空白 → 警告；行号片段不算空（#112） | 已迁到本文件「关键实现」与「失败样例」，标明「只看值那一格」的判据在 `MappingSampleChecks.java:436-446` | 这条是配置错了却全绿的主要路径（编译出来是空字符串，看着像配了） | 文档偏差 | 字段映射 | 已闭环 |
-| **N1** `docs/features/field-mapping/README.md:42` 把「空片段」写成功「`parts` 里有空串常量片段，或路径片段没写 `path`」——「没写 `path`」在实现里指**值是空白**（`MappingSampleChecks.java:441-442` 要 `path` 键在），**键整个缺失**是结构错（`FieldMappingConfig.java:310-312`），不算那条警告 | 把功能页那一句改成「路径片段的 `path` 是空串或只有空白」；键缺失那种另有错误那条 | 措辞含糊会让人以为键缺失也走警告，而那种形状保存就被 400 拦下（`MappingDraftValidationServiceTest:551-566` 正是为这条歧义写的） | 文档偏差 | 字段映射 | 待评估 |
-| **N2** 片段上的 `startAt` 是非数字（如 `"abc"`）时**静默按 1 编译**：`startAtOf` 认不出返回 `null`（`JsonataRuleCompiler.java:287-296`）→ `indexExpr` 取默认 1（`:321-325`）；结构校验对行号片段只查位置、不查 `startAt`（`FieldMappingConfig.java:313-317`），一条问题都不报 | 结构校验补一条「起始值不是整数」（与日期格式串同档：配置期错误）；或明确文档写「认不出的起始值按 1」 | 对照行级：`startAt` 在 `FieldMappingRule.java:56` 就 `Integer.valueOf`，非法值会让整份草稿读不出来（`MappingDraftValidationService.java:67-70`）——同一份配置里两处一个硬报一个静默 | 缺陷 | 字段映射 | 待评估 |
+| **N1** `docs/features/field-mapping/README.md:42` 把「空片段」写成功「`parts` 里有空串常量片段，或路径片段没写 `path`」——「没写 `path`」在实现里指**值是空白**（`MappingSampleChecks.java:441-442` 要 `path` 键在），**键整个缺失**是结构错（`FieldMappingConfig.java:311-313`），不算那条警告 | 把功能页那一句改成「路径片段的 `path` 是空串或只有空白」；键缺失那种另有错误那条 | 措辞含糊会让人以为键缺失也走警告，而那种形状保存就被 400 拦下（`MappingDraftValidationServiceTest:551-566` 正是为这条歧义写的） | 文档偏差 | 字段映射 | 待评估 |
+| **N2** 片段上的 `startAt` 是非数字（如 `"abc"`）时**静默按 1 编译**：`startAtOf` 认不出返回 `null`（`JsonataRuleCompiler.java:287-296`）→ `indexExpr` 取默认 1（`:321-325`）；结构校验对行号片段只查位置、不查 `startAt`（`FieldMappingConfig.java:314-318`），一条问题都不报 | 结构校验补一条「起始值不是整数」（与日期格式串同档：配置期错误）；或明确文档写「认不出的起始值按 1」 | 对照行级：`startAt` 在 `FieldMappingRule.java:57` 就 `Integer.valueOf`，非法值会让整份草稿读不出来（`MappingDraftValidationService.java:67-70`）——同一份配置里两处一个硬报一个静默 | 缺陷 | 字段映射 | 待评估 |
 | **N3** 片段级枚举面板给了「按样例补全」按钮（`MappingRowList.vue:698` 传 `sample-field`，`MappingEnumParams.vue:59-66` 算缺哪些键），但校验器**不按样例检查片段枚举覆盖**（`MappingSampleChecks.java:267-270` 只看 `rule.enumMap()`） | 要么把片段枚举也接进 `collectUncoveredEnumValues`（问题定位得能带片段序号），要么在片段面板上说明「这里不会按样例提醒」 | 现在同一件事：界面用样例提示用户补全，校验结果里却一个字不说，用户会以为覆盖齐了；功能页已把「不查」记为取舍（`README.md:115`），但界面没体现 | 设计改进 | 字段映射 | 待评估 |
 | **N4** 手写行号片段不带 `startAt`（`{"transform":"INDEX"}`）时，编辑器保存会补成 `{"transform":"INDEX","startAt":1}`：`partFromRule` 只在键在时读（`parts.ts:80`），`partRuleOf` 无条件写（`parts.ts:53`） | 明确「形状不变」只承诺老形状（常量 / 取值）与已带 `startAt` 的行号片段，并把这个形状写进对照表；或让 `partRuleOf` 缺省时也不写 `startAt` | 语义等价但形状变了；`checks.ts:622-628` 的往返样例显式带 `startAt: 1`，所以这条没被覆盖 | 文档偏差 | 字段映射 | 待评估 |
 | **N5** 顶层拼接行「加片段」默认给**常量**片段、数组子行默认给**取值**片段（`MappingRowList.vue:309`），而 `partNeedsPath` 把常量片段排除在外（`parts.ts:168-171`）：结果是顶层新增片段之后「自动匹配同名」既不会填它（`fast-config.ts:621`），整行也被判成非空白行而不参与匹配（`:526-531`） | 顶层新增片段也默认成取值片段（与数组子行一致），或让「自动匹配」把「只有常量片的拼接行」也算空白 | 同一操作在两个位置行为不同，且顶层的那个恰好让「一键填上」失效；这是 #112 引入的不对称 | 设计改进 | 字段映射 | 待评估 |

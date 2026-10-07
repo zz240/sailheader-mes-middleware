@@ -25,12 +25,16 @@
 │   ├── archive/                # 已归档的过时文档（历史草案等）
 │   └── agents/                 # issue tracker / triage / domain 配置
 ├── frontend/                   # 前端工程（Vue 3 + TS + Vite + Element Plus）
-└── spike/                      # Spring Boot + Camel Spike 工程
+└── spike/                      # 后端工程（Spring Boot + Camel）——就是正式后端，见下方命名提醒
     ├── docker-compose.yml      # MySQL + RabbitMQ + app（多阶段构建）
     ├── Dockerfile              # 多阶段构建（node 构建前端 → mvn 打包 → JRE 镜像）
-    └── src/                    # 两条演示链路 + 字段映射 + mock MES
+    └── src/                    # 动作链 / 字段映射 / 消息历史 / mock MES
         └── main/resources/db/migration/   # Flyway 版本化迁移（V1 建表+种子，V2+ 增量）
 ```
+
+> **命名提醒**：`spike/` 是**正式后端**工程（Spring Boot + Apache Camel），不是一次性验证代码——
+> 目录名是早期"先把链路跑通"阶段留下的。改名要动构建脚本、文档与工具脚本里的全部路径引用，
+> 收益只是消除误解，因此**暂不改名**，在此说明。
 
 ## 快速运行
 
@@ -67,9 +71,21 @@ npm run dev
 
 ## 状态
 
-- 文档分层：用户看 `docs/user-guide.md`，开发者看 `docs/features/`，决策基线在 `docs/adr/`（历史草案已归档到 `docs/archive/`）
-- Spike 已端到端跑通（MySQL → 字段映射 → mock MES；RabbitMQ → 字段映射 → MySQL 幂等 upsert）
-- 进行中：M0（配置模型 + REST + 路由生成器 + 表单 UI）
+- 文档分层：用户看 `docs/user-guide.md`；开发者看 `docs/features/`（每个功能的现状 + 决策时间线）；
+  决策"为什么"在 `docs/adr/`；业务↔代码走查在 `docs/flows/`；历史草案已归档到 `docs/archive/`。
+- **已落地**：
+  - 数据源（HTTP / MySQL / SQL Server / RabbitMQ，**连接级**：地址与鉴权在数据源，表 / 队列 / 路径在动作）；
+  - 任务与动作链配置界面；**八种动作种类**：`READ_SQL`、`WRITE_UPSERT`、`HTTP_CALL`、`MQ_CONSUME`、
+    `MQ_PUBLISH`、`FIELD_MAP`、`ONE_TO_MANY`（拆分 / 还原两档）、`AGGREGATE`（合并）；
+  - 字段映射：规则树编译成 JSONata 求值，配只读草稿校验与试算；
+  - 消息历史（`job_run` / `message_step` + 批次三格）、断点重投与整批重发；
+  - 外部 API Key 触发、定时调度、模板 / 站点 / 映射历史沉淀。
+- **交付**：单镜像同源运行（前端 `dist` 打进 Spring Boot 镜像），Flyway 版本化迁移 V1–V7。
+- **测试**：后端 `mvn -o -B test` **624 项 0 失败**（H2 内存库，不需要 MySQL / RabbitMQ）；
+  前端纯模块自测（`node --experimental-strip-types`，不依赖浏览器）；
+  真机脚本在 `tools/shadow-site/`（影子站点 + MES 替身）与 `tools/ui/`（Playwright 页面级）。
+- **已知债务**：目录名 `spike/`（见上「命名提醒」）；`RouteGenerator` 曾是改动热点（#145 已按片段与簿记拆开：装配 400 行 + `StepLedger` / 各片段类，最长的 `StepLedger` 318 行）；
+  链一致性只校验 `sourceStep` 的**存在性与先后**，不校验语义漂移（重排后同序号换动作仍会放行）。
 
 ## 参考
 

@@ -46,13 +46,13 @@ sequenceDiagram
 
 | 环节 | 业务动作 | 入口（文件+行号） | 关键类方法 | 数据形态变化 | 错误处理 |
 |---|---|---|---|---|---|
-| 触发 | 自动调度/手动进主路由 | `buildPollingEntry`（`service/RouteGenerator.java:84`） | `from("direct:job-N")`（自动触发由 `JobScheduler` 投递） | — | 路由级 `onException` |
-| 读水位 | 取上次位置（进入循环前） | `prepareRead`（`service/RouteGenerator.java`） | `WatermarkStore.get("job:N")` → property `edge.readWatermark`（epoch 毫秒/自增值） | 无 | TIMESTAMP 以任务时区格式化窗口下界 |
-| 分批读 | keyset 分页逐批扫 | `appendChain`（`loopDoWhile` + `readBatch`） | `{watermark}` 谓词 + `ORDER BY col LIMIT batchSize`，经 `JdbcTemplate` 打到客户库（`#edge-ds-<id>` 池） | `List<Map>`（每批 ≤ batchSize） | 只读 SQL 校验（jobId 校验期） |
+| 触发 | 自动调度/手动进主路由 | `buildPollingEntry`（`service/RouteGenerator.java:198`） | `from("direct:job-N")`（自动触发由 `JobScheduler` 投递） | — | 路由级 `onException`（`service/ErrorHandling.java:26`） |
+| 读水位 | 取上次位置（进入循环前） | `prepareRead`（`service/ReadWriteFragments.java:59`） | `WatermarkStore.get("job:N")` → property `edge.readWatermark`（epoch 毫秒/自增值） | 无 | TIMESTAMP 以任务时区格式化窗口下界 |
+| 分批读 | keyset 分页逐批扫 | `appendChain`（`loopDoWhile` + `readBatch`，`service/RouteGenerator.java:306` + `service/ReadWriteFragments.java:76`） | `{watermark}` 谓词 + `ORDER BY col LIMIT batchSize`，经 `JdbcTemplate` 打到客户库（`#edge-ds-<id>` 池） | `List<Map>`（每批 ≤ batchSize） | 只读 SQL 校验（jobId 校验期） |
 | 算新水位 | 取批内 max | `ReadSqlBatcher.newBatchWatermark` | SEQUENCE 取 max(id)；TIMESTAMP 取 max(updated_at) 转 epoch 毫秒（**不用墙钟 now**） | 批内进度 | — |
 | 拆分 | 每行一子交换 | `split(bodyExpression())` | Camel split（循环内） | `List<Map>` → `Map` | — |
-| 映射 | 源→目标 | FIELD_MAP（`appendFragment`） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
-| 推送 | HTTP 出站 | HTTP_CALL（`appendFragment`） | `composeUrl` + `marshal().json()` + `.to(url)` + `captureResponse`（响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→抛异常→重试/FAILED 消息步 |
+| 映射 | 源→目标 | FIELD_MAP（`service/ActionFragment.java:55` 那段片段） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
+| 推送 | HTTP 出站 | HTTP_CALL（`service/ActionFragment.java:95` 那段片段） | `composeUrl`（`service/ReadWriteFragments.java:177`）+ `marshal().json()` + `.to(url)` + `captureResponse`（`service/ReadWriteFragments.java:161`，响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→抛异常→重试/FAILED 消息步 |
 | 水位回写 | **每批**成功后推进 | `updateWatermark`（split 结束后、循环内） | `WatermarkStore.put(批内水位)` | — | 批失败只丢该批：水位停在上一成功批，重跑补读 |
 
 > 水位首跑语义：`watermark` 表无记录时按初始值 0 处理——SEQUENCE 读 `id > 0` 即**首次全量**（不会跳过首行），
@@ -96,4 +96,4 @@ curl http://localhost:8080/mock/mes/received
 | 水位首跑语义（SEQUENCE 初始 0）未在文档说明 | 已注明（本页"水位首跑语义"：无记录按 0 → 首跑全量，成功后按 id 前进） | 避免误以为跳过首行 | 文档偏差 | 可靠性 | 已闭环 |
 | 水位策略重构 + 分批：两种模式——增量（id，`> last` + 每批 max(id)）与刷量（按 `updated_at` 窗口 + 业务键 upsert，幂等，不用墙钟 now）；支持 `batchSize` + keyset 分页（`where {watermark} order by 列 limit n`）、**每批推进水位**，供**首次全量/大增量**；`job.timezone` 用于刷量窗口 | 由 #79 实现：`SEQUENCE`＝增量 `>`、`TIMESTAMP`＝按时间 `>=`（含边界）+ 批内 max、`batchSize` 分批、整批成功才推进水位；首次全量从空水位逐批扫完 | 务实收敛：不做侵入式强绑定 | 设计改进 | 北向/可靠性 | 已闭环（#79） |
 | 删除同步：拉取模型感知不到物理删除 | 逻辑删除靠刷量 upsert 覆盖；物理删除由用户按需触发任务（manual/external trigger）；自动删除检测需新动作，单列增强 | 无法自动感知删除 | 业务改进 | 北向/可靠性 | 待评估 |
-| P12 **分批只在有水位列时生效**：无 `watermarkColumn` 的 READ_SQL 走 Camel `sql:` 端点**整批一次性读入**（不分批、不推进水位）（`service/RouteGenerator.java:200-219`） | **不采纳**（用户拍板）：无水位列即"全量一次读"语义，整批读符合预期；大表首跑按水位列 + `batchSize` 配（能力已由 #79 提供） | 大表首跑一次性进内存属配置选择，非缺陷 | 文档偏差 | 北向/可靠性 | 不采纳（语义符合预期） |
+| P12 **分批只在有水位列时生效**：无 `watermarkColumn` 的 READ_SQL 走 Camel `sql:` 端点**整批一次性读入**（不分批、不推进水位）（`service/RouteGenerator.java:329-342`） | **不采纳**（用户拍板）：无水位列即"全量一次读"语义，整批读符合预期；大表首跑按水位列 + `batchSize` 配（能力已由 #79 提供） | 大表首跑一次性进内存属配置选择，非缺陷 | 文档偏差 | 北向/可靠性 | 不采纳（语义符合预期） |

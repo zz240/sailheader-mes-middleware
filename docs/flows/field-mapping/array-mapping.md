@@ -20,7 +20,7 @@
 **链路形态**：入口 = 动作表上的「编辑映射」（`frontend/src/views/JobsView.vue:112-117`）→ 逐行编辑器
 （数组行 + 子行，`frontend/src/components/FieldMappingWorkbench.vue` 装配，
 `frontend/src/views/JobsView.vue:243-255`）→ 保存 = `POST /api/jobs/{id}/actions` 把 `rules` 落库
-→ 启用建路由时编译成 JSONata（`spike/.../service/RouteGenerator.java:278-283`）→ 消息到达时求值
+→ 启用建路由时编译成 JSONata（`spike/.../service/ActionFragment.java:58-60`）→ 消息到达时求值
 （`spike/.../mapping/JsonataFieldMapper.java:46-55`）→ 落点 = 目标对象（`Map`），供后续 HTTP/MQ/写库消费。
 
 **「外层」的语义**（本形态最容易填错的一处）：它**始终指这份来源数据的顶层对象**，不是「上一层」、
@@ -102,12 +102,12 @@ sequenceDiagram
 | ⑧ 行号子行 | 取值固定是行号，起始值就地改 | `MappingRowList.vue:525-533` → `frontend/src/components/MappingIndexParams.vue:21-23`；规则侧 `frontend/src/mapping/rows.ts:155-159` | `onStartAtChange` / `ruleFromRow` | `startAt` 写进行与规则；`source` 恒为 `$index` | 起始值空 → 1（一处定义，`MappingIndexParams.vue:4-6`） |
 | ⑨ 清除 / 撤销一行 | 清的是「值怎么取」，子行留着 | `rows.ts:239-251`（`clearRowMapping`）、`rows.ts:185-206`（`isRowConfigured`） | `clearRowMapping` / `isRowConfigured` | 数组行清完 = 「一行没有来源数组的数组映射」，`children` 不动（`rows.ts:233-237`） | 清完的行不进草稿（`editor-model.ts:334-340`），目标字段与子行留着 |
 | ⑩ 校验草稿（前端装请求） | 草稿 = 保存会写出去的那份 | `frontend/src/mapping/useMappingDraft.ts:76-96` → `frontend/src/mapping/draft.ts:90-100` | `draftRequest` | 行树 → `{draft:{rules[]}, targets, sourceFields, sourceFieldsStep, …}` | 请求失败提示「校验没跑起来」（`useMappingDraft.ts:96`） |
-| ⑪ 校验草稿（结构 + 链） | 后端判对错 | `spike/.../web/FieldMappingEditorController.java:69-72` → `spike/.../service/MappingDraftValidationService.java:60-92` | `MappingDraftValidationService.validate` → `FieldMappingConfig.problems()`（`FieldMappingConfig.java:86-106,213-270`） | 草稿 JSON → `FieldMappingConfig` → `RuleProblem{target,parent,message}` | 错误只有结构错与链问题（`MappingDraftValidationService.java:78-82`），全部「错误」才 `valid=false` |
+| ⑪ 校验草稿（结构 + 链） | 后端判对错 | `spike/.../web/FieldMappingEditorController.java:69-72` → `spike/.../service/MappingDraftValidationService.java:60-92` | `MappingDraftValidationService.validate` → `FieldMappingConfig.problems()`（`FieldMappingConfig.java:87-107,213-270`） | 草稿 JSON → `FieldMappingConfig` → `RuleProblem{target,parent,message}` | 错误只有结构错与链问题（`MappingDraftValidationService.java:78-82`），全部「错误」才 `valid=false` |
 | ⑫ 校验草稿（样例依赖的警告） | 来源路径在不在、必填配没配 | `MappingDraftValidationService.java:119-130` → `spike/.../service/MappingSampleChecks.java:69-79,91-101` | `unknownSources` / `missingRequiredTargets` / `RuleScope`（`MappingSampleChecks.java:184-217`） | 相对路径补上组节点的来源数组再查（`MappingSampleChecks.java:205-210,227-237`）；`$root.` 去掉前缀按绝对查 | 全是警告，一条都不拦保存（`MappingSampleChecks.java:36-38`） |
 | ⑬ 编译产物 | 草稿编成 JSONata 文本 | `MappingDraftValidationService.java:176-194` → `JsonataRuleCompiler.java:36-48,127-164` | `compile` / `groupExpr` | `List<FieldMappingRule>` → `[ $map($s_1.items, function($g0, $i0) { {…} }) ]` | 编不出来补一条错误（`MappingDraftValidationService.java:184-189`） |
-| ⑭ 保存 | 同一份 rules 落库 | `frontend/src/views/JobsView.vue:340-357` → `POST /api/jobs/{id}/actions` → `FieldMappingConfig.validate()`（`FieldMappingConfig.java:66-74`） | `validate` / `problems` | 前端行 → `ruleFromRow`（顶层写 `sourceStep`，子规则不带，`rows.ts:131-171`）→ `rules` | 400 带上全部结构问题（`；` 连接），抽屉不关（`JobsView.vue:361` 注释所在分支） |
+| ⑭ 保存 | 同一份 rules 落库 | `frontend/src/views/JobsView.vue:340-357` → `POST /api/jobs/{id}/actions` → `FieldMappingConfig.validate()`（`FieldMappingConfig.java:67-75`） | `validate` / `problems` | 前端行 → `ruleFromRow`（顶层写 `sourceStep`，子规则不带，`rows.ts:131-171`）→ `rules` | 400 带上全部结构问题（`；` 连接），抽屉不关（`JobsView.vue:361` 注释所在分支） |
 | ⑮ 映射历史沉淀 | 组行落库 | `spike/.../service/ActionService.java:157-163` → `MappingHistoryService.java:59-74` | `recordFromAction` / `upsert`（`:130-155`） | 只遍历**顶层**规则：组行按「数组路径 → 目标数组」入历史，`children` 一条都不入 | 链上还没有读入口时整份跳过（`MappingHistoryService.java:64-68`） |
-| ⑯ 编译（路由构建期） | 启用时把规则编成表达式 | `RouteGenerator.java:278-283` | `JsonataFieldMapper(rules)` → `JsonataRuleCompiler.compile`（`JsonataFieldMapper.java:21-22`） | `rules` → dashjoin JSONata 实例（跨消息复用） | 编译失败 → 使路由构建/启用失败 |
+| ⑯ 编译（路由构建期） | 启用时把规则编成表达式 | `service/ActionFragment.java:58-60`（FIELD_MAP 那段片段） | `JsonataFieldMapper(rules)` → `JsonataRuleCompiler.compile`（`JsonataFieldMapper.java:21-22`） | `rules` → dashjoin JSONata 实例（跨消息复用） | 编译失败 → 使路由构建/启用失败 |
 | ⑰ 求值 | 消息到达时按上下文求值 | `JsonataFieldMapper.java:46-55` | `apply(context)`；`frame.bind("s_"+step, …)`（`:53`） | 上下文 `Map<Integer,Object>` → 目标对象；`$g0`/`$i0` 由 `$map` 逐元素提供 | 求值异常 → 该消息步失败（落消息历史） |
 
 #### 三种来源写法对照表（界面 ↔ 规则 `source` ↔ 编译产物）
@@ -125,9 +125,9 @@ sequenceDiagram
 
 ### 关键实现
 
-1. **组节点 = `children` 非空**，不是靠 `iterate` 认的：`FieldMappingRule.java:18-33` 的字段定义 + 编译器
+1. **组节点 = `children` 非空**，不是靠 `iterate` 认的：`FieldMappingRule.java:19-34` 的字段定义 + 编译器
    `boolean group = rule.children() != null && !rule.children().isEmpty()`（`JsonataRuleCompiler.java:110`），
-   结构校验同一判据（`FieldMappingConfig.java:220`）。空 `children` 的组行会被当成普通叶子——那就是
+   结构校验同一判据（`FieldMappingConfig.java:221`）。空 `children` 的组行会被当成普通叶子——那就是
    「一整个数组写成一个值」的静默错，前端为此在 `isRowConfigured` 里更严一层（`rows.ts:187-190`）。
 2. **`$g<depth-1>` 只绑当前层**：`groupExpr` 用 `$g{depth}` / `$i{depth}` 声明元素变量，并把 `depth+1`
    交给子表达式（`JsonataRuleCompiler.java:150-172`）；子规则解析来源时用 `$g` + `(depth-1)`
@@ -145,18 +145,18 @@ sequenceDiagram
    （`JsonataRuleCompiler.java:321-325`）；界面同一口径（`labels.ts:39-41` 读作「行号 · 从 N 起」，
    `MappingIndexParams.vue:21-23` 把空归一成 1）。**注意**：类注释里写的 `$i<d> + (startAt-1)`
    （`JsonataRuleCompiler.java:23`）与实现不一致，见建议表 N6。
-6. **`$index` 只在数组元素里有意义，压在两处**：结构校验 `depth == 0` 时拒 INDEX（`FieldMappingConfig.java:238-240`），
+6. **`$index` 只在数组元素里有意义，压在两处**：结构校验 `depth == 0` 时拒 INDEX（`FieldMappingConfig.java:239-241`），
    组内还要求 `source` 恰好是 `$index`（`:241-243`）；界面把顶层行的「行号」置灰并写明理由
    （`frontend/src/mapping/transforms.ts:51-64`）。拼接里的行号片段同理（`JsonataRuleCompiler.java:249-255`、
-   `FieldMappingConfig.java:314-316`）——细节见[拼接与片段转换](concat-part-mapping.md)。
+   `FieldMappingConfig.java:315-317`）——细节见[拼接与片段转换](concat-part-mapping.md)。
 7. **数组组 `[ ]` 恒为数组**：`groupExpr` 返回 `"[ $map(…) ]"`（`JsonataRuleCompiler.java:160-163`），
    代码注释说这是 S0 实测的结论（`$map` 单元素结果会被 JSONata 序列扁平化，退化成对象）——
    **本轮未复跑那条实测**，历史结论的落点是 `JsonataRuleCompilerTest.singleElementArrayStaysAnArray`
    （`:142-159`，用单元素源断言 `bomLines` 仍是 `List`）与 `tools/ui/array-mapping-101.cjs`（#101 真机端到端脚本，本轮未运行）。
-8. **组内子规则禁 `sourceStep`**（继承组节点）：结构校验逐个子规则查（`FieldMappingConfig.java:228-234`），
+8. **组内子规则禁 `sourceStep`**（继承组节点）：结构校验逐个子规则查（`FieldMappingConfig.java:229-235`），
    链级校验只看顶层（`MappingDraftValidationService.java:132-146`）；前端两条路都保证——写规则时子规则不带
    （`rows.ts:141,165-168`），填来源时元素字段与外层引用都不存步骤（`source-picker.ts:266-268`）。
-9. **组节点的 `source` 只查「非空」**：`FieldMappingConfig.java:225-227`。也就是说「数组行的来源必须是一个
+9. **组节点的 `source` 只查「非空」**：`FieldMappingConfig.java:226-228`。也就是说「数组行的来源必须是一个
    数组」这条只在界面挡（`source-picker.ts:253-256`）——绕过界面（手写规则 JSON / 存量配置）能存下
    `$map(<非数组路径>, …)`，见建议表 N3。
 10. **组节点的 `transform` 不参与编译**：编译器只认组节点的 `children`（`JsonataRuleCompiler.java:141-142`），
@@ -254,7 +254,7 @@ sequenceDiagram
 { "rules": [ { "sourceStep": 1, "source": "$index", "target": "bom.lineNo", "transform": "INDEX", "startAt": 1 } ] }
 ```
 
-预期：`INDEX 转换只能在数组组内使用: bom.lineNo`（`FieldMappingConfig.java:238-240`；同一条在编译期由
+预期：`INDEX 转换只能在数组组内使用: bom.lineNo`（`FieldMappingConfig.java:239-241`；同一条在编译期由
 `JsonataRuleCompiler.java:249-255` 对**拼接片段**再报一次，逐字相同的两条由
 `MappingDraftValidationService.addOnce`（`:100-105`）合成一条）。
 
@@ -270,7 +270,7 @@ sequenceDiagram
 ```
 
 预期：`组内子规则不允许再选 sourceStep（继承组节点）: bom.bomLines -> materialCode`，且 `parent='bom.bomLines'`
-→ 界面上挂到那条子行（`FieldMappingConfig.java:228-234`）。
+→ 界面上挂到那条子行（`FieldMappingConfig.java:229-235`）。
 
 3. **子行来源字段不在样例里**：把子行 `source` 改成 `materialCodex`（样例里没有它）。
 
@@ -299,7 +299,7 @@ curl -X POST http://localhost:8080/api/field-mapping-editor/validate `
 
 # 2) 保存（真的落库）：带编辑器那份 rules 建/改 FIELD_MAP 动作
 curl -X POST http://localhost:8080/api/jobs/{id}/actions -H "Content-Type: application/json" -d '{...}'
-# 期望：200；非法时 400，消息是「；」连接的全部结构问题（FieldMappingConfig.java:66-74）
+# 期望：200；非法时 400，消息是「；」连接的全部结构问题（FieldMappingConfig.java:67-75）
 
 # 3) 后端相关测试类
 cd spike
@@ -325,9 +325,9 @@ curl -X POST http://localhost:8080/api/actions/{id}/probe-target -H "Content-Typ
 | **P9**（迁自旧 `transform-flow.md` 建议表；该文件已改成导航页，编号对照见 [transform-flow.md](../transform-flow.md)）组内只能引用当前层 `$g<depth-1>` 或 `$root`（顶层根）——**中间层组的元素无法被更内层引用**（本轮核对：`JsonataRuleCompiler.java:150-172,317` 与 `:313-315`） | 待评估：精确化文档边界（"深层任意重排"的确切成因）或扩展变量绑定 | 与 `features/field-mapping` 已知限制对应，但现有描述不够精确 | 文档偏差 | 字段映射 · 数组层级 | 待评估 |
 | **T37 约定**（迁自旧 `transform-flow.md` 建议表）映射历史对组规则：组行落库、INDEX 子规则不入库 | 保持现状，已在文档注明（`features/field-mapping` 已知限制，T37 约定） | T37 约定 | 文档偏差 | 字段映射 · 数组层级 | 已闭环 |
 | **已知限制 · 本形态表述**（迁自旧 `transform-flow.md` 建议表）深层数组任意重排仍建议走 `mode:EXPRESSION` | 已在文档注明（`features/field-mapping` 已知限制："数组迭代段 + 相对路径"边界）；本形态里的具体表现是**来源清单只给第一层元素字段**（`source-picker.ts:85-89,156`），嵌套数组的子行只能手写 JSONata | 层级路径支持有限 | 业务改进 | 字段映射 · 数组层级 | 已闭环 |
-| **N1** `source` 写成 `$index` 但 `transform` 不是 INDEX 时，**没有任何一处**拦：结构校验只要求来源非空（`FieldMappingConfig.java:265-268`），界面读配置时把 `source='$index'` 显示成「行号 · 从 N 起」（`editor-model.ts:264-273`、`labels.ts:39-41`），保存又原样写回（`rows.ts:137` 只按 `transform` 分支），编译出来是 `$s_1.$index` / `$g0.$index` 这样一个取不到任何字段的表达式 | 待评估：读入时按 `$index` 归一（像 `rows.ts:111-112` 那样），或在结构校验里加一条「非 INDEX 转换不得以 `$index` 为来源」 | `$index` 只在行号语义里成立；这种形状只能由手写规则 JSON 造出来（界面两条路都会清掉：`transforms.ts:164-169` 换转换时清、`source-picker.ts:347-358` 加行时固定 INDEX），所以是校验缺口而非日常踩坑 | 缺陷 | 字段映射 · 数组层级 | 待评估 |
+| **N1** `source` 写成 `$index` 但 `transform` 不是 INDEX 时，**没有任何一处**拦：结构校验只要求来源非空（`FieldMappingConfig.java:266-269`），界面读配置时把 `source='$index'` 显示成「行号 · 从 N 起」（`editor-model.ts:264-273`、`labels.ts:39-41`），保存又原样写回（`rows.ts:137` 只按 `transform` 分支），编译出来是 `$s_1.$index` / `$g0.$index` 这样一个取不到任何字段的表达式 | 待评估：读入时按 `$index` 归一（像 `rows.ts:111-112` 那样），或在结构校验里加一条「非 INDEX 转换不得以 `$index` 为来源」 | `$index` 只在行号语义里成立；这种形状只能由手写规则 JSON 造出来（界面两条路都会清掉：`transforms.ts:164-169` 换转换时清、`source-picker.ts:347-358` 加行时固定 INDEX），所以是校验缺口而非日常踩坑 | 缺陷 | 字段映射 · 数组层级 | 待评估 |
 | **N2** 迁移条目 T37 的表述是「组行落库、**INDEX 子规则**不入库」，但本轮读到 `recordFromAction` 只遍历**顶层**规则（`MappingHistoryService.java:71-73`），**所有**组内子规则（元素字段、外层引用、行号）一条都不入历史；用例也只断言组行那一条（`MappingHistoryServiceTest.java:189-214`） | 待评估：把 `features/field-mapping` 已知限制那条改成「组行落库，组内子规则一律不入库（含 INDEX）」，或在实现里真的递归入历史 | 现行文档只提 INDEX，会让人以为元素字段已经在历史里、能参与建议器的历史复用 | 文档偏差 | 字段映射 · 数组层级 | 待评估 |
-| **N3** 「数组行的来源必须是一个数组」只在界面挡（`source-picker.ts:253-256`），结构校验对组节点的来源只查非空（`FieldMappingConfig.java:225-227`）——手写规则 JSON 能存下 `$map(<非数组路径>, …)` | 待评估：结构校验加一条需要样例的形状提示（样例里以该路径开头的元素字段存不存在），或明确记为已知限制 | 与 `docs/features/field-mapping/README.md:108`（源里数组必须是真数组）是同一类问题的两个方向：那边是源形状，这边是配置形状 | 设计改进 | 字段映射 · 数组层级 | 待评估 |
+| **N3** 「数组行的来源必须是一个数组」只在界面挡（`source-picker.ts:253-256`），结构校验对组节点的来源只查非空（`FieldMappingConfig.java:226-228`）——手写规则 JSON 能存下 `$map(<非数组路径>, …)` | 待评估：结构校验加一条需要样例的形状提示（样例里以该路径开头的元素字段存不存在），或明确记为已知限制 | 与 `docs/features/field-mapping/README.md:108`（源里数组必须是真数组）是同一类问题的两个方向：那边是源形状，这边是配置形状 | 设计改进 | 字段映射 · 数组层级 | 待评估 |
 | **N4** 目标字段补全对嵌套数组**会往下展开**（`editor-model.ts:115-131` 的 `elementPaths` 递归），而来源清单只给第一层元素字段（`source-picker.ts:85-89,156`）——子行选了一个嵌套元素目标路径（如 `parts.code`）时，「数组元素内」这一组里没有任何一项能填它 | 待评估：两边取同一种深度口径（补全也只给第一层，或来源清单在嵌套时给出提示「深层重排请走手写 JSONata」） | 当前是「清单里有这个目标字段、却是死路」的体验，容易让人以为字段丢了 | 设计改进 | 字段映射 · 数组层级 | 待评估 |
 | **N5** `frontend/src/mapping/labels.ts:12-13` 的注释仍写着「（`docs/flows/transform-flow.md` P9）」，而本次拆分后 `transform-flow.md` 只留导航与旧编号对照（`docs/flows/README.md:27`），P9 的正文搬到本文件 | 待评估：注释改指 `docs/flows/field-mapping/array-mapping.md`（建议表 P9） | 指针指到只留导航的文件，等于下次走查又得重找一遍 | 文档偏差 | 字段映射 · 数组层级 | 待评估 |
 | **N6** `JsonataRuleCompiler` 类注释写「INDEX → `$i<d> + (startAt-1)`」（`JsonataRuleCompiler.java:23`），实现是 `$i<depth-1> + startAt`（`indexExpr`，`:321-325`）：`startAt=1` 时产物是 `$i0 + 1`（`JsonataRuleCompilerTest.java:115-116` 的断言、`labels.ts:39-41` 的界面文案都按「从 1 起」） | 待评估：把类注释改成 `$i<d-1> + startAt`（与实现、界面、用例三处一致） | 照注释推语义会以为起始值要减 1，排查行号差一位时会走错方向 | 文档偏差 | 字段映射 · 数组层级 | 待评估 |

@@ -4,14 +4,14 @@
 
 ## 当前设计（现状）
 
-- **失败即停（ADR-0003）**：`RouteGenerator.configureErrorHandling` 对全链 `onException(Exception.class)`；`maximumRedeliveries = job.retryCount`、`redeliveryDelay = job.backoffMs`；最终失败记一条 `FAILED` 消息步并把运行标为 `FAILED`。
+- **失败即停（ADR-0003）**：`ErrorHandling.configure`（`service/ErrorHandling.java:26`）对全链 `onException(Exception.class)`；`maximumRedeliveries = job.retryCount`、`redeliveryDelay = job.backoffMs`；最终失败记一条 `FAILED` 消息步并把运行标为 `FAILED`。
   - **总尝试次数（#109）**：`attempt` = 该步的总投递次数，由 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，与所属动作序号 `edge.failedAttemptsStep` 成对读写，读的时候对上号才用——否则前一步骤的重试会漏给后面的步骤）：失败步 = 该步失败次数（末次失败也走异常回调），成功步 = 该步失败次数 + 1。`retryCount=2` 必失败 → 3；`retryCount=0` → 1；重试一次后成功 → 2；前一步骤重试过后再有一次成功的步骤仍是 1。
 - **handled 策略**：MQ 消费主路由 `handled=true`（失败后消费侧不重投队列）；重放/轮询/断点路由 `handled=false`（异常抛回调用方）。
 - **消息历史（ADR-0009）**：死信升维为「运行 + 消息步」。
   - `job_run`：一次执行（id/jobId/status/input_snapshot/error/started_at/finished_at），`status ∈ RUNNING/SUCCESS/FAILED`；
   - `message_step`：一条消息 × 一个动作（runId/messageId/step/actionName/status/data_snapshot/input_snapshot/error/created_at/attempt/businessKey），`status ∈ SUCCESS/FAILED/REDELIVERED`（RETRYING/SUPPRESSED 预留）；按 `(run_id, message_id, step)` 唯一。
   - **批次身份（#139 / ADR-0017）**：`message_step` 又多三格（迁移 `db/migration/V5__message_step_batch.sql`，列 / 索引都按 `information_schema` 判断、幂等）——`batch_id`（批号，配 `idx_msg_step_batch`）、`batch_seq`（批内序号）、`parent_message_id`（父消息标识）。**批号是「某一个动作上、被同一次基数变化动作归到一起的那组消息」的编号**：每执行一次现生成，随消息在链上**继承到下一个基数变化动作为止**（同一个动作上一条消息只属于一个批次）。读库那条路**每读一批一个新号**（原先一次运行一个，粗到当不了批边界）；成功步与失败步两条路都写。**批内序号只在拆分与合并时写**（元素顺序 / 攒批顺序，从 1 起），读取批那些行留空——空不是 0。**父消息标识管谱系、批号管分组**：一条父消息被拆两次时两次的子消息这一格完全相同，只有批号分得开。**现有唯一约束不动**（批号不是标识的一部分）。消息步索引接口（`/history/runs/{id}/steps`）带上 `batch_id`，右详情按它分组：**这一步换了号**的链节点带小批徽标，点开是「读取批 · 一次请求 N 条 · 失败 M 条」的组头加一组 chip；某一步上这条消息**自己一组**时画虚线框写「单条 · 不是一批」（读库直连 / MQ 消费 / 任务输入这些链就该长这样）。列表默认行为、网址与筛选一个字没改（分组口径在纯模块 `frontend/src/history/batch.ts`，自测 `batch-checks.ts`）。
-  - **元素 → 已初始化消息（#139 抽出的 module）**：`service/ElementMessageFactory.java`——消息标识、业务键、父消息标识、批内序号与外层字段继承归它管；策略部分（何时开容器、批尾提交水位、split 之前结算动作耗时、失败步挂批量占位标识、批号何时换）仍留在 `RouteGenerator`，这一抽**行为零变化**，业务键提取也随之从 `MessageHistoryService` 搬过来。
+  - **元素 → 已初始化消息（#139 抽出的 module）**：`service/ElementMessageFactory.java`——消息标识、业务键、父消息标识、批内序号与外层字段继承归它管；策略部分（何时开容器、批尾提交水位、split 之前结算动作耗时、失败步挂批量占位标识、批号何时换）先留在 `RouteGenerator`（#145 之后归 `StepLedger` 与各片段类），这一抽**行为零变化**，业务键提取也随之从 `MessageHistoryService` 搬过来。
 - **业务键**：源动作新增 `businessKey`（READ_SQL=源列；MQ_CONSUME/任务输入=JSON 路径），在**消息创建时**提取；可为空（不分组/去重）。
 - **任务最近运行结果（#88）**：每次运行结束（成功/失败/重投）由 `MessageHistoryService.finishRun` 经 `JobLastRunWriter` 统一回写 `job.last_run_status/last_run_at/last_error`（错误取 `job_run.error`；成功清空 `last_error`），覆盖 MQ 消费/自动调度/手动执行/断点重投；手动执行与外部触发只回读任务返回。
 - **断点续跑**：从一条 `FAILED` 消息步精确重投（用该步数据从该动作重放，不整链重跑），成功后原步状态 `REDELIVERED`。
@@ -25,7 +25,7 @@
   - **界面入口（#135）**：消息历史页的单步卡底部——**只有 `FAILED` 的消息步铺「从步骤 N 断点重投」**（其余状态摆一句「为什么不能投」）；弹窗写清消息 id / 业务键 / 步骤号 / 动作 / 状态，二次确认、进行中按钮 pending 且不可连点、Esc 关闭，成功后原步 `REDELIVERED` 且**列表与详情同时刷新**，接口报错时错误铺在弹窗里、按钮恢复可点（口径与文案在纯模块 `frontend/src/history/redeliver.ts`，自测 `redeliver-checks.ts`）。
 - **列表分页**：`GET /api/history/runs`（运行，可按 jobId/status/**businessKey** 过滤；业务键的口径是「该运行下任一条消息的业务键命中即保留这条运行」，一条也没命中直接给空页）、`GET /api/history/steps` 与扁平别名 `GET /api/history`（消息步，默认 FAILED，`page/size`，size≤100）返回 `{total, records}`；步骤可按 jobId/runId/messageId/businessKey/status 过滤；`GET /api/history/{id}` 与 `/steps/{id}` 返回某消息步完整字段。
 - **交付语义（至少一次）**：水位仅整批成功才推进，失败整批重读（at-least-once）；重试退避与断点重投下 HTTP/MQ 推送**可能重复**——南向 `WRITE_UPSERT` 按幂等键去重，北向推送需 MES 按业务键去重。与 ADR-0003 一致（不承诺恰好一次/分布式补偿）。
-- **代码位置**：`service/MessageHistoryService.java`（核心）、`service/ElementMessageFactory.java`（元素 → 已初始化消息：#139）、`model/BatchStamp.java`（一条消息步的批次戳：#139）、`service/JobLastRunWriter.java`（任务最近运行结果回写）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由内记录/失败/续跑）、`model/JobRun.java`、`model/MessageStep.java`、`frontend/src/history/batch.ts`（批次口径的纯模块：#139）、`spike/src/main/resources/db/migration/`（表定义）、`spike/src/test/resources/schema.sql`（H2 测试库）。
+- **代码位置**：`service/MessageHistoryService.java`（核心）、`service/StepLedger.java`（消息步 / 运行簿记：#145 从 `RouteGenerator` 抽出）、`service/ElementMessageFactory.java`（元素 → 已初始化消息：#139）、`model/BatchStamp.java`（一条消息步的批次戳：#139）、`service/JobLastRunWriter.java`（任务最近运行结果回写）、`web/HistoryController.java`、`service/RouteGenerator.java`（路由装配）、`service/ErrorHandling.java`（`onException` 失败面）、`model/JobRun.java`、`model/MessageStep.java`、`frontend/src/history/batch.ts`（批次口径的纯模块：#139）、`spike/src/main/resources/db/migration/`（表定义）、`spike/src/test/resources/schema.sql`（H2 测试库）。
 
 ## 决策时间线
 
@@ -43,7 +43,7 @@
 | 09-20 | 运行列表接上业务键筛选（口径：任一消息命中即保留该运行） | 新历史页是双栏控制台，运行那一层也要能按业务对象找；前端按行补拉 `/history/steps?runId=` 是 N+1 | 消息步那一侧的 businessKey 语义不变；运行侧的 status 仍默认不过滤 | #129 / ADR-0016 |
 | 09-22 | 消息历史页恢复断点重投入口（弹窗写清哪条消息的哪一步、二次确认、成功后**双刷**） | #129 拆掉旧表格后重投从页面上消失（只剩后端接口）；重投是「敢按的操作」，要把弹哪一步、后果、进行中与失败各是什么一次说清 | 语义一字未改（#108 / #90 / ADR-0009）；口径与文案落在纯模块 `frontend/src/history/redeliver.ts` | #135 / ADR-0016 决策 11 |
 | 09-28 | 批次身份落库：`message_step` 加批号 / 批内序号 / 父消息标识三格，右详情按批分组 | 批次此前只活在运行期的交换器属性里、**一个字节都没落库**，历史页答不出「哪几条是同一批」；读库那条路的粒度还是「一次运行一个」，粗到当不了批边界 | 读取批的批号只作兜底、不指望它分组；批内序号只在拆分与合并时写；唯一约束与列表默认行为一个字不动 | #139 / ADR-0017 |
-| 10-07 | 整批重发长在**出站**那一步（合并只打包 + 还原档摊回原消息） | 「一次点击 = 一次请求」这条承诺落在真正发请求的那一步（出站） | 批次身份与逐条重投的口径一个字不动；多目标各自一个按钮、点谁重发谁 | #142 / ADR-0017 决策 6·7 修订 / `service/RouteGenerator.java`（`buildBatchResend`） |
+| 10-07 | 整批重发长在**出站**那一步（合并只打包 + 还原档摊回原消息） | 「一次点击 = 一次请求」这条承诺落在真正发请求的那一步（出站） | 批次身份与逐条重投的口径一个字不动；多目标各自一个按钮、点谁重发谁 | #142 / ADR-0017 决策 6·7 修订 / `service/BatchResendRoute.java`（#145 从 `RouteGenerator` 搬到这个类） |
 
 ## 当前生效
 

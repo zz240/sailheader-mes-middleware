@@ -11,7 +11,7 @@
   - 手动执行/重投 → `direct:job-<id>` 重放。
 - **sourceKey（映射历史隔离）**：按**实际源动作**推导（MQ_CONSUME → `mq:<queue>`、READ_SQL → `db:<table>`），与 direction 解耦。
 - **反例场景**：MQ 消费入口 + NORTH 方向（客户发 MQ → 边缘消费 → 推 MES HTTP）已被 DS-9 端到端验证支持。
-- **代码位置**：`service/RouteGenerator.java`（buildConsumerEntry / buildPollingEntry / buildReplay）、`service/MappingHistoryService.java`（sourceKey）。
+- **代码位置**：`service/RouteGenerator.java`（buildConsumerEntry / buildPollingEntry / buildReplay，只做装配）、`service/ActionFragment.java`（每种动作一段片段）、`service/MappingHistoryService.java`（sourceKey）。
 
 ## 待办 / 已知限制
 

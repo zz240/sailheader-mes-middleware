@@ -11,7 +11,7 @@
 **链路形态** = 入口 → 落点：
 
 - **入口**：动作表上的「编辑映射」（`frontend/src/views/JobsView.vue:117`）打开全屏抽屉 `FieldMappingWorkbench.vue`；新建 FIELD_MAP 从同一个入口进（`JobsView.vue:322`）。
-- **落点**：`job_action.addition` 这个 MySQL JSON 列里的 `rules`（`model/Action.java:30`、`config/FieldMappingConfig.toMap` :343）。编译产物与表达式**不落库**（`docs/features/field-mapping/README.md:124`）。
+- **落点**：`job_action.addition` 这个 MySQL JSON 列里的 `rules`（`model/Action.java:30`、`config/action/FieldMappingConfig.toMap` :343）。编译产物与表达式**不落库**（`docs/features/field-mapping/README.md:124`）。
 
 **不归本篇**：数组行 / 组节点 / 子行 → [数组 / 层级映射](array-mapping.md)；拼接片段 → [拼接片段映射](concat-part-mapping.md)；`mode=EXPRESSION` 手写 JSONata → [手写 JSONata 模式](expression-mode.md)；映射建议器 → [建议器](suggester.md)。本篇只在被交叉引用处各写一句。
 
@@ -26,8 +26,8 @@
 | 实施工程师 | 填转换参数 | 面板里就地改（日期 `MappingDateParams.vue` / 枚举 `MappingEnumParams.vue` / 常量 `MappingRowList.vue:621` / 起始值 `MappingIndexParams.vue`） | 参数写进行上的那一格（`row.extra` / `row.enumMap` / `row.startAt`），行摘要跟着变 |
 | 实施工程师 | 校验草稿 | 顶部「校验配置」（`FieldMappingWorkbench.vue:57`）→ `POST /api/field-mapping-editor/validate` | `errors[]` / `warnings[]` + 编译产物；**不写库**；每条问题带 `target` / `parent`，挂回对应行 |
 | 实施工程师 | 保存 | 顶部「保存」（`:59`）→ `useMappingDraft.save` :227 | 先跑一次校验，**只有错误**拦下并跳到第一条错误所在行；通过后把那份草稿交给工作台 emit（`onSaved` :378）→ `POST /api/jobs/{id}/actions` 或 `PUT /api/actions/{id}`（`JobsView.onWorkbenchSaved` :340） |
-| 系统 | 构建期编译 | 启用/重建路由（`RouteGenerator.appendFragment` :278） | 规则树 → JSONata 表达式字符串，执行器实例跨消息复用 |
-| 系统 | 消息到达求值 | 消息流经 FIELD_MAP 动作（`JsonataFieldMapper.apply` :46） | 上下文各步骤绑定 `$s_<step>` → 目标对象，写回 context 供下游引用（`RouteGenerator.java:294`） |
+| 系统 | 构建期编译 | 启用/重建路由（`ActionFragment.append` :58-60） | 规则树 → JSONata 表达式字符串，执行器实例跨消息复用 |
+| 系统 | 消息到达求值 | 消息流经 FIELD_MAP 动作（`JsonataFieldMapper.apply` :46） | 上下文各步骤绑定 `$s_<step>` → 目标对象，写回 context 供下游引用（`ActionFragment.java:70-73`） |
 
 ## 流程详解
 
@@ -97,18 +97,18 @@ sequenceDiagram
 | ① 附：目标字段清单 | 连库探测写目标那张表 | `POST /api/actions/{id}/probe-target`（`FieldMappingEditorController.java:54`） | `probeTargetFields`（`FieldMappingEditorService.java:81`） | 表结构 → `SourceStructure`（列名/类型/是否必填） | 没有数据源 → `IllegalArgumentException`（`:88`）；工作台侧探测失败只 warning 不阻塞，退化成手写目标字段（`FieldMappingWorkbench.loadTargets` :324） |
 | ② 逐行配置 | 目标清单铺成行；一行一个来源 + 一个转换 | `FieldMappingWorkbench.load`（`FieldMappingWorkbench.vue:262`）→ `rowsFromTargetFields` / `mergeRowsWithTargets`（`mapping/editor-model.ts:51`、`:296`） | 行模型 `MapRow`（`mapping/rows.ts:41`）；来源类型 → 默认转换 `transformForType`（`editor-model.ts:63`） | 目标 `TargetField[]` → 行树 `MapRow[]` | 已存配置按目标字段对齐（`mergeRowsWithTargets` :296），清单里没有的行原样留在后面（:307） |
 | ② 选来源 | 点左边清单一项填进当前行 | `useWorkbenchState.pick`（`mapping/useWorkbenchState.ts:383`）→ `fillRowFromPick`（`mapping/source-picker.ts:247`） | 形状挡三种接不上：数组行要数组、数组要进数组行、相对路径要进子行（`source-picker.ts:252-264`） | 点中的 `PickableItem` → `row.source`（+ 可能一次 `row.transform`） | 填不进去 → `PickResult.reason` + 一句中文（`emptyPickResult` :277），**这不判定对错**，只挡形状（:11-12） |
-| ② 换转换 | `/` 或点「换转换」，七种全在、按层级置灰 | `FieldMappingWorkbench.openTransformPanel`（:496）→ `openPanel`（`useWorkbenchState.ts:308`）→ `chooseTransform`（`:325`）→ `applyTransform`（`mapping/transforms.ts:129`） | `transformOptions`（`transforms.ts:51`）：INDEX 在 `depth===0` 时置灰并写明原因 | `row.transform` + 参数（换回去时保留同一种转换的旧参数） | 置灰项直接 `return`（`useWorkbenchState.ts:326`）；后端另有同一条结构校验兜底（`FieldMappingConfig.java:238`） |
+| ② 换转换 | `/` 或点「换转换」，七种全在、按层级置灰 | `FieldMappingWorkbench.openTransformPanel`（:496）→ `openPanel`（`useWorkbenchState.ts:308`）→ `chooseTransform`（`:325`）→ `applyTransform`（`mapping/transforms.ts:129`） | `transformOptions`（`transforms.ts:51`）：INDEX 在 `depth===0` 时置灰并写明原因 | `row.transform` + 参数（换回去时保留同一种转换的旧参数） | 置灰项直接 `return`（`useWorkbenchState.ts:326`）；后端另有同一条结构校验兜底（`FieldMappingConfig.java:239`） |
 | ② 转换参数 | 就地编辑，不开弹窗 | 面板在 `MappingRowList.vue:583-720`：日期 `MappingDateParams.vue`、枚举 `MappingEnumParams`、常量 :621-632、起始值 `MappingIndexParams.vue`（「空 → 1」只在 `:22`） | 日期手输框清空 → `normalizeDatePattern`（`transforms.ts:180`）回落 `yyyy-MM-dd` | 面板输入 → `row.extra` / `row.enumMap` / `row.startAt`（行是唯一副本） | 界面上**不判对错**：格式串合不合法只在后端那个只读接口里判（`MappingDateParams.vue:6`） |
 | ③ 校验草稿：装请求 | 草稿 = 「按现在这样保存会写出去的那一份」 | `useMappingDraft.validateConfig`（`mapping/useMappingDraft.ts:76`）→ `draftRequest`（`mapping/draft.ts:90`） | `configFromRows`（`editor-model.ts:334`）：**没配好的行不进规则**（`rows.ts` 的 `isRowConfigured` :185）；顶层规则显式写 `sourceStep`（`ruleFromRow` `rows.ts:141`） | 行树 → `DraftRequestBody`（`draft.ts:52`） | 网络/服务端错误只弹一句「校验没跑起来」，不拦保存（`useMappingDraft.ts:95-97`、`:256`） |
-| ③ 校验草稿：判结构 | 结构错 + 编译期错前移 | `FieldMappingEditorController.validateDraft`（`FieldMappingEditorController.java:69`）→ `MappingDraftValidationService.validate`（`service/MappingDraftValidationService.java:60`） | `FieldMappingConfig.problems()`（`config/FieldMappingConfig.java:86`）：PER 规则的结构错走 `collectProblems`（:213），重复目标 / 前缀冲突 / 路径不合法走 `targetConflicts`（:126） | 草稿 Map → `FieldMappingConfig`（读不出来时只报一条、定位不到行，:67-73） | **errors 只有两类**：结构错与链问题（:75-82）；同一条问题 `addOnce` 去重（:100） |
+| ③ 校验草稿：判结构 | 结构错 + 编译期错前移 | `FieldMappingEditorController.validateDraft`（`FieldMappingEditorController.java:69`）→ `MappingDraftValidationService.validate`（`service/MappingDraftValidationService.java:60`） | `FieldMappingConfig.problems()`（`config/action/FieldMappingConfig.java:87`）：PER 规则的结构错走 `collectProblems`（:213），重复目标 / 前缀冲突 / 路径不合法走 `targetConflicts`（:126） | 草稿 Map → `FieldMappingConfig`（读不出来时只报一条、定位不到行，:67-73） | **errors 只有两类**：结构错与链问题（:75-82）；同一条问题 `addOnce` 去重（:100） |
 | ③ 校验草稿：判链 | `sourceStep` 得指向链上更早的动作 | 同上 → `chainProblems`（`MappingDraftValidationService.java:133`） | `ChainConsistencyValidator.checkRules`（`service/ChainConsistencyValidator.java:82`）：`null` 跳过（= 任务输入 0，恒合法）、`step >= actionIndex` → 错、不在更早集合里 → 错 | 规则表 + 更早动作序号集合 → `SourceStepProblem[]` | 只查顶层规则；组内子规则继承组节点（`ChainConsistencyValidator.java:24`） |
 | ③ 校验草稿：判样例 | 六条依赖目标清单 / 来源样例的**警告** | `sampleWarnings`（`MappingDraftValidationService.java:119-130`） | `MappingSampleChecks`：必填没配 :91、来源不在样例 :69、枚举没覆盖 :104、文本进数字 :117、拼接空片段 :138、日期格式串 :160 | 草稿 + `targets` + `sourceFields` → `RuleProblem[]`（全警告） | 清单一空就一条都不报（探不出结构不是配置的错，:40-42）；日期那条例外，试不了时反过来给一句提示（:44-47） |
 | ③ 校验草稿：编译产物 | 顺手编一次，出两个标签页的文本 | `compile`（`MappingDraftValidationService.java:176`） | `JsonataRuleCompiler.compile`；`rulesJson` 是后端按现在的规则读出来的那份（`:197`） | `List<FieldMappingRule>` → `{"jsonata": ..., "rulesJson": ...}` | 编不出来时补一条错误（`CompileException` 带 `target`/`parent`，:185-189）；没规则时不重复报（:179-182） |
 | ③ 校验草稿：结果回行 | 每条问题挂到「目标字段 + 所属数组行」 | `useMappingDraft.locatedIssues`（`useMappingDraft.ts:174`）→ `locateIssues`（`draft.ts:112`） | `issuesByRow`（`draft.ts:126`）、`rowIssueState`（`:136`）、`firstErrorRowId`（`:145`） | `DraftValidation` → 每行的问题列表 + 三档状态 | 定位不到行的（整份草稿级）`rowId=null`，跳行时跳过它接着找（:145） |
 | ④ 保存 | 只有**错误**拦下；警告放行 | `FieldMappingWorkbench.save`（:59）→ `useMappingDraft.save`（`useMappingDraft.ts:227`） | 保存前一定再跑一次 `validateConfig`；`errors.length` → `jumpToRowId(firstErrorRowId(...))`（:257-262） | 行树 → `{rules}` → `onSaved` → emit | 没配好的行 / 自动填上的行各一个确认框（:264-282）；校验没跑起来时不拦，兜底是保存那道 400（:256） |
-| ④ 保存：那道 400 | 写库前把整份配置的结构问题一次报全 | `JobsView.onWorkbenchSaved`（:340）→ `POST /jobs/{id}/actions`（`web/JobController.java:105`）/ `PUT /actions/{id}`（`web/ActionController.java:30`）→ `ActionService.validateChain`（`service/ActionService.java:169`） | `FieldMappingConfig.validate()`（`config/FieldMappingConfig.java:67`）：全部问题 `；` 连接（:70）；`checkMappingSourceSteps`（`ActionService.java:223`）→ `ChainConsistencyValidator.check` | 请求体 → `job_action.addition` | 任一问题 → `IllegalArgumentException` → 400（由 `ApiExceptionHandler` 统一映射）；前端抽屉不关，点「取消」放回来（`JobsView.vue:361-363`） |
-| ⑤ 构建期编译 | 路由构建时把 rules 编一次，执行器跨消息复用 | `RouteGenerator.appendFragment`（`service/RouteGenerator.java:278-283`） | `new JsonataFieldMapper(rules)` → `JsonataRuleCompiler.compile`；EXPRESSION 走 `fromExpression`（:282） | `List<FieldMappingRule>` → 表达式字符串（构建期一次） | 抛 `CompileException`（`IllegalArgumentException`）→ 启用/重建失败并自动停用（见 `ChainConsistencyValidator.java:19-22` 那三处挂了同一套规则） |
-| ⑥ 消息到达求值 | 上下文绑定各步骤求值 | `RouteGenerator.java:284-297` | `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | `Map<Integer,Object>` context → 目标对象；求值结果写回 context（`RouteGenerator.java:294`） | 求值异常 → 那一步 FAILED（消息步，`recordSuccessStep` 不走）；`isResumeSkipped` 时不重复算（:285） |
+| ④ 保存：那道 400 | 写库前把整份配置的结构问题一次报全 | `JobsView.onWorkbenchSaved`（:340）→ `POST /jobs/{id}/actions`（`web/JobController.java:105`）/ `PUT /actions/{id}`（`web/ActionController.java:30`）→ `ActionService.validateChain`（`service/ActionService.java:169`） | `FieldMappingConfig.validate()`（`config/action/FieldMappingConfig.java:68`）：全部问题 `；` 连接（:70）；`checkMappingSourceSteps`（`ActionService.java:223`）→ `ChainConsistencyValidator.check` | 请求体 → `job_action.addition` | 任一问题 → `IllegalArgumentException` → 400（由 `ApiExceptionHandler` 统一映射）；前端抽屉不关，点「取消」放回来（`JobsView.vue:361-363`） |
+| ⑤ 构建期编译 | 路由构建时把 rules 编一次，执行器跨消息复用 | `ActionFragment.append`（`service/ActionFragment.java:58-60`，FIELD_MAP 那段片段） | `new JsonataFieldMapper(rules)` → `JsonataRuleCompiler.compile`；EXPRESSION 走 `fromExpression`（:59） | `List<FieldMappingRule>` → 表达式字符串（构建期一次） | 抛 `CompileException`（`IllegalArgumentException`）→ 启用/重建失败并自动停用（见 `ChainConsistencyValidator.java:19-22` 那三处挂了同一套规则） |
+| ⑥ 消息到达求值 | 上下文绑定各步骤求值 | `ActionFragment.java:61-75` | `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | `Map<Integer,Object>` context → 目标对象；求值结果写回 context（`ActionFragment.java:70-73`） | 求值异常 → 那一步 FAILED（消息步，`recordSuccessStep` 不走）；`isResumeSkipped` 时不重复算（:62） |
 | ⑦ 转换运行时 | 六种行级转换各自的运行时行为 | 见下段 | `leafExpr`（`JsonataRuleCompiler.java:175`）逐个分支 | 编译产物片段 | 见下段 |
 
 **⑦ 转换运行时（行级）逐条：**
@@ -119,18 +119,18 @@ sequenceDiagram
 | INT | `$number(...)`（:179） | 数字转换 | **非数字输入抛 `NumberFormatException`，任务 FAILED**（0.9.10 实测更正，原 P8 写错了 → 见建议表 P8） |
 | DATE | `$dateFormat(<src>, "<pattern>")`（:180） | 自定义函数（`JsonataFunctions.dateFormat` :26），四种输入形状各试一次（:62-85） | 解析不出来 → **原样透传**（`formatDate` :47-48），任务照样 SUCCESS；格式串本身非法 → `ofPattern` 在所有 try **之外**（:63）→ 抛，任务 FAILED（配置期已被 #111 拦下） |
 | ENUM | `$lookup({...}, <src>)`（:182） | 查表替换 | 查不到键 → `undefined`，这个字段从目标报文里**整个消失**（不是 null） |
-| CONSTANT | JSON 字符串字面量（:177） | 不取来源，写死的值 | `constant` 空着 → 结构校验报「常量转换需要 constant」（`FieldMappingConfig.java:251-252`） |
+| CONSTANT | JSON 字符串字面量（:177） | 不取来源，写死的值 | `constant` 空着 → 结构校验报「常量转换需要 constant」（`FieldMappingConfig.java:252-253`） |
 | INDEX | `$i<depth-1> + <startAt>`（:183、`indexExpr` :321） | 数组元素行号（0 基 + startAt） | 顶层用 → 「INDEX 转换只能在数组组内使用」（`:238-242`，消息在 `:240`）；`source` 不是 `$index` → 同处报错（`:242`）。**注意**：`startAt` 在 `indexExpr` 里与 depth 一起算（:324），详见表下 N3 |
 
 ## 关键实现
 
 - **`$s_<step>` 绑定**：顶层来源统一编译成 `$s_<sourceStep>`（`JsonataRuleCompiler.compile` :42：`sourceStep` 为空时**缺省 0 = 任务输入**）；求值时按上下文逐个 bind（`JsonataFieldMapper.apply` :53 `frame.bind("s_" + entry.getKey(), normalized)`），上下文 Map 本身也作为求值根（`expression.evaluate(safe, frame)` :55）——规则模式只引用 `$s_<step>`，手写模式才能用 `$` / `$$`。
 - **`JsonataInputs.normalize`**：进入引擎前递归规范化（`mapping/JsonataInputs.java:22`）：日期/时间 → ISO-8601 字符串（`Timestamp` :36、`java.sql.Date` :39、`TemporalAccessor` :42）、`byte[]` → Base64（:45）、其余 `toString`（:48）。不规范化会被引擎报 "Only JSON types ... allowed as input"（:12-14 的注释记了这条）。
-- **jsonata 引擎版本与实例复用**：dashjoin jsonata 0.9.10（`docs/features/field-mapping/README.md:9`）；表达式在**路由构建期**编译一次（`RouteGenerator.java:281-283`），`JsonataFieldMapper` 实例随之创建、**跨消息复用**，`DATE` 自定义函数在构造时注册一次（`JsonataFieldMapper.java:33-39`）；每次求值只新建一个 frame（`:47`），文档注明解析/求值线程安全（`:14`）。
+- **jsonata 引擎版本与实例复用**：dashjoin jsonata 0.9.10（`docs/features/field-mapping/README.md:9`）；表达式在**路由构建期**编译一次（`ActionFragment.java:58-60`），`JsonataFieldMapper` 实例随之创建、**跨消息复用**，`DATE` 自定义函数在构造时注册一次（`JsonataFieldMapper.java:33-39`）；每次求值只新建一个 frame（`:47`），文档注明解析/求值线程安全（`:14`）。
 - **模式判定「不是 EXPRESSION 就当 RULES」**：`MappingDraftValidationService.isRules`（:213-215）`!"EXPRESSION".equals(config.mode())`——**只有字面量 EXPRESSION 走手写**，`mode` 为 null / 空串 / 别的值一律按规则树。`FieldMappingConfig.problems()` 的同一口径在 :88（EXPRESSION 不校验规则树）。
 - **缺省日期格式串只有一处定义**：`DatePatterns.DEFAULT = "yyyy-MM-dd"`（`mapping/DatePatterns.java:35`），编译器（`JsonataRuleCompiler.java:30`、`datePatternOf` :194）、运行时（`JsonataFunctions.java:16`）、校验（`MappingSampleChecks.datePatternOf` :368）三处都引用它；空串/空白按「没写」处理（`:196`）。
 - **`$index` 的形状在三处归一**：前端选 INDEX 时把来源固定成 `$index` 并给起始值默认 1（`transforms.applyTransform` :158-163）；写规则时再强制一次（`rows.ruleFromRow` :155-159）；读回来时也归一（`rows.rowFromRule` :111-112），保证往返稳定。
-- **编译期错的第二份实现**：`FieldMappingConfig.targetConflicts`（:126）与 `JsonataRuleCompiler.insert`（:86）是同一套判据的两份实现，约束它们的是 `JsonataRuleCompilerTest.savingGateAndCompilerReportTheSameConflicts`（`spike/src/test/java/com/example/edgegateway/mapping/JsonataRuleCompilerTest.java:585`），注释在 `FieldMappingConfig.java:116-118` 写明了「两处会走散」。
+- **编译期错的第二份实现**：`FieldMappingConfig.targetConflicts`（:126）与 `JsonataRuleCompiler.insert`（:86）是同一套判据的两份实现，约束它们的是 `JsonataRuleCompilerTest.savingGateAndCompilerReportTheSameConflicts`（`spike/src/test/java/com/example/edgegateway/mapping/JsonataRuleCompilerTest.java:585`），注释在 `FieldMappingConfig.java:117-119` 写明了「两处会走散」。
 
 ## 测试环境
 

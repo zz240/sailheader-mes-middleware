@@ -11,6 +11,7 @@
 | 场景 | 业务链路（入口 → 落点） | 涉及的页面/模块 | 产物文件 |
 |---|---|---|---|
 | 配置流 | 建数据源 → 建任务/动作 → 校验 → 启用注册路由 | 数据源 / 任务 / 动作链 | [config-flow.md](config-flow.md) |
+| 动作链编译 | 配置落库 → 链一致性校验 → 按动作种类组合片段 → 注册 Camel 路由（含拆分 / 合并 / 还原） | 任务 / 动作链 | [chain-compile-flow.md](chain-compile-flow.md) |
 | 北向同步 | 读客户 MySQL（增量水位）→ 字段映射 → 推送 MES HTTP | 任务 / 映射编辑器 | [northbound-sync.md](northbound-sync.md) |
 | 南向同步 | MQ 订阅 → 字段映射 → 幂等 upsert 客户 MySQL | 任务 / 映射编辑器 | [southbound-sync.md](southbound-sync.md) |
 | 同步 + 通知 | 读库 → 映射 → HTTP 推送 + MQ 发布 | 任务 / 动作链 | [notify-push.md](notify-push.md) |
@@ -26,7 +27,7 @@
 > 「两档校验 + 保存那道门」的机制——在同一目录的总览里：[field-mapping/README.md](field-mapping/README.md)。
 > 旧的单份文件 [transform-flow.md](transform-flow.md) 只留导航与旧编号（P6/P7/P8/P9、F1–F9）对照，不再有正文。
 
-> 其余六个场景与字段映射五份共十一份产出文件均含业务场景与交互、Mermaid 时序图、逐环节代码走查
+> 其余七个场景与字段映射五份共十二份产出文件均含业务场景与交互、Mermaid 时序图、逐环节代码走查
 > （文件+行号）、测试环境、造数指导、建议表。
 
 ## 建议路由（走查后进入改进流程）

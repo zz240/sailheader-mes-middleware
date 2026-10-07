@@ -63,11 +63,11 @@ sequenceDiagram
 
 **② 失败即停 + 重试退避**
 
-- 入口：`RouteGenerator.configureErrorHandling` 对全链 `onException(Exception.class)`，
-  `maximumRedeliveries=job.retryCount`、`redeliveryDelay=job.backoffMs`；
-- `handled(handled)` —— MQ 消费主路由 `handled=true`（失败后不重投队列）；重放/轮询/断点路由 `handled=false`
+- 入口：`ErrorHandling.configure`（`service/ErrorHandling.java:26`，#145 从 `RouteGenerator` 搬出）对全链
+  `onException(Exception.class)`，`maximumRedeliveries=job.retryCount`、`redeliveryDelay=job.backoffMs`；
+- `handled(handled)` —— MQ 消费主路由 `handled=true`（失败后不重投队列）；重放/轮询/断点/打包重发 `handled=false`
   （异常抛回调用方）；
-- 最终失败进入 `recordFailure`：`finishRun(FAILED)` + 若已生成消息则记一条 `FAILED` 消息步。
+- 最终失败进入 `StepLedger.recordFailure`（`service/StepLedger.java:218`）：`finishRun(FAILED)` + 若已生成消息则记一条 `FAILED` 消息步。
 
 **③ 消息历史记录（成功/失败全程）**
 
@@ -83,7 +83,8 @@ sequenceDiagram
 - 数据形态：`dataSnapshot`/`inputSnapshot` 为 JSON 字符串；`status ∈ SUCCESS/FAILED/REDELIVERED`；
   `attempt` 是**该步的总尝试次数**（#109）：失败步 = 该步失败次数（末次也走异常回调），重试耗尽
   `retryCount=2` → `3`；重试一次后成功 → `2`；一次就成功 → `1`（哪怕更早的步骤重试过，也还是 `1`）。
-  计数由 `RouteGenerator.configureErrorHandling` 的 `onExceptionOccurred` 写在自己的 exchange property 上
+  计数由 `ErrorHandling.configure` 的 `onExceptionOccurred`（`service/ErrorHandling.java:32`，实现在
+  `StepLedger.noteAttemptFailure`）写在自己的 exchange property 上
   （`edge.failedAttempts`，与所属动作序号 `edge.failedAttemptsStep` 成对），不读 Camel 的
   `CamelRedeliveryCounter`——后者写在 message header 上，且 `handled=true` 的路由进失败处理器前
   `removeHeader`、`handled=false` 的路由先 `decrementRedeliveryCounter`，读它恒为 `null + 1`。
@@ -173,8 +174,8 @@ curl "http://localhost:8080/api/history/steps?businessKey={键}&size=5"
 | 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 已实现（#90，方案 B）：`redeliver` 把同一 `message_id` 下 `step < resumeFrom` 的成功步骤 `data_snapshot` 注入 context（经 property `edge.resumeContext` 传给 resume 入口），引用上游输出的 FIELD_MAP 也能续跑 | 现状：只投 `inputSnapshot` 当 body、被跳步骤不写 context，而 FIELD_MAP 唯一输入是整份 context → 静默出空 | 设计改进 | 可靠性 | 已闭环（#90） |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |
-| `message_step.attempt` 恒为 1：历史页「尝试次数」列与实际重试次数不符 | 已实现（#109）：`RouteGenerator.configureErrorHandling` 用 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，按动作序号归零），失败步写失败次数、成功步写「失败次数 + 1」= 总尝试次数；`retryCount=2` → 3、`retryCount=0` → 1、重试一次后成功 → 2。保留 run 内自动重投（`retryCount`/`backoffMs`）的决策不变 | `RouteGenerator.attempt()` 原读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把计数写进 message header（`handled=true` 路由进失败处理器前 remove、`handled=false` 路由先 -1）→ 该表达式恒为 `null + 1`（实测：`retryCount=2` 执行 699ms 即确实投递 3 次，落库仍是 1）。历史页最常见的排查问题"这条是第一次就成功还是重试才成功"无法回答；ADR-0009 预留的 `RETRYING` 也依赖该计数 | 缺陷 | 可靠性 | 已闭环（#109） |
+| `message_step.attempt` 恒为 1：历史页「尝试次数」列与实际重试次数不符 | 已实现（#109）：`ErrorHandling.configure`（`service/ErrorHandling.java:26`，#145 前在 `RouteGenerator`）用 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，按动作序号归零），失败步写失败次数、成功步写「失败次数 + 1」= 总尝试次数；`retryCount=2` → 3、`retryCount=0` → 1、重试一次后成功 → 2。保留 run 内自动重投（`retryCount`/`backoffMs`）的决策不变 | `StepLedger.attempt`（原 `RouteGenerator.attempt()`）曾读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把计数写进 message header（`handled=true` 路由进失败处理器前 remove、`handled=false` 路由先 -1）→ 该表达式恒为 `null + 1`（实测：`retryCount=2` 执行 699ms 即确实投递 3 次，落库仍是 1）。历史页最常见的排查问题"这条是第一次就成功还是重试才成功"无法回答；ADR-0009 预留的 `RETRYING` 也依赖该计数 | 缺陷 | 可靠性 | 已闭环（#109） |
 | 重投失败仍被当成成功：原消息步标 `REDELIVERED`、接口返回成功，而新 run 实为 `FAILED`（"重投失败"分支不可达） | 已实现（#108）：`MessageHistoryService.redeliver` 投递后检查返回 exchange（`getException()` / `EXCEPTION_CAUGHT` / `isFailed()`），失败即抛"重投失败：<根因>"且**不改**原步状态；`MessageHistoryRedeliverFailureTest` 用真实 Camel 断点续跑路由 + 可控目标端守住"失败保持 FAILED"与"成功才 REDELIVERED"两侧 | 实测 run 301/302：`job_run=FAILED`（错误 `Field 'order_no' doesn't have a default value`）而原步 `REDELIVERED`、HTTP `{"code":"OK"}`；与 `user-guide.md`「消息历史与断点重投」与「常见问题」两节的承诺不符——把"没修好"误报成"已修复"，运维据此收工 | 缺陷（高危） | 可靠性 | 已闭环（#108） |
 | `MQ_CONSUME` 入口链的映射步重投会静默出空：规则 `sourceStep=1`（入口步）时 `context[1]` 必缺 → 映射步 SUCCESS 但 `data_snapshot = {}`，下游写库才因空数据失败 | 二选一：① 入口步骤（`MQ_CONSUME`/重放入口的源步）也记一份快照，使 #90 的回填有数据可用；② 重投时把该步 `inputSnapshot` 回填到 `context[源步骤]`（重投 body 已有这份数据，只是被放进 `context[0]`）。无论选哪条，都建议"源步骤无快照"时**显式失败**而不是静默出空 | #90 的边界（上游无快照 → 不进上下文，"行为与现状一致"）在入口步骤上退化为"静默出空 + 下游背锅"：MQ 链失败映射步的重投实际不可用，与 #90"不再静默映射出空"的目标冲突；实测 run 301：step 2 SUCCESS + `{}` → step 3 报 `Field 'order_no' doesn't have a default value`；#108 修复后该链路仍"重投成功"——新 run 的 step 2 照样 SUCCESS + `{}`，只是不再谎报成功要靠下游步骤失败才暴露 | 缺陷 / 设计改进 | 可靠性 | 待评估（牵涉 #90 边界定义，建议与 #90 的图一起定） |
-| **首动作不是源动作（`READ_SQL` / `MQ_CONSUME`）的任务根本不记消息步**：跑完只有 `job_run`，一条 `message_step` 都没有 | 二选一：① `buildPollingEntry` 在链首也 `beginMessage`（一条消息 = 一次运行），让这类任务（`FIELD_MAP` / `HTTP_CALL` 打头，例如 A4PUSH 那种"外部触发直推"链）也有历史与断点重投；② 明确"这类任务不进消息历史"并把它写进 `docs/user-guide.md` 与 ADR-0009 | `RouteGenerator.buildPollingEntry`（`RouteGenerator.java:165`）只 `beginRun`、**不 `beginMessage`**，而 `recordSuccessStep`（`:592`）与 `recordFailure`（`:613`）见 `edge.messageId` 为空**直接返回**——消息上下文只由源动作创建（READ_SQL 每条源行 / MQ_CONSUME 入口）。实测任务 146（`SH-A4PUSH-Report-to-MES`，FIELD_MAP → HTTP_CALL）两次运行（run 2599 SUCCESS、run 2686 FAILED）都是零消息步：历史页看不到它，失败了也无从断点重投；#135 的真机脚本因此必须自己搭一条 `READ_SQL → HTTP_CALL` 的链 | 缺陷 | 可靠性 | 待评估（#135 写真机脚本时实测到，与本票无关、未修） |
+| **首动作不是源动作（`READ_SQL` / `MQ_CONSUME`）的任务根本不记消息步**：跑完只有 `job_run`，一条 `message_step` 都没有 | 二选一：① `buildPollingEntry` 在链首也 `beginMessage`（一条消息 = 一次运行），让这类任务（`FIELD_MAP` / `HTTP_CALL` 打头，例如 A4PUSH 那种"外部触发直推"链）也有历史与断点重投；② 明确"这类任务不进消息历史"并把它写进 `docs/user-guide.md` 与 ADR-0009 | `RouteGenerator.buildPollingEntry`（`RouteGenerator.java:198`）只 `beginRun`、**不 `beginMessage`**，而 `recordSuccessStep`（`StepLedger.java:177`/`:188`）与 `recordFailure`（`StepLedger.java:218`）见 `edge.messageId` 为空**直接返回**——消息上下文只由源动作创建（READ_SQL 每条源行 / MQ_CONSUME 入口）。实测任务 146（`SH-A4PUSH-Report-to-MES`，FIELD_MAP → HTTP_CALL）两次运行（run 2599 SUCCESS、run 2686 FAILED）都是零消息步：历史页看不到它，失败了也无从断点重投；#135 的真机脚本因此必须自己搭一条 `READ_SQL → HTTP_CALL` 的链 | 缺陷 | 可靠性 | 待评估（#135 写真机脚本时实测到，与本票无关、未修） |
 | 消息步的**快照序列化不支持 `java.time`**：源列是 MySQL `datetime`（JDBC 给 `LocalDateTime`）时，落库当场抛 `Java 8 date/time type java.time.LocalDateTime not supported by default` | 给快照用的 `ObjectMapper` 注册 `JavaTimeModule`（或在落库前把时间类型统一转字符串）；并把"快照序列化失败"与"动作失败"分开记——前者不该顶掉失败步真正的错误 | 实测（#135 真机脚本第一版）：`select * from mes_db.mes_work_order` 带 `FPlanStart` / `FPlanEnd` / `FModifyDate` 三个 `datetime` 列，三条消息的 `push-report` 失败步，`error` **全被序列化异常顶掉**（真正的 `HTTP operation failed invoking … 500` 在历史页上消失了），排查时看到的是 Jackson 那句话 | 缺陷 | 可靠性 | 待评估（#135 写真机脚本时实测到，与本票无关、未修） |
