@@ -1,8 +1,8 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.FieldMappingConfig.RuleProblem;
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig.RuleProblem;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import com.example.edgegateway.mapping.JsonataRuleCompiler;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
 import com.example.edgegateway.web.dto.MappingDraftValidation;

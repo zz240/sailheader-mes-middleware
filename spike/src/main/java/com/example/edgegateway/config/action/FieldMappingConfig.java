@@ -1,5 +1,6 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.action;
 
+import com.example.edgegateway.config.ConfigValues;
 import com.example.edgegateway.mapping.DatePatterns;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.model.ActionKind;

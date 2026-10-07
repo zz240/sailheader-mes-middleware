@@ -1,6 +1,6 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.web.dto.MappingTrialRequest;
 import com.example.edgegateway.web.dto.MappingTrialResult;

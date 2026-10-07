@@ -1,8 +1,8 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.edgegateway.config.DataSourceConfig;
-import com.example.edgegateway.config.JdbcDataSourceConfig;
+import com.example.edgegateway.config.datasource.DataSourceConfig;
+import com.example.edgegateway.config.datasource.JdbcDataSourceConfig;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.model.DataSourceType;

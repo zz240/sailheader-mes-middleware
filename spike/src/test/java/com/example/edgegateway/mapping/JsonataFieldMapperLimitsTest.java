@@ -1,6 +1,6 @@
 package com.example.edgegateway.mapping;
 
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

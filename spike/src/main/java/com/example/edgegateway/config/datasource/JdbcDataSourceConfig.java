@@ -1,4 +1,4 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.datasource;
 
 /**
  * 走 JDBC 的关系库数据源配置（MySQL / SQL Server）。

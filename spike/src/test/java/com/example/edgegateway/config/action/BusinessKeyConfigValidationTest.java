@@ -1,4 +1,4 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.action;
 
 import org.junit.jupiter.api.Test;
 

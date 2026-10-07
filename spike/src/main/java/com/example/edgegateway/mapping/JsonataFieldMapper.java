@@ -2,7 +2,7 @@ package com.example.edgegateway.mapping;
 
 import com.dashjoin.jsonata.Jsonata;
 import com.dashjoin.jsonata.Timebox;
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingRule;
 
 import java.util.LinkedHashMap;
 import java.util.List;

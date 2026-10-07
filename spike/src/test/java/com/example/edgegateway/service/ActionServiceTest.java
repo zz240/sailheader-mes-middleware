@@ -1,10 +1,10 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.MqConsumeConfig;
-import com.example.edgegateway.config.MqPublishConfig;
-import com.example.edgegateway.config.ReadSqlConfig;
-import com.example.edgegateway.config.OneToManyConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.MqConsumeConfig;
+import com.example.edgegateway.config.action.MqPublishConfig;
+import com.example.edgegateway.config.action.ReadSqlConfig;
+import com.example.edgegateway.config.action.OneToManyConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;

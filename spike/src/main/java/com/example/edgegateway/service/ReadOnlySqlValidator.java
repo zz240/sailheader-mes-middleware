@@ -1,6 +1,6 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.JdbcDataSourceConfig;
+import com.example.edgegateway.config.datasource.JdbcDataSourceConfig;
 import com.example.edgegateway.service.sql.SqlDialects;
 import org.springframework.stereotype.Component;
 

@@ -1,10 +1,10 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.edgegateway.config.ActionConfig;
-import com.example.edgegateway.config.FieldMappingRule;
-import com.example.edgegateway.config.MqConsumeConfig;
-import com.example.edgegateway.config.ReadSqlConfig;
+import com.example.edgegateway.config.action.ActionConfig;
+import com.example.edgegateway.config.action.FieldMappingRule;
+import com.example.edgegateway.config.action.MqConsumeConfig;
+import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;

@@ -1,36 +1,41 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.datasource;
 
+import com.example.edgegateway.config.ConfigValues;
 import com.example.edgegateway.model.DataSourceType;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * MySQL 数据源配置（连接级，ADR-0007）：连接 url 取数据源 {@code address}，addition 仅存 username/password。
+ * SQL Server 数据源配置（连接级，ADR-0007）：连接 url 取数据源 {@code address}，addition 仅存 username/password。
+ *
+ * <p>字段与 {@link MysqlDataSourceConfig} 现在相同，但**不合并**（ADR-0014 决策 2）：
+ * SQL Server 的连接属性（{@code encrypt}、{@code trustServerCertificate}、{@code instanceName}）
+ * 迟早要加，到时用各自类型承载最省事，也不用让 MySQL 侧跟着长出一堆用不上的字段。</p>
  */
-public record MysqlDataSourceConfig(String username, String password)
+public record SqlServerDataSourceConfig(String username, String password)
         implements JdbcDataSourceConfig {
 
-    public static MysqlDataSourceConfig from(Map<String, Object> addition) {
+    public static SqlServerDataSourceConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
         rejectUnknownKeys(map, Set.of("username", "password"));
-        return new MysqlDataSourceConfig(
+        return new SqlServerDataSourceConfig(
                 ConfigValues.str(map.get("username")),
                 ConfigValues.str(map.get("password")));
     }
 
     @Override
     public DataSourceType type() {
-        return DataSourceType.MYSQL;
+        return DataSourceType.SQLSERVER;
     }
 
     @Override
     public void validate() {
         if (username == null || username.isBlank()) {
-            throw new IllegalArgumentException("MySQL 数据源需要 username");
+            throw new IllegalArgumentException("SQL Server 数据源需要 username");
         }
         if (password == null || password.isBlank()) {
-            throw new IllegalArgumentException("MySQL 数据源需要 password");
+            throw new IllegalArgumentException("SQL Server 数据源需要 password");
         }
     }
 

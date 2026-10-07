@@ -1,6 +1,6 @@
 package com.example.edgegateway.mapping;
 
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

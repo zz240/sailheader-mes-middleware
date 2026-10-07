@@ -1,9 +1,9 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.DataSourceConfig;
-import com.example.edgegateway.config.HttpDataSourceConfig;
-import com.example.edgegateway.config.JdbcDataSourceConfig;
-import com.example.edgegateway.config.RabbitMqDataSourceConfig;
+import com.example.edgegateway.config.datasource.DataSourceConfig;
+import com.example.edgegateway.config.datasource.HttpDataSourceConfig;
+import com.example.edgegateway.config.datasource.JdbcDataSourceConfig;
+import com.example.edgegateway.config.datasource.RabbitMqDataSourceConfig;
 import com.example.edgegateway.model.DataSource;
 import com.rabbitmq.client.ConnectionFactory;
 import org.springframework.stereotype.Component;

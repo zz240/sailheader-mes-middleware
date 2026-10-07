@@ -1,8 +1,8 @@
 package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.edgegateway.config.ActionConfig;
-import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.action.ActionConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;

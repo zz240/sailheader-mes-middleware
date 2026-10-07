@@ -2,7 +2,7 @@ package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.DataSourceType;
 
-import com.example.edgegateway.config.DataSourceConfig;
+import com.example.edgegateway.config.datasource.DataSourceConfig;
 import com.example.edgegateway.model.DataSourceType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

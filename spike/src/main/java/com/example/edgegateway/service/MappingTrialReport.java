@@ -1,7 +1,7 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.web.dto.MappingDraftRequest.TargetFieldSpec;

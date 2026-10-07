@@ -1,7 +1,7 @@
 package com.example.edgegateway.mapping;
 
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;

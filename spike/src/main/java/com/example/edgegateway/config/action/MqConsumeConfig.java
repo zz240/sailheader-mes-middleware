@@ -1,5 +1,6 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.action;
 
+import com.example.edgegateway.config.ConfigValues;
 import com.example.edgegateway.model.ActionKind;
 
 import java.util.LinkedHashMap;

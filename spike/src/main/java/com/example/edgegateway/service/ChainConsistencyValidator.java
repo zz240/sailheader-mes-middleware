@@ -1,10 +1,10 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.AggregateConfig;
-import com.example.edgegateway.config.OneToManyConfig;
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.FieldMappingRule;
-import com.example.edgegateway.config.OneToManyConfig;
+import com.example.edgegateway.config.action.AggregateConfig;
+import com.example.edgegateway.config.action.OneToManyConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingRule;
+import com.example.edgegateway.config.action.OneToManyConfig;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 

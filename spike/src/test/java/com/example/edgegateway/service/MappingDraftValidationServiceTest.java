@@ -1,6 +1,6 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
 import com.example.edgegateway.mapping.suggest.SourceField;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
 import com.example.edgegateway.web.dto.MappingDraftValidation;

@@ -1,8 +1,8 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.FieldMappingConfig.RuleProblem;
-import com.example.edgegateway.config.FieldMappingRule;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig.RuleProblem;
+import com.example.edgegateway.config.action.FieldMappingRule;
 import com.example.edgegateway.mapping.DatePatterns;
 import com.example.edgegateway.mapping.JsonataFunctions;
 import com.example.edgegateway.mapping.TransformType;
@@ -132,7 +132,7 @@ final class MappingSampleChecks {
      *
      * <p>只看**编译器和结构校验都不管**的那一种：常量片段是空串，或 {@code {"path": ""}}（键在、值是空串）。
      * 片段整个不是字符串也不是 {@code {"path": ...}}、或 {@code path} 键整个没写，{@link
-     * com.example.edgegateway.config.FieldMappingConfig#problems()} 已经各报一条错误了，这里不再补一条
+     * com.example.edgegateway.config.action.FieldMappingConfig#problems()} 已经各报一条错误了，这里不再补一条
      * 说的同一件事的警告。</p>
      */
     static List<RuleProblem> emptyConcatParts(FieldMappingConfig config) {

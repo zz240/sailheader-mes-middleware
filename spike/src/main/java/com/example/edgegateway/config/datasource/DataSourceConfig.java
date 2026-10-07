@@ -1,4 +1,4 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.datasource;
 
 import com.example.edgegateway.model.DataSourceType;
 

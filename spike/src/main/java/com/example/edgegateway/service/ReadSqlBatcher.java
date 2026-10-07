@@ -1,6 +1,6 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.ReadSqlConfig;
+import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.model.WatermarkType;
 import com.example.edgegateway.service.sql.SqlDialect;
 import org.springframework.stereotype.Component;

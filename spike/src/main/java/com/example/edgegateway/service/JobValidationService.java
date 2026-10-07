@@ -1,12 +1,12 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.config.ActionConfig;
-import com.example.edgegateway.config.DataSourceConfig;
-import com.example.edgegateway.config.FieldMappingConfig;
-import com.example.edgegateway.config.MqConsumeConfig;
-import com.example.edgegateway.config.JdbcDataSourceConfig;
+import com.example.edgegateway.config.action.ActionConfig;
+import com.example.edgegateway.config.datasource.DataSourceConfig;
+import com.example.edgegateway.config.action.FieldMappingConfig;
+import com.example.edgegateway.config.action.MqConsumeConfig;
+import com.example.edgegateway.config.datasource.JdbcDataSourceConfig;
 import com.example.edgegateway.service.sql.SqlDialects;
-import com.example.edgegateway.config.ReadSqlConfig;
+import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.mapping.TransformType;
 import com.example.edgegateway.mapping.suggest.NameNormalizer;
 import com.example.edgegateway.mapping.suggest.SourceStructure;

@@ -1,6 +1,6 @@
 package com.example.edgegateway.web.dto;
 
-import com.example.edgegateway.config.ActionConfig;
+import com.example.edgegateway.config.action.ActionConfig;
 import com.example.edgegateway.model.ActionKind;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

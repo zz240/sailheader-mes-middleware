@@ -1,5 +1,6 @@
-package com.example.edgegateway.config;
+package com.example.edgegateway.config.datasource;
 
+import com.example.edgegateway.config.ConfigValues;
 import com.example.edgegateway.model.DataSourceType;
 import java.util.LinkedHashMap;
 import java.util.Map;
