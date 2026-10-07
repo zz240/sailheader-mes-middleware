@@ -1,10 +1,10 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.config.AggregateConfig;
-import com.example.edgegateway.config.FanoutConfig;
+import com.example.edgegateway.config.OneToManyConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.FieldMappingRule;
-import com.example.edgegateway.config.SplitConfig;
+import com.example.edgegateway.config.OneToManyConfig;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 
@@ -56,8 +56,8 @@ public final class ChainConsistencyValidator {
             if (action.getActionIndex() == null) {
                 continue;
             }
-            if (action.getType() == ActionKind.SPLIT) {
-                String problem = checkSplitSourceStep(action, indexes);
+            if (action.getType() == ActionKind.ONE_TO_MANY) {
+                String problem = checkOneToMany(action, indexes, actions);
                 if (problem != null) {
                     problems.add(problem);
                 }
@@ -67,13 +67,6 @@ public final class ChainConsistencyValidator {
                 // 合并没有「来源步骤」可指（它攒的是**走到它这里的那批消息**），链级要管的是配置本身
                 // 能不能解析：脏配置报成问题而不是抛出去（与拆分那一档同一处理，否则 /validate 500）
                 String problem = checkAggregateConfig(action);
-                if (problem != null) {
-                    problems.add(problem);
-                }
-                continue;
-            }
-            if (action.getType() == ActionKind.FANOUT) {
-                String problem = checkFanoutSourceStep(action, indexes);
                 if (problem != null) {
                     problems.add(problem);
                 }
@@ -104,46 +97,42 @@ public final class ChainConsistencyValidator {
     }
 
     /**
-     * 拆分的来源步骤（#140）：{@code sourceStep} 可空（空 = 取当前消息体），填了就必须指向链中**存在且
-     * 序号更早**的动作——与 FIELD_MAP 的 sourceStep 同一条口径、同一批闸口。
+     * 一分多的来源步骤与前提（两档，校验按**档**走）：
      *
-     * <p>为什么不能省这道校验：拆分的来源指错时，运行期那一步会「取不到数据」当场失败，
-     * 但那是**跑起来才知道**；配置期拦下来才符合既有那套（写时 400 / {@code /validate} / 启用前）。</p>
+     * <ul>
+     *   <li><b>拆分档</b>：{@code sourceStep} 可空（空 = 取当前消息体），填了就必须指向链中**存在且序号
+     *       更早**的动作——与 FIELD_MAP 的 sourceStep 同一条口径、同一批闸口；</li>
+     *   <li><b>还原档</b>：{@code sourceStep} **必填**（它必须知道去哪儿取回应），同样要指向更早的动作；
+     *       此外它**要求链上有上游合并动作**——还原靠成员清单（{@code edge.batchManifest}）回到原来那几条
+     *       消息，没有合并就没有那份清单（写时 400 / {@code /validate} / 启用前都会拦）。</li>
+     * </ul>
+     *
+     * <p>为什么不能省这道校验：来源指错时运行期那一步会「取不到数据 / 回应」当场失败，
+     * 但那是**跑起来才知道**；配置期拦下来才符合既有那套。</p>
      *
      * @return 一条问题描述（定位已拼好），没有问题时 {@code null}
      */
-    private static String checkSplitSourceStep(Action action, Set<Integer> indexes) {
-        SplitConfig split;
+    private static String checkOneToMany(Action action, Set<Integer> indexes, List<Action> actions) {
+        OneToManyConfig many;
         try {
-            split = SplitConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
+            many = OneToManyConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
         } catch (RuntimeException e) {
             // 与字段映射那一档同一处理：存量脏配置报成问题，不抛出去（否则 /validate 500）
-            return location(action) + " 拆分配置无法解析: " + e.getMessage();
+            return location(action) + " 一分多配置无法解析: " + e.getMessage();
         }
-        Integer step = split.sourceStep();
-        if (step == null) {
-            return null; // 未声明 = 拆当前消息体，链上引用无从谈起
+        if (many.sourceStep() != null) {
+            String problem = stepProblem("sourceStep", many.sourceStep(), action.getActionIndex(), indexes);
+            if (problem != null) {
+                return location(action) + " 的 " + problem;
+            }
         }
-        String problem = stepProblem("sourceStep", step, action.getActionIndex(), indexes);
-        return problem == null ? null : location(action) + " 的 " + problem;
-    }
-
-    /**
-     * 扇回的来源步骤（#142）：**必填**（它必须知道去哪儿取回应），且必须指向链中**存在且序号更早**的动作
-     * ——与拆分的 {@code sourceStep} 同一条口径、同一批闸口（写时 400 / {@code /validate} / 启用前）。
-     *
-     * <p>为什么不能省：扇回的来源指错时，运行期那一步会「取不到回应」当场失败，但那是**跑起来才知道**；
-     * 配置期拦下来才符合既有那套。</p>
-     */
-    private static String checkFanoutSourceStep(Action action, Set<Integer> indexes) {
-        FanoutConfig fanout;
-        try {
-            fanout = FanoutConfig.from(action.getAddition() == null ? Map.of() : action.getAddition());
-        } catch (RuntimeException e) {
-            return location(action) + " 扇回配置无法解析: " + e.getMessage();
+        if (many.isRestore() && actions.stream().noneMatch(candidate ->
+                candidate.getType() == ActionKind.AGGREGATE
+                        && candidate.getActionIndex() != null
+                        && candidate.getActionIndex() < action.getActionIndex())) {
+            return location(action) + " 的还原档要求链上有上游合并动作（成员清单是它与出站之间唯一的联系）";
         }
-        String problem = stepProblem("sourceStep", fanout.sourceStep(), action.getActionIndex(), indexes);
-        return problem == null ? null : location(action) + " 的 " + problem;
+        return null;
     }
 
     /**

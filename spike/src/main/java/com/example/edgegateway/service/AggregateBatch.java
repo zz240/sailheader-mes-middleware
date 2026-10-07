@@ -10,7 +10,7 @@ import java.util.Map;
  *
  * <p>一条消息走到合并动作时，把「我是谁、我这一片是什么、我的上下文到哪儿了」记成一张
  * {@link Carrier}（承运单），攒在 {@code (运行 + 批号)} 这个键下；攒齐之后一次发出去，
- * 再按承运单把响应扇回每一条（ADR-0017 决策 6/7）。</p>
+ * 再按承运单把响应还原每一条（ADR-0017 决策 6/7）。</p>
  *
  * <p><b>为什么不是 Camel 的 {@code aggregate} EIP</b>：实测它的「攒齐之后那一段」跑在**别的线程**上
  * （探针：{@code sendBody} 返回时一次都没发，等一会儿才发）。放进这条链就是要命的——读库那批的
@@ -30,7 +30,7 @@ final class AggregateBatch {
      * 一张承运单：一条消息在合并那一步的**全部现场**。
      *
      * @param body      这条消息自己那一片（进请求体数组的就是它；配对结果按 {@code attachAs} 落在它上面）
-     * @param context   走到这里为止的上下文快照（扇回之后后续动作接着用）
+     * @param context   走到这里为止的上下文快照（还原之后后续动作接着用）
      * @param rowKey    它来自读取批的哪一行（父消息标识优先，否则是消息标识）——判齐时按它去重
      * @param rowShares 它那一行本该摊出几条（不经过拆分就是 1）
      * @param skipped   这一步在断点续投里被跳过（不参与发送，只把现场还回去让后续步骤照跑）
@@ -105,7 +105,7 @@ final class AggregateBatch {
             return List.of((Object) map);
         }
         if (response == null) {
-            throw new IllegalStateException("响应是空的，没法按配对字段扇回");
+            throw new IllegalStateException("响应是空的，没法按配对字段还原");
         }
         return List.of(response);
     }

@@ -80,14 +80,15 @@ public class JobValidationService {
     }
 
     /**
-     * 这个动作种类是否引用数据源。**不含 FIELD_MAP / SPLIT / AGGREGATE / FANOUT**：字段映射、拆分、
-     * 合并与扇回都是在链上干活的动作，不连任何库/队列/HTTP——把它们也算进来的话，一个合法的拆分/合并动作
-     * 会被报成「缺少 dataSourceId」（真机第一次跑这条链就是这么被拦下的）。合并**不再**自带出口
-     * （ADR-0017 决策 6 的修订）：发去哪儿由后面的 {@code HTTP_CALL} / {@code MQ_PUBLISH} 决定。
+     * 这个动作种类是否引用数据源。**不含 FIELD_MAP / ONE_TO_MANY / AGGREGATE**：字段映射、一分多
+     * （拆分与还原两档）、合并都是在链上干活的动作，不连任何库/队列/HTTP——把它们也算进来的话，
+     * 一个合法的一分多/合并动作会被报成「缺少 dataSourceId」（真机第一次跑这条链就是这么被拦下的）。
+     * 合并**不再**自带出口（ADR-0017 决策 6 的修订）：发去哪儿由后面的 {@code HTTP_CALL} /
+     * {@code MQ_PUBLISH} 决定。
      */
     private boolean hasDataSource(ActionKind kind) {
-        return kind != ActionKind.FIELD_MAP && kind != ActionKind.SPLIT
-                && kind != ActionKind.AGGREGATE && kind != ActionKind.FANOUT;
+        return kind != ActionKind.FIELD_MAP && kind != ActionKind.ONE_TO_MANY
+                && kind != ActionKind.AGGREGATE;
     }
 
     private void validateRemoteAction(Action action, List<ValidationResult.Issue> errors) {

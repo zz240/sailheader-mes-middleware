@@ -112,24 +112,24 @@ eq('摘要行也是一颗 chip（与消息 chip 并排），但不计入「N 条
 eq('摘要行认得出来（就一条前缀）', sendBatch[0].summary?.messageId, `${SUMMARY_MESSAGE_PREFIX}batch-C`)
 eq('读取批没有摘要行', oneReadBatch[0].summary, null)
 
-/* ── 3b. 摘要行与成员不在同一步（#142 对称形状：出站那一步有摘要、扇回那一步是成员） ── */
+/* ── 3b. 摘要行与成员不在同一步（出站那一步有摘要、还原那一步是成员） ── */
 
 const acrossSteps = batchGroups([
   step({ id: 1, messageId: 'm-1', step: 5, batchId: 'batch-E' }),
   step({ id: 2, messageId: 'm-2', step: 5, batchId: 'batch-E', status: 'FAILED' }),
   step({ id: 3, messageId: `${SUMMARY_MESSAGE_PREFIX}batch-E`, step: 4, batchId: 'batch-E' }),
 ])
-eq('摘要行在出站、成员在扇回：两组都算发送批', acrossSteps.map((g) => [g.step, g.kind]),
+eq('摘要行在出站、成员在还原：两组都算发送批', acrossSteps.map((g) => [g.step, g.kind]),
   [[4, 'send'], [5, 'send']])
 eq('「N 条 / 失败 M 条」按批号跨步骤去重（同一条消息在两步各一行也只算一条）',
   acrossSteps.map((g) => [g.messages, g.failed]), [[2, 1], [2, 1]])
 eq('出站那一组只有一行摘要，也不算「单条 · 不是一批」', acrossSteps[0].kind, 'send')
-eq('「重发这一批」只长在摘要行那一组（出站），不重复长在扇回那一组',
+eq('「重发这一批」只长在摘要行那一组（出站），不重复长在还原那一组',
   [batchRedeliver(acrossSteps[0]), batchRedeliver(acrossSteps[1])],
   [{ count: 2, label: '重发这一批（2 条）' }, null])
-eq('下游（扇回）失败时，摘要行自己是 SUCCESS 也照样铺按钮——重发要重新打一次请求',
+eq('下游（还原）失败时，摘要行自己是 SUCCESS 也照样铺按钮——重发要重新打一次请求',
   batchRedeliver(acrossSteps[0])?.count, 2)
-eq('发送批那几格都画批徽标（扇回不换号，所以它仍属这一批）',
+eq('发送批那几格都画批徽标（还原不换号，所以它仍属这一批）',
   [nodeBatch(null, acrossSteps[0].members[0], acrossSteps).tier,
     nodeBatch(acrossSteps[0].members[0], acrossSteps[1].members[0], acrossSteps).tier],
   ['batch', 'batch'])

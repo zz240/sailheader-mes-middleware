@@ -10,7 +10,7 @@
 #   1. 在 board_db 建落点两张表（头行 / 子行）——「头行分表」的落点形态;
 #   2. 建一条链并启用：READ_SQL（头表 join 子表、JSON_ARRAYAGG 聚成子件数组）
 #      -> FIELD_MAP（$parse 把数组还原成真数组）
-#      -> SPLIT（#140 拆分动作：一条报文摊成 N 条子消息）
+#      -> ONE_TO_MANY 的拆分档（mode=split；一条报文摊成 N 条子消息）
 #      -> FIELD_MAP（子件字段 + 摊平进来的父字段 -> 目标列）
 #      -> WRITE_UPSERT（逐条落库，幂等键 FLineKey）;
 #   3. 执行两次：头跑验「逐条落库 + 五样齐全 + 批号换手」，再跑一次验「水位推进 + 幂等重跑不涨行数」。
@@ -128,7 +128,7 @@ $actions = @(
         businessKey = 'FBOMNo'; batchSize = 10 } },
     @{ name = 'assemble-report'; type = 'FIELD_MAP'; addition = @{
         mode = 'EXPRESSION'; expression = $assemble } },
-    @{ name = 'split-lines'; type = 'SPLIT'; addition = @{
+    @{ name = 'split-lines'; type = 'ONE_TO_MANY'; addition = @{ mode = 'split';
         sourceStep = 2; sourcePath = 'lines'; elementKey = 'FItemNumber'; keepParent = $true } },
     @{ name = 'map-line'; type = 'FIELD_MAP'; addition = @{ rules = @(
         @{ sourceStep = 3; source = 'FBOMNo'; target = 'FBOMNo'; transform = 'STRING' },

@@ -7,10 +7,12 @@ import java.util.Map;
 /**
  * 动作配置的类型化包装：每种动作种类（DS-8）各有自己的配置结构与校验。
  * 与 DataSourceConfig 同一套模式：实体存 Map，服务边界转强类型。
+ *
+ * <p>{@code ONE_TO_MANY}（一分多）的两档见 {@link OneToManyConfig.Mode}，配置类同一个。</p>
  */
 public sealed interface ActionConfig
         permits MqConsumeConfig, ReadSqlConfig, FieldMappingConfig,
-        WriteUpsertConfig, HttpCallConfig, MqPublishConfig, SplitConfig, AggregateConfig, FanoutConfig {
+        WriteUpsertConfig, HttpCallConfig, MqPublishConfig, OneToManyConfig, AggregateConfig {
 
     ActionKind type();
 
@@ -28,9 +30,8 @@ public sealed interface ActionConfig
             case WRITE_UPSERT -> WriteUpsertConfig.from(map);
             case HTTP_CALL -> HttpCallConfig.from(map);
             case MQ_PUBLISH -> MqPublishConfig.from(map);
-            case SPLIT -> SplitConfig.from(map);
+            case ONE_TO_MANY -> OneToManyConfig.from(map);
             case AGGREGATE -> AggregateConfig.from(map);
-            case FANOUT -> FanoutConfig.from(map);
         };
     }
 }

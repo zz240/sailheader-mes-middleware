@@ -48,16 +48,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 合并 + 扇回（#142 / ADR-0017 决策 6 的修订版）的链级验收：真跑一条 Camel 路由
+ * 合并 + 还原（#142 / ADR-0017 决策 6 的修订版）的链级验收：真跑一条 Camel 路由
  * （H2 当客户库 + 本地 HTTP 替身），断言**库里落下来的消息步行**与**替身收到的请求**。
  *
- * <p>对称设计的形状：`读 → 合并（只打包）→ 出站（HTTP_CALL / MQ_PUBLISH）→ 扇回（FANOUT）→ 写库`。
+ * <p>链的形状：`读 → 合并（只打包）→ 出站（HTTP_CALL / MQ_PUBLISH）→ 还原（RESTORE）→ 写库`。
  * 票面那几条打在这儿：</p>
  * <ul>
  *   <li><b>只发一次</b>：整批打成一条报文，出站动作因此只发一次，请求体是整批；</li>
  *   <li><b>摘要行落在出站那一步</b>：`message_id = batch:<批号>`，整份请求与整份响应只在它身上；</li>
- *   <li><b>扇回沿用原身份</b>：回到原来那几条消息（消息标识不变）、不换批号，每条只存自己那一片；</li>
- *   <li><b>同成同败</b>：出站 5xx → 摘要行 + 每条各一行 FAILED；响应缺一条 → 扇回那一步每条 FAILED；</li>
+ *   <li><b>还原沿用原身份</b>：回到原来那几条消息（消息标识不变）、不换批号，每条只存自己那一片；</li>
+ *   <li><b>同成同败</b>：出站 5xx → 摘要行 + 每条各一行 FAILED；响应缺一条 → 还原那一步每条 FAILED；</li>
  *   <li><b>多目标</b>：两个出站动作 = 同一批各发一次；<b>空批</b>：读不到新数据时一次请求都不发。</li>
  * </ul>
  */
@@ -159,9 +159,9 @@ class AggregateActionExecutionTest {
     }
 
     /**
-     * 票面那条端到端：`读 → 合并 → 出站 → 扇回 → 写库`。
+     * 票面那条端到端：`读 → 合并 → 出站 → 还原 → 写库`。
      *
-     * <p>读库一批 3 行 → 合并打成一条 → 出站**只发一次**（请求体是整批）→ 扇回按 {@code code} 配对、
+     * <p>读库一批 3 行 → 合并打成一条 → 出站**只发一次**（请求体是整批）→ 还原按 {@code code} 配对、
      * 结果落进各自的 {@code handle} → 写库逐行落 3 行。</p>
      */
     @Test
@@ -173,7 +173,7 @@ class AggregateActionExecutionTest {
                 readOrders(),
                 aggregate(2),
                 outlet(3),
-                fanout(4, 3, "handle"),
+                restore(4, 3, "handle"),
                 writeMapping(5, 1, 4, "order_no"),
                 action(6, ActionKind.WRITE_UPSERT, Map.of("dataSourceId", DB_DS,
                         "tableName", "po_receipt", "idempotencyKey", "order_no")));
@@ -206,9 +206,9 @@ class AggregateActionExecutionTest {
         assertThat(summary.getDataSnapshot()).as("摘要行承载整份响应").isEqualTo(httpResponse.get());
         assertThat(summary.getBatchSeq()).isNull();
 
-        // 扇回那一步：回到**原来那几条**消息，每条只存自己那一片
+        // 还原那一步：回到**原来那几条**消息，每条只存自己那一片
         List<MessageStep> fanned = stepsAt(run.getId(), 4);
-        assertThat(fanned).as("扇回给这一批每条各记一行").hasSize(3);
+        assertThat(fanned).as("还原给这一批每条各记一行").hasSize(3);
         assertThat(fanned).extracting(MessageStep::getMessageId)
                 .as("沿用原来那几条消息的标识（不新造）")
                 .containsExactlyInAnyOrderElementsOf(
@@ -240,7 +240,7 @@ class AggregateActionExecutionTest {
                 readOrders(),
                 aggregate(2),
                 outlet(3),
-                fanout(4, 3, "handle"),
+                restore(4, 3, "handle"),
                 action(5, ActionKind.WRITE_UPSERT, Map.of("dataSourceId", DB_DS,
                         "tableName", "po_receipt", "idempotencyKey", "order_no")));
 
@@ -263,18 +263,18 @@ class AggregateActionExecutionTest {
     }
 
     /**
-     * 响应配不上某一条（票面「每条拿到自己那份」的另一面）：**扇回那一步整批失败**——
+     * 响应配不上某一条（票面「每条拿到自己那份」的另一面）：**还原那一步整批失败**——
      * 每条各记一行 FAILED 并点名缺的业务键；出站那一步仍是成功（请求确实发出去了）。
      */
     @Test
-    void responseMissingOneKeyFailsTheWholeBatchAtTheFanoutStep() throws Exception {
+    void responseMissingOneKeyFailsTheWholeBatchAtTheRestoreStep() throws Exception {
         httpResponse.set("[{\"code\":\"PO-1\",\"handle\":\"H1\"},{\"code\":\"PO-3\",\"handle\":\"H3\"}]");
         Job job = job(33L);
         List<Action> actions = List.of(
                 readOrders(),
                 aggregate(2),
                 outlet(3),
-                fanout(4, 3, "handle"));
+                restore(4, 3, "handle"));
 
         assertThatThrownBy(() -> run(job, actions)).isInstanceOf(Exception.class);
 
@@ -282,13 +282,13 @@ class AggregateActionExecutionTest {
         assertThat(stepsAt(run.getId(), 3)).as("出站那一步是成功的（请求发了、响应也回来了）")
                 .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
         List<MessageStep> fanned = stepsAt(run.getId(), 4);
-        assertThat(fanned).as("扇回给这一批每条各记一行 FAILED").hasSize(3);
+        assertThat(fanned).as("还原给这一批每条各记一行 FAILED").hasSize(3);
         assertThat(fanned).allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("FAILED"));
         assertThat(fanned).anySatisfy(step -> assertThat(step.getError()).contains("PO-2"));
     }
 
     /**
-     * 拆分之后再合并（票面 AC 的形状 `读 → 拆分 → 合并 → 出站 → 扇回 → 写库`）：一条报文摊成 N 条子消息，
+     * 拆分之后再合并（票面 AC 的形状 `读 → 拆分 → 合并 → 出站 → 还原 → 写库`）：一条报文摊成 N 条子消息，
      * 这 N 条**合成一次请求**。判齐按「这一行摊出几条」算（不是按读了几行算）。
      */
     @Test
@@ -298,10 +298,10 @@ class AggregateActionExecutionTest {
         List<Action> actions = List.of(
                 action(1, ActionKind.MQ_CONSUME, Map.of("dataSourceId", MQ_DS, "queue", "bom.to.edge",
                         "businessKey", "code")),
-                action(2, ActionKind.SPLIT, Map.of("elementKey", "code", "sourcePath", "codes", "keepParent", false)),
+                action(2, ActionKind.ONE_TO_MANY, Map.of("mode", "split", "elementKey", "code", "sourcePath", "codes", "keepParent", false)),
                 aggregate(3),
                 outlet(4),
-                fanout(5, 4, "handle"),
+                restore(5, 4, "handle"),
                 writeMapping(6, 2, 5, "code", "order_no"),
                 action(7, ActionKind.WRITE_UPSERT, Map.of("dataSourceId", DB_DS,
                         "tableName", "po_receipt", "idempotencyKey", "order_no")));
@@ -319,7 +319,7 @@ class AggregateActionExecutionTest {
         assertThat(lastRequest.get()).isEqualTo(
                 "{\"items\":[{\"code\":\"C-1\",\"order_no\":\"PO-1\"},{\"code\":\"C-2\",\"order_no\":\"PO-2\"}]}");
         JobRun run = onlyRun();
-        assertThat(stepsAt(run.getId(), 5)).as("扇回：两条子消息各一行").hasSize(2);
+        assertThat(stepsAt(run.getId(), 5)).as("还原：两条子消息各一行").hasSize(2);
         assertThat(customerJdbc.queryForList("select handle from po_receipt order by order_no", String.class))
                 .as("配对到的那一份经映射取出来、逐行写库").containsExactly("H1", "H2");
     }
@@ -327,7 +327,7 @@ class AggregateActionExecutionTest {
     /**
      * **多目标**：一次打包、两个出站动作各发一次（同一批）。出口的变化全在链上，合并配置一个字不用改。
      *
-     * <p>第二个终端收到的是同一份整批报文（带着第一个目标回填的 {@code handle}——扇回在出站**之后**，
+     * <p>第二个终端收到的是同一份整批报文（带着第一个目标回填的 {@code handle}——还原在出站**之后**，
      * 所以第二个出口看到的还是打包出来的那份报文）。</p>
      */
     @Test
@@ -360,7 +360,7 @@ class AggregateActionExecutionTest {
                 aggregate(2),
                 outlet(3, HTTP_DS, "/register"),
                 outlet(4, 4L, "/receipt"),
-                fanout(5, 4, "receipt"));
+                restore(5, 4, "receipt"));
         try {
             run(job, actions);
 
@@ -375,7 +375,7 @@ class AggregateActionExecutionTest {
             assertThat(stepsAt(run.getId(), 4)).as("第二个出口：那一行摘要").hasSize(1);
             assertThat(stepsAt(run.getId(), 4).getFirst().getMessageId())
                     .startsWith(MessageHistoryService.SUMMARY_MESSAGE_PREFIX);
-            assertThat(stepsAt(run.getId(), 5)).as("扇回（按第二个出口的响应）：3 条").hasSize(3);
+            assertThat(stepsAt(run.getId(), 5)).as("还原（按第二个出口的响应）：3 条").hasSize(3);
         } finally {
             second.stop(0);
         }
@@ -392,7 +392,7 @@ class AggregateActionExecutionTest {
         List<Action> actions = List.of(
                 readOrders(),
                 outlet(2),
-                fanout(3, 2, "handle"));
+                restore(3, 2, "handle"));
 
         run(job, actions);
 
@@ -415,7 +415,7 @@ class AggregateActionExecutionTest {
                         "businessKey", "code")),
                 aggregate(2),
                 outlet(3),
-                fanout(4, 3, "handle"),
+                restore(4, 3, "handle"),
                 writeMapping(5, 1, 4, "code", "order_no"),
                 action(6, ActionKind.WRITE_UPSERT, Map.of("dataSourceId", DB_DS,
                         "tableName", "po_receipt", "idempotencyKey", "order_no")));
@@ -429,7 +429,7 @@ class AggregateActionExecutionTest {
         assertThat(lastRequest.get()).isEqualTo("{\"items\":[{\"code\":\"PO-9\",\"order_no\":\"PO-9\"}]}");
         JobRun run = onlyRun();
         assertThat(stepsAt(run.getId(), 3)).as("出站：那一行摘要").hasSize(1);
-        assertThat(stepsAt(run.getId(), 4)).as("扇回：那一条消息").hasSize(1);
+        assertThat(stepsAt(run.getId(), 4)).as("还原：那一条消息").hasSize(1);
         assertThat(customerJdbc.queryForObject("select handle from po_receipt where order_no = 'PO-9'", String.class))
                 .isEqualTo("H9");
     }
@@ -458,22 +458,22 @@ class AggregateActionExecutionTest {
                 "method", "POST"));
     }
 
-    /** 扇回：从出站那一步的输出里取响应，按配对字段摊回原来那几条消息。 */
-    private Action fanout(int index, int sourceStep, String attachAs) {
-        return action(index, ActionKind.FANOUT, Map.of("sourceStep", sourceStep,
+    /** 还原：从出站那一步的输出里取响应，按配对字段摊回原来那几条消息。 */
+    private Action restore(int index, int sourceStep, String attachAs) {
+        return action(index, ActionKind.ONE_TO_MANY, Map.of("mode", "restore", "sourceStep", sourceStep,
                 "resultKeyField", "code", "attachAs", attachAs));
     }
 
     /**
-     * 扇回之后「紧随其后的写库动作直接用」：先从上游那一步的输出里把要写库的字段挑出来，再从扇回那一步
-     * 的输出里取配对到的那一份（{@code sourceStep} 指扇回动作序号、{@code source} 指响应项里那个字段）。
+     * 还原之后「紧随其后的写库动作直接用」：先从上游那一步的输出里把要写库的字段挑出来，再从还原那一步
+     * 的输出里取配对到的那一份（{@code sourceStep} 指还原动作序号、{@code source} 指响应项里那个字段）。
      */
-    private Action writeMapping(int index, int bodyStep, int fanoutStep, String... bodyFields) {
+    private Action writeMapping(int index, int bodyStep, int restoreStep, String... bodyFields) {
         List<Map<String, Object>> rules = new ArrayList<>();
         for (String field : bodyFields) {
             rules.add(Map.of("sourceStep", bodyStep, "source", field, "target", field));
         }
-        rules.add(Map.of("sourceStep", fanoutStep, "source", "handle", "target", "handle"));
+        rules.add(Map.of("sourceStep", restoreStep, "source", "handle", "target", "handle"));
         return action(index, ActionKind.FIELD_MAP, Map.of("rules", rules));
     }
 

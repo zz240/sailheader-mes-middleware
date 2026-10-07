@@ -240,10 +240,10 @@ class JobValidationServiceTest {
     private Action split(int index, int sourceStep) {
         Action action = new Action();
         action.setName("split");
-        action.setType(ActionKind.SPLIT);
+        action.setType(ActionKind.ONE_TO_MANY);
         action.setActionIndex(index);
         action.setAddition(Map.of(
-                "sourceStep", sourceStep, "sourcePath", "lines", "elementKey", "itemCode"));
+                "mode", "split", "sourceStep", sourceStep, "sourcePath", "lines", "elementKey", "itemCode"));
         return action;
     }
 

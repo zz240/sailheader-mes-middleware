@@ -122,6 +122,7 @@ class ChainConsistencyValidatorTest {
         if (sourceStep != null) {
             addition.put("sourceStep", sourceStep);
         }
+        addition.put("mode", "split");
         addition.put("sourcePath", "lines");
         addition.put("elementKey", elementKey);
         return addition;
@@ -131,7 +132,7 @@ class ChainConsistencyValidatorTest {
     void passesSplitSourceStepPointingAtAnEarlierAction() {
         List<String> problems = ChainConsistencyValidator.check(List.of(
                 action(1, ActionKind.READ_SQL, Map.of()),
-                action(2, ActionKind.SPLIT, split(1, "itemCode"))));
+                action(2, ActionKind.ONE_TO_MANY, split(1, "itemCode"))));
 
         assertThat(problems).isEmpty();
     }
@@ -140,7 +141,7 @@ class ChainConsistencyValidatorTest {
     void splitWithoutSourceStepIsFineBecauseItSplitsTheCurrentBody() {
         List<String> problems = ChainConsistencyValidator.check(List.of(
                 action(1, ActionKind.MQ_CONSUME, Map.of()),
-                action(2, ActionKind.SPLIT, split(null, "itemCode"))));
+                action(2, ActionKind.ONE_TO_MANY, split(null, "itemCode"))));
 
         assertThat(problems).isEmpty();
     }
@@ -149,11 +150,11 @@ class ChainConsistencyValidatorTest {
     void reportsSplitSourceStepPointingAtItselfOrLater() {
         List<String> problems = ChainConsistencyValidator.check(List.of(
                 action(1, ActionKind.READ_SQL, Map.of()),
-                action(2, ActionKind.SPLIT, split(2, "itemCode"))));
+                action(2, ActionKind.ONE_TO_MANY, split(2, "itemCode"))));
 
         assertThat(problems).hasSize(1);
         assertThat(problems.getFirst())
-                .contains("动作 2（split）")
+                .contains("动作 2（one_to_many）")
                 .contains("sourceStep=2")
                 .contains("更早");
     }
@@ -163,23 +164,71 @@ class ChainConsistencyValidatorTest {
         // 被引用的那个动作已删（或重排后序号变了）：链级校验要拦下来，不能等跑起来才炸
         List<String> problems = ChainConsistencyValidator.check(List.of(
                 action(1, ActionKind.READ_SQL, Map.of()),
-                action(3, ActionKind.SPLIT, split(2, "itemCode"))));
+                action(3, ActionKind.ONE_TO_MANY, split(2, "itemCode"))));
 
         assertThat(problems).hasSize(1);
         assertThat(problems.getFirst())
-                .contains("动作 3（split）")
+                .contains("动作 3（one_to_many）")
                 .contains("sourceStep=2")
                 .contains("不存在");
     }
 
     @Test
-    void reportsUnparseableSplitConfigInsteadOfThrowing() {
+    void reportsUnparseableOneToManyConfigInsteadOfThrowing() {
         List<String> problems = ChainConsistencyValidator.check(List.of(
-                action(2, ActionKind.SPLIT, Map.of("sourceStep", "abc", "elementKey", "itemCode"))));
+                action(2, ActionKind.ONE_TO_MANY, Map.of("mode", "split", "sourceStep", "abc", "elementKey", "itemCode"))));
 
         assertThat(problems).hasSize(1);
         assertThat(problems.getFirst())
-                .contains("动作 2（split）")
+                .contains("动作 2（one_to_many）")
                 .contains("无法解析");
+    }
+
+    // ---------- 一分多的还原档：上游必须有合并 ----------
+
+    /** 还原档的一份最小配置（sourceStep = 出站那一步）。 */
+    private Map<String, Object> restore(int sourceStep) {
+        Map<String, Object> addition = new LinkedHashMap<>();
+        addition.put("mode", "restore");
+        addition.put("sourceStep", sourceStep);
+        addition.put("resultKeyField", "code");
+        addition.put("attachAs", "handle");
+        return addition;
+    }
+
+    @Test
+    void reportsRestoreModeWithoutAnUpstreamAggregate() {
+        // 还原靠成员清单（edge.batchManifest）回到原来那几条消息，没有合并就没有那份清单：
+        // 以前只在运行期炸，现在配置期就拦下来
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.READ_SQL, Map.of()),
+                action(2, ActionKind.HTTP_CALL, Map.of("dataSourceId", 7L, "path", "/reg")),
+                action(3, ActionKind.ONE_TO_MANY, restore(2))));
+
+        assertThat(problems).hasSize(1);
+        assertThat(problems.getFirst())
+                .contains("动作 3（one_to_many）")
+                .contains("上游合并动作");
+    }
+
+    @Test
+    void restoreModeWithAnUpstreamAggregateAndOutletIsFine() {
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.READ_SQL, Map.of()),
+                action(2, ActionKind.AGGREGATE, Map.of("bodyField", "codes")),
+                action(3, ActionKind.HTTP_CALL, Map.of("dataSourceId", 7L, "path", "/reg")),
+                action(4, ActionKind.ONE_TO_MANY, restore(3))));
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void splitModeDoesNotNeedAnUpstreamAggregate() {
+        // 拆分档没有这个前提：它是造新消息，不认任何出口、也不要成员清单
+        List<String> problems = ChainConsistencyValidator.check(List.of(
+                action(1, ActionKind.MQ_CONSUME, Map.of()),
+                action(2, ActionKind.ONE_TO_MANY, split(null, "itemCode"))));
+
+        assertThat(problems).isEmpty();
     }
 }

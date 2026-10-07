@@ -31,10 +31,10 @@ export interface Job {
 
 export type ActionType =
   | 'READ_SQL' | 'WRITE_UPSERT' | 'HTTP_CALL' | 'MQ_CONSUME' | 'MQ_PUBLISH' | 'FIELD_MAP'
-  // 拆分（#140）：一条消息里的一个数组摊成 N 条子消息，是基数变化动作（1 → N）
-  | 'SPLIT'
+  // 一分多（1 → N，两档：addition.mode = 'split' 拆分 / 'restore' 还原）
+  // ——后端 ActionKind.ONE_TO_MANY + OneToManyConfig.Mode，库里的旧行由迁移 V7 归一。
+  | 'ONE_TO_MANY'
   | 'AGGREGATE'
-  | 'FANOUT'
 
 export interface Action {
   id: number

@@ -110,7 +110,7 @@ class SplitActionExecutionTest {
         Job job = job(JOB_ID);
         List<Action> actions = List.of(
                 action(1, ActionKind.MQ_CONSUME, "consume", Map.of("dataSourceId", 3L, "queue", "bom.to.edge")),
-                action(2, ActionKind.SPLIT, "拆明细", Map.of(
+                action(2, ActionKind.ONE_TO_MANY, "拆明细", Map.of("mode", "split", 
                         "sourcePath", "lines", "elementKey", "itemCode", "keepParent", true)),
                 action(3, ActionKind.FIELD_MAP, "map", Map.of("rules", List.of(
                         Map.of("sourceStep", 2, "source", "itemCode", "target", "item_code"),
@@ -189,7 +189,7 @@ class SplitActionExecutionTest {
         Job job = job(JOB_ID);
         List<Action> actions = List.of(
                 action(1, ActionKind.MQ_CONSUME, "consume", Map.of("dataSourceId", 3L, "queue", "bom.to.edge")),
-                action(2, ActionKind.SPLIT, "拆明细", Map.of(
+                action(2, ActionKind.ONE_TO_MANY, "拆明细", Map.of("mode", "split", 
                         "sourcePath", "lines", "elementKey", "itemCode", "keepParent", false)),
                 action(3, ActionKind.FIELD_MAP, "map", Map.of("rules", List.of(
                         Map.of("sourceStep", 2, "source", "itemCode", "target", "item_code"),
@@ -219,7 +219,7 @@ class SplitActionExecutionTest {
         Job job = job(JOB_ID);
         List<Action> actions = List.of(
                 action(1, ActionKind.MQ_CONSUME, "consume", Map.of("dataSourceId", 3L, "queue", "bom.to.edge")),
-                action(2, ActionKind.SPLIT, "拆明细", Map.of(
+                action(2, ActionKind.ONE_TO_MANY, "拆明细", Map.of("mode", "split", 
                         "sourceStep", 1, "sourcePath", "lines", "elementKey", "itemCode", "keepParent", true)),
                 action(3, ActionKind.FIELD_MAP, "map", Map.of("rules", List.of(
                         Map.of("sourceStep", 2, "source", "itemCode", "target", "item_code"),
@@ -245,7 +245,7 @@ class SplitActionExecutionTest {
         Job job = job(JOB_ID);
         List<Action> actions = List.of(
                 action(1, ActionKind.MQ_CONSUME, "consume", Map.of("dataSourceId", 3L, "queue", "bom.to.edge")),
-                action(2, ActionKind.SPLIT, "拆明细", Map.of(
+                action(2, ActionKind.ONE_TO_MANY, "拆明细", Map.of("mode", "split", 
                         "sourcePath", "noSuchArray", "elementKey", "itemCode", "keepParent", true)),
                 action(3, ActionKind.WRITE_UPSERT, "write", Map.of(
                         "dataSourceId", 2L, "tableName", "order_line", "idempotencyKey", "item_code")));
@@ -294,7 +294,7 @@ class SplitActionExecutionTest {
                 action(2, ActionKind.FIELD_MAP, "展开报文", Map.of(
                         "mode", "EXPRESSION",
                         "expression", "{\"orderNo\": $s_1.bom_no, \"lines\": $parse($s_1.lines_json)}")),
-                action(3, ActionKind.SPLIT, "拆明细", Map.of(
+                action(3, ActionKind.ONE_TO_MANY, "拆明细", Map.of("mode", "split", 
                         "sourceStep", 2, "sourcePath", "lines", "elementKey", "itemCode", "keepParent", true)),
                 action(4, ActionKind.FIELD_MAP, "map", Map.of("rules", List.of(
                         Map.of("sourceStep", 3, "source", "itemCode", "target", "item_code"),

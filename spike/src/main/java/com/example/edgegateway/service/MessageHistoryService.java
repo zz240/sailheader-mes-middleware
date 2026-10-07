@@ -83,7 +83,7 @@ public class MessageHistoryService {
      */
     public static final String SUMMARY_MESSAGE_PREFIX = "batch:";
     /**
-     * 合并那一批的**成员清单**（#142）挂在 exchange 上的属性名：扇回、出站失败时的逐条补记、
+     * 合并那一批的**成员清单**（#142）挂在 exchange 上的属性名：还原、出站失败时的逐条补记、
      * 以及打包重发那条路由都用它把「这一批哪几条消息、各自那一片是什么」传下去。
      * 名字的唯一定义在这儿（路由生成器只是引它）。
      */
@@ -592,7 +592,7 @@ public class MessageHistoryService {
      * **按批重发**（#142 / ADR-0017 决策 7）：合并那一步只做整批重发，**一次点击 = 一次请求**。
      *
      * <p>拿的是摘要行上存下来的**整份请求**（那一批的报文只存这一份，决策 6），按同一个动作
-     * （同数据源、同路径、同方法）原样再发一次；响应按业务键扇回这一批每条消息，在**新运行**里
+     * （同数据源、同路径、同方法）原样再发一次；响应按业务键还原这一批每条消息，在**新运行**里
      * 摘要行与每条各记一行，旧的摘要行与那一批的消息行标 {@code REDELIVERED}。</p>
      *
      * <p><b>为什么不像 {@link #redeliver} 那样重放链</b>：重放会把「发几次」交给链的形状决定，
@@ -661,8 +661,8 @@ public class MessageHistoryService {
     /**
      * 这一批的**消息行**（同运行 + 同批号、去掉摘要行），取**最后记过的那一步**、按攒批序号排。
      *
-     * <p>为什么要「最后那一步」而不是摘要行那一步：失败可能落在**下游**——出站成功、扇回那一步配不上时，
-     * 每条消息的行记在**扇回**那一步上。重发要按那些行把「各自那一片」重新装回承运单。</p>
+     * <p>为什么要「最后那一步」而不是摘要行那一步：失败可能落在**下游**——出站成功、还原那一步配不上时，
+     * 每条消息的行记在**还原**那一步上。重发要按那些行把「各自那一片」重新装回承运单。</p>
      */
     private List<MessageStep> batchMembers(MessageStep summary) {
         List<MessageStep> rows = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
@@ -681,7 +681,7 @@ public class MessageHistoryService {
 
     /**
      * 这一批里有没有失败的行（跨步骤看）：出站那一步失败时摘要行自己就是 FAILED；
-     * **下游（扇回）那一步失败**时摘要行是 SUCCESS，但这一批整体没成——重发要重新打一次请求
+     * **下游（还原）那一步失败**时摘要行是 SUCCESS，但这一批整体没成——重发要重新打一次请求
      * （拿旧响应重新配一遍没有意义：同一份响应配第二次还是同一份结果）。
      */
     private boolean batchHasFailure(MessageStep summary) {

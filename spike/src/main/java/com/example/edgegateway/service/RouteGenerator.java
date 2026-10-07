@@ -4,14 +4,14 @@ import com.example.edgegateway.WatermarkStore;
 import com.example.edgegateway.config.ActionConfig;
 import com.example.edgegateway.config.AggregateConfig;
 import com.example.edgegateway.config.DataSourceConfig;
-import com.example.edgegateway.config.FanoutConfig;
+import com.example.edgegateway.config.OneToManyConfig;
 import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.HttpCallConfig;
 import com.example.edgegateway.config.HttpDataSourceConfig;
 import com.example.edgegateway.config.MqConsumeConfig;
 import com.example.edgegateway.config.MqPublishConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
-import com.example.edgegateway.config.SplitConfig;
+import com.example.edgegateway.config.OneToManyConfig;
 import com.example.edgegateway.config.WriteUpsertConfig;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
@@ -91,7 +91,7 @@ public class RouteGenerator {
     private static final String BATCH_EXPECTED = "edge.batchExpected";
     /**
      * 合并动作攒到的那批**成员清单**（#142）：每条只有身份与它自己那一片。
-     * 名字的唯一定义在 {@link MessageHistoryService#BATCH_MANIFEST}——扇回、出站失败时的补记、
+     * 名字的唯一定义在 {@link MessageHistoryService#BATCH_MANIFEST}——还原、出站失败时的补记、
      * 以及打包重发那条路由都要用它。**不进报文、不进快照**（绝不能污染发给终端的 JSON）。
      */
     private static final String BATCH_MANIFEST = MessageHistoryService.BATCH_MANIFEST;
@@ -101,9 +101,9 @@ public class RouteGenerator {
      */
     private static final String BATCH_EMPTY = "edge.batchEmpty";
     /**
-     * 这一批的失败**只逐条记**、别记「整批」那一行（#142）：扇回那一步失败时置上它。
+     * 这一批的失败**只逐条记**、别记「整批」那一行（#142）：还原那一步失败时置上它。
      *
-     * <p>摘要行归**出站**那一步（决策 6 的修订）：扇回失败时若也记一条 `batch:<批号>` 的行，
+     * <p>摘要行归**出站**那一步（决策 6 的修订）：还原失败时若也记一条 `batch:<批号>` 的行，
      * 右详情会在这两步各长一个「重发这一批」按钮，而重发只该长在出站那一步（决策 7）。</p>
      */
     private static final String BATCH_NO_SUMMARY = "edge.batchNoSummary";
@@ -158,22 +158,24 @@ public class RouteGenerator {
         if (sorted.stream().anyMatch(action -> action.getType() == ActionKind.AGGREGATE)) {
             for (Action action : sorted) {
                 if (action.getType() == ActionKind.HTTP_CALL || action.getType() == ActionKind.MQ_PUBLISH) {
-                    // 配对配置在**扇回**那一档上（出口自己不配对），所以这里把指向这个出口的那条扇回找出来
-                    FanoutConfig fanout = fanoutAfter(sorted, action.getActionIndex());
+                    // 配对配置在**还原**那一档上（出口自己不配对），所以这里把指向这个出口的那条还原找出来
+                    OneToManyConfig restore = restoreAfter(sorted, action.getActionIndex());
                     builders.add(buildBatchResend(job, action,
-                            ActionConfig.from(action.getType(), action.getAddition()), fanout));
+                            ActionConfig.from(action.getType(), action.getAddition()), restore));
                 }
             }
         }
         return builders;
     }
 
-    /** 指向这个出口的扇回动作（没有就返回 {@code null}）：重发时按它配对，出口自己不配对。 */
-    private static FanoutConfig fanoutAfter(List<Action> actions, int outletStep) {
+    /** 指向这个出口的**还原档**一分多动作（没有就返回 {@code null}）：重发时按它配对，出口自己不配对。 */
+    private static OneToManyConfig restoreAfter(List<Action> actions, int outletStep) {
         return actions.stream()
-                .filter(action -> action.getType() == ActionKind.FANOUT)
-                .map(action -> FanoutConfig.from(action.getAddition() == null ? Map.of() : action.getAddition()))
-                .filter(fanout -> Integer.valueOf(outletStep).equals(fanout.sourceStep()))
+                .filter(action -> action.getType() == ActionKind.ONE_TO_MANY)
+                .map(action -> OneToManyConfig.from(action.getAddition() == null ? Map.of() : action.getAddition()))
+                // 一分多的两档里只有还原档与出口配对（拆分档是造新消息，不认任何出口）
+                .filter(OneToManyConfig::isRestore)
+                .filter(restore -> Integer.valueOf(outletStep).equals(restore.sourceStep()))
                 .findFirst()
                 .orElse(null);
     }
@@ -187,7 +189,7 @@ public class RouteGenerator {
      * 失败面复用既有 {@code onException}（那时消息标识已是摘要行、批号是原批，加上成员清单就能给这一批
      * 每条补记一行 FAILED）。</p>
      */
-    private RouteBuilder buildBatchResend(Job job, Action action, ActionConfig config, FanoutConfig fanout) {
+    private RouteBuilder buildBatchResend(Job job, Action action, ActionConfig config, OneToManyConfig restore) {
         int index = action.getActionIndex();
         boolean http = config instanceof HttpCallConfig;
         String uri;
@@ -231,7 +233,7 @@ public class RouteGenerator {
                         })
                         .marshal().json()
                         .to(target)
-                        .process(ex -> settleBatchResend(ex, action, fanout, index));
+                        .process(ex -> settleBatchResend(ex, action, restore, index));
             }
         };
     }
@@ -242,25 +244,25 @@ public class RouteGenerator {
      *
      * <p>配不上就抛——交给统一的记账路（摘要行 + 这一批每条都记 FAILED，同因），与链上那条路同一个口径。</p>
      */
-    private void settleBatchResend(Exchange ex, Action action, FanoutConfig fanout, int index) {
+    private void settleBatchResend(Exchange ex, Action action, OneToManyConfig restore, int index) {
         List<AggregateBatch.Carrier> carriers = ex.getProperty(BATCH_MANIFEST, List.class);
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
         String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
         Long durationMs = stepDuration(ex);
         Map<String, Object> paired = Map.of();
         Object response = null;
-        if (fanout != null) {
-            // 这个出口后面挂着扇回：响应要按业务键配回这一批每条（配对字段归扇回那一档配）
+        if (restore != null) {
+            // 这个出口后面挂着还原：响应要按业务键配回这一批每条（配对字段归还原那一档配）
             response = HttpCallResponse.parse(responseText(ex));
             messageHistory.requireCaptureFitsSnapshot(index, response);
-            Map<String, Object> matched = AggregateBatch.pair(response, fanout.resultKeyField(), carriers);
+            Map<String, Object> matched = AggregateBatch.pair(response, restore.resultKeyField(), carriers);
             List<String> missing = carriers.stream()
                     .filter(carrier -> !matched.containsKey(carrier.messageId()))
                     .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
                     .toList();
             if (!missing.isEmpty()) {
                 throw new IllegalStateException("重发的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
-                        + fanout.resultKeyField() + "）");
+                        + restore.resultKeyField() + "）");
             }
             paired = matched;
         }
@@ -477,10 +479,15 @@ public class RouteGenerator {
                 // 读取动作本身也作为链上一步：每条源行记一条 SUCCESS 消息步（无输入快照，data=该行）
                 current = current.process(ex -> recordSuccessStep(ex, action, null));
             }
-            if (kind == ActionKind.SPLIT) {
-                current = appendSplit(current, action, (SplitConfig) config);
-                // 这一层的 end() 由收尾那段按层数完成：这里已进 split 体，其后的动作片段照旧逐条追加，
-                // 处理的是**每条子消息**
+            if (kind == ActionKind.ONE_TO_MANY) {
+                // 一分多（1 → N）两档：
+                //   拆分档——造新消息（新标识、换批号、元素按顺序摊开）；
+                //   还原档——还原成员（身份从成员清单里来、不换批号、按业务键配对）。
+                // 两档都要开一层扇出：end() 由收尾那段按层数完成，其后的动作片段照旧逐条追加。
+                OneToManyConfig oneToMany = (OneToManyConfig) config;
+                current = oneToMany.isRestore()
+                        ? appendRestore(current, action, oneToMany)
+                        : appendSplit(current, action, oneToMany);
                 openScopes++;
             }
             if (kind == ActionKind.AGGREGATE) {
@@ -488,10 +495,10 @@ public class RouteGenerator {
                 //  ① 前半段留在**当前这一层**（读库/拆分那几层扇出之内）——每条消息各来一次，记一张承运单；
                 //  ② 然后把扇出那几层收回来（= 这一批读完了），在**批 exchange** 上打成一条报文。
                 // 打完**不开新扇出**：链上从这里起只有一条消息，后面的出站动作（HTTP_CALL / MQ_PUBLISH）
-                // 天然只发一次；响应由扇回（FANOUT）那一档摊回原来那 N 条。
+                // 天然只发一次；响应由还原（RESTORE）那一档摊回原来那 N 条。
                 //
                 // 空批（读库读到 0 行 / 整批被续投跳过）用一层 filter 兜住：不然**每个「没有新数据」的运行**
-                // 都会朝目标端发一份空报文。这一层与扇回那层一样按 openScopes 记账、收尾时统一退回来。
+                // 都会朝目标端发一份空报文。这一层与还原那层一样按 openScopes 记账、收尾时统一退回来。
                 current = appendAggregateCollect(current, action);
                 while (openScopes > 0) {
                     current = current.end();
@@ -501,17 +508,12 @@ public class RouteGenerator {
                 current = current.filter(ex -> !Boolean.TRUE.equals(ex.getProperty(BATCH_EMPTY, Boolean.class)));
                 openScopes = 1;
             }
-            if (kind == ActionKind.FANOUT) {
-                // 扇回（#142）：1 → N，**回到原来那几条消息**（身份从成员清单里来），不换批号
-                current = appendFanout(current, action, (FanoutConfig) config);
-                openScopes++;
-            }
             current = appendFragment(current, action, config, job);
         }
         // 收尾按**嵌套的由内到外**顺序关闭。一条链上可能叠着多层：读库分批那层（loopDoWhile + split）、
-        // 拆分那层（split）、合并之后那层（filter，空批兜底）与扇回那层（split）。
+        // 拆分那层（split）、合并之后那层（filter，空批兜底）与还原那层（split）。
         //
-        // 两个坑：① 每开一层就要 end() 一次，而且必须**由内到外**（先关扇回/拆分那些、再交水位、
+        // 两个坑：① 每开一层就要 end() 一次，而且必须**由内到外**（先关还原/拆分那些、再交水位、
         // 最后关循环），否则水位处理器会被追加到内层里、每行提交一次；② Camel 的 `end()` 在**循环体内**
         // 只往外退一层，嵌套时要按开过的层数退够（所以这里调 ProcessorDefinition.end()，不假设是哪一种定义）。
         while (openScopes > 0) {
@@ -548,7 +550,7 @@ public class RouteGenerator {
      * 合并动作的**后半段**（#142 / ADR-0017 决策 6 的修订版）：在批 exchange 上把这一批**打成一条报文**。
      *
      * <p>它**不认识出口**：打包完链上只有一条消息，后面的出站动作（{@code HTTP_CALL} / {@code MQ_PUBLISH}）
-     * 因此天然只发一次；出口的种类与数量由链决定，换出口不用动合并配置。响应由扇回（{@code FANOUT}）
+     * 因此天然只发一次；出口的种类与数量由链决定，换出口不用动合并配置。响应由还原（{@code RESTORE}）
      * 那一档摊回原来那 N 条。</p>
      *
      * <p>空批（读库读到 0 行 / 整批被续投跳过）标 {@link #BATCH_EMPTY}：调用方用一层 filter 兜住，
@@ -643,20 +645,20 @@ public class RouteGenerator {
     }
 
     /**
-     * 扇回动作的片段（#142）：把出站拿回来的响应按配对字段**摊回原来那 N 条消息**（1 → N）。
+     * 还原动作的片段（#142）：把出站拿回来的响应按配对字段**摊回原来那 N 条消息**（1 → N）。
      *
      * <p>与拆分那一档同一套记账：这一层是 split，后续动作追加在它里面逐条跑，收尾时按层数统一退回。
-     * 区别在**身份**：拆分会新造消息、换批号；扇回沿用成员清单里那几条（消息标识 / 业务键 / 父消息标识 /
+     * 区别在**身份**：拆分会新造消息、换批号；还原沿用成员清单里那几条（消息标识 / 业务键 / 父消息标识 /
      * 批内序号），**也不换批号**——它是把这一批还原回成员，不是新的一批。</p>
      */
-    private ProcessorDefinition<?> appendFanout(ProcessorDefinition<?> current, Action action, FanoutConfig fanout) {
+    private ProcessorDefinition<?> appendRestore(ProcessorDefinition<?> current, Action action, OneToManyConfig restore) {
         int index = action.getActionIndex();
         return current
                 .process(ex -> {
                     ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                     ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                     beginStep(ex); // #134：计时起点打在配对之前
-                    prepareFanout(ex, action, fanout, index);
+                    prepareRestore(ex, action, restore, index);
                 })
                 .split(ExpressionBuilder.bodyExpression())
                     .process(this::restoreCarrier);
@@ -669,34 +671,34 @@ public class RouteGenerator {
      * <p>**同成同败**：有一条没配上（响应里没有它的业务键）就算整批失败——先给这一批每条记一行 FAILED
      * （同因，各自带自己那一片），再抛出去让这一批失败，绝不留「看着成功其实只回了一部分」的行。</p>
      */
-    private void prepareFanout(Exchange ex, Action action, FanoutConfig fanout, int index) {
+    private void prepareRestore(Exchange ex, Action action, OneToManyConfig restore, int index) {
         List<AggregateBatch.Carrier> carriers = ex.getProperty(BATCH_MANIFEST, List.class);
         if (carriers == null || carriers.isEmpty()) {
             throw new IllegalStateException(
-                    "扇回这一步的上游没有合并动作（没有成员清单）：扇回只能接在「合并 + 出站」之后");
+                    "还原这一步的上游没有合并动作（没有成员清单）：还原只能接在「合并 + 出站」之后");
         }
         Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
         String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
-        Object source = context(ex).get(fanout.sourceStep());
-        Object response = ElementMessageFactory.valueAt(source, fanout.sourcePath());
+        Object source = context(ex).get(restore.sourceStep());
+        Object response = ElementMessageFactory.valueAt(source, restore.sourcePath());
         if (response == null) {
-            throw new IllegalStateException("扇回取不到回应：sourceStep=" + fanout.sourceStep()
-                    + (fanout.sourcePath() == null || fanout.sourcePath().isBlank() ? "" : "（路径 " + fanout.sourcePath() + "）"));
+            throw new IllegalStateException("还原取不到回应：sourceStep=" + restore.sourceStep()
+                    + (restore.sourcePath() == null || restore.sourcePath().isBlank() ? "" : "（路径 " + restore.sourcePath() + "）"));
         }
         messageHistory.requireCaptureFitsSnapshot(index, response);
         Long durationMs = stepDuration(ex);
-        Map<String, Object> paired = AggregateBatch.pair(response, fanout.resultKeyField(), carriers);
+        Map<String, Object> paired = AggregateBatch.pair(response, restore.resultKeyField(), carriers);
         List<String> missing = carriers.stream()
                 .filter(carrier -> !paired.containsKey(carrier.messageId()))
                 .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
                 .toList();
         if (!missing.isEmpty()) {
             // 这一步的失败**只逐条记**（交给统一的失败那条路：它按成员清单给这一批每条记一行 FAILED）——
-            // 不记「整批」那一行，否则右详情会在扇回这一步长出一个「重发这一批」按钮，
+            // 不记「整批」那一行，否则右详情会在还原这一步长出一个「重发这一批」按钮，
             // 而重发只该长在**出站**那一步（#142 / 决策 7）
             ex.setProperty(BATCH_NO_SUMMARY, true);
-            throw new IllegalStateException("扇回的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
-                    + fanout.resultKeyField() + "）");
+            throw new IllegalStateException("还原的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
+                    + restore.resultKeyField() + "）");
         }
         List<AggregateBatch.Carrier> settled = new ArrayList<>();
         int seq = 0;
@@ -706,12 +708,12 @@ public class RouteGenerator {
             messageHistory.recordSuccess(runId, carrier.messageId(), index, action.getName(), carrier.body(),
                     slice, carrier.businessKey(), attemptsOnSuccess(ex), durationMs,
                     new BatchStamp(batchId, seq, carrier.parentMessageId()));
-            settled.add(carrier.settled(seq, fanout.attachAs(), slice, index));
+            settled.add(carrier.settled(seq, restore.attachAs(), slice, index));
         }
         ex.getMessage().setBody(settled);
     }
 
-    /** 扇回：把成员清单里那一条的现场装回 exchange，后续动作照旧逐条跑（#142）。 */
+    /** 还原：把成员清单里那一条的现场装回 exchange，后续动作照旧逐条跑（#142）。 */
     private void restoreCarrier(Exchange ex) {
         AggregateBatch.Carrier carrier = ex.getMessage().getBody(AggregateBatch.Carrier.class);
         ex.setProperty(MessageHistoryService.MESSAGE_ID, carrier.messageId());
@@ -765,7 +767,7 @@ public class RouteGenerator {
      * <p>拆完之后链上仍是「一条一条走」：其后的片段逐个处理每条子消息，失败即停 / 重试退避 /
      * 水位推进这些既有语义一个字不改。</p>
      */
-    private ProcessorDefinition<?> appendSplit(ProcessorDefinition<?> current, Action action, SplitConfig split) {
+    private ProcessorDefinition<?> appendSplit(ProcessorDefinition<?> current, Action action, OneToManyConfig split) {
         int index = action.getActionIndex();
         return current
                 .process(ex -> {
@@ -824,7 +826,7 @@ public class RouteGenerator {
      * <p>取不到就**当场显式失败**：步骤没执行（被断点跳过）或当前消息体为空——两种都是配置或链的
      * 问题，静默拆出 0 条只会让运行"成功"而一条数据都不落库。</p>
      */
-    private Object resolveSplitSource(Exchange ex, SplitConfig split) {
+    private Object resolveSplitSource(Exchange ex, OneToManyConfig split) {
         Object source = split.sourceStep() == null
                 ? ex.getMessage().getBody()
                 : context(ex).get(split.sourceStep());
@@ -840,7 +842,7 @@ public class RouteGenerator {
      * 来源里那片数组（{@code sourcePath} 走进去；空路径 = 来源本身就是数组）。取不到、或取到的不是
      * 数组，同样当场显式失败——理由见 {@link #resolveSplitSource}。
      */
-    private static List<?> splitArray(Object source, SplitConfig split) {
+    private static List<?> splitArray(Object source, OneToManyConfig split) {
         String where = split.sourcePath() == null || split.sourcePath().isBlank()
                 ? "（来源本身）" : split.sourcePath();
         Object array = ElementMessageFactory.valueAt(source, split.sourcePath());
@@ -862,7 +864,7 @@ public class RouteGenerator {
      * 的外层字段，不是数组里某个元素的；而且它**只影响 body**——父消息标识照记，所以
      * 「改 keepParent 不影响谱系」。</p>
      */
-    private void beginChildMessage(Exchange ex, SplitConfig split) {
+    private void beginChildMessage(Exchange ex, OneToManyConfig split) {
         Object element = ex.getMessage().getBody();
         Object parentBody = ex.getProperty(SPLIT_SOURCE, Object.class);
         String parentMessageId = ex.getProperty(MessageHistoryService.PARENT_MESSAGE_ID, String.class);
@@ -1025,9 +1027,9 @@ public class RouteGenerator {
                 context.put(index, ex.getMessage().getBody());
                 ex.setProperty(CONTEXT, context);
             });
-            // 拆分 / 合并 / 扇回这三档的片段整个在 appendSplit / appendChain / appendFanout 里，
+            // 一分多 / 合并这两档的片段整个在 appendSplit / appendRestore / appendAggregate* 里，
             // 这里没有可加的
-            case SPLIT, AGGREGATE, FANOUT -> current;
+            case ONE_TO_MANY, AGGREGATE -> current;
         };
     }
 

@@ -45,11 +45,11 @@ import static org.mockito.Mockito.when;
  * **打包重发**（#142 / ADR-0017 决策 7 的修订版）：一次点击 = 一次请求，认的是**出站那一步的摘要行**。
  *
  * <p>这里考的是那次出站与它带来的账：整批失败之后拿出站那一步的摘要行重发——替身端点**只多收一次**请求
- * （报文从摘要行的 `input_snapshot` 取回，配对字段从指向这个出口的**扇回**那一档取），新运行里摘要行与
+ * （报文从摘要行的 `input_snapshot` 取回，配对字段从指向这个出口的**还原**那一档取），新运行里摘要行与
  * 这一批每条各记一行（成功），旧的那一批（摘要行 + 每条消息行）标 {@code REDELIVERED}；
  * 不该发的时候（不是摘要行 / 不是失败批 / 这一步不是出站动作）当场拒绝，一次请求都不发。</p>
  *
- * <p>路由是**真的**（RouteGenerator 建、Camel 跑），mappers 是桩——链上的合并/扇回行为在
+ * <p>路由是**真的**（RouteGenerator 建、Camel 跑），mappers 是桩——链上的合并/还原行为在
  * {@code AggregateActionExecutionTest} 里对着 H2 验。</p>
  */
 class BatchRedeliverTest {
@@ -108,11 +108,11 @@ class BatchRedeliverTest {
         http.setAddition(Map.of());
         when(dataSourceMapper.selectById(2L)).thenReturn(http);
 
-        // 链：合并(1) → 出站(2) → 扇回(3)：摘要行在出站那一步，配对字段在扇回那一档
+        // 链：合并(1) → 出站(2) → 还原(3)：摘要行在出站那一步，配对字段在还原那一档
         when(actionMapper.selectList(any())).thenReturn(List.of(
                 action(1, ActionKind.AGGREGATE, Map.of("bodyField", "items")),
                 action(2, ActionKind.HTTP_CALL, Map.of("dataSourceId", 2L, "path", "/register", "method", "POST")),
-                action(3, ActionKind.FANOUT, Map.of("sourceStep", 2, "resultKeyField", "code", "attachAs", "handle"))));
+                action(3, ActionKind.ONE_TO_MANY, Map.of("mode", "restore", "sourceStep", 2, "resultKeyField", "code", "attachAs", "handle"))));
 
         Job job = new Job();
         job.setId(JOB_ID);
@@ -208,13 +208,13 @@ class BatchRedeliverTest {
 
     @Test
     void aBatchThatFailedDownstreamCanStillBeResent() {
-        // 出站成功、扇回那一步配不上 → 摘要行自己是 SUCCESS，成员行在**扇回那一步**（步骤 3）失败。
+        // 出站成功、还原那一步配不上 → 摘要行自己是 SUCCESS，成员行在**还原那一步**（步骤 3）失败。
         // 重发仍然是「再打一次请求」：同一条目标端第二次可能回一份完整的响应
         MessageStep summary = step(11L, 7L, "batch:B-1", OUTLET_STEP, "SUCCESS", null,
                 "{\"items\":[{\"code\":\"PO-1\"}]}");
-        MessageStep failedAtFanout = step(21L, 7L, "msg-1", 3, "FAILED", 1, "{\"code\":\"PO-1\"}");
+        MessageStep failedAtRestore = step(21L, 7L, "msg-1", 3, "FAILED", 1, "{\"code\":\"PO-1\"}");
         when(messageStepMapper.selectById(11L)).thenReturn(summary);
-        when(messageStepMapper.selectList(any())).thenReturn(List.of(summary, failedAtFanout));
+        when(messageStepMapper.selectList(any())).thenReturn(List.of(summary, failedAtRestore));
         httpResponse.set("[{\"code\":\"PO-1\",\"handle\":\"H1\"}]");
 
         JobRun resent = service().redeliverBatch(11L);
@@ -223,7 +223,7 @@ class BatchRedeliverTest {
         assertThat(resent.getStatus()).isEqualTo("SUCCESS");
         assertThat(inserted).as("新运行里：摘要行 + 那一条消息").hasSize(2);
         assertThat(updated).extracting(MessageStep::getId)
-                .as("旧的那一批（摘要行 + 扇回那一步那条失败行）都标 REDELIVERED")
+                .as("旧的那一批（摘要行 + 还原那一步那条失败行）都标 REDELIVERED")
                 .containsExactlyInAnyOrder(11L, 21L);
     }
 

@@ -185,10 +185,9 @@ public class ActionService {
         if (request.type() == ActionKind.MQ_PUBLISH) {
             checkBodySourceStep(request, existing);
         }
-        // 跨步骤引用写时就拦：字段映射的 rules.sourceStep、拆分的 sourceStep 与扇回的 sourceStep
+        // 跨步骤引用写时就拦：字段映射的 rules.sourceStep 与一分多（拆分/还原两档）的 sourceStep
         // 走同一份链一致性校验（#89 / #140 / #142），报 400 而不是等到跑起来才「取不到数据」
-        if (request.type() == ActionKind.FIELD_MAP || request.type() == ActionKind.SPLIT
-                || request.type() == ActionKind.FANOUT) {
+        if (request.type() == ActionKind.FIELD_MAP || request.type() == ActionKind.ONE_TO_MANY) {
             checkCrossStepReferences(jobId, request, existing);
         }
         // 包含当前请求：新增时 +1，更新时按自身种类替换

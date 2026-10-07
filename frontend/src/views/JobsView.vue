@@ -191,23 +191,51 @@
           <el-form-item label="业务键路径"><el-input v-model="kindForm.businessKey" placeholder="如 data.orderNo（按业务分组/检索）" /></el-form-item>
         </template>
 
-        <template v-if="actionForm.type === 'SPLIT'">
+        <template v-if="actionForm.type === 'ONE_TO_MANY'">
+          <el-form-item label="档位">
+            <el-select v-model="kindForm.mode" style="width: 100%" @change="onModeChange">
+              <el-option label="拆分：一条消息摊成 N 条新消息" value="split" />
+              <el-option label="还原：把出站拿回的响应还回原来那几条消息" value="restore" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="来源步骤">
             <el-input-number v-model="kindForm.sourceStep" :min="0"
-              placeholder="留空 = 拆当前消息体；填了则取该步骤的输出" />
+              :placeholder="kindForm.mode === 'restore'
+                ? '必填：回应在哪个动作的输出里（通常就是出站那一步的序号）'
+                : '留空 = 拆当前消息体；填了则取该步骤的输出'" />
           </el-form-item>
           <el-form-item label="来源路径">
-            <el-input v-model="kindForm.sourcePath" placeholder="留空 = 来源本身就得是数组；如 lines / data.items" />
+            <el-input v-model="kindForm.sourcePath"
+              :placeholder="kindForm.mode === 'restore'
+                ? '留空 = 来源本身就得是数组；如 results / data.items'
+                : '留空 = 来源本身就得是数组；如 lines / data.items'" />
           </el-form-item>
-          <el-form-item label="元素键">
-            <el-input v-model="kindForm.elementKey" placeholder="必填：子消息的业务键取自元素里的哪个字段，如 itemCode" />
-          </el-form-item>
-          <el-form-item label="保留外层字段">
-            <el-switch v-model="kindForm.keepParent" />
-            <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
-              父消息的字段是否摊平进子消息（只影响子消息内容，不影响谱系）
-            </span>
-          </el-form-item>
+          <template v-if="kindForm.mode === 'split'">
+            <el-form-item label="元素键">
+              <el-input v-model="kindForm.elementKey" placeholder="必填：子消息的业务键取自元素里的哪个字段，如 itemCode" />
+            </el-form-item>
+            <el-form-item label="保留外层字段">
+              <el-switch v-model="kindForm.keepParent" />
+              <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
+                父消息的字段是否摊平进子消息（只影响子消息内容，不影响谱系）
+              </span>
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-form-item label="响应配对字段">
+              <el-input v-model="kindForm.resultKeyField" placeholder="必填：响应每一项里这个字段与消息的业务键相等就算配上，如 FCode" />
+            </el-form-item>
+            <el-form-item label="结果落进 body 的键">
+              <el-input v-model="kindForm.attachAs" placeholder="必填：配对到的那一份写进各自 body 的这个键，紧随其后的动作直接用，如 registration" />
+            </el-form-item>
+          </template>
+          <el-alert type="info" :closable="false" show-icon
+            :title="kindForm.mode === 'restore'
+              ? '还原是「回到原来那几条消息」，不是新造消息'
+              : '拆分是「造新消息」：一条消息摊成 N 条'"
+            :description="kindForm.mode === 'restore'
+              ? '消息标识 / 业务键 / 父消息标识 / 批内序号都沿用合并那一批的，批号也不换。有一条配不上就整批失败（同成同败）。它必须挂在上游有合并动作的链上；没有响应的出口（MQ 发布）就不摆这一档。'
+              : '子消息是新造的消息（新标识、新批号），父消息标识指向被拆的那条（谱系）。来源取不到就当场失败，不静默拆出 0 条。'" />
         </template>
 
         <template v-if="actionForm.type === 'AGGREGATE'">
@@ -216,26 +244,7 @@
           </el-form-item>
           <el-alert type="info" :closable="false" show-icon
             title="合并只打包，发去哪儿由后面的出站动作决定"
-            description="攒齐的边界是上游读取批读完那一刻（不做条数阈值：要限制条数就调读库那一步的批大小）。打包完链上只有一条消息，后面的 HTTP_CALL / MQ_PUBLISH 因此只发一次；响应由「扇回」那一档摊回原来那几条消息。" />
-        </template>
-
-        <template v-if="actionForm.type === 'FANOUT'">
-          <el-form-item label="来源步骤">
-            <el-input-number v-model="kindForm.sourceStep" :min="0"
-              placeholder="必填：回应在哪个动作的输出里（通常就是出站那一步的序号）" />
-          </el-form-item>
-          <el-form-item label="来源路径">
-            <el-input v-model="kindForm.sourcePath" placeholder="留空 = 来源本身就得是数组；如 codes / data.items" />
-          </el-form-item>
-          <el-form-item label="响应配对字段">
-            <el-input v-model="kindForm.resultKeyField" placeholder="必填：响应每一项里这个字段与消息的业务键相等就算配上，如 code" />
-          </el-form-item>
-          <el-form-item label="结果落进 body 的键">
-            <el-input v-model="kindForm.attachAs" placeholder="必填：配对到的那一份写进各自 body 的这个键，紧随其后的动作直接用，如 handle" />
-          </el-form-item>
-          <el-alert type="info" :closable="false" show-icon
-            title="扇回是「回到原来那几条消息」，不是新造消息"
-            description="消息标识 / 业务键 / 父消息标识 / 批内序号都沿用合并那一批的，批号也不换。有一条配不上就整批失败（同成同败）。没有响应的出口（MQ 发布）就不摆这一档。" />
+            description="攒齐的边界是上游读取批读完那一刻（不做条数阈值：要限制条数就调读库那一步的批大小）。打包完链上只有一条消息，后面的 HTTP_CALL / MQ_PUBLISH 因此只发一次；响应由「还原」那一档摊回原来那几条消息。" />
         </template>
 
         <template v-if="actionForm.type === 'MQ_PUBLISH'">
@@ -311,7 +320,7 @@ import { api, ApiError } from '../api/client'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
-const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP', 'SPLIT', 'AGGREGATE', 'FANOUT']
+const kinds = ['READ_SQL', 'WRITE_UPSERT', 'HTTP_CALL', 'MQ_CONSUME', 'MQ_PUBLISH', 'FIELD_MAP', 'ONE_TO_MANY', 'AGGREGATE']
 
 const jobs = ref<Job[]>([])
 const sites = ref<SiteInfo[]>([])
@@ -411,9 +420,8 @@ async function onWorkbenchSaved(config: Record<string, any>) {
   }
 }
 
-/** 拆分与字段映射在链上干活，不引用数据源；其余动作都要选一个。 */
-// 合并与扇回都不连任何出口/库（它们在链上干活，出口由后面的 HTTP_CALL / MQ_PUBLISH 承担）
-const kindNeedsDataSource = computed(() => !['FIELD_MAP', 'SPLIT', 'AGGREGATE', 'FANOUT'].includes(actionForm.type))
+/** 一分多（拆分/还原两档）与字段映射在链上干活，不引用数据源；合并也不连出口（出口由后面的出站动作承担）。 */
+const kindNeedsDataSource = computed(() => !['FIELD_MAP', 'ONE_TO_MANY', 'AGGREGATE'].includes(actionForm.type))
 
 const filteredDataSources = computed(() => {
   const typeFilter: Record<string, string[]> = {
@@ -545,9 +553,24 @@ function resetKindFields() {
   kindForm.dataSourceId = filteredDataSources.value[0]?.id
   // MQ_CONSUME exchange 类型缺省 direct（ADR-0010）；切换类型时重置回缺省
   if (actionForm.type === 'MQ_CONSUME') kindForm.exchangeType = 'direct'
-  // 拆分缺省摊平外层字段（与后端 SplitConfig 的缺省一致）：开关一进来就是"开"，
-  // 别让用户以为关着——后端在字段缺失时也是 true
-  if (actionForm.type === 'SPLIT') kindForm.keepParent = true
+  // 一分多缺省「拆分」档，且该档缺省摊平外层字段（与后端 OneToManyConfig 的缺省一致）：
+  // 开关一进来就是"开"，别让用户以为关着——后端在字段缺失时也是 true
+  if (actionForm.type === 'ONE_TO_MANY') {
+    kindForm.mode = 'split'
+    kindForm.keepParent = true
+  }
+}
+
+/** 换档位时把**另一档**的字段清掉：两档各认各的键，留着会被后端当「未知字段」拒掉。 */
+function onModeChange(mode: string) {
+  if (mode === 'restore') {
+    delete kindForm.elementKey
+    delete kindForm.keepParent
+  } else {
+    delete kindForm.resultKeyField
+    delete kindForm.attachAs
+    if (kindForm.keepParent == null) kindForm.keepParent = true
+  }
 }
 
 function openActionCreate() {

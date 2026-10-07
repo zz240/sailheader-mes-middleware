@@ -370,7 +370,7 @@ if ($big) { $item5 = @($big.body.lines)[4]; Check 'A7BIG line fields mapped' ("$
 Write-Host 'B6-BATCH  the whole read batch in ONE request -> per-row handle write-back'
 $jbatch = JobIdByName 'SH-B6-Register-Batch'
 $jbatchOutlet = 4
-$jbatchFanout = 5
+$jbatchRestore = 5
 Reset-BatchJob -JobId $jbatch
 ClearFault
 $batchResult = Execute $jbatch
@@ -386,7 +386,7 @@ Check 'B6-BATCH the run is recorded SUCCESS' ($bRun -and $bRun.status -eq 'SUCCE
 $bIdx = RunIndex $bRun.id 2
 $bSummary = @($bIdx | Where-Object { "$($_.messageId)" -like 'batch:*' })
 Check 'B6-BATCH the outlet keeps exactly ONE summary row (whole request + whole response)' ($bSummary.Count -eq 1) ("rows={0}" -f $bSummary.Count)
-$bFan = @($bIdx | Where-Object { $_.step -eq $jbatchFanout })
+$bFan = @($bIdx | Where-Object { $_.step -eq $jbatchRestore })
 Check 'B6-BATCH the fan-out records one row per code (20 rows, all SUCCESS)' ($bFan.Count -eq 20 -and @($bFan | Where-Object { $_.status -ne 'SUCCESS' }).Count -eq 0) ("rows={0}" -f $bFan.Count)
 $bKeys = @($bFan | ForEach-Object { "$($_.businessKey)" })
 Check 'B6-BATCH per-row attribution: every fan-out row carries its own business key (20 distinct)' ((@($bKeys | Select-Object -Unique)).Count -eq 20) ("distinct={0}" -f (@($bKeys | Select-Object -Unique)).Count)
@@ -398,7 +398,7 @@ Check 'B6-BATCH batch identity: the packed batch shares ONE batch id (= the summ
 
 # per-row attribution with the snapshots: which code got which handle
 $bRows = RunSteps $bRun.id 100 2
-$bFanRows = @($bRows | Where-Object { $_.step -eq $jbatchFanout })
+$bFanRows = @($bRows | Where-Object { $_.step -eq $jbatchRestore })
 $bBad = @($bFanRows | Where-Object {
         $snap = $null
         try { $snap = "$($_.dataSnapshot)" | ConvertFrom-Json } catch { }

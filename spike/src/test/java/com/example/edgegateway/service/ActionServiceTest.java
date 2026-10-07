@@ -4,7 +4,7 @@ import com.example.edgegateway.config.FieldMappingConfig;
 import com.example.edgegateway.config.MqConsumeConfig;
 import com.example.edgegateway.config.MqPublishConfig;
 import com.example.edgegateway.config.ReadSqlConfig;
-import com.example.edgegateway.config.SplitConfig;
+import com.example.edgegateway.config.OneToManyConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
@@ -522,9 +522,10 @@ class ActionServiceTest {
         if (sourceStep != null) {
             addition.put("sourceStep", sourceStep);
         }
+        addition.put("mode", "split");
         addition.put("sourcePath", "lines");
         addition.put("elementKey", "itemCode");
-        return new ActionRequest("拆明细", ActionKind.SPLIT, index, SplitConfig.from(addition));
+        return new ActionRequest("拆明细", ActionKind.ONE_TO_MANY, index, OneToManyConfig.from(addition));
     }
 
     @Test
@@ -556,7 +557,7 @@ class ActionServiceTest {
 
         Action saved = service.add(1L, splitRequest(2, 1));
 
-        assertThat(saved.getType()).isEqualTo(ActionKind.SPLIT);
+        assertThat(saved.getType()).isEqualTo(ActionKind.ONE_TO_MANY);
     }
 
     @Test
@@ -567,7 +568,7 @@ class ActionServiceTest {
 
         Action saved = service.add(1L, splitRequest(1, null));
 
-        assertThat(saved.getType()).isEqualTo(ActionKind.SPLIT);
+        assertThat(saved.getType()).isEqualTo(ActionKind.ONE_TO_MANY);
         assertThat(saved.getAddition()).doesNotContainKey("sourceStep");
     }
 

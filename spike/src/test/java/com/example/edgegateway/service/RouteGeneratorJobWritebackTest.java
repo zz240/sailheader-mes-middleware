@@ -283,9 +283,8 @@ class RouteGeneratorJobWritebackTest {
             case HTTP_CALL -> "call";
             case MQ_CONSUME -> "consume";
             case MQ_PUBLISH -> "publish";
-            case SPLIT -> "split";
+            case ONE_TO_MANY -> "one-to-many";
             case AGGREGATE -> "aggregate";
-            case FANOUT -> "fanout";
         });
         action.setAddition(addition);
         return action;

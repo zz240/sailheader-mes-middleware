@@ -358,7 +358,7 @@ $a7bigId = New-ScenarioJob -Name 'SH-A7BIG-Whole-Report' -Direction 'NORTH' -Rem
 
 # ---------- B6 batch variant: the whole read batch in ONE request (#143) ----------
 # #142 made this shape possible: READ_SQL (a batch of codes) -> FIELD_MAP (one payload per code)
-# -> AGGREGATE (pack them into {"codes":[...]}) -> HTTP_CALL (sent once) -> FANOUT (pair the handles
+# -> AGGREGATE (pack them into {"codes":[...]}) -> HTTP_CALL (sent once) -> RESTORE (pair the handles
 # back by FCode) -> FIELD_MAP -> WRITE_UPSERT (each row gets its own handle).
 # The read batch size IS the request size (ADR-0017 decision 5: the barrier is "the upstream read batch
 # finished"; there is no count threshold and no timeout), so batchSize=1000 sends the 20 shadow-site
@@ -379,7 +379,7 @@ function New-B6BatchActions {
         @{ name = 'push-register-batch'; type = 'HTTP_CALL'; addition = @{
             dataSourceId = $dsMesHttp; path = '/mes/api/id-register'; method = 'POST' } },
         # sourceStep 4 = the outlet: the stand-in answers {code,count,results:[{FCode,handle}]}
-        @{ name = 'fanout-handles'; type = 'FANOUT'; addition = @{
+        @{ name = 'restore-handles'; type = 'ONE_TO_MANY'; addition = @{ mode = 'restore';
             sourceStep = 4; sourcePath = 'results'; resultKeyField = 'FCode'; attachAs = 'registration' } },
         @{ name = 'map-handle-batch'; type = 'FIELD_MAP'; addition = @{ rules = @(
             @{ sourceStep = 1; source = 'FCode'; target = 'FCode'; transform = 'STRING' },
@@ -420,7 +420,7 @@ $a2hl = @(
     ) } },
     @{ name = 'write-head'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsBoardDb; tableName = 'bom_head_t'; idempotencyKey = 'FBOMNo' } },
-    @{ name = 'split-lines'; type = 'SPLIT'; addition = @{
+    @{ name = 'split-lines'; type = 'ONE_TO_MANY'; addition = @{ mode = 'split';
         sourceStep = 2; sourcePath = 'lines'; elementKey = 'FItemNumber'; keepParent = $true } },
     @{ name = 'map-line'; type = 'FIELD_MAP'; addition = @{ rules = @(
         @{ sourceStep = 5; source = 'FBOMNo'; target = 'FBOMNo'; transform = 'STRING' },
