@@ -18,7 +18,7 @@
 ├── AGENTS.md                   # 给 agent 的仓库约定
 ├── docs/
 │   ├── user-guide.md           # 用户操作手册（当前功能）
-│   ├── mock-contract.md        # 环境 mock 契约
+│   ├── action-chain-design.md  # 动作链通用化设计（DS-8 细化稿）
 │   ├── adr/                    # 架构决策记录
 │   ├── features/               # 功能演化页（现状 + 决策时间线）
 │   ├── flows/                  # 数据流走查地图（业务↔代码对应 + 建议表）

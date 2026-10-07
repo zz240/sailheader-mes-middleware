@@ -4,7 +4,7 @@
 
 - 现状（用户视角）：[docs/user-guide.md](../user-guide.md)
 - 术语：仓库根 `CONTEXT.md`
-- 决策详情：`docs/adr/`（正式记录）与 `docs/code-review-notes.md`（历史流水账，已冻结）；本目录**只引用不复制**
+- 决策详情：`docs/adr/`（正式记录）与 `docs/archive/code-review-notes.md`（历史流水账，已冻结）；本目录**只引用不复制**
 
 ## 维护规则（每次变更 5 分钟）
 

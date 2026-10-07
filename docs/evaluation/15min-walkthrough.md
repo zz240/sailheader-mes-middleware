@@ -4,7 +4,7 @@
 
 ## 前置
 
-- 本地环境：docker-compose 启动 MySQL + RabbitMQ（连接信息见 `docs/mock-contract.md`）
+- 本地环境：docker-compose 启动 MySQL + RabbitMQ（连接信息见 `spike/docker-compose.yml` 与 README「快速运行」）
 - 网关应用已启动（`spike`，8080），表单 UI 可用
 - 被测工程师只熟悉业务、不熟悉内部实现
 

@@ -63,8 +63,12 @@ A5（采购收料回传）、A7（试模/质检报告回传）的源都在这个
 
 - **影响面**：后端 11 个文件（类型/配置/连接池/连接测试/四处方言站点/校验分支/运行时取池）、前端 3 个文件、`pom.xml` 一处。
 - **可测性**：方言两个实现各自单测（不连库就能钉住 SQL 文本）；真机验收靠 `tools/shadow-site/` 的 SQL Server 容器（容器 `edge-shadow-mssql`）。
-- **不改的语义**：仍然是「一条消息 = 一行 = 一张表」（`RouteGenerator.upsert`）；把一条消息拆成多行写的「分裂」能力是另一条票，见
-  `docs/design/docking-scenarios-spec.md` 的「落库形态的硬约束」。
+- **默认语义不变**：仍然是「一条消息 = 一行 = 一张表」（`RouteGenerator.upsert`）。
+  **补记（#140 / #142 落地后）**：把一条消息拆成多行写的「分裂」能力**已落地**为 `SPLIT`（拆分）动作；
+  批量发送那一侧的 `AGGREGATE`（合并）与 `FANOUT`（扇回）见同一份 ADR。
+  决策在 `docs/adr/0017-cardinality-change-and-message-history.md`、
+  动作种类与链上行为在 `docs/action-chain-design.md` §1；要拆得在链上**显式**摆一个拆分动作，默认行为一个字没改。
+  场景侧的落库形态选项见 `docs/design/docking-scenarios-spec.md` 的「落库形态的硬约束」。
 - **风险**：`mssql-jdbc 7.4.1.jre8` 是 2019 年版本，遇到 TLS/新特性问题需要联网取新版驱动；
   离线环境只能用这一版，属于已知约束。
 - **待观察**：SQL Server 的 `ORDER BY ... OFFSET/FETCH` 与现有 keyset 分页（`col > ?`）的配合；

@@ -78,7 +78,7 @@
 1. **连接器只有三种**：`HTTP`、`MYSQL`、`RABBITMQ`（`model/DataSourceType.java:4-8`；`DataSourceManager:99-116` 强转 `MysqlDataSourceConfig`）。Kafka / MQTT / OPC UA / SOAP / SFTP 都要新增能力。
 2. **SQL Server 不是加个驱动就行**：`ReadSqlBatcher:83` 拼 `LIMIT`、`StructureProbeService:116` 用 `SELECT * FROM t LIMIT 20`、`ReadOnlySqlValidator:18` 用 `LIMIT 0` 包一层——三处都是 MySQL 方言。驱动本身离线可用（本机 `.m2` 有 `mssql-jdbc-7.4.1.jre8`），但方言要单独一块改动。
 3. **没有数据入站的 HTTP 口**：HTTP 侧只有出站 `HTTP_CALL`；入站只有 `POST /api/external/jobs/{id}/trigger`（带 `X-API-Key`，请求体可作链首输入，`ExternalTriggerController:25-31`、`trigger-flow.md:60-65`）。设备/车间系统想直接 POST 数据进来，走的就是这条，或走 MQ。
-4. **交付语义是至少一次**：推送可能重复，靠目标端业务键或南向幂等键去重（`docs/features/reliability/README.md:21`）。
+4. **交付语义是至少一次**：推送可能重复，靠目标端业务键或南向幂等键去重（`docs/features/reliability/README.md` 的「交付语义（至少一次）」）。
 5. **未闭环缺陷（会直接影响 A4/D3）**：MQ 入口链的映射步重投会**静默出空**（`docs/flows/reliability-flow.md:178`，状态「待评估」）。现场表现就是「重投看起来成功、下游写库报缺列」——清场前那批配置里 `south-debug` 的 `Field 'order_no' doesn't have a default value` 就是这个现场。
 6. **删任务不删动作行**：`JobService.delete` 只删任务与样例（`JobService.java:55-60`），`job_action` 会留下孤儿行——交付清理与配置迁移时要记这一条。
 

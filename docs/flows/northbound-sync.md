@@ -72,7 +72,7 @@ sequenceDiagram
 | 推送 | — | HTTP 请求体 | `%TEMP%\edge-mock\bom-mock.log` |
 | 失败样例 | 令 `HTTP_CALL` 指向不可达地址 | 消息步 `FAILED` | `GET /api/history/steps?status=FAILED` |
 
-映射后期望体（`docs/mock-contract.md`）：
+映射后期望体（由内置 mock MES 端点收下，读回看 `GET /mock/mes/received`，实现见 `mock/MockMesController`）：
 
 ```json
 { "sheet_no": "PO-2026-001", "vendor_code": "V001", "sheet_date": "2026-08-14", "status": 1 }

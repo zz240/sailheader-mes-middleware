@@ -2,7 +2,7 @@
 
 > **状态：历史草案（2026-08-18）**。本文是设计阶段的草案，部分内容已被后续实现演进；当前现状以 `docs/user-guide.md` 与 `docs/adr/` 为准，决策演进见 `docs/features/`。
 
-本文是围绕 Apache Camel 嵌入内核的边缘数据网关设计草案，用于最终确认后进入实现。术语见 [CONTEXT.md](../CONTEXT.md)。
+本文是围绕 Apache Camel 嵌入内核的边缘数据网关设计草案，用于最终确认后进入实现。术语见 [CONTEXT.md](../../CONTEXT.md)。
 
 ## 1. 目标与范围
 
@@ -12,10 +12,10 @@ MVP 明确不做：通用编排画布、多租户 SaaS、高可用、KMS、复�
 
 ## 2. 已确认决策
 
-- 引擎：Apache Camel 嵌入内核，Spring Boot 运行（[ADR-0001](adr/0001-embedded-apache-camel.md)）。
-- 通信：南向 MQ 订阅消费、北向边缘出站 HTTP（[ADR-0002](adr/0002-northbound-southbound-transport.md)）。
-- 失败：失败即停 + 重试退避 + 死信记录（[ADR-0003](adr/0003-failure-stop-retry-dead-letter.md)）。
-- 配置库与客户库统一 MySQL（[ADR-0004](adr/0004-mysql-for-config-store.md)）。
+- 引擎：Apache Camel 嵌入内核，Spring Boot 运行（[ADR-0001](../adr/0001-embedded-apache-camel.md)）。
+- 通信：南向 MQ 订阅消费、北向边缘出站 HTTP（[ADR-0002](../adr/0002-northbound-southbound-transport.md)）。
+- 失败：失败即停 + 重试退避 + 死信记录（[ADR-0003](../adr/0003-failure-stop-retry-dead-letter.md)）。
+- 配置库与客户库统一 MySQL（[ADR-0004](../adr/0004-mysql-for-config-store.md)）。
 - 表单式配置界面、每站点 API Key、docker-compose 部署、本地 master key + AES。
 - MVP 连接器：HTTP、MySQL、RabbitMQ、字段映射、Bearer Token 鉴权。
 
