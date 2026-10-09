@@ -10,7 +10,7 @@ package com.example.edgegateway.model;
  * 列名与字段名靠 MyBatis 的下划线转驼峰对上，改名字要两边一起改。</p>
  *
  * <p>没有任何消息步时 SQL 的 `COUNT` / `SUM` 仍回**一行**（0 / NULL / 0），所以这里三个数都是基本类型
- * ——{@code SUM} 那一格由 XML 里的 `ELSE 0` 兜住，不会是 null。</p>
+ * ——{@code SUM} 那一格由 XML 里的 `ELSE 0` 保证不为 null。</p>
  */
 public class RunStepTotals {
 

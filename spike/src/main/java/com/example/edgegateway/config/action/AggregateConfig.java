@@ -15,7 +15,7 @@ import java.util.Set;
  * {@link OneToManyConfig} 那一档负责。</p>
  *
  * <p>攒齐的边界仍是**上游读取批读完那一刻**（ADR-0017 决策 5）：不设条数阈值、不设超时——
- * 要限制单次发送条数就调读库那一步的批大小，一处生效。打包结果过容量闸（装不下当场失败、绝不写半截）。</p>
+ * 要限制单次发送条数就调读库那一步的批大小，一处生效。打包结果过容量闸（装不下立即失败、绝不写半截）。</p>
  */
 public record AggregateConfig(String bodyField) implements ActionConfig {
 

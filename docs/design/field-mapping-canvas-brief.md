@@ -107,7 +107,7 @@ app 条    edge-gateway 控制台 / 任务 · 动作 2 字段映射             
 2. **来源数组行永远显示未映射**：组规则的 `target` 是 `bom.bomLines`，而代码用 `ruleForTarget('erpBom.items')` 反查，永远查不到。改用 `ruleForSource` 反查，现在会写出「已映射到 bom.bomLines · 7/14 元素字段」。
 3. **落点判定在重绘之后**：`pointerup` 里先 `endDrag()` 重绘、再判断落点所属列表，节点已脱离文档使 `contains()` 恒为 false。改为先算落点再重绘。
 
-**顺带清理**：页头场景统一为 `db:erp_bom → mes.bom`（原文案残留 `po_order/mes.purchase-order`，与画布里的 BOM 数据自相矛盾）；目标字段计数由「4 顶层字段」更正为 5；删除死代码 `previewLines`、重复的 `norm`、未使用的 `state.filterUnmapped`；字段路径 12.5→13px、次要信息 10.5→11px、行高 44→46px，拖拽态、可落点、推荐态、悬停态的对比度逐一定义并保持文字不低于默认态。
+**同时清理**：页头场景统一为 `db:erp_bom → mes.bom`（原文案残留 `po_order/mes.purchase-order`，与画布里的 BOM 数据自相矛盾）；目标字段计数由「4 顶层字段」更正为 5；删除死代码 `previewLines`、重复的 `norm`、未使用的 `state.filterUnmapped`；字段路径 12.5→13px、次要信息 10.5→11px、行高 44→46px，拖拽态、可落点、推荐态、悬停态的对比度逐一定义并保持文字不低于默认态。
 
 ---
 

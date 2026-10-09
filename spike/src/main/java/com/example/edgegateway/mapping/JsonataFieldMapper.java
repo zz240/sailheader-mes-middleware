@@ -28,7 +28,7 @@ public final class JsonataFieldMapper {
     /**
      * 指定资源上限的那一份。
      *
-     * <p>运行时与试算都走上面那个默认入口（{@link JsonataLimits#DEFAULT}）；这个口子是给测试的——
+     * <p>运行时与试算都走上面那个默认入口（{@link JsonataLimits#DEFAULT}）；这个重载是给测试的——
      * 把上限调到一个不可能满足的值，才能确定性地断言「这道边界真的接上了」，而不是干等 5 秒。</p>
      */
     public JsonataFieldMapper(List<FieldMappingRule> rules, JsonataLimits limits) {

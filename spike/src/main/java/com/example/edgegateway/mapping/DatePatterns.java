@@ -64,8 +64,8 @@ public final class DatePatterns {
     /**
      * 陷阱字母的说明；一个都没有时返回 null。
      *
-     * <p>顺带把这个格式串真算一次，把算出来的样子写进说明里——「会写成 2026-08-233」比
-     * 「Y 是周所在年」更让人当场看懂自己写错了什么。</p>
+     * <p>同时把这个格式串实际计算一次，把算出来的样子写进说明里——「会写成 2026-08-233」比
+     * 「Y 是周所在年」更容易让人立刻看出自己写错了什么。</p>
      */
     private static String trapLetters(String pattern, DateTimeFormatter formatter) {
         List<String> traps = new ArrayList<>();

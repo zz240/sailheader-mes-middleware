@@ -157,7 +157,7 @@ class ReadWriteFragments {
     void captureResponse(Exchange ex, Action action, int index) {
         Object request = ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class);
         String raw = ResponseTexts.text(ex);
-        // 捕获内容不做截断：装不下就当场失败（可读错误），绝不写半截 JSON（#123 口径 4；列容量本身是 #141=MEDIUMTEXT）
+        // 捕获内容不做截断：装不下就立即失败（可读错误），绝不写半截 JSON（#123 口径 4；列容量本身是 #141=MEDIUMTEXT）
         messageHistory.requireCaptureFitsSnapshot(index, raw);
         Map<Integer, Object> context = StepLedger.context(ex);
         context.put(index, HttpCallResponse.parse(raw));

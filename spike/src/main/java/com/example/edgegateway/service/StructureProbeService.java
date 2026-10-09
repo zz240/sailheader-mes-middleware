@@ -58,7 +58,7 @@ public class StructureProbeService {
 
     /**
      * @param dbProbe 连库探测的实现；传 null 用真的（{@link #probeDb}）。
-     *                有这个口子是为了让缓存行为可测——缓存错不错，只有「连了几次库」能说明。
+     *                提供这个参数是为了让缓存行为可测——缓存是否正确，只有「连了几次库」能说明。
      */
     StructureProbeService(ActionMapper actionMapper, DataSourceMapper dataSourceMapper,
                           BiFunction<DataSource, String, SourceStructure> dbProbe) {

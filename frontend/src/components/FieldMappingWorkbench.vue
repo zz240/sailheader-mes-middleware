@@ -53,7 +53,7 @@
           <span v-else class="wb-chip chip-mode" title="这个动作保存的是一段手写 JSONata 表达式">手写 JSONata</span>
 
           <el-button size="small" @click="close">取消</el-button>
-          <el-tooltip content="把这份草稿交给后端判一遍：有没有错、错在哪一行，顺带看编译产物" placement="bottom">
+          <el-tooltip content="把这份草稿交给后端校验：有没有错、错在哪一行，同时查看编译产物" placement="bottom">
             <el-button size="small" :loading="validating" @click="validateConfig()">校验配置</el-button>
           </el-tooltip>
           <el-button size="small" type="primary" :loading="saving" @click="save">保存</el-button>
@@ -812,13 +812,13 @@ function inTextEntryFor(key: string, target: EventTarget | null): boolean {
 /**
  * 目标字段的补全下拉开着吗（开着时这些键归它）。
  *
- * 两个坑：① 补全是 teleport 到 body 的，每个输入框一个 popper，**只看 `querySelector` 拿到的第一个
- * 会认到别行那个关着的**——要看「有没有任何一个正铺着」；② 没有候选时 element-plus 自己就把
- * `visible` 关掉（`suggestionVisible = 候选数 > 0 && activated`），所以「铺着」就等于「有候选」。
+ * 两点注意事项：① 补全是 teleport 到 body 的，每个输入框一个 popper，**只看 `querySelector` 拿到的第一个
+ * 会认到别行那个已关闭的**——要判断「有没有任何一个正在显示」；② 没有候选时 element-plus 自己就把
+ * `visible` 关掉（`suggestionVisible = 候选数 > 0 && activated`），所以「显示中」就等于「有候选」。
  *
- * 第三个坑（#115 撞上的）：关掉时 popper 要播完那截退出动画才真的隐藏，动画期间 `offsetParent` 已经不是
- * null 了、盒子高度却已经是 0——只看前者会把**已经看不见**的下拉当成开着的，于是这 300 毫秒里回车与
- * 上下键全被它吃掉（界面上那一下就是键盘失灵）。所以「开着」还得看得见。
+ * 第三点注意事项（#115 遇到的）：关闭时 popper 要播完退出动画才真正隐藏，动画期间 `offsetParent` 已经不是
+ * null 了、盒子高度却已经是 0——只看前者会把**已经看不见**的下拉当成打开的，于是这 300 毫秒里回车与
+ * 上下键全被它拦截（界面上表现为键盘失灵）。所以「打开」还要判断是否可见。
  */
 function hasOpenAutocomplete(): boolean {
   return [...document.querySelectorAll<HTMLElement>('.el-autocomplete-suggestion')]

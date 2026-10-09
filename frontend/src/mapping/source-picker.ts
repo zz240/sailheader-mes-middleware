@@ -134,7 +134,7 @@ function childRowGroups(group: MapRow, fields: SourceField[], step: number | nul
       items: elements,
       tip: elements.length ? undefined : EMPTY_ELEMENT_TIP,
     },
-    // 坑：「外层」不是「上一层」——编译器里它始终指这份来源数据的顶层对象（#98 B8）。
+    // 注意：「外层」不是「上一层」——编译器里它始终指这份来源数据的顶层对象（#98 B8）。
     { title: '外层', items: outerItems(fields, own, step) },
   ]
 }
@@ -259,7 +259,7 @@ export function fillRowFromPick(
     // 元素字段（相对路径）只在数组元素子行里有意义：
     // 顶层行收了它，编译出来是「动作 1 · items[0].qty」——只取第一个元素，读起来却像能用。
     if (item.kind === 'element' && !isChildRow) return { row: null, reason: 'child-wants-relative' }
-    // 外层引用是数组元素才有的说法：普通行没有「外面那一层」（#98 B8 的坑）。
+    // 外层引用是数组元素才有的说法：普通行没有「外面那一层」（见 #98 B8 的注意事项）。
     if (item.root && !isChildRow) return { row: null, reason: 'child-wants-relative' }
   }
   row.source = item.root ? ROOT_PREFIX + item.path : item.path

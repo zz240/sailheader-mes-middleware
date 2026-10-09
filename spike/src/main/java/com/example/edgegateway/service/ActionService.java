@@ -88,8 +88,8 @@ public class ActionService {
     public void delete(Long id) {
         Action action = get(id);
         actionMapper.deleteById(id);
-        // 删动作时顺手把它的样例行带走（#119）：目标那格按动作 id，来源那格按这个动作的序号——
-        // 那一步没了，它当来源的样例也就没主了（不留孤儿行）
+        // 删动作时同时删除它的样例行（#119）：目标那一格按动作 id，来源那一格按这个动作的序号——
+        // 该步骤被删除后，以它为来源的样例会失去引用（不保留残留行）
         mappingSampleService.clearOfAction(action.getJobId(), action.getId(), action.getActionIndex());
         rebuildRoutesIfEnabled(action.getJobId());
     }

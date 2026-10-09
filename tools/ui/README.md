@@ -73,7 +73,7 @@ node part-transform-112.cjs        # 在哪个目录跑都行：截图落在 too
 `message-history-131.cjs` 右详情走的那条消息步索引 `GET /api/history/runs/{id}/steps`）。
 脚本会先直接打一次接口问清楚，后端还没那一版时打印一行
 `SKIP` 并跳过（#131 那个是**整段**跳过：右详情全靠那条索引），
-顺带说明后端的证据在哪几个 Java 用例里。**重启后端之后再跑就是真验。**
+同时说明后端的证据在哪几个 Java 用例里。**重启后端之后再跑就是真验。**
 
 `message-history-132.cjs` **没有**这一段：快照那一票全是前端，取快照走的是 #74 就有的
 `GET /api/history/steps/{id}`；面板不在就是真没过，不装成 SKIP。第三段那三种降级用

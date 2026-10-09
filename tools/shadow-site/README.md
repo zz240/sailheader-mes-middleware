@@ -155,7 +155,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/jobs/<A7BIG id>/e
 （一份 344 KB 失败就整份重推）与水位粒度只能到报告级；展平那条是一行一条消息（重试精确到行、水位到行），代价是消息数多。
 两条都留在场景里，按现场目标端的接口形态选。
 
-**顺带量到的事实**：目标库不可达时每条消息要等 HikariCP `connectionTimeout`（默认 30 s）才失败一次，
+**同时量到的事实**：目标库不可达时每条消息要等 HikariCP `connectionTimeout`（默认 30 s）才失败一次，
 `retryCount=1` 的一条消息就是 60 s（清场前 job 75 / run 314 实测）——联调时别当成卡死。
 
 ## 批量注册 / 头行分表 / 1000 条量级的真机验收（#143）

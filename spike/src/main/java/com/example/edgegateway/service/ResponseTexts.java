@@ -7,7 +7,7 @@ import org.apache.camel.Exchange;
  *
  * <p>出站那两条路都要用：链上 HTTP 动作捕获响应（{@link ReadWriteFragments#captureResponse}）与
  * 打包重发收尾配对（{@link RestoreFragment#settleBatchResend}）。走 Camel 的类型转换
- * （InputStream / StreamCache / byte[] 都能读），读不出来就当场失败——不留一个"看起来成功、
+ * （InputStream / StreamCache / byte[] 都能读），读不出来就立即失败——不留一个"看起来成功、
  * 其实没捕获到"的步骤。</p>
  */
 final class ResponseTexts {

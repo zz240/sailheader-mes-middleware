@@ -71,7 +71,7 @@ class AggregateFragment {
      * 那一档摊回原来那 N 条。</p>
      *
      * <p>空批（读库读到 0 行 / 整批被续投跳过）标 {@link RouteKeys#BATCH_EMPTY}：调用方用一层 filter
-     * 兜住，后续动作（含出站）一律不跑——不然**每个「没有新数据」的运行**都会朝目标端发一份空报文。</p>
+     * 拦截，后续动作（含出站）一律不执行——否则**每个「没有新数据」的运行**都会朝目标端发一份空报文。</p>
      */
     ProcessorDefinition<?> appendAggregatePack(ProcessorDefinition<?> current, Action action,
                                                AggregateConfig aggregate) {
@@ -82,14 +82,14 @@ class AggregateFragment {
             ledger.beginStep(ex); // #134：计时起点打在打包之前
             List<AggregateBatch.Carrier> carriers = takeBatch(ex, index);
             if (carriers.isEmpty() || carriers.stream().allMatch(AggregateBatch.Carrier::skipped)) {
-                // 空批 / 整批被断点续投跳过：这一趟没有要发的东西，后面那层 filter 会兜住
+                // 空批 / 整批被断点续投跳过：这一趟没有要发送的内容，后面那层 filter 会拦截
                 ex.setProperty(RouteKeys.BATCH_EMPTY, true);
                 return;
             }
             Object wholeBatch = carriers.stream().map(AggregateBatch.Carrier::body).toList();
             Map<String, Object> packed = new LinkedHashMap<>();
             packed.put(aggregate.bodyField(), wholeBatch);
-            // 容量闸（#123 口径 4 / #141 的列容量）：整批报文装不下就当场失败、绝不写半截
+            // 容量闸（#123 口径 4 / #141 的列容量）：整批报文装不下就立即失败、绝不写半截
             messageHistory.requireCaptureFitsSnapshot(index, packed);
             ex.setProperty(MessageHistoryService.STEP_INPUT, wholeBatch);
             ex.getMessage().setBody(packed);

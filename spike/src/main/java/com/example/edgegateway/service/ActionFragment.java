@@ -29,8 +29,8 @@ import java.util.Map;
  * {@link SplitFragment} / {@link AggregateFragment} / {@link RestoreFragment}；装配处按动作种类分派，
  * 走不到这里（那个 switch 里 {@code ONE_TO_MANY} / {@code AGGREGATE} 两档原样返回）。</p>
  *
- * <p>构建期解析（URL / 连接池 / 方言）都放在片段之外先算好——路由建一次、消息跑很多次，
- * 这些值不该每条消息重算；解析失败也在**建路由**时就抛出来，由启用闸口兜住。</p>
+ * <p>构建期解析（URL / 连接池 / 方言）都放在片段之外先算好——路由建一次、消息执行很多次，
+ * 这些值不应每条消息重算；解析失败也在**建路由**时就抛出，由启用闸口拦截。</p>
  */
 @Component
 class ActionFragment {

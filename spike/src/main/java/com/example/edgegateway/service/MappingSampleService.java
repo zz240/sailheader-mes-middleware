@@ -25,8 +25,8 @@ import java.time.LocalDateTime;
  * <p>所以「保存什么，下次打开就是什么」；粘了但不保存（取消）什么都不留，与编辑器里其它东西一个口径。
  * 探测那份不落库：它随时能再取一次，存它等于把同一份报文在库里放两遍。</p>
  *
- * <p>删除动作用 {@link #clearOfAction}、删任务用 {@link #clearOfJob}：**样例行**顺手带走；
- * 删任务时**动作行**（{@code job_action}）也一并带走——两处都不留孤儿行。</p>
+ * <p>删除动作用 {@link #clearOfAction}、删任务用 {@link #clearOfJob}：**样例行**一并删除；
+ * 删任务时**动作行**（{@code job_action}）也一并删除——两处都不保留残留行。</p>
  */
 @Service
 public class MappingSampleService {

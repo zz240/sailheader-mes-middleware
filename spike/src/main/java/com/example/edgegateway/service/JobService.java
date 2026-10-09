@@ -55,7 +55,7 @@ public class JobService {
     public void delete(Long id) {
         get(id);
         jobMapper.deleteById(id);
-        // 任务没了，它下面每一格的样例也跟着走（#119：不留孤儿行）
+        // 任务删除后，它下面每一格的样例也一并删除（#119：不保留残留行）
         mappingSampleService.clearOfJob(id);
     }
 

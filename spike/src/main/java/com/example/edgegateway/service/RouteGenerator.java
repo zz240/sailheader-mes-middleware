@@ -366,7 +366,7 @@ public class RouteGenerator {
                 // 打完**不开新扇出**：链上从这里起只有一条消息，后面的出站动作（HTTP_CALL / MQ_PUBLISH）
                 // 天然只发一次；响应由还原（RESTORE）那一档摊回原来那 N 条。
                 //
-                // 空批（读库读到 0 行 / 整批被续投跳过）用一层 filter 兜住：不然**每个「没有新数据」的运行**
+                // 空批（读库读到 0 行 / 整批被续投跳过）用一层 filter 拦截：否则**每个「没有新数据」的运行**
                 // 都会朝目标端发一份空报文。这一层与还原那层一样按 openScopes 记账、收尾时统一退回来。
                 current = aggregateFragment.appendAggregateCollect(current, action);
                 while (openScopes > 0) {

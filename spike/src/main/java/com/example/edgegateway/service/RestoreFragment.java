@@ -54,7 +54,7 @@ class RestoreFragment {
      * 配对 + 给这一批每条各记一行：输入是**自己那一片请求**、输出是**配给自己的那一份响应**，
      * 批内序号沿用攒批顺序。
      *
-     * <p>缺成员清单（上游没有合并动作）时当场失败：还原只能接在「合并 + 出站」之后。</p>
+     * <p>缺成员清单（上游没有合并动作）时立即失败：还原只能接在「合并 + 出站」之后。</p>
      */
     private void prepareRestore(Exchange ex, Action action, OneToManyConfig restore, int index) {
         List<AggregateBatch.Carrier> carriers = ex.getProperty(RouteKeys.BATCH_MANIFEST, List.class);

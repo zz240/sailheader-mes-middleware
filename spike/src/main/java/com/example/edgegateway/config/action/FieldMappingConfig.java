@@ -54,7 +54,7 @@ public record FieldMappingConfig(
      * 是不是手写表达式那一支（{@code mode=EXPRESSION}）。
      *
      * <p>「哪一支」这件事有几处要判（编译器入口、草稿校验、试算的整份跑与逐字段状态表），
-     * 各写一遍裸字符串迟早会漂。放一个口子在这里，判据只有这一份。</p>
+     * 各写一遍裸字符串迟早会漂移。把判据集中在这一处，只保留一份定义。</p>
      */
     public boolean isExpression() {
         return "EXPRESSION".equals(mode);
