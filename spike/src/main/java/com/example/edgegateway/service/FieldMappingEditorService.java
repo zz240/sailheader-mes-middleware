@@ -317,7 +317,7 @@ public class FieldMappingEditorService {
 
     /**
      * 库里给这一步存过的那份粘的（#119）：解析原文、现推字段清单，`sourceKey` 记成 `stored`
-     * （界面据此写明「粘的（已存）」），**原文一起带走**——保存时手里必须还握着它，才能原样写回库里。
+     * （界面据此写明「粘的（已存）」），**原文一并保留**——保存时手里必须还持有它，才能原样写回库里。
      */
     private FieldMappingEditorView.SourceSample storedSourceSample(Long jobId, List<Action> chain, Integer step) {
         ParsedSample sample = tryParseSample(

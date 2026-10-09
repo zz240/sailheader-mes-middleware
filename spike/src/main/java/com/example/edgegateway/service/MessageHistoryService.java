@@ -379,7 +379,7 @@ public class MessageHistoryService {
      * 把模式串变成可以内联进 SQL 的字符串字面量（模式串本身是拼出来的，只能内联，见 {@link #matchingRuns}）。
      *
      * <p>两步：`'` 翻倍（别把用户的引号当成字符串结束）；`\` 翻倍（MySQL 的 `LIKE` 默认拿 `\` 当转义符，
-     * 不翻倍的话「业务键里带反斜杠」会让后面的字符被静默吃掉——找一个包含 `\` 的业务键正是会踩到的那一步）。
+     * 不翻倍的话「业务键里带反斜杠」会让后面的字符被静默丢弃——找一个包含 `\` 的业务键正是会触发的那一步）。
      * `%` / `_` 不动：它们是通配符，与消息步检索那一侧同一档语义。</p>
      */
     private static String likeLiteral(String pattern) {
@@ -558,7 +558,7 @@ public class MessageHistoryService {
         if (job == null || job.getStatus() == null || job.getStatus() != 1) {
             throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法重投");
         }
-        // 源动作（READ_SQL/MQ_CONSUME）失败时没有断点数据可续跑：再重投会用空数据跑下游而连坐失败
+        // 源动作（READ_SQL/MQ_CONSUME）失败时没有断点数据可续跑：再次重投会用空数据执行下游，导致下游一并失败
         if (isSourceAction(run.getJobId(), step.getStep())) {
             throw new IllegalStateException("源动作（READ_SQL/MQ_CONSUME）失败无断点数据，无法断点重投；请重新执行任务");
         }
