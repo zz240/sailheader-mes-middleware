@@ -97,7 +97,7 @@ class RouteGeneratorAttemptTest {
     }
 
     /**
-     * 串味防线：前一个步骤重试过，**后一个步骤一次成功**时不能被算成"重试过的"。
+     * 计数隔离：前一个步骤重试过，**后一个步骤一次成功**时不能被算成"重试过的"。
      * 入口链 `handled=true` 失败后链还会往下走，所以这个组合是真实存在的。
      * 链：MQ_CONSUME(1) → FIELD_MAP(2) → HTTP_CALL(3, 重试 2 次才成) → FIELD_MAP(4, 一次成)。
      */

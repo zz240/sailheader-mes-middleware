@@ -802,7 +802,7 @@ class MessageHistoryExecutionTest {
      *
      * <p>起点与结算都挂在 exchange 属性上，起点要是打在循环外（`prepareRead` 那一处只跑一次），
      * 第二批起就量的是第一批读库的时间。这条用「一次比一次慢」的连接代理把批与批分开：
-     * 三批的读耗时必须**递增**，全等于第 1 批那个数就是串味了。</p>
+     * 三批的读耗时必须**递增**，全部等于第 1 批那个数就说明计时起点被复用了。</p>
      */
     @Test
     void batchedReadTimesEveryBatchSeparately() throws Exception {
@@ -1122,7 +1122,7 @@ class MessageHistoryExecutionTest {
 
     /**
      * 每取一次连接就比上一次多睡 {@code stepMs} 的数据源（#134 的分批计时用例要它）：
-     * 批与批的读耗时因此**递增**，「第 2 批拿着第 1 批那个数」这种串味一眼看得出来。
+     * 批与批的读耗时因此**递增**，「第 2 批拿到第 1 批那个数」这种计时错误一眼看得出来。
      */
     private static final class SlowerEachTimeDataSource
             extends org.springframework.jdbc.datasource.DelegatingDataSource {

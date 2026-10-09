@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 删任务要把它下面的动作行与样例行一起带走（不留孤儿行）；别的任务的行不能被连坐。
+ * 删任务要把它下面的动作行与样例行一起删除（不保留残留行）；别的任务的行不受影响。
  *
  * <p>断言看的是**表里剩下的行**（真库切片 H2 + schema.sql），不是"某个方法被调了一次"。</p>
  */

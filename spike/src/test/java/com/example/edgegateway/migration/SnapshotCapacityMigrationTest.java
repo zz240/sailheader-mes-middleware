@@ -86,7 +86,7 @@ class SnapshotCapacityMigrationTest {
         }
     }
 
-    /** 每个用例都从「V1 的 TEXT 起点」重来一次，用例之间不串味。 */
+    /** 每个用例都从「V1 的 TEXT 起点」重新执行一次，用例之间不相互影响。 */
     @BeforeEach
     void freshLibrary() throws SQLException {
         try (Connection connection = admin()) {

@@ -117,7 +117,7 @@ class MappingSampleServiceTest {
         service.clearOfJob(3L);
 
         verify(mapper).delete(any());
-        verify(actionMapper).delete(any()); // 任务没了，它下面的动作行也跟着走（不留孤儿行）
+        verify(actionMapper).delete(any()); // 任务删除后，它下面的动作行也一并删除（不保留残留行）
     }
 
     /** 没给任务 id 就什么都不删（调用方传空不该误伤全表）。 */

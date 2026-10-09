@@ -1344,7 +1344,7 @@ class MappingDraftValidationServiceTest {
      * 窄的那几份目标清单：只声明某一份草稿真映射了的字段，别的都不提。
      *
      * <p>「必填没配来源」是拿**请求里的清单**比草稿的，所以一条只想看别的问题的 fixture 得把清单
-     * 收窄到它自己那份草稿——不然会顺带报出一串「草稿里本来就没打算配的字段」，那些噪声会盖住这条
+     * 收窄到它自己那份草稿——否则会同时报出一串「草稿里本来就没打算配的字段」，那些噪声会盖住这条
      * fixture 真正要断言的东西。</p>
      */
     private static List<MappingDraftRequest.TargetFieldSpec> thinBomTargets() {
