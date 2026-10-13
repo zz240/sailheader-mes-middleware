@@ -14,7 +14,7 @@
 
 ```text
 .
-├── CONTEXT.md                  # 领域词汇表
+├── GLOSSARY.md                  # 领域词汇表
 ├── AGENTS.md                   # 给 agent 的仓库约定
 ├── docs/
 │   ├── user-guide.md           # 用户操作手册（当前功能）

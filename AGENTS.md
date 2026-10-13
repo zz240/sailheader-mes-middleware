@@ -12,7 +12,7 @@ Five canonical triage roles mapped to default labels in this repo's local tracke
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` at the repo root plus `docs/adr/` for decisions. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` at the repo root plus `docs/adr/` for decisions. See `docs/agents/domain.md`.
 
 ### Vocabulary
 

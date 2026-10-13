@@ -130,7 +130,7 @@ public class FieldMappingEditorController {
      * POST /api/field-mapping-editor/trial：「试算」——把编辑器里那份草稿拿到一份来源样例上真跑一遍（#116）。
      *
      * <p>与上面那个校验接口**并列，不并进去**：校验是静态查、便宜、保存前必跑；试算是真执行表达式、
-     * 要资源上限、点按钮才跑（{@code CONTEXT.md} 里那句「试算不是配置期校验的一部分」）。同样只读、
+     * 要资源上限、点按钮才跑（{@code GLOSSARY.md} 里那句「试算不是配置期校验的一部分」）。同样只读、
      * 无状态、不带 jobId——不落库、不改配置。</p>
      */
     @PostMapping("/field-mapping-editor/trial")

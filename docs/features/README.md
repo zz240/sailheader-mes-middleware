@@ -3,7 +3,7 @@
 按**功能**聚合的决策时间线，是开发者理解“某个功能为什么长这样”的导航入口。
 
 - 现状（用户视角）：[docs/user-guide.md](../user-guide.md)
-- 术语：仓库根 `CONTEXT.md`
+- 术语：仓库根 `GLOSSARY.md`
 - 决策详情：`docs/adr/`（正式记录）与 `docs/archive/code-review-notes.md`（历史流水账，已冻结）；本目录**只引用不复制**
 
 ## 维护规则（每次变更 5 分钟）

@@ -218,7 +218,7 @@ export function trialConclusion(result: TrialResult | null): string {
 /**
  * 四档判决在界面上的两种说法：值那一列的颜色档，与状态那一格的人话。
  *
- * 两种说法放在同一张表里，是因为它们判的是同一件事（`CONTEXT.md` 的「逐字段状态」）——分成两处
+ * 两种说法放在同一张表里，是因为它们判的是同一件事（`GLOSSARY.md` 的「逐字段状态」）——分成两处
  * 各自展开一个四臂 switch，加一档时漏改一处，界面上就会出现「落值」配着红颜色这种自相矛盾。
  * 色调名与状态名故意不同名：那是 CSS 那一侧的词（`.trial-evidence-row.valued`），不是接口契约。
  */

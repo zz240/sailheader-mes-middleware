@@ -2,7 +2,7 @@
 
 > 本轮走查（2026-09-16，第三次；#117 编辑器拆份之后）**只读当前工作树代码，未运行任何测试或真机脚本**。
 > 文中「文件+行号」取自本轮读到的版本；凡引用历史实测，均注明当时的验收脚本或测试类。
-> 术语用 `CONTEXT.md` 的定义；决策依据见 `docs/adr/0011`、`docs/adr/0012`；功能现状见 `docs/features/field-mapping/README.md`。
+> 术语用 `GLOSSARY.md` 的定义；决策依据见 `docs/adr/0011`、`docs/adr/0012`；功能现状见 `docs/features/field-mapping/README.md`。
 
 ## 场景说明
 

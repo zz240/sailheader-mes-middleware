@@ -1,7 +1,7 @@
 # 手写 JSONata（EXPRESSION 模式）：整段表达式 → 跳过规则树 → 直接求值
 
 > 本轮（#117 重构后）走查只读当前工作树代码，未运行任何测试或真机脚本；行号取自本轮读到的版本。
-> 凡引用历史实测，均注明当时的验收脚本或测试类。术语用 `CONTEXT.md`，决策依据见 `docs/adr/0011-field-mapping-editor-rework.md`。
+> 凡引用历史实测，均注明当时的验收脚本或测试类。术语用 `GLOSSARY.md`，决策依据见 `docs/adr/0011-field-mapping-editor-rework.md`。
 
 ## 场景说明
 
