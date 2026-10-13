@@ -3,6 +3,7 @@ package com.example.edgegateway.web;
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
 import com.example.edgegateway.model.MessageStepIndex;
+import com.example.edgegateway.service.JobRunGuard;
 import com.example.edgegateway.service.MessageHistoryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,9 @@ class HistoryControllerTest {
 
     @MockBean
     private MessageHistoryService messageHistoryService;
+
+    @MockBean
+    private JobRunGuard runGuard;
 
     @Test
     void listsRuns() throws Exception {
@@ -259,11 +263,27 @@ class HistoryControllerTest {
         MessageStep step = new MessageStep();
         step.setId(5L);
         step.setStatus("REDELIVERED");
+        // 任务标识取不到时不拦（那是「这条消息步本身有问题」，交给重投逻辑按原口径报错）
+        when(messageHistoryService.jobIdOfStep(5L)).thenReturn(null);
         when(messageHistoryService.redeliver(5L)).thenReturn(step);
 
         mockMvc.perform(post("/api/history/steps/5/redeliver"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REDELIVERED"))
                 .andExpect(jsonPath("$.data.stepId").value(5));
+    }
+
+    /** #146：同一任务已有运行在跑时，重投不排队，直接 409 + 业务码。 */
+    @Test
+    void rejectsRedeliverWhileJobIsRunning() throws Exception {
+        when(messageHistoryService.jobIdOfStep(5L)).thenReturn(7L);
+        when(runGuard.tryAcquire(7L, JobRunGuard.ORIGIN_REDELIVER)).thenReturn(null);
+
+        mockMvc.perform(post("/api/history/steps/5/redeliver"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("JOB_ALREADY_RUNNING"))
+                .andExpect(jsonPath("$.message").value("任务正在执行，请稍后再试"));
+
+        verify(messageHistoryService, never()).redeliver(anyLong());
     }
 }

@@ -51,6 +51,8 @@ public class RouteGenerator {
     private final MessageHistoryService messageHistory;
     private final DataSourceManager dataSourceManager;
     private final ReadSqlBatcher readSqlBatcher;
+    /** 只往下传给 {@link StepLedger}（#146 的运行标识回填）；路由本身不判互斥。 */
+    private final JobRunGuard runGuard;
 
     private final StepLedger ledger;
     private BatchResendRoute batchResendRoute;
@@ -75,6 +77,7 @@ public class RouteGenerator {
             DataSourceManager dataSourceManager,
             ReadSqlBatcher readSqlBatcher,
             StepLedger ledger,
+            JobRunGuard runGuard,
             BatchResendRoute batchResendRoute,
             SplitFragment splitFragment,
             AggregateFragment aggregateFragment,
@@ -87,6 +90,7 @@ public class RouteGenerator {
         this.dataSourceManager = dataSourceManager;
         this.readSqlBatcher = readSqlBatcher;
         this.ledger = ledger;
+        this.runGuard = runGuard;
         this.batchResendRoute = batchResendRoute;
         this.splitFragment = splitFragment;
         this.aggregateFragment = aggregateFragment;
@@ -108,7 +112,8 @@ public class RouteGenerator {
             DataSourceManager dataSourceManager,
             ReadSqlBatcher readSqlBatcher) {
         this(dataSourceMapper, watermarkStore, messageHistory, dataSourceManager, readSqlBatcher,
-                new StepLedger(messageHistory),
+                new StepLedger(messageHistory, null),
+                null,
                 null,
                 null,
                 null,

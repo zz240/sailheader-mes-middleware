@@ -47,12 +47,12 @@ class ExternalTriggerServiceTest {
         when(apiKeyService.matches(5L, "secret-key")).thenReturn(true);
         Job executed = job(1L, 5L);
         executed.setStatus(1);
-        when(jobExecutionService.execute(1L, Map.of())).thenReturn(executed);
+        when(jobExecutionService.executeExternal(1L, Map.of())).thenReturn(executed);
 
         JobView view = service.trigger(1L, "secret-key", Map.of());
 
         assertThat(view.id()).isEqualTo(1L);
-        verify(jobExecutionService).execute(1L, Map.of());
+        verify(jobExecutionService).executeExternal(1L, Map.of());
     }
 
     @Test

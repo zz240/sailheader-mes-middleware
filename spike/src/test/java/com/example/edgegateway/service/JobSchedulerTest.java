@@ -9,6 +9,7 @@ import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 
@@ -17,8 +18,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,19 +36,22 @@ class JobSchedulerTest {
     private ActionMapper actionMapper;
     private JobTrigger jobTrigger;
     private JobScheduler scheduler;
+    private JobRunGuard runGuard;
 
     @BeforeEach
     void setUp() {
         taskScheduler = mock(TaskScheduler.class);
         jobMapper = mock(JobMapper.class);
         actionMapper = mock(ActionMapper.class);
-        when(taskScheduler.scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class)))
+        jobTrigger = mock(JobTrigger.class);
+        runGuard = new JobRunGuard();
+        when(taskScheduler.scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class)))
                 .thenReturn(mock(ScheduledFuture.class));
         when(taskScheduler.schedule(any(Runnable.class), any(Trigger.class)))
                 .thenReturn(mock(ScheduledFuture.class));
         when(actionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        scheduler = new JobScheduler(taskScheduler, mock(JobTrigger.class),
-                jobMapper, actionMapper);
+        scheduler = new JobScheduler(taskScheduler, jobTrigger,
+                jobMapper, actionMapper, runGuard);
     }
 
     private Job enabledJob(ScheduleType type) {
@@ -59,12 +66,12 @@ class JobSchedulerTest {
     void noneScheduleRegistersNothing() {
         when(jobMapper.selectById(7L)).thenReturn(enabledJob(ScheduleType.NONE));
         scheduler.reconcile(7L);
-        verify(taskScheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        verify(taskScheduler, never()).scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
         verify(taskScheduler, never()).schedule(any(Runnable.class), any(Trigger.class));
     }
 
     @Test
-    void intervalRegistersFixedRateWithMinutes() {
+    void intervalRegistersFixedDelayWithMinutes() {
         Job job = enabledJob(ScheduleType.INTERVAL);
         job.setIntervalValue(10);
         job.setIntervalUnit("MINUTES");
@@ -72,8 +79,10 @@ class JobSchedulerTest {
 
         scheduler.reconcile(7L);
 
-        verify(taskScheduler).scheduleAtFixedRate(any(Runnable.class),
+        // #146：间隔档用固定延迟（上一次结束后再等间隔），不用固定间隔
+        verify(taskScheduler).scheduleWithFixedDelay(any(Runnable.class),
                 any(Instant.class), eq(Duration.ofMillis(10L * 60_000L)));
+        verify(taskScheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
         verify(taskScheduler, never()).schedule(any(Runnable.class), any(Trigger.class));
     }
 
@@ -87,7 +96,7 @@ class JobSchedulerTest {
         scheduler.reconcile(7L);
 
         verify(taskScheduler).schedule(any(Runnable.class), any(Trigger.class));
-        verify(taskScheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        verify(taskScheduler, never()).scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
     }
 
     @Test
@@ -112,7 +121,7 @@ class JobSchedulerTest {
 
         scheduler.reconcile(7L);
 
-        verify(taskScheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        verify(taskScheduler, never()).scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
     }
 
     @Test
@@ -127,6 +136,49 @@ class JobSchedulerTest {
 
         scheduler.reconcile(7L);
 
-        verify(taskScheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        verify(taskScheduler, never()).scheduleWithFixedDelay(any(Runnable.class), any(Instant.class), any(Duration.class));
+    }
+
+    @Test
+    void fireRunsTriggerWhenJobIsIdle() {
+        when(jobMapper.selectById(7L)).thenReturn(enabledJob(ScheduleType.INTERVAL));
+        scheduler.reconcile(7L);
+
+        runRegisteredTask().run();
+
+        verify(jobTrigger).trigger(eq(7L), any());
+        assertThat(runGuard.isRunning(7L)).isFalse();
+    }
+
+    @Test
+    void fireSkipsWhenJobAlreadyRunning() {
+        JobRunGuard.Handle occupied = runGuard.tryAcquire(7L, JobRunGuard.ORIGIN_MANUAL);
+        when(jobMapper.selectById(7L)).thenReturn(enabledJob(ScheduleType.INTERVAL));
+        scheduler.reconcile(7L);
+
+        runRegisteredTask().run();
+
+        verify(jobTrigger, never()).trigger(anyLong(), any());
+        assertThat(runGuard.isRunning(7L)).isTrue();
+        runGuard.release(occupied);
+    }
+
+    @Test
+    void fireReleasesOccupancyWhenTriggerThrows() {
+        when(jobMapper.selectById(7L)).thenReturn(enabledJob(ScheduleType.INTERVAL));
+        scheduler.reconcile(7L);
+        doThrow(new IllegalStateException("boom")).when(jobTrigger).trigger(eq(7L), any());
+
+        runRegisteredTask().run();
+
+        verify(jobTrigger).trigger(eq(7L), any());
+        assertThat(runGuard.isRunning(7L)).isFalse();
+    }
+
+    /** 取 reconcile 交给 TaskScheduler 的那个触发任务，手动跑一次（不到点也能验触发语义）。 */
+    private Runnable runRegisteredTask() {
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(taskScheduler).scheduleWithFixedDelay(task.capture(), any(Instant.class), any(Duration.class));
+        return task.getValue();
     }
 }

@@ -2,7 +2,12 @@ package com.example.edgegateway.web;
 
 import com.example.edgegateway.model.JobRun;
 import com.example.edgegateway.model.MessageStep;
+import com.example.edgegateway.service.BusinessCode;
+import com.example.edgegateway.service.BusinessException;
+import com.example.edgegateway.service.JobRunGuard;
 import com.example.edgegateway.service.MessageHistoryService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +22,8 @@ import java.util.Map;
 @RequestMapping("/api/history")
 public class HistoryController {
 
+    private static final Logger LOG = LoggerFactory.getLogger(HistoryController.class);
+
     /** 列表接口一页最多多少条（整行带两个 TEXT 快照，见 {@link #safeSize(int)}）。 */
     private static final int LIST_MAX_SIZE = 100;
 
@@ -24,9 +31,11 @@ public class HistoryController {
     private static final int INDEX_MAX_SIZE = 1000;
 
     private final MessageHistoryService messageHistoryService;
+    private final JobRunGuard runGuard;
 
-    public HistoryController(MessageHistoryService messageHistoryService) {
+    public HistoryController(MessageHistoryService messageHistoryService, JobRunGuard runGuard) {
         this.messageHistoryService = messageHistoryService;
+        this.runGuard = runGuard;
     }
 
     /** 历史列表（#74 契约）：按 jobId/runId/messageId/businessKey/status 过滤 + 分页，等价于 /steps。 */
@@ -120,13 +129,23 @@ public class HistoryController {
         return messageHistoryService.getStep(id);
     }
 
-    /** 从失败消息步断点续跑；成功后原消息步状态改为 REDELIVERED。 */
+    /**
+     * 从失败消息步断点续跑；成功后原消息步状态改为 REDELIVERED。
+     *
+     * <p>#146：重投会为这个任务**再开一次运行**，所以它与手动执行、外部触发、定时调度共用同一张占用表
+     * ——已有运行在跑时直接拒（409 + {@code JOB_ALREADY_RUNNING}），不排队。</p>
+     */
     @PostMapping("/steps/{id}/redeliver")
     public Map<String, Object> redeliver(@PathVariable Long id) {
-        MessageStep step = messageHistoryService.redeliver(id);
-        return Map.of(
-                "status", step.getStatus(),
-                "stepId", step.getId());
+        JobRunGuard.Handle handle = acquireForRedeliver(id);
+        try {
+            MessageStep step = messageHistoryService.redeliver(id);
+            return Map.of(
+                    "status", step.getStatus(),
+                    "stepId", step.getId());
+        } finally {
+            runGuard.release(handle);
+        }
     }
 
     /**
@@ -135,13 +154,40 @@ public class HistoryController {
      * <p>{@code id} 是那一批的**摘要行**（{@code message_id = batch:<批号>}）的消息步 id——整份请求与
      * 整份响应都只在它身上（决策 6），所以重发从它取报文；同批每条消息在新运行里各记一行，
      * 旧的那一批标 {@code REDELIVERED}。</p>
+     *
+     * <p>#146：与断点续跑同一口径——已有运行在跑时拒绝，不排队。</p>
      */
     @PostMapping("/batches/{id}/redeliver")
     public Map<String, Object> redeliverBatch(@PathVariable Long id) {
-        JobRun run = messageHistoryService.redeliverBatch(id);
-        return Map.of(
-                "status", run.getStatus(),
-                "runId", run.getId());
+        JobRunGuard.Handle handle = acquireForRedeliver(id);
+        try {
+            JobRun run = messageHistoryService.redeliverBatch(id);
+            return Map.of(
+                    "status", run.getStatus(),
+                    "runId", run.getId());
+        } finally {
+            runGuard.release(handle);
+        }
+    }
+
+    /**
+     * 取重投任务的占用；拿不到就抛 409 + {@code JOB_ALREADY_RUNNING}（与手动执行同一个业务码）。
+     *
+     * <p>任务标识取不到时返回 {@code null} 而不抛：那属于「这条消息步本身有问题」，交给重投逻辑按它
+     * 原有的口径报错（不存在 / 未启用 / 仅失败步可重投），别在这里抢先改判。</p>
+     */
+    private JobRunGuard.Handle acquireForRedeliver(Long stepId) {
+        Long jobId = messageHistoryService.jobIdOfStep(stepId);
+        if (jobId == null) {
+            return null;
+        }
+        JobRunGuard.Handle handle = runGuard.tryAcquire(jobId, JobRunGuard.ORIGIN_REDELIVER);
+        if (handle == null) {
+            LOG.info("任务已有运行，跳过本次重投 job={} step={}", jobId, stepId);
+            throw BusinessException.of(BusinessCode.JOB_ALREADY_RUNNING,
+                    BusinessCode.JOB_ALREADY_RUNNING.defaultMessage());
+        }
+        return handle;
     }
 
     private int safePage(int page) {

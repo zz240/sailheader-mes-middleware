@@ -61,19 +61,37 @@ sequenceDiagram
 - 手动执行走 `JobExecutionService.execute`（`direct:job-<id>` 同步等待），执行完**回读**任务返回给调用方；
   最近运行结果不再由它自己计算，而是由链路尾部 `finishRun` 统一回写（见下）。
 
-**①-2 任务串行（约定；实现见 [#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，尚未落地）**
+**①-2 任务串行（[#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，已落地）**
 
-- 约定：**同一个任务同一时刻最多一个运行**。已有运行时，后续触发一律跳过并明确告知，不排队。
-- 缺口（当前代码事实）：`JobScheduler.fire`（`service/JobScheduler.java:96`）直接触发、不判断是否已有运行；
-  固定间隔用 `scheduleAtFixedRate`（`:80`），上一次未结束也照排；`JobExecutionService.execute`
-  （`service/JobExecutionService.java:37`）只校验任务启用状态。因此手动执行与调度触发可以并发进入
-  `direct:job-<id>`，两份运行在同一个水位起点上读同一批数据。
-- 实测证据：`job_run` 中同一任务时间区间重叠的运行共 **6 对**（job 2 一对重叠 4 秒；job 99 五对各 1 秒），
-  复现查询见该票。代价按并发数成倍放大：重复发送、`message_step` 写入成倍、内存与连接池占用成倍、
-  水位推进顺序不确定。
-- 落地口径：接口返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」）；
-  调度触发只记日志、不产生运行行。判据用「运行中任务集合」（进程内），**不用**查 `job_run` 里有没有
-  `RUNNING` 行——进程被强杀时该行会永久停留，任务将再也无法触发。
+- 口径：**同一个任务同一时刻最多一个运行**。已有运行时，后续触发一律跳过并明确告知，不排队。
+- 判据（实现）：进程内的运行中集合 `JobRunGuard`（`service/JobRunGuard.java`）——`tryAcquire(jobId, origin)`
+  拿占用凭据（`putIfAbsent` 一次判定与占位），`finally` 里 `release(handle)`（两参 `remove`，只放自己那一次）。
+  **不查** `job_run` 里有没有 `RUNNING` 行：进程被强杀时那一行永久停留，任务将再也无法触发。
+- 四个触发入口都取了这道占用：手动执行（`JobExecutionService.execute`，`service/JobExecutionService.java:47`）、
+  外部 API Key 触发（复用同一个方法，只是来源标为 `external`）、定时调度
+  （`JobScheduler.fire`，`service/JobScheduler.java:96`）、断点重投与整批重发
+  （`web/HistoryController.java` 的两个入口，重投会再开一次运行）。
+- 响应契约：四个 HTTP 入口在已有运行时返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」），
+  信封沿用 `ApiExceptionHandler`；前端手动执行按**提示**展示（`JobsView.vue`），不当失败告警。调度触发只记一条日志
+  （含 jobId 与当前运行的 runId——运行标识由 `StepLedger.beginRun` 回填给占用凭据），不产生运行行、不改任务状态。
+- 排期口径：间隔档 `scheduleAtFixedRate` → `scheduleWithFixedDelay`（`service/JobScheduler.java:80`），
+  固定延迟天然保证「上一次结束后再等间隔」；cron 档（每天/每周）不变。
+- 缺口证据（落地前实测，留作回归对照）：`job_run` 中同一任务时间区间重叠的运行共 **6 对**
+  （job 2 一对重叠 4 秒；job 99 五对各 1 秒）。代价按并发数成倍放大：重复发送、`message_step` 写入成倍、
+  内存与连接池占用成倍、水位推进顺序不确定。
+- 已知限制：互斥只在单进程内有效；多实例部署时两个网关进程各持一份集合，仍可能并发，届时需改为数据库锁。
+- 真机验收（本机单实例，2026-10-13，脚本在 `tools/shadow-site/`，均为自建夹具、跑完删掉）：
+  - **手动执行并发**（`verify-146-serial.ps1`，15/15）：第一次运行期间第二次 `POST /api/jobs/{id}/execute` → `409` +
+    `JOB_ALREADY_RUNNING` + 文案一致，`job_run` 只多一行；桩端点日志显示被跳过的那次**没有发出下游请求**。
+  - **外部触发共用占用表**（同上）：外部 API Key 触发运行期间的手动执行同样 `409`；三条成功运行 = 桩端点三次请求。
+  - **调度到点跳过**（`verify-146-schedule.ps1`，8/8）：间隔 1 分钟的任务在到点时正在手动运行，`job_run` 未多行，
+    日志有一条 `JobScheduler` 的「跳过本次调度触发 job=…」；下一次到点照常执行（证明 `scheduleWithFixedDelay` 没改坏）。
+  - **重投入口**（`verify-146-redeliver.ps1`，16/16）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
+    在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver` 与 `POST /api/history/batches/{id}/redeliver`
+    → 均 `409` + `JOB_ALREADY_RUNNING`，被拒后那条消息步仍是 `FAILED`、运行行没有增加（跳过没有副作用），
+    空闲后重投不再 `409`。
+  - 断言「链首必须是源动作才会记消息步」（本票外的那条已知缺口）在夹具构造时被再次实测到：纯 `HTTP_CALL` 打头的链
+    跑完只有 `job_run`、一条消息步都没有。
 
 **② 失败即停 + 重试退避**
 
@@ -186,7 +204,7 @@ curl "http://localhost:8080/api/history/steps?businessKey={键}&size=5"
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 已实现（#90，方案 B）：`redeliver` 把同一 `message_id` 下 `step < resumeFrom` 的成功步骤 `data_snapshot` 注入 context（经 property `edge.resumeContext` 传给 resume 入口），引用上游输出的 FIELD_MAP 也能续跑 | 现状：只投 `inputSnapshot` 当 body、被跳步骤不写 context，而 FIELD_MAP 唯一输入是整份 context → 静默出空 | 设计改进 | 可靠性 | 已闭环（#90） |
-| **同一任务可被并发执行多份**：`JobScheduler.fire` 直接触发、不判断是否已有运行，固定间隔用 `scheduleAtFixedRate`；`JobExecutionService.execute` 只校验任务启用状态，手动执行与调度触发可同时进入 `direct:job-<id>` | 已开票：任务串行——已有运行时后续触发一律**跳过**并明确告知（接口 `409` + 业务码 `JOB_ALREADY_RUNNING`，文案「任务正在执行，请稍后再试」；调度触发只记日志、不产生运行行）；判据用进程内「运行中任务集合」，不用查 `job_run` 的 `RUNNING` 行（进程被强杀会让该行永久停留） | 两份运行在同一水位起点读同一批数据 → 重复发送、`message_step` 写入成倍、内存与连接池占用成倍、水位推进顺序不确定；**实测 `job_run` 中同一任务时间区间重叠 6 对**（job 2 重叠 4 秒；job 99 五对各 1 秒）。单实例内存互斥在多实例部署时失效，届时需数据库锁 | 缺陷 | 可靠性 | **已开票 [#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)**（口径已定，待实现） |
+| **同一任务可被并发执行多份**：`JobScheduler.fire` 直接触发、不判断是否已有运行，固定间隔用 `scheduleAtFixedRate`；`JobExecutionService.execute` 只校验任务启用状态，手动执行与调度触发可同时进入 `direct:job-<id>` | 已落地（[#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)）：四个触发入口共用进程内占用表 `JobRunGuard`，已有运行时一律**跳过**并明确告知（接口 `409` + 业务码 `JOB_ALREADY_RUNNING`，文案「任务正在执行，请稍后再试」；调度触发只记日志、不产生运行行）；判据不用查 `job_run` 的 `RUNNING` 行（进程被强杀会让该行永久停留）；间隔档改 `scheduleWithFixedDelay` | 两份运行在同一水位起点读同一批数据 → 重复发送、`message_step` 写入成倍、内存与连接池占用成倍、水位推进顺序不确定；**实测 `job_run` 中同一任务时间区间重叠 6 对**（job 2 重叠 4 秒；job 99 五对各 1 秒）。单实例内存互斥在多实例部署时失效，届时需数据库锁 | 缺陷 | 可靠性 | 已闭环（#146；多实例另开票） |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |
 | `message_step.attempt` 恒为 1：历史页「尝试次数」列与实际重试次数不符 | 已实现（#109）：`ErrorHandling.configure`（`service/ErrorHandling.java:26`，#145 前在 `RouteGenerator`）用 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，按动作序号归零），失败步写失败次数、成功步写「失败次数 + 1」= 总尝试次数；`retryCount=2` → 3、`retryCount=0` → 1、重试一次后成功 → 2。保留 run 内自动重投（`retryCount`/`backoffMs`）的决策不变 | `StepLedger.attempt`（原 `RouteGenerator.attempt()`）曾读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把计数写进 message header（`handled=true` 路由进失败处理器前 remove、`handled=false` 路由先 -1）→ 该表达式恒为 `null + 1`（实测：`retryCount=2` 执行 699ms 即确实投递 3 次，落库仍是 1）。历史页最常见的排查问题"这条是第一次就成功还是重试才成功"无法回答；ADR-0009 预留的 `RETRYING` 也依赖该计数 | 缺陷 | 可靠性 | 已闭环（#109） |

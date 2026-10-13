@@ -32,9 +32,11 @@ import java.util.Map;
 class StepLedger {
 
     private final MessageHistoryService messageHistory;
+    private final JobRunGuard runGuard;
 
-    StepLedger(MessageHistoryService messageHistory) {
+    StepLedger(MessageHistoryService messageHistory, JobRunGuard runGuard) {
         this.messageHistory = messageHistory;
+        this.runGuard = runGuard;
     }
 
     // ---- 计时（#134）----
@@ -135,11 +137,17 @@ class StepLedger {
 
     // ---- 运行 / 消息的开始与结束 ----
 
-    /** 开一次运行：建运行行、把运行标识挂上 exchange（后续所有消息步都挂它）。 */
+    /**
+     * 开一次运行：建运行行、把运行标识挂上 exchange（后续所有消息步都挂它）。
+     *
+     * <p>顺手把运行标识回填给 {@link JobRunGuard}（#146）——「跳过」那条日志要写出当前在跑的是哪一次
+     * 运行。回填只走 {@code tryAcquire} 拿到占用凭据的那条路（{@link JobRunGuard#bindRun} 自己判空），
+     * 断点续跑那种没走互斥的运行不受影响。</p>
+     */
     void beginRun(Exchange ex, Job job) {
         Long runId = messageHistory.startRun(job.getId(), ex.getMessage().getBody()).getId();
         ex.setProperty(MessageHistoryService.RUN_ID, runId);
-    }
+        JobRunGuard.bindRun(runGuard, job.getId(), runId);    }
 
     /**
      * 创建一条消息：消息标识、业务键、父消息标识、批内序号都归

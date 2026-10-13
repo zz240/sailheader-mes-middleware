@@ -544,7 +544,13 @@ async function execute(row: Job) {
     await load()
     await loadReceived()
   } catch (e) {
-    ElMessage.error((e as ApiError).message)
+    const err = e as ApiError
+    // #146：任务正在执行是「这次没跑」的提示，不是失败告警
+    if (err.code === 'JOB_ALREADY_RUNNING') {
+      ElMessage.info(err.message)
+      return
+    }
+    ElMessage.error(err.message)
   }
 }
 

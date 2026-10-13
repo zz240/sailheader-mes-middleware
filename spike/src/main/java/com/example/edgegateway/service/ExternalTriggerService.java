@@ -36,6 +36,6 @@ public class ExternalTriggerService {
         if (!apiKeyService.matches(job.getSiteId(), apiKey)) {
             throw BusinessException.of(BusinessCode.UNAUTHORIZED, "API Key 缺失或无效");
         }
-        return JobView.from(jobExecutionService.execute(jobId, input));
+        return JobView.from(jobExecutionService.executeExternal(jobId, input));
     }
 }

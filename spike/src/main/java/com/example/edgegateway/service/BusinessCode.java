@@ -11,6 +11,7 @@ public enum BusinessCode {
     OK("OK", "ok", HttpStatus.OK),
     PARAM_INVALID("PARAM_INVALID", "参数错误", HttpStatus.BAD_REQUEST),
     JOB_NOT_ENABLED("JOB_NOT_ENABLED", "任务未启用", HttpStatus.BAD_REQUEST),
+    JOB_ALREADY_RUNNING("JOB_ALREADY_RUNNING", "任务正在执行，请稍后再试", HttpStatus.CONFLICT),
     UNAUTHORIZED("UNAUTHORIZED", "API Key 缺失或无效", HttpStatus.UNAUTHORIZED),
     NOT_FOUND("NOT_FOUND", "不存在", HttpStatus.NOT_FOUND),
     CONFLICT("CONFLICT", "冲突", HttpStatus.CONFLICT),

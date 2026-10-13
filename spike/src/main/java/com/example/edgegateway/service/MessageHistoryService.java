@@ -544,7 +544,23 @@ public class MessageHistoryService {
         return step;
     }
 
-    /** 从一条失败消息步精确断点续跑：用该步数据从该动作重放，成功后原步标记 REDELIVERED。 */
+    /**
+     * 这条消息步属于哪个任务（经它的运行行找）。重投的两个入口（{@code HistoryController}）用它取
+     * 任务标识去做任务串行判断（#146）；任务标识取不到时返回 {@code null}，由调用方按原有口径报错
+     * （不存在 / 未启用 / 仅失败步可重投），此处不改判。
+     */
+    public Long jobIdOfStep(Long stepId) {
+        MessageStep step = messageStepMapper.selectById(stepId);
+        if (step == null || step.getRunId() == null) {
+            return null;
+        }
+        JobRun run = jobRunMapper.selectById(step.getRunId());
+        return run == null ? null : run.getJobId();
+    }
+
+    /**
+     * 从一条失败消息步精确断点续跑：用该步数据从该动作重放，成功后原步标记 REDELIVERED。
+     */
     public MessageStep redeliver(Long stepId) {
         MessageStep step = getStep(stepId);
         if (!FAILED.equals(step.getStatus())) {
