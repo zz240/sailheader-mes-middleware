@@ -4,6 +4,7 @@
 
 ## 当前设计（现状）
 
+- **任务串行（约定；实现见 [#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，尚未落地）**：同一个任务同一时刻最多一个运行。已有运行时，后续触发（手动执行 / 外部 API Key 触发 / 定时调度）一律**跳过**并明确告知——接口返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」），调度触发只记日志、不产生运行行。**当前代码没有这层保护**：`JobScheduler` 固定间隔用 `scheduleAtFixedRate` 且触发前不判断是否已有运行，`JobExecutionService.execute` 只校验任务启用状态——已实测到同一任务时间区间重叠的运行（`job_run` 中 6 对，见该票）。
 - **失败即停（ADR-0003）**：`ErrorHandling.configure`（`service/ErrorHandling.java:26`）对全链 `onException(Exception.class)`；`maximumRedeliveries = job.retryCount`、`redeliveryDelay = job.backoffMs`；最终失败记一条 `FAILED` 消息步并把运行标为 `FAILED`。
   - **总尝试次数（#109）**：`attempt` = 该步的总投递次数，由 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，与所属动作序号 `edge.failedAttemptsStep` 成对读写，读的时候对上号才用——否则前一步骤的重试会漏给后面的步骤）：失败步 = 该步失败次数（末次失败也走异常回调），成功步 = 该步失败次数 + 1。`retryCount=2` 必失败 → 3；`retryCount=0` → 1；重试一次后成功 → 2；前一步骤重试过后再有一次成功的步骤仍是 1。
 - **handled 策略**：MQ 消费主路由 `handled=true`（失败后消费侧不重投队列）；重放/轮询/断点路由 `handled=false`（异常抛回调用方）。
@@ -58,6 +59,7 @@
 
 ## 待办 / 已知限制
 
+- **任务串行未实现**（[#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)）：同一任务可被并发执行多份（手动执行 + 调度触发 + 外部触发互不排斥），已实测到 `job_run` 中同一任务时间区间重叠 6 对；约定的目标行为见上文「任务串行」；
 - 断点续跑的 `edge.resumeContext` 快照以内存 property 传递，大 payload 会放大单次 exchange（不落盘，可接受）；仅在字段映射规则实际引用上游步骤时才有必要，按需注入可作为后续优化；
 - 存储随「消息数 × 步骤数」增长；
 - 任务行回写随运行数增长（消费型任务每条消息更新一次 `job`），高吞吐场景为已知写放大；并发运行下 `last_run_*` 取最后写入者（"最近"语义尽力而为）；

@@ -61,6 +61,20 @@ sequenceDiagram
 - 手动执行走 `JobExecutionService.execute`（`direct:job-<id>` 同步等待），执行完**回读**任务返回给调用方；
   最近运行结果不再由它自己计算，而是由链路尾部 `finishRun` 统一回写（见下）。
 
+**①-2 任务串行（约定；实现见 [#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，尚未落地）**
+
+- 约定：**同一个任务同一时刻最多一个运行**。已有运行时，后续触发一律跳过并明确告知，不排队。
+- 缺口（当前代码事实）：`JobScheduler.fire`（`service/JobScheduler.java:96`）直接触发、不判断是否已有运行；
+  固定间隔用 `scheduleAtFixedRate`（`:80`），上一次未结束也照排；`JobExecutionService.execute`
+  （`service/JobExecutionService.java:37`）只校验任务启用状态。因此手动执行与调度触发可以并发进入
+  `direct:job-<id>`，两份运行在同一个水位起点上读同一批数据。
+- 实测证据：`job_run` 中同一任务时间区间重叠的运行共 **6 对**（job 2 一对重叠 4 秒；job 99 五对各 1 秒），
+  复现查询见该票。代价按并发数成倍放大：重复发送、`message_step` 写入成倍、内存与连接池占用成倍、
+  水位推进顺序不确定。
+- 落地口径：接口返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」）；
+  调度触发只记日志、不产生运行行。判据用「运行中任务集合」（进程内），**不用**查 `job_run` 里有没有
+  `RUNNING` 行——进程被强杀时该行会永久停留，任务将再也无法触发。
+
 **② 失败即停 + 重试退避**
 
 - 入口：`ErrorHandling.configure`（`service/ErrorHandling.java:26`，#145 从 `RouteGenerator` 搬出）对全链
@@ -172,6 +186,7 @@ curl "http://localhost:8080/api/history/steps?businessKey={键}&size=5"
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |
 |---|---|---|---|---|---|
 | 断点续跑对「下游 FIELD_MAP 引用被跳过步骤上下文」不保证语义 | 已实现（#90，方案 B）：`redeliver` 把同一 `message_id` 下 `step < resumeFrom` 的成功步骤 `data_snapshot` 注入 context（经 property `edge.resumeContext` 传给 resume 入口），引用上游输出的 FIELD_MAP 也能续跑 | 现状：只投 `inputSnapshot` 当 body、被跳步骤不写 context，而 FIELD_MAP 唯一输入是整份 context → 静默出空 | 设计改进 | 可靠性 | 已闭环（#90） |
+| **同一任务可被并发执行多份**：`JobScheduler.fire` 直接触发、不判断是否已有运行，固定间隔用 `scheduleAtFixedRate`；`JobExecutionService.execute` 只校验任务启用状态，手动执行与调度触发可同时进入 `direct:job-<id>` | 已开票：任务串行——已有运行时后续触发一律**跳过**并明确告知（接口 `409` + 业务码 `JOB_ALREADY_RUNNING`，文案「任务正在执行，请稍后再试」；调度触发只记日志、不产生运行行）；判据用进程内「运行中任务集合」，不用查 `job_run` 的 `RUNNING` 行（进程被强杀会让该行永久停留） | 两份运行在同一水位起点读同一批数据 → 重复发送、`message_step` 写入成倍、内存与连接池占用成倍、水位推进顺序不确定；**实测 `job_run` 中同一任务时间区间重叠 6 对**（job 2 重叠 4 秒；job 99 五对各 1 秒）。单实例内存互斥在多实例部署时失效，届时需数据库锁 | 缺陷 | 可靠性 | **已开票 [#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)**（口径已定，待实现） |
 | 任务 `lastRunStatus` 仅在手动/外部执行回写，MQ 消费链路完成不更新 | 已实现（#88）：`finishRun` 统一回写 `job.last_run_status/at/error`（错误取 `job_run.error`），覆盖消费/调度/手动/重投；手动路径改为回读 + 触发层失败兜底 | 任务列表状态与真实执行不一致 | 设计改进 | 可靠性 | 已闭环（#88） |
 | 水位仅整批成功才推进，失败整批重读（at-least-once）；HTTP 推送可能重复 | 已写入文档（`features/reliability` 当前设计"交付语义"：至少一次、南向按幂等键/北向按业务键去重；推送链建议 SEQUENCE + 目标端幂等键） | 与 ADR-0003 一致，但需明示避免误认为不再重复 | 文档偏差 | 可靠性 | 已闭环 |
 | `message_step.attempt` 恒为 1：历史页「尝试次数」列与实际重试次数不符 | 已实现（#109）：`ErrorHandling.configure`（`service/ErrorHandling.java:26`，#145 前在 `RouteGenerator`）用 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，按动作序号归零），失败步写失败次数、成功步写「失败次数 + 1」= 总尝试次数；`retryCount=2` → 3、`retryCount=0` → 1、重试一次后成功 → 2。保留 run 内自动重投（`retryCount`/`backoffMs`）的决策不变 | `StepLedger.attempt`（原 `RouteGenerator.attempt()`）曾读 exchange property `CamelRedeliveryCounter`，而 Camel 4 把计数写进 message header（`handled=true` 路由进失败处理器前 remove、`handled=false` 路由先 -1）→ 该表达式恒为 `null + 1`（实测：`retryCount=2` 执行 699ms 即确实投递 3 次，落库仍是 1）。历史页最常见的排查问题"这条是第一次就成功还是重试才成功"无法回答；ADR-0009 预留的 `RETRYING` 也依赖该计数 | 缺陷 | 可靠性 | 已闭环（#109） |
