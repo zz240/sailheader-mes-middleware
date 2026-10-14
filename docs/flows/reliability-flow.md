@@ -94,7 +94,7 @@ sequenceDiagram
     日志有一条 `JobScheduler` 的「跳过本次调度触发」，并**跨线程**读到了占用凭据上的回填值
     （`job=252 origin=manual run=3140`——占用由 HTTP 线程取、由调度线程读）；下一次到点照常执行
     （证明 `scheduleWithFixedDelay` 没改坏）。
-  - **重投入口**（`verify-146-redeliver.ps1`，16/16）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
+  - **重投入口**（`verify-146-redeliver.ps1`，17/17）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
     在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver`
     → `409` + `JOB_ALREADY_RUNNING`，跳过日志带 runId；被拒后那条消息步仍是 `FAILED`、运行行没有增加
     （跳过没有副作用），空闲后重投不再 `409`。失败恢复的另一半是**重跑任务**（水位未推进即整批重走）：

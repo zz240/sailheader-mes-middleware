@@ -165,7 +165,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/jobs/<A7BIG id>/e
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-scenario.ps1   # 79 项（含 #143 新增 46 项）
-cd tools/ui; node batch-redeliver-143.cjs                                        # 界面那一半：一次点击 = 一次请求
+cd tools/ui; node batch-rerun-147.cjs                                            # 界面那一半：重跑任务入口——二次确认 → POST /api/jobs/{id}/execute，替身只多收到一次该批请求、写回被补齐
 powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-split-140.ps1   # 21 项（#140 不回归）
 powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-b1.ps1          # 19 项（设备侧不回归）
 ```
@@ -176,13 +176,13 @@ powershell -ExecutionPolicy Bypass -File tools/shadow-site/verify-b1.ps1        
 | 验收项 | 怎么验的 | 结果 |
 |---|---|---|
 | 20 条码**一次请求** + N 行逐行回写 + 逐条归因 | 替身收到 **1** 次 `id-register`、body 里 20 条码； `MDM_Code` 20 行 `FHandle` 与替身返回的 handle 逐条相等；还原那一步 20 行各带自己的业务键与自己的 handle | ✓ 12 项 |
-| A2 头行分表：头一行 + 子 N 行（2 份报文 → 2 头 + 6 子），父子谱系与批号在历史里 | `bom_head_t` / `bom_line_t` 行数与字段；拆分那一行（输入父报文、输出子件数组）；4 条子行的父消息标识 = 那一行的消息标识、批号 1 个且与上游不同、批内序号 1..4。**页面级**（`batch-redeliver-143.cjs`）：子件的链从步骤 6 起（它是拆分新造的消息）、子件那一格带批徽标、点开是「读取批 · 一次请求 4 条 · 失败 0 条」与那 4 个编号，父消息链上拆分那一格的**数据快照原文里就是那 4 条子件** | ✓ 13 项 + 页面 6 项 |
+| A2 头行分表：头一行 + 子 N 行（2 份报文 → 2 头 + 6 子），父子谱系与批号在历史里 | `bom_head_t` / `bom_line_t` 行数与字段；拆分那一行（输入父报文、输出子件数组）；4 条子行的父消息标识 = 那一行的消息标识、批号 1 个且与上游不同、批内序号 1..4。**页面级**（`batch-rerun-147.cjs`）：子件的链从步骤 6 起（它是拆分新造的消息）、子件那一格带批徽标、点开是「读取批 · 一次请求 4 条 · 失败 0 条」与那 4 个编号，父消息链上拆分那一格的**数据快照原文里就是那 4 条子件** | ✓ 13 项 + 页面 6 项 |
 | 失败路径：目标端 500 → 整批同因 `FAILED` → 一次点击只发一次请求 | 出站那一步 1 行摘要 + 20 行同因 FAILED（各自带业务键）；水位不推进、库里没写；`POST /api/history/batches/{摘要行 id}/redeliver` 之后替身只多 1 次请求、旧批标 `REDELIVERED`、新运行 SUCCESS（该端点与摘要行已由 #147 删除，失败恢复统一为重跑任务） | ✓ 11 项 |
 | 1000 条量级：只发 1 次、报文完整落历史 | 1 次请求装 1000 条码；摘要行 `input_snapshot` ≈ 80 KB / 1000 项、`data_snapshot` 1000 项（用快照面板那条 `GET /api/history/steps/{id}` 读回来）；1000 行回写 | ✓ 10 项 |
 
 **结果（2026-10-07，真 SQL Server 2022 + 真 MySQL + 真网关 8080 + 真前端 5173 + MES 替身 9100）**：
 `verify-scenario.ps1` **79 项通过 / 0 失败**（含 #143 新增 46 项，连跑三次结果一致）、
-`batch-redeliver-143.cjs` **29 项通过 / 0 失败**（界面：重发按钮那一档 + A2 头行分表那一档的谱系与批号）、
+`batch-rerun-147.cjs` **29 项通过 / 0 失败**（界面：重跑任务按钮那一档 + A2 头行分表那一档的谱系与批号）——这是 #143 当时的记录，那时的脚本叫 `batch-redeliver-143.cjs`；#147 把它改写成「重跑任务」口径并改了名，**改写后的这 29 项尚未重跑**、
 `verify-split-140.ps1` 21 项、
 `verify-b1.ps1` 19 项全绿（不回归）；**全量测试**：`mvn test` **623 项 / 0 失败 / BUILD SUCCESS**、
 前端纯模块自测 617 + 213 + 102 + 42 + 46 全绿、`vue-tsc --noEmit` 干净。

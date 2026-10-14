@@ -110,8 +110,13 @@ try {
     $running = Wait-Running $jobId 30
     Check '第二次运行已进入 RUNNING（重投请求确实落在运行窗口内）' $running
     $redeliver = Api POST "/api/history/steps/$($failed.id)/redeliver" @{}
-    # #147 删掉了整批重发那条路径：那个端点不该再存在（下面断言 404），不再有第二个入口要验互斥
+    # #147 删掉了整批重发那条路径：这个端点不该再答 200，也不该打到任何重投逻辑。
+    # 注意本工程对**任何未匹配路径**都答全局统一信封的 500（ApiExceptionHandler 的 catch-all 收走了
+    # Spring 的 NoResourceFoundException），不是 404 —— 那是既有全局行为，不在本票范围。
+    # 这里先记下「跳过本次重投」的条数：那条日志只有真的走到重投服务才会多出来（= 目标端没被多打一次）。
+    $skipBeforeGone = if (Test-Path $AppLog) { @(Get-Content $AppLog -ErrorAction SilentlyContinue | Where-Object { $_ -match '任务已有运行，跳过本次重投' }).Count } else { -1 }
     $batchGone = Api POST "/api/history/batches/$($failed.id)/redeliver" @{}
+    $skipAfterGone = if (Test-Path $AppLog) { @(Get-Content $AppLog -ErrorAction SilentlyContinue | Where-Object { $_ -match '任务已有运行，跳过本次重投' }).Count } else { -1 }
     $runsAtReject = (Api GET "/api/history/runs?jobId=$jobId" $null).data.total
     $secondDone = $false
     $deadline = (Get-Date).AddSeconds(60)
@@ -124,7 +129,8 @@ try {
     Check '断点重投在运行期间返回 409' ($redeliver.status -eq 409) ("status=$($redeliver.status) code=$($redeliver.code) raw=$($redeliver.raw)")
     Check '断点重投业务码为 JOB_ALREADY_RUNNING' ($redeliver.code -eq 'JOB_ALREADY_RUNNING') ("code=$($redeliver.code)")
     Check '断点重投文案为「任务正在执行，请稍后再试」' ($redeliver.message -eq '任务正在执行，请稍后再试') ("message=$($redeliver.message)")
-    Check '整批重发端点已随 #147 删除（404）' ($batchGone.status -eq 404) ("status=$($batchGone.status) code=$($batchGone.code)")
+    Check '整批重发端点已随 #147 删除（不再答 200；本工程未匹配路径答统一信封 500，不是 404）' ($batchGone.status -ne 200) ("status=$($batchGone.status) code=$($batchGone.code)")
+    Check '这条路不打到重投服务（没多出「跳过本次重投」→ 目标端没被多打一次）' ($skipBeforeGone -lt 0 -or $skipAfterGone -eq $skipBeforeGone) ("before={0} after={1}" -f $skipBeforeGone, $skipAfterGone)
 
     # ---- 被拒的重投没有副作用：那一步仍是 FAILED，也没有多出运行 ----
     $stillFailed = Api GET "/api/history/steps/$($failed.id)" $null

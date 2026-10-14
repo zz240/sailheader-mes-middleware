@@ -225,6 +225,63 @@ class BatchRerunTest {
                 .allSatisfy(step -> assertThat(step.getMessageId()).doesNotStartWith("batch:"));
     }
 
+    /**
+     * 票面核心用例的**字面场景**：失败落在**写回那一步自己**（#143 的「`FHandle` 不写回」那一档），
+     * 出站与还原都成功。
+     *
+     * <p>与 {@link #rerunningTheJobRefillsTheDownstreamAfterAWriteBackFailure()} 的区别就在这一点上：
+     * 那一条是「失败在**还原**（响应里的配对没配上，下游根本没跑到）」，这一条是「失败在**写回**
+     * （还原已经成功、报文也配齐了，坏掉的是写库那一步自己）」。两者对「水位不推进 → 重跑整批重走」
+     * 的结论一样，都靠重跑补齐下游。</p>
+     *
+     * <p>注入方式最省事：跑之前把目标表的那一列去掉（**链与报文一个字不改，只让目标库坏掉**），
+     * 第一趟跑完再修好——于是写回那一步**真的执行过并失败**，而不是像上一条那样根本没跑到。</p>
+     */
+    @Test
+    void rerunningTheJobRefillsAWriteBackStepThatItselfFailed() throws Exception {
+        httpResponse.set("[{\"code\":\"PO-1\",\"handle\":\"H1\"},{\"code\":\"PO-2\",\"handle\":\"H2\"},"
+                + "{\"code\":\"PO-3\",\"handle\":\"H3\"}]");
+        Job job = job(JOB_ID);
+        List<Action> actions = b6Chain();
+        // 目标表缺一列（handle）：写回那一步自己失败，出站与还原照常成功
+        customerJdbc.execute("alter table po_receipt drop column handle");
+
+        assertThatThrownBy(() -> run(job, actions)).isInstanceOf(Exception.class);
+
+        JobRun first = runNumber(1);
+        assertThat(first.getStatus()).isEqualTo("FAILED");
+        assertThat(watermarkPuts).as("写回失败，水位不推进").isEmpty();
+        assertThat(stepsAt(first.getId(), STEP_OUTLET)).as("出站那一步成功").hasSize(1)
+                .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
+        assertThat(stepsAt(first.getId(), STEP_RESTORE))
+                .as("还原那一步也成功——这一档与「配对没配上」那条的关键区别").hasSize(3)
+                .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
+        assertThat(stepsAt(first.getId(), STEP_WRITE)).as("写回那一步真的执行过并失败").isNotEmpty()
+                .allSatisfy(step -> {
+                    assertThat(step.getStatus()).isEqualTo("FAILED");
+                    assertThat(step.getError()).isNotBlank();
+                });
+        assertThat(customerJdbc.queryForObject("select count(*) from po_receipt", Integer.class))
+                .as("库里一行都没有").isZero();
+        assertThat(httpCalls.get()).as("第一趟发了一次").isEqualTo(1);
+
+        // ---- 修好目标库，重跑同一个任务 ----
+        customerJdbc.execute("alter table po_receipt add column handle varchar(32)");
+        run(job, actions);
+
+        JobRun second = runNumber(2);
+        assertThat(second.getStatus()).isEqualTo("SUCCESS");
+        assertThat(first.getStatus()).as("原来那次运行仍是 FAILED").isEqualTo("FAILED");
+        assertThat(httpCalls.get()).as("替身只多收到一次该批请求").isEqualTo(2);
+        assertThat(watermarkPuts).as("重跑把这一批跑完，水位推进到该批之后").containsExactly(3L);
+        assertThat(stepsAt(second.getId(), STEP_WRITE)).as("WRITE_UPSERT 补跑成功：这一批每条各一行")
+                .hasSize(3).allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
+        assertThat(customerJdbc.queryForList("select handle from po_receipt order by order_no", String.class))
+                .as("回写值正确").containsExactly("H1", "H2", "H3");
+        assertThat(steps.values()).as("#147：整条链上不再有 batch: 前缀的摘要行")
+                .allSatisfy(step -> assertThat(step.getMessageId()).doesNotStartWith("batch:"));
+    }
+
     // ---------- 脚手架 ----------
 
     /** B6 形状那条链：`READ_SQL → FIELD_MAP → AGGREGATE → HTTP_CALL → ONE_TO_MANY(还原) → FIELD_MAP → WRITE_UPSERT`。 */

@@ -119,7 +119,7 @@ curl -X POST http://localhost:8080/api/jobs/{id}/run
 
 # 4) 真机批量链路（影子站点，可选）
 pwsh tools/shadow-site/verify-split-140.ps1
-node tools/ui/batch-redeliver-143.cjs
+node tools/ui/batch-rerun-147.cjs
 ```
 
 ## 建议表

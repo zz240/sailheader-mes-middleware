@@ -495,6 +495,23 @@ $fWritten = Mssql 'SELECT COUNT(*) FROM CustomerERP.dbo.MDM_Code WHERE FHandle I
 Check 'B6-BATCH-FAIL nothing was written back while the outlet was down' ($fWritten -match '^\s*0\s*$') ("rows={0}" -f ($fWritten -join '|'))
 
 ClearFault
+# #147 deleted the "resend this batch" endpoint. Every unmatched path in this project answers with the global
+# envelope advice (ApiExceptionHandler's catch-all swallows Spring's NoResourceFoundException), so the status
+# is 500 + business code, NOT 404. What has to hold instead: the path reaches no redeliver logic at all --
+# the target sees no extra request and the failed batch is not marked REDELIVERED.
+$sentBeforeGone = @(Received 'id-register').Count
+$fBadPathStatus = 0
+try { Api POST "/api/history/batches/$($fPack.id)/redeliver" @{} | Out-Null; $fBadPathStatus = 200 }
+catch {
+    if ($null -ne $_.Exception.Response) { $fBadPathStatus = [int]$_.Exception.Response.StatusCode } else { $fBadPathStatus = -1 }
+}
+$sentAfterGone = @(Received 'id-register').Count
+Check 'B6-BATCH-FAIL the deleted batch-redeliver path no longer answers 200 (global envelope: 500, not 404)' ($fBadPathStatus -ne 200) ("status={0}" -f $fBadPathStatus)
+Check 'B6-BATCH-FAIL that path sends nothing to the target (no redeliver logic ran)' (($sentAfterGone - $sentBeforeGone) -eq 0) ("before={0} after={1}" -f $sentBeforeGone, $sentAfterGone)
+$fRowsAfterGone = RunSteps $fRun.id 100 2
+$fRedelivered = @($fRowsAfterGone | Where-Object { $_.status -eq 'REDELIVERED' })
+Check 'B6-BATCH-FAIL that path does not mark the failed batch REDELIVERED' ($fRedelivered.Count -eq 0) ("redelivered={0}" -f $fRedelivered.Count)
+
 $sentBefore = @(Received 'id-register').Count
 Execute $jbatch | Out-Null
 $sentAfter = @(Received 'id-register').Count
