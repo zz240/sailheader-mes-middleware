@@ -229,6 +229,29 @@ async function main() {
   await memberRow.click()
   await waitForDetail(page)
 
+  // 落点（#147 的裁决）：一个批号只铺**一颗**「重跑任务」，落在「该批号里最深的、还带着打包消息的
+  // 那一步」——出站失败这一档就是**出站那一步（步骤 4）**。合并那一步（步骤 3）那一组里也有打包消息
+  // 那一行，但它**不该**有按钮；所以先点**信封那一条**的步骤 3 行，把那一组点开看一眼。
+  const envelopeRow = page.locator('.hc-ritem')
+    .filter({ hasText: `#${run.id} · 步骤 ${AGGREGATE_STEP}` }).first()
+  await envelopeRow.waitFor({ timeout: 20000 })
+  await envelopeRow.click()
+  await waitForDetail(page)
+  const aggregateNode = page.locator('.hc-cnode').filter({ hasText: `步骤 ${AGGREGATE_STEP}` }).first()
+  await aggregateNode.waitFor({ timeout: 20000 })
+  await aggregateNode.locator('.hc-bbadge').click()
+  const aggregateGroup = page.locator(`.hc-batch[data-batch-step="${AGGREGATE_STEP}"]`)
+  await aggregateGroup.waitFor({ timeout: 10000 })
+  check('合并那一步那一组里也有打包消息那一行（信封只有它一行）',
+    await aggregateGroup.locator('.hc-mchip-packed').count() === 1,
+    String(await aggregateGroup.locator('.hc-mchip-packed').count()))
+  check('但那一组**不铺**「重跑任务」：一个批号只铺一颗，落在出站那一步（#147 的落点口径）',
+    await aggregateGroup.locator('.hc-brerun').count() === 0,
+    String(await aggregateGroup.locator('.hc-brerun').count()))
+
+  // 回到失败成员那一行，看出站那一步那一组（按钮真正的落点）
+  await memberRow.click()
+  await waitForDetail(page)
   // 步骤链上出站那一格：行动作名找（链上就有 push-register-batch 这一格）
   const outletNode = page.locator('.hc-cnode').filter({ hasText: 'push-register-batch' }).first()
   await outletNode.waitFor({ timeout: 20000 })
