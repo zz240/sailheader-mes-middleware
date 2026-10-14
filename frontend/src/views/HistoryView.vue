@@ -57,13 +57,13 @@
         :prev-step-row-loading="prevStepRowLoading"
         :prev-step-row-error="prevStepRowError"
         :redeliver-pending="redeliverPending"
-        :batch-redeliver-pending="batchRedeliverPending"
+        :rerun-pending="rerunPending"
         @select-step="onSelectStep"
         @retry-steps="retryRunSteps"
         @retry-step-row="retryStepRow"
         @retry-prev-row="retryPrevStepRow"
         @redeliver="openRedeliver"
-        @redeliver-batch="onRedeliverBatch"
+        @rerun-job="onRerunBatch"
       />
     </main>
 
@@ -95,7 +95,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import HistoryFilters from '../components/history/HistoryFilters.vue'
 import HistoryCountsBar from '../components/history/HistoryCountsBar.vue'
 import HistoryListPanel from '../components/history/HistoryListPanel.vue'
@@ -113,7 +113,7 @@ import {
 } from '../history/redeliver'
 import { previousStepOf } from '../history/diff'
 import {
-  batchRedeliver, batchRedeliverDone, redeliverBatchPath, type BatchGroup,
+  RERUN_CONFIRM_BUTTON, RERUN_CONFIRM_CANCEL, RERUN_CONFIRM_TITLE, type BatchRerun,
 } from '../history/batch'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
@@ -121,12 +121,6 @@ import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '..
 interface RedeliverResult {
   status: string
   stepId: number
-}
-
-/** 整批重发接口的应答（#142）：新运行的状态与 id。 */
-interface BatchRedeliverResult {
-  status: string
-  runId: number
 }
 
 const jobs = ref<Job[]>([])
@@ -221,8 +215,8 @@ const redeliverVisible = ref(false)
 const redeliverTarget = ref<{ step: MessageStep; businessKey: string } | null>(null)
 /** 这一投正在路上：入口与确认按钮 pending 且不可连点，弹窗也不许关。 */
 const redeliverPending = ref(false)
-/** 整批重发（#142）在路上：发送批组头上那个按钮按在原地，别让人连点两下发两遍。 */
-const batchRedeliverPending = ref(false)
+/** 重跑任务（#147）在路上：发送批组头上那个按钮按在原地，别让人连点两下发两遍。 */
+const rerunPending = ref(false)
 /** 接口那句错误（空串 = 这一投还没失败过）；成功一次就清掉。 */
 const redeliverError = ref('')
 /**
@@ -360,31 +354,67 @@ function openRedeliver() {
 }
 
 /**
- * **按批重发**（#142 / ADR-0017 决策 7）：合并那一档组头上的按钮——**一次点击 = 一次请求**。
+ * **重跑任务**（#147）：批组头上那颗按钮——失败恢复只有这一条路。
  *
- * 与逐条重投（下面那条弹窗）分开是有意的：合并之前的数据仍是逐条重投，合并那一步只认整批，
- * 界面上也因此不摆 N 个「重投这一条」的按钮（那会变成「点 N 次把整批发 N 遍」）。
- * 目标那一行由纯模块判（{@link batchRedeliver}），这里只管发请求与刷新。
+ * 与任务列表上那颗「执行」（`views/JobsView.vue` 的 `execute`）是**同一个接口、同一套错误处理**：
+ * 水位只在一批全部成功之后才推进，所以重跑会从**未完成的那一批**整批重走
+ * （重读 → 重打包 → 重出站 → 还原 → 写回）——原先「出站成功、下游失败」丢下的写回因此被补上；
+ * 代价是目标端会再收到一次该批请求（至少一次交付 + 目标端按业务键去重）。
+ *
+ * 按钮写什么、什么时候铺、确认框里问什么，全在纯模块（`history/batch.ts`）里判；
+ * 这里只管**二次确认**、发请求与刷新（点一下就发是不行的：那一次重复请求要让人知道）。
  */
-async function onRedeliverBatch(group: BatchGroup) {
-  const target = batchRedeliver(group)
-  const summary = group.summary
-  if (!target || !summary || batchRedeliverPending.value) return
-  batchRedeliverPending.value = true
+async function onRerunBatch(target: BatchRerun) {
+  if (rerunPending.value) return
   try {
-    const done = await api<BatchRedeliverResult>(redeliverBatchPath(summary.id), {
-      method: 'POST',
-      // 与逐条重投同一条口径：到点当成一次失败，界面不停留在 pending
-      signal: AbortSignal.timeout(REDELIVER_TIMEOUT_MS),
+    await ElMessageBox.confirm(target.confirm, RERUN_CONFIRM_TITLE, {
+      confirmButtonText: RERUN_CONFIRM_BUTTON,
+      cancelButtonText: RERUN_CONFIRM_CANCEL,
+      type: 'warning',
     })
-    ElMessage.success(batchRedeliverDone(target.count, done.runId))
-    // 双刷 + 保住选中态：与逐条重投同一处刷新口径（原批那几行会变成 REDELIVERED）
-    await refreshAfterRedeliver({ step: summary, businessKey: summary.businessKey ?? '' })
-  } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.message : String(e))
-  } finally {
-    batchRedeliverPending.value = false
+  } catch {
+    // 取消就是取消：什么都没发生，不提示也不报错
+    return
   }
+  rerunPending.value = true
+  try {
+    const run = await api<Job>(`/jobs/${target.jobId}/execute`, { method: 'POST', body: '{}' })
+    ElMessage.success(`重跑完成：${run.lastRunStatus}${run.lastError ? ' ' + run.lastError : ''}`)
+    await refreshAfterRerun()
+  } catch (e) {
+    const err = e as ApiError
+    // #146：任务正在执行是「这次没跑」的提示，不是失败告警（与任务列表那颗按钮同一个口径）
+    if (err.code === 'JOB_ALREADY_RUNNING') {
+      ElMessage.info(err.message)
+      return
+    }
+    ElMessage.error(err.message)
+  } finally {
+    rerunPending.value = false
+  }
+}
+
+/**
+ * 重跑之后的刷新（票面：成功后刷新列表与详情）。
+ *
+ * 与逐条重投那次双刷同一套：① 列表（连同计数条与每运行摘要）；② 这条运行的消息步
+ * （右栏的消息 chips / 步骤链 / 单步卡都从它长出来）；③ 按 id 再取当前这一步与上一步的**整行**
+ * （同一行的 id 没变，`stepRowKey` 那道去重键不响，只靠那个 watch 会把旧快照一直铺着）。
+ *
+ * 重跑**不改写**原来那次失败运行（新运行是新的一行），所以选中态照旧；`keepSelectionOnLoad`
+ * 只是不让 `load()` 中途把选中收走（与重投那一趟同一个理由）。
+ */
+async function refreshAfterRerun() {
+  const runId = selectedRun.value?.id ?? null
+  keepSelectionOnLoad = true
+  try {
+    await load()
+    if (runId !== null) await loadRunSteps(runId)
+  } finally {
+    keepSelectionOnLoad = false
+  }
+  retryStepRow()
+  retryPrevStepRow()
 }
 
 /**

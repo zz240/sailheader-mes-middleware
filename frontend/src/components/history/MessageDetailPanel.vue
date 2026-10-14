@@ -141,9 +141,10 @@
             <BatchGroupChips
               v-if="openGroup"
               :group="openGroup"
-              :pending="batchRedeliverPending"
+              :pending="rerunPending"
+              :job-id="runJobId"
               @select-step="emit('select-step', $event)"
-              @redeliver-batch="emit('redeliver-batch', $event)"
+              @rerun-job="emit('rerun-job', $event)"
             />
           </div>
 
@@ -171,7 +172,7 @@ import { computed, ref } from 'vue'
 import BatchGroupChips from './BatchGroupChips.vue'
 import StepDetailCard from './StepDetailCard.vue'
 import {
-  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup,
+  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup, type BatchRerun,
 } from '../../history/batch'
 import {
   chainNodes, chainSummary, detailPath, jobTitleOf, shortId, stampOf, statusChip,
@@ -213,8 +214,8 @@ const props = defineProps<{
   prevStepRowError: string
   /** 断点重投正在路上（#135）：入口按钮 pending 且不可连点。 */
   redeliverPending?: boolean
-  /** 这一批的**整批重发**正在路上（#142）：发送批组头上那个按钮 pending。 */
-  batchRedeliverPending?: boolean
+  /** 这一批的**重跑任务**正在路上（#147）：发送批组头上那个按钮 pending。 */
+  rerunPending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -223,11 +224,17 @@ const emit = defineEmits<{
   'retry-step-row': []
   'retry-prev-row': []
   redeliver: []
-  'redeliver-batch': [group: BatchGroup]
+  'rerun-job': [target: BatchRerun]
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))
 const jobTitle = computed(() => (props.run ? jobTitleOf(props.jobs, props.run.jobId) : ''))
+
+/**
+ * 当前这条运行的**任务标识**（#147）：组头上那颗「重跑任务」要它——重跑是任务级的动作，
+ * 而批组本身不带任务号。取不到（这条运行还没取回来）时传 `null`，纯模块那边就不铺按钮。
+ */
+const runJobId = computed(() => props.run?.jobId ?? null)
 
 /** 链上的一格 + 它属于哪一批（两样在这里对上；分组与「这一步画成什么」都判在 `history/batch.ts`）。 */
 interface ChainEntry {
