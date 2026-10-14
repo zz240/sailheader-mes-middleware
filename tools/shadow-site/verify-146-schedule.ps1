@@ -87,6 +87,7 @@ if (Test-Path $AppLog) {
     $tail = @(Get-Content $AppLog -ErrorAction SilentlyContinue | Select-Object -Skip $logMark)
     $skip = @($tail | Where-Object { $_ -match '跳过本次调度触发' -and $_ -match "job=$jobId" })
     Check '日志里有一条「跳过本次调度触发」（含 jobId）' ($skip.Count -ge 1) ("matched=$($skip.Count)")
+    Check '该记录带上了当前运行的 runId（调度侧读的是占用凭据上的回填值）' (@($skip | Where-Object { $_ -match 'run=\d+' }).Count -ge 1) ("lines=$($skip -join ' | ')")
     foreach ($line in $skip | Select-Object -First 2) { Write-Host ("    日志：{0}" -f $line.Trim()) }
 } else {
     Write-Host ("    （未提供网关日志文件 {0}，跳过日志断言）" -f $AppLog)

@@ -72,24 +72,32 @@ sequenceDiagram
   （`JobScheduler.fire`，`service/JobScheduler.java:96`）、断点重投与整批重发
   （`web/HistoryController.java` 的两个入口，重投会再开一次运行）。
 - 响应契约：四个 HTTP 入口在已有运行时返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」），
-  信封沿用 `ApiExceptionHandler`；前端手动执行按**提示**展示（`JobsView.vue`），不当失败告警。调度触发只记一条日志
-  （含 jobId 与当前运行的 runId——运行标识由 `StepLedger.beginRun` 回填给占用凭据），不产生运行行、不改任务状态。
+  信封沿用 `ApiExceptionHandler`；前端手动执行按**提示**展示（`JobsView.vue`），不当失败告警。调度触发只记一条日志，
+  不产生运行行、不改任务状态。
+- 跳过日志（四个入口都写，`JobRunGuard.describe`）：格式 `任务已有运行，跳过本次触发/调度触发/重投：job=7 origin=manual
+  run=2837 startedAt=…`。其中运行的标识由 `StepLedger.beginRun` 在运行行建好后回填给占用凭据
+  （`JobRunGuard.bindRun`，簿记层是单例、手上没有凭据，故借本线程的凭据把「我这次」认出来），
+  所以**被拒绝的那一方一定能读到已经跑起来的那次运行**；回填要求与触发同线程，改到线程池上会退化成 `run=-`，判据不受影响。
 - 排期口径：间隔档 `scheduleAtFixedRate` → `scheduleWithFixedDelay`（`service/JobScheduler.java:80`），
   固定延迟天然保证「上一次结束后再等间隔」；cron 档（每天/每周）不变。
 - 缺口证据（落地前实测，留作回归对照）：`job_run` 中同一任务时间区间重叠的运行共 **6 对**
   （job 2 一对重叠 4 秒；job 99 五对各 1 秒）。代价按并发数成倍放大：重复发送、`message_step` 写入成倍、
   内存与连接池占用成倍、水位推进顺序不确定。
 - 已知限制：互斥只在单进程内有效；多实例部署时两个网关进程各持一份集合，仍可能并发，届时需改为数据库锁。
-- 真机验收（本机单实例，2026-10-13，脚本在 `tools/shadow-site/`，均为自建夹具、跑完删掉）：
-  - **手动执行并发**（`verify-146-serial.ps1`，15/15）：第一次运行期间第二次 `POST /api/jobs/{id}/execute` → `409` +
-    `JOB_ALREADY_RUNNING` + 文案一致，`job_run` 只多一行；桩端点日志显示被跳过的那次**没有发出下游请求**。
+- 真机验收（本机单实例，2026-10-13 / 10-14 两轮，脚本在 `tools/shadow-site/`，均为自建夹具、跑完删掉）：
+  - **手动执行并发**（`verify-146-serial.ps1`，17/17）：第一次运行期间第二次 `POST /api/jobs/{id}/execute` → `409` +
+    `JOB_ALREADY_RUNNING` + 文案一致，`job_run` 只多一行；桩端点日志显示被跳过的那次**没有发出下游请求**；
+    跳过日志带上了当前运行的标识，实测为
+    `任务已有运行，跳过本次触发：job=251 origin=manual run=3137 startedAt=2026-10-14T10:57:31.989`。
   - **外部触发共用占用表**（同上）：外部 API Key 触发运行期间的手动执行同样 `409`；三条成功运行 = 桩端点三次请求。
-  - **调度到点跳过**（`verify-146-schedule.ps1`，8/8）：间隔 1 分钟的任务在到点时正在手动运行，`job_run` 未多行，
-    日志有一条 `JobScheduler` 的「跳过本次调度触发 job=…」；下一次到点照常执行（证明 `scheduleWithFixedDelay` 没改坏）。
-  - **重投入口**（`verify-146-redeliver.ps1`，16/16）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
+  - **调度到点跳过**（`verify-146-schedule.ps1`，9/9）：间隔 1 分钟的任务在到点时正在手动运行，`job_run` 未多行，
+    日志有一条 `JobScheduler` 的「跳过本次调度触发」，并**跨线程**读到了占用凭据上的回填值
+    （`job=252 origin=manual run=3140`——占用由 HTTP 线程取、由调度线程读）；下一次到点照常执行
+    （证明 `scheduleWithFixedDelay` 没改坏）。
+  - **重投入口**（`verify-146-redeliver.ps1`，17/17）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
     在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver` 与 `POST /api/history/batches/{id}/redeliver`
-    → 均 `409` + `JOB_ALREADY_RUNNING`，被拒后那条消息步仍是 `FAILED`、运行行没有增加（跳过没有副作用），
-    空闲后重投不再 `409`。
+    → 均 `409` + `JOB_ALREADY_RUNNING`，两条跳过日志都带 runId；被拒后那条消息步仍是 `FAILED`、运行行没有增加
+    （跳过没有副作用），空闲后重投不再 `409`。
   - 断言「链首必须是源动作才会记消息步」（本票外的那条已知缺口）在夹具构造时被再次实测到：纯 `HTTP_CALL` 打头的链
     跑完只有 `job_run`、一条消息步都没有。
 

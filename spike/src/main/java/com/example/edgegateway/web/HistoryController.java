@@ -183,7 +183,7 @@ public class HistoryController {
         }
         JobRunGuard.Handle handle = runGuard.tryAcquire(jobId, JobRunGuard.ORIGIN_REDELIVER);
         if (handle == null) {
-            LOG.info("任务已有运行，跳过本次重投 job={} step={}", jobId, stepId);
+            LOG.info("任务已有运行，跳过本次重投 step={}：{}", stepId, runGuard.describe(runGuard.current(jobId)));
             throw BusinessException.of(BusinessCode.JOB_ALREADY_RUNNING,
                     BusinessCode.JOB_ALREADY_RUNNING.defaultMessage());
         }

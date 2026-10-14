@@ -140,6 +140,7 @@ try {
         $tail = @(Get-Content $AppLog -ErrorAction SilentlyContinue | Select-Object -Skip $logMark)
         $rejected = @($tail | Where-Object { $_ -match '任务已有运行，跳过本次重投' })
         Check '服务层日志里记录了两次「跳过本次重投」' ($rejected.Count -ge 2) ("matched=$($rejected.Count)")
+        Check '这两条日志都带上了当前运行的 runId 与触发来源' (@($rejected | Where-Object { $_ -match 'run=\d+' -and $_ -match 'origin=' }).Count -ge 2) ("lines=$($rejected -join ' | ')")
         foreach ($line in $rejected | Select-Object -First 2) { Write-Host ("    日志：{0}" -f $line.Trim()) }
     }
 } finally {

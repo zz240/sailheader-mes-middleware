@@ -2,6 +2,7 @@ package com.example.edgegateway.service;
 
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -49,11 +50,11 @@ public class JobRunGuard {
      * 占住某个任务。返回的 {@link Handle} 就是这次占用的凭据，释放时原样交回。
      *
      * <p>用 {@code putIfAbsent} 一次判定与占位（不要写成 {@code containsKey} + {@code put} 两拍：
-     * 那本身就是竞态）。已有占用者时返回 {@code null}，并把当前占用者交给
-     * {@link #describe(Handle)} 供调用方记日志。</p>
+     * 那本身就是竞态）。已有占用者时返回 {@code null}——调用方拿 {@link #current(Long)} 取当前
+     * 占用者，把「正在跑的是哪一次运行」写进跳过日志。</p>
      */
     public Handle tryAcquire(Long jobId, String origin) {
-        Handle handle = new Handle(jobId, origin, System.currentTimeMillis());
+        Handle handle = new Handle(jobId, origin, LocalDateTime.now());
         if (running.putIfAbsent(jobId, handle) != null) {
             return null;
         }
@@ -74,8 +75,19 @@ public class JobRunGuard {
         }
     }
 
-    /** 本线程当前的占用凭据；没占用（或未走互斥的路径）时为 {@code null}。 */
-    public Handle current() {
+    /**
+     * 某个任务当前的占用者；没有人在跑时为 {@code null}。
+     *
+     * <p>给「已有运行、本次跳过」那条日志用：{@code tryAcquire} 返回 {@code null} 之后，
+     * 调用方靠它拿到正在跑的那次运行（运行标识见 {@link #describe(Handle)}，由
+     * {@link #bindRun} 在运行行建好后回填）。</p>
+     */
+    public Handle current(Long jobId) {
+        return running.get(jobId);
+    }
+
+    /** 本线程手上的占用凭据；没占用（或未走互斥的路径）时为 {@code null}。 */
+    public Handle threadHandle() {
         return current.get();
     }
 
@@ -89,7 +101,8 @@ public class JobRunGuard {
      *
      * <p>回填要求「这次占用的凭据正握在当前线程手上」，所以走到它必须与触发同线程。触发链是同步的
      * （{@link JobTrigger#trigger} 里 {@code requestBody} 跑完才返回），这条成立；哪天把执行改到
-     * 线程池上，回填会静默失效——那时跳过日志就只剩 jobId，判据不受影响。</p>
+     * 线程池上，回填会静默失效——跳过日志那时就只有 jobId 与开始时刻（{@link #describe(Handle)} 把
+     * 运行标识写成 {@code run=-}），判据本身不受影响。</p>
      */
     public static void bindRun(JobRunGuard guard, Long jobId, Long runId) {
         if (guard == null || jobId == null || runId == null) {
@@ -101,14 +114,19 @@ public class JobRunGuard {
         }
     }
 
-    /** 当前占用者的可读描述：{@code job=7 run=2837 origin=schedule startedAt=...}，给日志用。 */
+    /**
+     * 一次占用的可读描述，给日志用：{@code job=7 origin=manual run=2837 startedAt=…}。
+     *
+     * <p>运行标识那一格在运行行建好之前是空的（{@link #bindRun} 回填之后才有）——所以第一次
+     * 触发时它可能显示为 {@code run=-}，被拒绝的那一方看到的一定是已经跑起来的那次。</p>
+     */
     public String describe(Handle handle) {
         if (handle == null) {
             return "未被占用";
         }
         return "job=" + handle.jobId()
-                + (handle.runId() == null ? "" : " run=" + handle.runId())
                 + " origin=" + handle.origin()
+                + " run=" + (handle.runId() == null ? "-" : handle.runId())
                 + " startedAt=" + handle.startedAt();
     }
 
@@ -125,10 +143,10 @@ public class JobRunGuard {
 
         private final Long jobId;
         private final String origin;
-        private final long startedAt;
+        private final LocalDateTime startedAt;
         private volatile Long runId;
 
-        Handle(Long jobId, String origin, long startedAt) {
+        Handle(Long jobId, String origin, LocalDateTime startedAt) {
             this.jobId = jobId;
             this.origin = origin;
             this.startedAt = startedAt;
@@ -146,7 +164,7 @@ public class JobRunGuard {
             return origin;
         }
 
-        public long startedAt() {
+        public LocalDateTime startedAt() {
             return startedAt;
         }
 

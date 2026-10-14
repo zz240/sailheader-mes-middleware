@@ -85,8 +85,11 @@ class JobRunGuardTest {
         JobRunGuard.Handle handle = guard.tryAcquire(7L, JobRunGuard.ORIGIN_MANUAL);
 
         JobRunGuard.bindRun(guard, 7L, 2837L);
+
         assertThat(handle.runId()).isEqualTo(2837L);
         assertThat(guard.describe(handle)).contains("run=2837").contains("origin=manual");
+        // 回填是「这次占用的运行标识」，不是「这个任务的运行标识」：别的任务不该被顺带写上
+        assertThat(guard.describe(guard.current(8L))).doesNotContain("run=2837");
     }
 
     @Test
@@ -101,8 +104,22 @@ class JobRunGuardTest {
 
         assertThat(holder.runId()).isNull();
         // 凭据仍归占用它的那条线程（这里是主线程自己）
-        assertThat(guard.current()).isSameAs(holder);
+        assertThat(guard.threadHandle()).isSameAs(holder);
         assertThat(guard.isRunning(7L)).isTrue();
+    }
+
+    /** 「已有运行、本次跳过」那条日志靠它取当前占用者：要能读到正在跑的那次运行标识。 */
+    @Test
+    void exposesCurrentOccupancyWithRunIdForSkipLog() {
+        JobRunGuard.Handle handle = guard.tryAcquire(7L, JobRunGuard.ORIGIN_SCHEDULE);
+        JobRunGuard.bindRun(guard, 7L, 2837L);
+
+        JobRunGuard.Handle current = guard.current(7L);
+
+        assertThat(current).isSameAs(handle);
+        assertThat(guard.describe(current))
+                .contains("job=7").contains("origin=schedule").contains("run=2837");
+        assertThat(guard.current(8L)).isNull();
     }
 
     @Test

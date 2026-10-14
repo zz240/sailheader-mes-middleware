@@ -147,7 +147,8 @@ class StepLedger {
     void beginRun(Exchange ex, Job job) {
         Long runId = messageHistory.startRun(job.getId(), ex.getMessage().getBody()).getId();
         ex.setProperty(MessageHistoryService.RUN_ID, runId);
-        JobRunGuard.bindRun(runGuard, job.getId(), runId);    }
+        JobRunGuard.bindRun(runGuard, job.getId(), runId);
+    }
 
     /**
      * 创建一条消息：消息标识、业务键、父消息标识、批内序号都归

@@ -61,7 +61,7 @@ public class JobExecutionService {
         // 占位失败即已有运行：占用凭据在 try 之外拿到，下面 finally 才敢释放（放掉别人的锁就没保护了）
         JobRunGuard.Handle handle = runGuard.tryAcquire(jobId, origin);
         if (handle == null) {
-            LOG.info("任务已有运行，跳过本次触发 job={} origin={}", jobId, origin);
+            LOG.info("任务已有运行，跳过本次触发：{}", runGuard.describe(runGuard.current(jobId)));
             throw BusinessException.of(BusinessCode.JOB_ALREADY_RUNNING,
                     BusinessCode.JOB_ALREADY_RUNNING.defaultMessage());
         }

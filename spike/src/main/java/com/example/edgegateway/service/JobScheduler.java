@@ -109,7 +109,7 @@ public class JobScheduler {
     private void fire(Long jobId) {
         JobRunGuard.Handle handle = runGuard.tryAcquire(jobId, JobRunGuard.ORIGIN_SCHEDULE);
         if (handle == null) {
-            LOG.info("任务已有运行，跳过本次调度触发 job={}", jobId);
+            LOG.info("任务已有运行，跳过本次调度触发：{}", runGuard.describe(runGuard.current(jobId)));
             return;
         }
         try {

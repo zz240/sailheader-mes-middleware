@@ -15,13 +15,14 @@
 # 而 scriptblock 又跑不到 .NET 线程上）；主线程随后发第二次。curl 的 stdout / stderr 落盘后读回。
 #
 # 用法（本机执行策略会拦脚本文件，须带 Bypass）：
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\shadow-site\verify-146-serial.ps1 `
-#       [-StubLog .scratch\146\stub.log]
+# 用法：powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\shadow-site\verify-146-serial.ps1 `
+#       [-StubLog .scratch\146\stub.log] [-AppLog <网关 stdout 日志文件>]
 
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8080',
     [string]$SiteId = '1',
     [string]$StubLog = '',
+    [string]$AppLog = 'D:\workspace\programs\edge-gateway\.scratch\146\app.log',
     [int]$RunMillis = 3000,
     [int]$LeadMs = 900
 )
@@ -127,6 +128,9 @@ Write-Host '#146 任务串行真机验收'
 Write-Host ("base={0} site={1} runMillis={2}" -f $BaseUrl, $SiteId, $RunMillis)
 New-Item -ItemType Directory -Force -Path $workDir | Out-Null
 
+$logMark = 0
+if (Test-Path $AppLog) { $logMark = @(Get-Content $AppLog -ErrorAction SilentlyContinue).Count }
+
 # ---------- 夹具 ----------
 $dsName = 'verify-146-http'
 $existing = (Api GET '/api/data-sources' $null).data | Where-Object { $_.name -eq $dsName } | Select-Object -First 1
@@ -181,6 +185,15 @@ try {
 
     $runsAfter = ((Api GET "/api/history/runs?jobId=$jobId" $null).data.total)
     Check 'job_run 只多一行' (($runsAfter - $runsBefore) -eq 1) ("before=$runsBefore after=$runsAfter")
+
+    # 跳过日志必须写明「正在跑的是哪一次运行」（runId 由 StepLedger.beginRun 回填给占用凭据）
+    if (Test-Path $AppLog) {
+        $tail = @(Get-Content $AppLog -ErrorAction SilentlyContinue | Select-Object -Skip $logMark)
+        $skipLine = @($tail | Where-Object { $_ -match '跳过本次触发' -and $_ -match "job=$jobId" })
+        Check '日志里有跳过本次触发的记录（含 jobId）' ($skipLine.Count -ge 1) ("matched=$($skipLine.Count)")
+        Check '该记录带上了当前运行的 runId 与触发来源' (@($skipLine | Where-Object { $_ -match 'run=\d+' -and $_ -match 'origin=' }).Count -ge 1) ("lines=$($skipLine -join ' | ')")
+        foreach ($line in $skipLine | Select-Object -First 1) { Write-Host ("    日志：{0}" -f $line.Trim()) }
+    }
 
     # ---------- 断言 2：外部触发共用同一张占用表 ----------
     Write-Host '--- 断言 2：外部触发并发 ---'
