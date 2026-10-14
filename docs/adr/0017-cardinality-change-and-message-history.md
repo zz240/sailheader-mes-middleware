@@ -250,6 +250,14 @@
 - **片段按层数记账**（与 #140 同源的 `end()` 坑）：读库那层是 `loopDoWhile`，一分多的两档（拆分 / 还原）各开一层 `split`；
   每开一层收尾 `end()` 一次、由内到外。Camel 的 `end()` 在循环体内只往外退一层，退少了会拿到外层那个 split。
 
+- **状态更新（2026-10-13，#147）**：决策 6 的**摘要行**与决策 7 的**整批重发**已作废——那条路径只把那一次请求再发一遍、
+  **不执行出站之后的链上动作**，且要求使用者判断"失败发生在出站还是下游"，而这个前提在界面上看不出来。
+  失败恢复改为**重跑任务**：一批里任何一步失败时水位都不推进（`RouteGenerator.appendChain` 收尾把水位提交挂在一批全部完成之后），
+  重跑即从未完成的那一批整批重走（含还原与下游写回）；代价是目标端会再收到一次该批请求，与「至少一次 + 目标端按业务键幂等」一致。
+  决策 1–5、8 不受影响。**本文正文按仓库惯例不改**，只追加本条状态；落地见 #147，活文档已同步
+  （`docs/action-chain-design.md`、`docs/user-guide.md`、`docs/features/job-action-chain/README.md`、
+  `docs/features/reliability/README.md`、`docs/flows/chain-compile-flow.md`、`GLOSSARY.md`）。
+
 ## #143 落地（真机验收）
 
 #142 的对称设计在影子站点真机验过（脚本与 79 项断言见 `tools/shadow-site/README.md`，

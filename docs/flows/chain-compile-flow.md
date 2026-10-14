@@ -56,8 +56,8 @@ sequenceDiagram
 | 拆分档（1→N） | 把一片数组摊成 N 条消息 | `service/SplitFragment.java:41`（`appendSplit`） | `resolveSplitSource`、`service/ElementMessageFactory.java:30`（消息标识 / 业务键 / 父消息标识 / 外层字段继承） | 父消息 → N 条子消息（新批号 + 批内序号）；本步自己记一行 | 来源取不出数组 / 路径断了 → 该步**显式失败**，不静默拆出 0 条 |
 | 合并档（N→1） | 攒住一批打成一条报文 | `service/AggregateFragment.java:55`（`appendAggregateCollect`）、`:75`（`appendAggregatePack`） | `takeBatch`（:144）；攒批边界 = 上游读取批读完那一刻（不做条数阈值 / 超时） | 一批消息 → 一条报文 `{"<bodyField>":[…]}`；`edge.batchManifest` 挂属性、不进报文 | 凑不满立即失败、绝不发半批；空批 / 整批被续投跳过时挂 `edge.batchEmpty`，后面连出站都不跑 |
 | 还原档（1→N） | 按业务键把响应摊回原来那几条 | `service/RestoreFragment.java:40`（`appendRestore`） | `restoreCarrier`（:102）、`markBatchCarrier`（`AggregateFragment.java:170`） | 整批响应 → 每条消息自己那一份（沿用原消息标识与批号，**不换号**） | 响应里有一条配不上 → 整批失败（同成同败） |
-| 打包重发 | 摘要行那一份报文再发一次 | `service/BatchResendRoute.java:63`（`build`，入口 `direct:job-<id>-batch-resend-<出站序号>`） | `BatchResendRoute.restoreAfter`（按出口找配对的那条还原档）、`RestoreFragment.settleBatchResend` | 摘要行 + 成员清单 → 一次请求；HTTP 按业务键配回每条 | 配不上当场抛（同成同败）；失败面与链上同款 |
-| 消息步 / 运行簿记 | 记一行、算耗时与尝试次数 | `service/StepLedger.java:32`（`StepLedger`） | `beginStep` / `settleStepDuration` / `stepDuration` / `attemptsOnSuccess` / `recordSuccessStep` / `recordFailure` / `finishRun` / `context` | exchange 现场 → `message_step` 与 `job_run` 两行 | 未创建消息时不记步；同类失败只逐条记（`edge.batchNoSummary`） |
+| 失败恢复 | 整批重走（**重跑任务**） | 无专用路由：`RouteGenerator.appendChain` 收尾（水位提交挂在一批全部完成之后） | 水位不推进即整批重读重发；合并之前的**单条**仍走断点重投（`direct:job-<id>-resume`） | 目标端会再收到一次该批请求 | 与「至少一次 + 目标端按业务键幂等」一致（#147 已删除「重发这一批」那条只发请求、不跑下游的路径） |
+| 消息步 / 运行簿记 | 记一行、算耗时与尝试次数 | `service/StepLedger.java:32`（`StepLedger`） | `beginStep` / `settleStepDuration` / `stepDuration` / `attemptsOnSuccess` / `recordSuccessStep` / `recordFailure` / `finishRun` / `context` | exchange 现场 → `message_step` 与 `job_run` 两行 | 未创建消息时不记步 |
 | 错误处理与重试 | 全链失败面 | `service/ErrorHandling.java:26`（`configure`） | `onException` + `maximumRedeliveries`/`redeliveryDelay`（取任务上的 `retryCount`/`backoffMs`）、`onExceptionOccurred` → 自计数、`handled` 策略 | 失败步写 `message_step`（`attempt` = 总投递次数）+ 运行标 FAILED | 消费主路由 `handled=true`；重放 / 轮询 / 断点 / 打包重发 `handled=false`（异常抛回调用方） |
 | 水位提交 | 读库那一段的收尾 | `service/ReadWriteFragments.java:108`（`updateWatermark`） | 水位只在**整批成功**时推进 | 水位表游标前移 | 失败整批重读（至少一次） |
 | 生命周期 | 注册 / 摘除 / 重建 | `service/RouteRegistry.java:22`、`service/RouteLifecycle.java:20` | 启用注册、停用移除、启动重载、动作变更自动重建 | 配置变更 → 路由重建 | 启用 / 重建失败 → 自动停用 + 摘路由与调度 + 写 `job.lastError` |
@@ -71,7 +71,8 @@ sequenceDiagram
 三条口径（全部见 `docs/action-chain-design.md` §1.1，都是**刻意设计**）：
 
 - **批号只在基数变化动作上转手**：拆分档现生成新号发给子消息，合并再转一次手；**还原档不换号**（它是把这一批还原回成员，不是新的一批）。
-- **摘要行归出站动作**：`batch:<批号>` 那一行（整份请求 + 整份响应）落在出站那一步，不在合并上——合并**不认识出口**，发去哪儿由链上后面的出站动作决定；多目标 = 多个出站动作，顺序执行、失败即停。
+- **合并那一行记的是「整批 → 打包报文」**：打包出来的那一条消息在合并动作上记一行（输入整批、输出打包报文）；出站与还原各按**消息粒度**记行——**不再有**用 `batch:<批号>` 承载整份请求与响应的"摘要行"（它为"单独重发某一批"服务，#147 已删除那条路径）。
+- **失败恢复统一为「重跑任务」**：一批里任何一步失败时水位都不推进（水位提交挂在一批全部完成之后），重跑即从未完成的那一批整批重走（含下游的还原与写回）；目标端会再收到一次该批请求，与「至少一次 + 目标端按业务键幂等」一致（#147）。
 - **片段按层数记账**：读库那层是 `loopDoWhile`，拆分与还原各开一层 `split`；每开一层收尾要 `end()` 一次，且**由内到外**（Camel 的 `end()` 在循环体内只往外退一层，嵌套时只退一次会拿到外层那个 split，路由直接建不起来）。
 
 ## 测试环境
