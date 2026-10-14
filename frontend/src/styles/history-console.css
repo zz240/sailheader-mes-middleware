@@ -258,17 +258,17 @@
 .hc-batch .hc-bhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hc-batch .hc-bt { font-size: 12px; font-weight: 620; }
 .hc-batch .hc-bchips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-/* 发送批（合并那一档）组头上的「重发这一批（N 条）」：**一次点击 = 一次请求**（#142 / ADR-0017 决策 7）。
-   它只长在发送批、只在该批失败时铺（判据在 `history/batch.ts`），所以与旁边那句组头同一个色系 */
-.hc-batch .hc-bredeliver {
+/* 发送批（合并那一档）组头上的「重跑任务」：**一次点击 = 重跑整个任务**（#147）。
+   它只长在含打包消息那一行、且只在该批失败时铺（判据在 `history/batch.ts`），所以与旁边那句组头同一个色系 */
+.hc-batch .hc-brerun {
   height: 24px; padding: 0 10px; border: 1px solid var(--accent-line); border-radius: 6px;
   background: var(--accent-soft); color: var(--fg); font-size: 12px; cursor: pointer;
 }
-.hc-batch .hc-bredeliver:hover { background: var(--accent-line); }
-.hc-batch .hc-bredeliver:disabled { opacity: .6; cursor: default; }
-/* 摘要行那颗 chip（ADR-0017 决策 6）：与消息 chip 并排，但一眼看得出来它不是一条消息 */
-.hc-mchip.hc-mchip-summary { border-style: dashed; }
-.hc-mchip .hc-msum { font-size: 10.5px; color: var(--muted); }
+.hc-batch .hc-brerun:hover { background: var(--accent-line); }
+.hc-batch .hc-brerun:disabled { opacity: .6; cursor: default; }
+/* 打包消息那颗 chip（合并 N→1 打出来的那条信封消息，#147）：与消息 chip 并排，但一眼看得出来它不是一条消息 */
+.hc-mchip.hc-mchip-packed { border-style: dashed; }
+.hc-mchip .hc-mpacked { font-size: 10.5px; color: var(--muted); }
 
 /* 单步卡 */
 .hc-card {

@@ -1,29 +1,29 @@
 <template>
-  <!-- 一组 chip（#139）：组头 + 同批每一行一颗。组头那句与「能不能重发」都由 `history/batch.ts` 判
-       （组在这里不判口径）；「重发这一批（N 条）」只长在**发送批**的组头上、且只在该批失败时铺（#142） -->
+  <!-- 一组 chip（#139）：组头 + 同批每一行一颗。组头那句与「能不能重跑任务」都由 `history/batch.ts` 判
+       （组在这里不判口径）；「重跑任务」只长在**含打包消息那一行**的发送批组头上、且只在该批失败时铺（#147） -->
   <div class="hc-batch" :data-batch-step="group.step">
     <div class="hc-bhead">
       <span class="hc-bt">{{ group.head }}</span>
       <button
-        v-if="redeliverBatch"
-        class="hc-bredeliver"
+        v-if="rerun"
+        class="hc-brerun"
         type="button"
         :disabled="pending"
-        :aria-label="`${redeliverBatch.label}：一次点击发一次请求，整批同成同败`"
-        @click="emit('redeliver-batch', group)"
-      >{{ redeliverBatch.label }}</button>
+        :aria-label="`${rerun.label}：从这一批未完成的位置整批重走，目标端会再收到一次该批请求`"
+        @click="emit('rerun-job', rerun)"
+      >{{ rerun.label }}</button>
     </div>
     <div class="hc-bchips">
       <button
         v-for="member in group.members"
         :key="member.id"
         class="hc-mchip"
-        :class="{ 'hc-mchip-summary': isSummaryRow(member) }"
+        :class="{ 'hc-mchip-packed': isPacked(member) }"
         type="button"
-        :aria-label="`${isSummaryRow(member) ? '摘要行（这一批的整份报文）' : '消息'} ${shortId(member.messageId)} · ${businessKeyOf(member)} · ${statusChip(member.status).label}`"
+        :aria-label="`${isPacked(member) ? '打包消息（合并 N→1 打出来的那条信封）' : '消息'} ${shortId(member.messageId)} · ${businessKeyOf(member)} · ${statusChip(member.status).label}`"
         @click="emit('select-step', member)"
       >
-        <span v-if="isSummaryRow(member)" class="hc-msum">批次</span>
+        <span v-if="isPacked(member)" class="hc-mpacked">打包报文</span>
         <span class="hc-mid">{{ shortId(member.messageId) }}</span>
         <span class="hc-mbk">{{ businessKeyOf(member) }}</span>
         <span class="hc-st" :class="`hc-st-${statusChip(member.status).kind}`">{{ statusChip(member.status).label }}</span>
@@ -34,27 +34,36 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { batchRedeliver, isSummaryRow, type BatchGroup } from '../../history/batch'
+import { batchRerun, type BatchGroup, type BatchRerun } from '../../history/batch'
 import { NO_BUSINESS_KEY, shortId, statusChip } from '../../history/console'
 import type { MessageStep } from '../../types'
 
 const props = defineProps<{
   /** 链上点开的那一组（分组口径全在 `history/batch.ts`，这里只管画）。 */
   group: BatchGroup
-  /** 这一批的重发在路上（按钮按在原地，别让人连点两下发两遍）。 */
+  /** 这一批的重跑在路上（按钮按在原地，别让人连点两下发两遍）。 */
   pending?: boolean
+  /** 当前这条运行的**任务标识**（`run.jobId`）；取不到就不铺按钮——重跑是任务级的动作，跑谁得说得出来。 */
+  jobId?: number | null
 }>()
 
 const emit = defineEmits<{
   'select-step': [step: MessageStep]
-  'redeliver-batch': [group: BatchGroup]
+  'rerun-job': [target: BatchRerun]
 }>()
 
-/** 能不能重发、按钮写什么，全在纯模块里判（这里不重写判据）。 */
-const redeliverBatch = computed(() => batchRedeliver(props.group))
+/** 能不能铺、铺什么、确认框里问什么，全在纯模块里判（这里不重写判据）。 */
+const rerun = computed(() => batchRerun(props.group, props.jobId ?? null))
 
 /**
- * 摘要行没有对应的消息、业务键也常常是空的——与消息 chip 同一句「无业务键」，不另立写法。
+ * 这一行是不是**打包消息**：与组头那颗按钮同一处判据算出来的那一行（按行 id 认，同组里只有它一颗）。
+ */
+function isPacked(member: MessageStep): boolean {
+  return props.group.packed?.id === member.id
+}
+
+/**
+ * 打包消息没有对应的业务键（它是整批的信封）——与消息 chip 同一句「无业务键」，不另立写法。
  */
 function businessKeyOf(member: MessageStep): string {
   return member.businessKey?.trim() || NO_BUSINESS_KEY

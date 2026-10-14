@@ -1,20 +1,22 @@
 /**
- * 批次口径的检查（#139）：不测组件，只测纯逻辑的外部行为。
+ * 批次口径的检查（#139 起，#147 换了判据）：不测组件，只测纯逻辑的外部行为。
  *
  * 跑法（零新依赖）：
  *   node --experimental-strip-types frontend/src/history/batch-checks.ts
  *
- * 押的是 #139 票面与 ADR-0017 那几条：
+ * 押的是 #139 / #142 / #147 那几条：
  *   1. **按批分组**：分组键是「步骤号 + 批号」——同一步上同批的一组，同一个批号在两步上是两组
  *      （批次是「某一步上的分组」，决策 1）；
- *   2. 组头文案：`读取批 · 一次请求 N 条 · 失败 M 条`；有摘要行的那一组是 `发送批`（决策 6）；
- *   3. 单条那档：某一步上这条消息**自己一组** → `单条 · 不是一批`，且**没有数据时不下结论**；
- *   4. 链上哪一格画徽标：**这一步换了号**才画，中间那些步骤不画（决策 2）；
- *   5. 某一步能不能重发：只有发送批且这一批有失败才铺「重发这一批（N 条）」（决策 7）。
+ *   2. 组头文案：`读取批 / 发送批 · 一次请求 N 条 · 失败 M 条`；**这一批有打包消息**的那一批是
+ *      `发送批`（#147 的新判据，取代旧的摘要行）；
+ *   3. **打包消息怎么认**（#147）：某批号**最小步骤**上独占该步、而该批号下还有别的消息标识的那条消息；
+ *   4. 单条那档：某一步上这条消息**自己一组** → `单条 · 不是一批`，且**没有数据时不下结论**；
+ *   5. 链上哪一格画徽标：**这一步换了号**才画，中间那些步骤不画（决策 2）；
+ *   6. 失败恢复那一档：**发送批、这一批有失败、而且拿得到任务标识**才铺「重跑任务」（#147）。
  */
 import {
-  BATCH_BADGE, SINGLE_NOTE, SUMMARY_MESSAGE_PREFIX, batchGroupAt, batchGroups, batchHead, batchKey,
-  batchRedeliver, batchRedeliverDone, isSummaryRow, nodeBatch, normalizeBatchId, redeliverBatchPath,
+  BATCH_BADGE, RERUN_LABEL, SINGLE_NOTE, batchGroupAt, batchGroups, batchHead, batchKey,
+  batchRerun, nodeBatch, normalizeBatchId,
 } from './batch.ts'
 import type { MessageStep } from '../types.ts'
 
@@ -66,6 +68,7 @@ eq('组的步骤号 / 批号 / 条数 / 失败数',
 eq('读取批那档的组头文案', oneReadBatch[0].head, '读取批 · 一次请求 3 条 · 失败 1 条')
 eq('组里每条 chip 就是一条消息步（按落库先后）',
   oneReadBatch[0].members.map((s) => s.messageId), ['m-1', 'm-2', 'm-3'])
+eq('读取批里没有打包消息', oneReadBatch[0].packed, null)
 
 const twoBatchesAtOneStep = batchGroups([
   step({ id: 1, messageId: 'm-1', batchId: 'batch-A' }),
@@ -97,44 +100,111 @@ eq('单条那档的组头就是那句话', mqChain[0].head, SINGLE_NOTE)
 eq('单条那档的组头不写「一次请求 1 条」', batchHead('single', 1, 0), '单条 · 不是一批')
 eq('批大小 1 的读库链同理：库里那行带着批号，但它没有「一组 chip」可看——按「不是一批」画',
   batchGroups([step({ id: 1, batchId: 'batch-A' })])[0].kind, 'single')
+eq('批大小 1 的读库批也没有打包消息（这一批下没有别的消息标识）',
+  batchGroups([step({ id: 1, batchId: 'batch-A' })])[0].packed, null)
 
-/* ── 3. 摘要行分「读取批 / 发送批」（决策 6） ─────────────────────── */
+/* ── 3. 打包消息分「读取批 / 发送批」（#147） ─────────────────────── */
 
-const sendBatch = batchGroups([
-  step({ id: 1, messageId: 'm-1', step: 4, batchId: 'batch-C' }),
-  step({ id: 2, messageId: 'm-2', step: 4, batchId: 'batch-C', status: 'FAILED' }),
-  step({ id: 3, messageId: `${SUMMARY_MESSAGE_PREFIX}batch-C`, step: 4, batchId: 'batch-C', status: 'FAILED' }),
-])
-eq('有摘要行的那一组是发送批', sendBatch[0].kind, 'send')
-eq('发送批的组头文案（「N 条」数的是消息，不含摘要行）', sendBatch[0].head, '发送批 · 一次请求 2 条 · 失败 1 条')
-eq('摘要行也是一颗 chip（与消息 chip 并排），但不计入「N 条」',
-  [sendBatch[0].total, sendBatch[0].messages, sendBatch[0].failed], [3, 2, 1])
-eq('摘要行认得出来（就一条前缀）', sendBatch[0].summary?.messageId, `${SUMMARY_MESSAGE_PREFIX}batch-C`)
-eq('读取批没有摘要行', oneReadBatch[0].summary, null)
+/**
+ * 合并链的一批（照着库里的真形状摆）：读库 20 条走 1、2 两步（`batch-A`）；**合并那一步批号转手**
+ * （`AggregateFragment.takeBatch` 现生成新批号、并给打包出来那一条一个自己的消息标识），信封 `e-1`
+ * 从第 3 步起、独占合并那一步；出站那一步是「信封 1 行 + 20 条成员同行」（整批同因）。
+ */
+const members: string[] = []
+for (let i = 1; i <= 20; i++) members.push(`m-${i}`)
 
-/* ── 3b. 摘要行与成员不在同一步（出站那一步有摘要、还原那一步是成员） ── */
+function mergeChain(outlet: 'SUCCESS' | 'FAILED'): MessageStep[] {
+  const rows: MessageStep[] = []
+  let id = 1
+  for (const messageId of members) rows.push(step({ id: id++, messageId, step: 1, batchId: 'batch-A' }))
+  for (const messageId of members) rows.push(step({ id: id++, messageId, step: 2, batchId: 'batch-A' }))
+  // 合并那一步：批号在这一步转手，信封独占这一步
+  rows.push(step({ id: id++, messageId: 'e-1', step: 3, batchId: 'batch-B' }))
+  // 出站那一步：信封 1 行 + 20 条成员同行
+  rows.push(step({ id: id++, messageId: 'e-1', step: 4, batchId: 'batch-B', status: outlet }))
+  for (const messageId of members) rows.push(step({ id: id++, messageId, step: 4, batchId: 'batch-B', status: outlet }))
+  // 出站成功才有还原那一步（失败即停）
+  if (outlet === 'SUCCESS') {
+    for (const messageId of members) rows.push(step({ id: id++, messageId, step: 5, batchId: 'batch-B' }))
+  }
+  return rows
+}
+
+const mergeFailed = batchGroups(mergeChain('FAILED'))
+const readGroup = mergeFailed.find((g) => g.step === 1)
+const aggregateGroup = mergeFailed.find((g) => g.step === 3)
+const outletGroup = mergeFailed.find((g) => g.step === 4)
+eq('合并链按「步骤号 + 批号」分成四组（合并那一步换了号，所以 1/2 与 3/4 不是同一批）',
+  mergeFailed.map((g) => [g.step, g.batchId, g.total]),
+  [[1, 'batch-A', 20], [2, 'batch-A', 20], [3, 'batch-B', 1], [4, 'batch-B', 21]])
+eq('合并那一步（批号在这一步转手）信封独占该步：它就是打包消息，这一批因此是发送批',
+  [aggregateGroup?.packed?.messageId, aggregateGroup?.kind], ['e-1', 'send'])
+eq('出站那一步：信封 1 行 + 20 条成员同行，打包消息认在同一组里',
+  [outletGroup?.packed?.messageId, outletGroup?.total], ['e-1', 21])
+eq('组头不再多算一条（#143 记的偏差：原来是「发送批 · 一次请求 21 条 · 失败 20 条」）',
+  outletGroup?.head, '发送批 · 一次请求 20 条 · 失败 20 条')
+eq('「N 条 / 失败 M 条」都不含打包消息（它自己那行也是 FAILED，但不计）',
+  [outletGroup?.messages, outletGroup?.failed], [20, 20])
+eq('读库那一批（batch-A）没有打包消息：它仍是读取批，20 条',
+  [readGroup?.kind, readGroup?.packed, readGroup?.head],
+  ['read', null, '读取批 · 一次请求 20 条 · 失败 0 条'])
+eq('合并那一步那一组也只有信封一行，但组头与出站那一组说的是同一句（kind / 条数都按**批号**算，不按这一组算）',
+  aggregateGroup?.head, '发送批 · 一次请求 20 条 · 失败 20 条')
+
+const mergeOk = batchGroups(mergeChain('SUCCESS'))
+eq('出站成功时同一个批号的还原那一步也是发送批（批号没换），但打包那一行不在这一组里',
+  [mergeOk.find((g) => g.step === 5)?.kind, mergeOk.find((g) => g.step === 5)?.packed,
+    mergeOk.find((g) => g.step === 5)?.total],
+  ['send', null, 20])
+
+/* ── 3b. 打包那一行与成员不在同一步（出站有打包、还原那一步是成员） ── */
 
 const acrossSteps = batchGroups([
   step({ id: 1, messageId: 'm-1', step: 5, batchId: 'batch-E' }),
   step({ id: 2, messageId: 'm-2', step: 5, batchId: 'batch-E', status: 'FAILED' }),
-  step({ id: 3, messageId: `${SUMMARY_MESSAGE_PREFIX}batch-E`, step: 4, batchId: 'batch-E' }),
+  step({ id: 3, messageId: 'e-1', step: 4, batchId: 'batch-E', status: 'FAILED' }),
 ])
-eq('摘要行在出站、成员在还原：两组都算发送批', acrossSteps.map((g) => [g.step, g.kind]),
-  [[4, 'send'], [5, 'send']])
-eq('「N 条 / 失败 M 条」按批号跨步骤去重（同一条消息在两步各一行也只算一条）',
+eq('打包消息在最小步骤（出站）、成员在还原：两组都算发送批',
+  acrossSteps.map((g) => [g.step, g.kind]), [[4, 'send'], [5, 'send']])
+eq('「N 条 / 失败 M 条」按批号跨步骤去重，且不含打包消息（它自己那行也 FAILED）',
   acrossSteps.map((g) => [g.messages, g.failed]), [[2, 1], [2, 1]])
-eq('出站那一组只有一行摘要，也不算「单条 · 不是一批」', acrossSteps[0].kind, 'send')
-eq('「重发这一批」只长在摘要行那一组（出站），不重复长在还原那一组',
-  [batchRedeliver(acrossSteps[0]), batchRedeliver(acrossSteps[1])],
-  [{ count: 2, label: '重发这一批（2 条）' }, null])
-eq('下游（还原）失败时，摘要行自己是 SUCCESS 也照样铺按钮——重发要重新打一次请求',
-  batchRedeliver(acrossSteps[0])?.count, 2)
-eq('发送批那几格都画批徽标（还原不换号，所以它仍属这一批）',
-  [nodeBatch(null, acrossSteps[0].members[0], acrossSteps).tier,
-    nodeBatch(acrossSteps[0].members[0], acrossSteps[1].members[0], acrossSteps).tier],
-  ['batch', 'batch'])
-eq('摘要行的认出法就一条前缀', [isSummaryRow({ messageId: `${SUMMARY_MESSAGE_PREFIX}x` }),
-  isSummaryRow({ messageId: 'm-1' })], [true, false])
+eq('出站那一组只有打包那一行，也不算「单条 · 不是一批」', acrossSteps[0].kind, 'send')
+eq('打包消息只认在**含它那一行**的组里：还原那一组没有它',
+  [acrossSteps[0].packed?.messageId, acrossSteps[1].packed], ['e-1', null])
+
+/* ── 3c. 判据为什么必须挂在**最小步骤**上（#147 复查出来的那个误判） ── */
+
+// 一条读取批：读库那一步 20 条都在（最小步骤）；下一步只留下 1 条失败行（失败即停，后面的没跑到）。
+// 只按「某一步上独占该步」判的话，这一条普通消息会被误认成打包消息——档位错成发送批、条数还少算一条。
+const partialRows: MessageStep[] = []
+for (let i = 1; i <= 20; i++) partialRows.push(step({ id: i, messageId: `m-${i}`, step: 1, batchId: 'batch-A' }))
+partialRows.push(step({ id: 21, messageId: 'm-1', step: 2, batchId: 'batch-A', status: 'FAILED' }))
+const partialRead = batchGroups(partialRows)
+eq('读取批在链中途只剩一条行时**不**被当成打包消息：这一批的档位仍是读取批、条数仍是 20',
+  [partialRead.find((g) => g.step === 1)?.kind, partialRead.find((g) => g.step === 1)?.messages,
+    partialRead.find((g) => g.step === 1)?.head],
+  ['read', 20, '读取批 · 一次请求 20 条 · 失败 1 条'])
+eq('这一批里一个打包消息都没有（最小步骤上是 20 条，不是一条独占）',
+  partialRead.map((g) => g.packed), [null, null])
+eq('那一条（第二步骤独）自己一组，仍是旧的单条档（决策 10），不是「重跑任务」的落点',
+  [partialRead.find((g) => g.step === 2)?.kind, partialRead.find((g) => g.step === 2)?.messages],
+  ['single', 20])
+
+// 拆分链（A2 头行分表那一档）：拆出来的子消息是新批号，**没有任何消息独占某一步**，所以不是发送批。
+const splitChildren = batchGroups([
+  step({ id: 1, messageId: 'c-1', step: 6, batchId: 'batch-S' }),
+  step({ id: 2, messageId: 'c-2', step: 6, batchId: 'batch-S' }),
+  step({ id: 3, messageId: 'c-3', step: 6, batchId: 'batch-S' }),
+  step({ id: 4, messageId: 'c-4', step: 6, batchId: 'batch-S' }),
+  step({ id: 5, messageId: 'c-1', step: 7, batchId: 'batch-S' }),
+  step({ id: 6, messageId: 'c-2', step: 7, batchId: 'batch-S' }),
+  step({ id: 7, messageId: 'c-3', step: 7, batchId: 'batch-S' }),
+  step({ id: 8, messageId: 'c-4', step: 7, batchId: 'batch-S' }),
+])
+eq('拆分新造出来的那一批仍是读取批（子消息的批号里没有基数变化步，也没有打包消息）',
+  [splitChildren.find((g) => g.step === 6)?.kind, splitChildren.find((g) => g.step === 6)?.packed,
+    splitChildren.find((g) => g.step === 6)?.head],
+  ['read', null, '读取批 · 一次请求 4 条 · 失败 0 条'])
 
 /* ── 4. 链上哪一格画徽标：换了号才画（决策 2） ─────────────────────── */
 
@@ -172,24 +242,26 @@ eq('查一组也走同一处判据（步骤号 + 批号都要对上）',
   [batchGroupAt(chainGroups, first)?.total, batchGroupAt(chainGroups, third)?.batchId],
   [2, 'batch-D'])
 
-/* ── 6. 某一步能不能重发（决策 7） ───────────────────────────────── */
+/* ── 6. 失败恢复那一档：重跑任务（#147） ─────────────────────────── */
 
-eq('读取批那一档不铺「重发这一批」（合并之前的步骤仍是逐条重投）',
-  batchRedeliver(oneReadBatch[0]), null)
-eq('单条那档更不铺', batchRedeliver(batchGroups([singleStep])[0]), null)
-eq('没有组就什么都不铺', batchRedeliver(null), null)
-eq('发送批且这一批有失败：一次点击 = 一次请求，N 数的是消息',
-  batchRedeliver(sendBatch[0]), { count: 2, label: '重发这一批（2 条）' })
-eq('发送批全成时不铺（没什么可重发的）',
-  batchRedeliver(batchGroups([
-    step({ id: 1, messageId: 'm-1', step: 4, batchId: 'batch-C' }),
-    step({ id: 2, messageId: 'm-2', step: 4, batchId: 'batch-C' }),
-  ])[0]), null)
-eq('按批重发的接口路径指向**摘要行**那一条（一次点击 = 一次请求）',
-  redeliverBatchPath(77), '/history/batches/77/redeliver')
-eq('重发成功那一句带上条数与新运行',
-  [batchRedeliverDone(2, 31), batchRedeliverDone(2, null)],
-  ['已重发这一批（2 条），新运行 #31', '已重发这一批（2 条）'])
+eq('读取批那一档不铺「重跑任务」（合并之前的步骤仍是逐条断点重投）',
+  batchRerun(oneReadBatch[0], 7), null)
+eq('单条那档更不铺', batchRerun(batchGroups([singleStep])[0], 7), null)
+eq('没有组就什么都不铺', batchRerun(null, 7), null)
+eq('发送批且这一批有失败：铺「重跑任务」，要的是**任务标识**（不是哪一行）',
+  [batchRerun(outletGroup ?? null, 7)?.jobId, batchRerun(outletGroup ?? null, 7)?.label],
+  [7, RERUN_LABEL])
+eq('那颗按钮上的字就是「重跑任务」', RERUN_LABEL, '重跑任务')
+const confirm = batchRerun(outletGroup ?? null, 7)?.confirm ?? ''
+ok('确认文案说清「从未完成的那一批继续」', confirm.includes('未完成的那一批'), confirm)
+ok('确认文案点明目标端会再收到一次该批请求', confirm.includes('目标端会再收到一次该批请求'), confirm)
+ok('确认文案带上这一批的条数与失败数', confirm.includes('20 条消息') && confirm.includes('20 条失败'), confirm)
+eq('发送批全成时不铺（没什么可重跑的）',
+  batchRerun(mergeOk.find((g) => g.step === 4) ?? null, 7), null)
+eq('取不到任务标识时不铺（`MessageDetailPanel` 那条「拿不到 jobId 就别铺按钮」）',
+  [batchRerun(outletGroup ?? null, null), batchRerun(outletGroup ?? null, undefined)], [null, null])
+eq('按钮只长在含打包消息那一行的组头上：还原那一组不重复长一颗',
+  [batchRerun(acrossSteps[0], 7)?.label, batchRerun(acrossSteps[1], 7)], [RERUN_LABEL, null])
 
 /* ── 7. 归一与计数那两句 ─────────────────────────────────────────── */
 

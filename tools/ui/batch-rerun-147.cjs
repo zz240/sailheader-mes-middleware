@@ -1,34 +1,39 @@
 /*
- * #143 真机 UI 验收：「重发这一批（N 条）」在界面上真的可用（AC3 的界面那一半）。
+ * #147 真机 UI 验收：「重跑任务」在界面上真的可用，且组头不再多算一条。
  *
- * 票面那条 AC：目标端 500 时整批同因 FAILED、**界面上「重发这一批」可用、点一次只发一次请求**。
- * PowerShell 那一半（`tools/shadow-site/verify-scenario.ps1` 的 B6-BATCH-FAIL 段）验的是接口：
- * 摘要行 + 这一批每条都 FAILED（同因）、水位不推进、库里没写、`POST /history/batches/{id}/redeliver`
- * 只多发一次请求。**界面这一半只有真浏览器能验**：那颗按钮是不是真的铺出来了、点下去是不是真的只发
- * 一次、点完界面是不是刷新成了「已重发」。
+ * 票面那几条 AC 的**界面那一半**（接口那一半归 `tools/shadow-site/verify-scenario.ps1`）：
+ *   ① 失败批组头上的按钮文案是「重跑任务」、有**二次确认弹窗**（文案说明"从未完成的那一批继续"、
+ *      目标端会再收到一次该批请求），确认后调**任务执行接口** `POST /api/jobs/{id}/execute`
+ *      ——与任务列表上那颗「执行」同一个接口；
+ *   ② 历史页分组仍分得清「读取批 / 发送批」、组头「一次请求 N 条 · 失败 M 条」**不再多算那一条**
+ *      （#143 记的偏差：20 条码写成「一次请求 21 条」），界面上不再有「重发这一批」；
+ *   ③ 拆分链（A2 头行分表）新造出来的那一批仍是「读取批 · 一次请求 4 条 · 失败 0 条」；
+ *   ④ **失败恢复闭环**：重跑之后 `WRITE_UPSERT` 补跑成功（原先"出站成功、下游失败"丢下的写回补上）。
  *
- * 场景自己搭（不挑库里现成的失败批——那些任务的外部依赖在本地多半是坏的，而「点一次成功」这一侧
- * 恰恰需要一个**可控的目标端**）：
+ * 场景自己搭（与 #143 同一套，不挑库里现成的失败批——那些任务的外部依赖在本地多半是坏的，
+ * 而「重跑成功」这一侧恰恰需要一个**可控的目标端**）：
  *   ① 用 MES 替身（9100）的故障注入把标识注册打回 500；
  *   ② **克隆**造数脚本里那条批量链（`SH-B6-Register-Batch`，7 个动作：读 → 包装 → 合并 → 出站 →
  *      还原 → 映射 → 写回）：克隆出来的新任务 id 是新的，水位键 `job:<新id>` 因此是空的，
  *      不必去动 MySQL 里的水位（脚本不去碰库、也不起子进程）；
- *   ③ 跑一次 → 出站 500 → 整批 20 条 FAILED + 一条摘要行；
- *   ④ 在界面上：消息步检索 → 这一批的那个任务 → 点失败的那一行 → 步骤链上出站那一格的批徽标
- *      → 组头 + 「重发这一批（20 条）」→ 点它 → 替身只多收到 **一次** 请求 → 界面刷新成 REDELIVERED。
+ *   ③ 跑一次 → 出站 500 → 出站那一步「信封 1 行 + 20 条成员同行」整批同因 FAILED、
+ *      合并那一步（AGGREGATE）只有信封那一行（**批号在合并那一步转手**，所以信封是它那一批的第一步）；
+ *   ④ 在界面上：消息步检索 → 这一批的那个任务 → 点一条失败成员 → 步骤链上出站那一格的批徽标
+ *      → 组头「发送批 · 一次请求 **20** 条 · 失败 20 条」+ 21 颗 chip（20 条消息 + 打包那一颗）
+ *      → 点「重跑任务」→ 弹窗确认 → 替身只多收到**一次**该批请求 → 新运行 SUCCESS 且写回那一步补跑成功。
  *
- * 另加一段（同一张票 AC2 的界面那一半）：**A2 头行分表**也克隆出来跑一次，然后在历史页上看
+ * 另加一段（同一张票 AC 的界面那一半）：**A2 头行分表**也克隆出来跑一次，然后在历史页上看
  * 「父子谱系与批号」——子行的步骤链上看得见拆分那一格、子件那一格带批徽标、点开是
  * 「读取批 · 一次请求 4 条 · 失败 0 条」与那 4 个编号。
  *
  * 跑法（playwright 是本目录自带的，先 `npm i` 一次就行）：
- *   cd tools/ui && node batch-redeliver-143.cjs
+ *   cd tools/ui && node batch-rerun-147.cjs
  * 跑之前：前端 dev server（5173）、后端（8080）、MES 替身（9100，`node tools/shadow-site/mes-mock.cjs`）
  * 都要在，且造数脚本已经跑过（`SH-B6-Register-Batch` 存在——克隆它的动作）。跑完删掉克隆出来的任务。
  *
- * 与 `message-history-135.cjs` 的关系：那个脚本验的是**逐条重投**（`/history/steps/{id}/redeliver`，
- * 有弹窗、要二次确认）；这一支验的是**整批重发**（`/history/batches/{id}/redeliver`，**没有弹窗**，
- * 点一下直接发——按钮自己的 pending 就是防连点那一道）。
+ * 与 `message-history-135.cjs` 的关系：那个脚本验的是**逐条断点重投**（`/history/steps/{id}/redeliver`，
+ * 有弹窗、要二次确认）；这一支验的是**重跑任务**（`/jobs/{id}/execute`，也有二次确认，
+ * 但那一下说的是"整批重走、目标端会再收到一次"，不是"只重发请求"）。
  */
 const fs = require('fs')
 const path = require('path')
@@ -39,17 +44,16 @@ const API = 'http://127.0.0.1:8080/api'
 const MOCK = 'http://localhost:9100'
 /** 造数脚本里的那条批量链：克隆它的动作，克隆体拿到新的任务 id（= 空水位）。 */
 const SOURCE_JOB = 'SH-B6-Register-Batch'
-/** 出站那一步的序号（链上第 4 个动作）与这一批几条码。 */
+/** 链上各步的序号：合并（AGGREGATE）/ 出站（HTTP_CALL）/ 写回（WRITE_UPSERT，链上最后一个动作）。 */
+const AGGREGATE_STEP = 3
 const OUTLET_STEP = 4
+const WRITE_STEP = 7
+/** 这一批几条码（= 造数脚本那一条链读出来的行数）。 */
 const EXPECTED = 20
-/**
- * #143 真机发现（**不在本票改产品代码**，只钉住现状并写清偏差）：`history/batch.ts` 的 `messages`
- * 数的是「该批号下非摘要行的不同消息标识数」，而**合并打包出来那一条信封消息**也带着这一批的批号
- * （`RouteGenerator` 的 `edge.batchManifest` 那一条有自己的消息标识），于是它被算进了「一次请求 N 条」。
- * 现场是 20 条码、替身侧实测那一次请求也只装了 20 条，界面上写的却是 21 条
- * （组头还出现「一次请求 21 条 · 失败 20 条」这种自相矛盾）。修掉之后下面的断言会一起变红，逼着改口径。
- */
-const UI_COUNT = EXPECTED + 1
+/** 确认弹窗里必须出现的那两句（文案在 `frontend/src/history/batch.ts` 的 `rerunConfirmText`，一处写）。 */
+const CONFIRM_SAYS = ['未完成的那一批', '目标端会再收到一次该批请求']
+/** 已删除的那条路径在界面上一个字都不该剩（#147）。 */
+const GONE_TEXT = '重发这一批'
 const shots = path.join(__dirname, 'shots')
 const failures = []
 const log = []
@@ -61,9 +65,9 @@ function check(name, cond, detail = '') {
   if (!cond) failures.push(name)
 }
 
-/* ── 发出去的请求（「点一次只发一次」的证据就靠它） ───────────────────── */
+/* ── 发出去的请求（「点一次调一次执行接口」的证据就靠它） ─────────────── */
 
-const redeliverPosts = () => log.filter(r => r.method === 'POST' && /\/history\/batches\/\d+\/redeliver$/.test(r.url))
+const executePosts = () => log.filter(r => r.method === 'POST' && /\/jobs\/\d+\/execute$/.test(r.url))
 
 /* ── 替身侧：故障注入 + 收到几次注册请求 ─────────────────────────────── */
 
@@ -79,7 +83,7 @@ async function fault(mode, count) {
   return (await res.json()).fault
 }
 
-/** 替身收到过几次标识注册（这一票「一次点击 = 一次请求」的裁判）。 */
+/** 替身收到过几次标识注册（「重跑又发了一次」的裁判）。 */
 async function registrations() {
   const res = await fetch(`${MOCK}/__received?path=id-register&limit=2000`)
   const body = await res.json()
@@ -126,7 +130,7 @@ async function cloneJob(source, name, expectedActions) {
   return id
 }
 
-/* ── 浏览器侧的小工具（与 #129/#130/#131/#135/#136 同一套） ─────────── */
+/* ── 浏览器侧的小工具（与 #129/#130/#131/#135/#136/#143 同一套） ─────── */
 
 async function settle(page, ms = 4000) {
   const start = log.length
@@ -173,7 +177,7 @@ async function main() {
     check(`造数脚本里那条批量链在（${SOURCE_JOB}）`, false, '先跑 seed-scenario.ps1')
     return
   }
-  jobId = await cloneJob(source, `__ui143-batch-redeliver-${Date.now()}`, 7)
+  jobId = await cloneJob(source, `__ui147-rerun-${Date.now()}`, 7)
   if (!jobId) {
     check('克隆那条批量链（7 个动作：读 → 包装 → 合并 → 出站 → 还原 → 映射 → 写回）', false,
       `${SOURCE_JOB} 的动作读不回来或个数不对`)
@@ -187,15 +191,17 @@ async function main() {
   await api('POST', `/jobs/${jobId}/execute`, {}).catch(() => { /* 整批失败：接口可能回 500 */ })
   const run = listOf(await api('GET', `/history/runs?jobId=${jobId}&page=1&size=1`))[0]
   const runSteps = run ? listOf(await api('GET', `/history/runs/${run.id}/steps?page=1&size=1000`)) : []
-  const summary = runSteps.find(s => (s.messageId || '').startsWith('batch:'))
+  // 信封消息 = 合并那一步（AGGREGATE）的那一条：它的消息标识在出站那一步也有一行，
+  // 所以判「成员」要把这一步的消息标识排除掉（场景侧的事实，不是把分组判据抄一遍）
+  const envelopeIds = new Set(runSteps.filter(s => s.step === AGGREGATE_STEP).map(s => s.messageId))
   const failedMembers = runSteps.filter(s => s.step === OUTLET_STEP && s.status === 'FAILED'
-    && !(s.messageId || '').startsWith('batch:'))
-  check('场景就绪：这一次运行 FAILED、出站那一步有摘要行 + 20 条同因 FAILED',
-    !!run && run.status === 'FAILED' && !!summary && failedMembers.length === EXPECTED,
-    `run=${run && run.status} summary=${!!summary} failedMembers=${failedMembers.length}`)
-  if (!run || !summary || failedMembers.length !== EXPECTED) return
+    && !envelopeIds.has(s.messageId))
+  check('场景就绪：这一次运行 FAILED、出站那一步是「信封 1 行 + 20 条成员同行」（同因）',
+    !!run && run.status === 'FAILED' && envelopeIds.size === 1 && failedMembers.length === EXPECTED,
+    `run=${run && run.status} envelope=${envelopeIds.size} failedMembers=${failedMembers.length}`)
+  if (!run || failedMembers.length !== EXPECTED) return
   const member = failedMembers[0]
-  console.log(`run ${run.id} · 摘要行 id=${summary.id} · 失败成员 ${failedMembers.length} 条（如 ${member.businessKey}）`)
+  console.log(`run ${run.id} · 信封 ${[...envelopeIds][0]} · 失败成员 ${failedMembers.length} 条（如 ${member.businessKey}）`)
 
   // ── ② 浏览器：走到那一批的组头 ──
   browser = await chromium.launch()
@@ -208,12 +214,12 @@ async function main() {
   await waitForList(page)
   fs.mkdirSync(shots, { recursive: true })
 
-  // 消息步检索 + 全部状态 + 只看我们这个任务：摘要行与失败成员都在同一屏上
+  // 消息步检索 + 全部状态 + 只看我们这个任务
   await ensureStepsMode(page)
   await pickOption(page, '.hc-filter-status', '全部状态')
   await pickOption(page, '.hc-filter-job', new RegExp(`^#${jobId} `))
 
-  // 点一条**失败成员**那一行（不是摘要行：成员的消息链上才有完整的 1..4 步）
+  // 点一条**失败成员**那一行（不是信封那一条：成员的消息链上才有完整的 1..4 步）
   const memberRow = page.locator('.hc-ritem')
     .filter({ hasText: `#${run.id} · 步骤 ${OUTLET_STEP}` })
     .filter({ hasText: member.businessKey }).first()
@@ -233,74 +239,70 @@ async function main() {
   const group = page.locator(`.hc-batch[data-batch-step="${OUTLET_STEP}"]`)
   await group.waitFor({ timeout: 10000 })
   const headText = (await group.locator('.hc-bt').innerText()).replace(/\s+/g, ' ')
-  check('组头写清这是发送批（#143 发现：条数写成 21，比这一批 20 条码多算了打包那一条信封）',
-    headText === `发送批 · 一次请求 ${UI_COUNT} 条 · 失败 ${EXPECTED} 条`, headText)
+  check('组头写清这是发送批，且**不再多算一条**（#143 那处偏差：原来是「一次请求 21 条 · 失败 20 条」）',
+    headText === `发送批 · 一次请求 ${EXPECTED} 条 · 失败 ${EXPECTED} 条`, headText)
   const chips = await group.locator('.hc-mchip').count()
-  check('这一组 21 颗 chip（20 条消息 + 摘要行那条「批次」）', chips === EXPECTED + 1, String(chips))
-  check('摘要行那颗 chip 写着「批次」',
-    (await group.locator('.hc-mchip-summary').innerText()).includes('批次'),
-    await group.locator('.hc-mchip-summary').innerText())
+  check('这一组 21 颗 chip（20 条消息 + 打包那一颗）', chips === EXPECTED + 1, String(chips))
+  const packed = group.locator('.hc-mchip-packed')
+  const packedCount = await packed.count()
+  check('打包消息那颗 chip 一眼认得出来（虚线 + 「打包报文」标）',
+    packedCount === 1 && (await packed.innerText()).includes('打包报文'),
+    `${packedCount} / ${packedCount ? await packed.innerText() : ''}`)
+  check('界面上不再有「重发这一批」那颗按钮', await group.locator('.hc-bredeliver').count() === 0,
+    String(await group.locator('.hc-bredeliver').count()))
 
-  const button = group.locator('.hc-bredeliver')
-  check('组头铺了「重发这一批（20 条）」', await button.count() === 1, String(await button.count()))
-  check('按钮上的字数的是**消息**条数（#143 发现：写成 21，多算了打包那一条）',
-    (await button.innerText()).trim() === `重发这一批（${UI_COUNT} 条）`, await button.innerText())
+  const button = group.locator('.hc-brerun')
+  check('组头铺了「重跑任务」', await button.count() === 1, String(await button.count()))
+  check('按钮上就是「重跑任务」四个字', (await button.innerText()).trim() === '重跑任务', await button.innerText())
   check('按钮可点（不是置灰摆样子）', !(await button.isDisabled()), String(await button.isDisabled()))
-  check('按钮的无障碍标签把「一次点击发一次请求，整批同成同败」说清',
-    (await button.getAttribute('aria-label') || '').includes('一次点击发一次请求'), await button.getAttribute('aria-label'))
-  await page.screenshot({ path: path.join(shots, '143-batch-entry.png') })
+  check('按钮的无障碍标签说清「整批重走、目标端会再收到一次」',
+    (await button.getAttribute('aria-label') || '').includes('目标端会再收到一次'), await button.getAttribute('aria-label'))
+  await page.screenshot({ path: path.join(shots, '147-rerun-entry.png') })
 
-  const groupMembers = await Promise.all(failedMembers.slice(0, 3).map(m => m.businessKey))
-  check('组里那几条失败成员在界面上也写着 FAILED（逐条可归因）',
-    (await group.innerText()).includes('FAILED') && groupMembers.every(k => k && k.length > 0),
-    groupMembers.join(','))
-
-  // ── ③ 修好目标端，点按钮：一次点击 = 一次请求 ──
+  // ── ③ 修好目标端，点按钮：先二次确认，再调任务执行接口 ──
   await fault(null)
   const before = await registrations()
   await button.click()
-  await page.locator('.el-message').filter({ hasText: '已重发这一批' }).first().waitFor({ timeout: 30000 })
+  const box = page.locator('.el-message-box')
+  await box.waitFor({ timeout: 10000 })
+  const boxText = (await box.innerText()).replace(/\s+/g, ' ')
+  check('点一下就出来**二次确认弹窗**（不是点一下就发）', await box.isVisible(), boxText.slice(0, 120))
+  check('确认文案说明会从「未完成的那一批」继续', boxText.includes(CONFIRM_SAYS[0]), boxText)
+  check('确认文案点明目标端会再收到一次该批请求', boxText.includes(CONFIRM_SAYS[1]), boxText)
+  await page.screenshot({ path: path.join(shots, '147-rerun-confirm.png') })
+  await box.locator('.el-message-box__btns .el-button--primary').click()
+  await page.locator('.el-message').filter({ hasText: '重跑完成' }).first().waitFor({ timeout: 60000 })
   const toast = (await page.locator('.el-message').first().innerText()).replace(/\s+/g, ' ')
-  check('成功后给出「已重发这一批（N 条）…新运行 #id」那句',
-    toast.includes(`已重发这一批（${UI_COUNT} 条）`) && toast.includes('新运行'), toast)
+  check('成功后给出「重跑完成：<状态>」那句', toast.includes('重跑完成'), toast)
+  check('这一次点击调的是**任务执行接口**（`POST /jobs/{id}/execute`，与任务列表那颗同一个）',
+    executePosts().some(r => r.url.endsWith(`/jobs/${jobId}/execute`)), JSON.stringify(executePosts().map(r => r.url)))
+  check('这一次点击只调了一次（按钮 pending 挡住连点）', executePosts().length === 1, String(executePosts().length))
   const after = await registrations()
-  check('一次点击只多收到一次注册请求（替身侧的真数，不看界面画的字）',
-    after - before === 1, `${before} -> ${after}`)
-  check('这一次点击只发了一个重发请求（页面侧）', redeliverPosts().length === 1,
-    String(redeliverPosts().length))
+  check('重跑把这一批又发了一次（替身侧的真数 +1，不看界面画的字）', after - before === 1, `${before} -> ${after}`)
 
-  // ── ④ 界面刷新成「已重发」：旧那一批标 REDELIVERED ──
-  await page.waitForTimeout(800)
-  const refreshed = await page.locator('.hc-dbody').innerText().catch(() => '')
-  check('点完界面刷新成 REDELIVERED（旧那一批不再是 FAILED）', refreshed.includes('REDELIVERED'), refreshed.replace(/\s+/g, ' ').slice(0, 200))
-  const afterApi = await api('GET', `/history/steps/${summary.id}`)
-  check('接口里摘要行也确实是 REDELIVERED', afterApi.status === 'REDELIVERED', String(afterApi.status))
+  // ── ④ 闭环：新运行 SUCCESS、写回那一步补跑成功、原运行仍是那次 FAILED ──
+  await page.waitForTimeout(1500)
   const newRun = listOf(await api('GET', `/history/runs?jobId=${jobId}&page=1&size=1`))[0]
-  check('重发产生了一条新的 SUCCESS 运行（原运行仍是那次 FAILED）',
-    newRun.id > run.id && newRun.status === 'SUCCESS', `${newRun.id} ${newRun.status}`)
+  check('重跑产生了一条新的 SUCCESS 运行', !!newRun && newRun.id > run.id && newRun.status === 'SUCCESS',
+    `${newRun && newRun.id} ${newRun && newRun.status}`)
+  const newSteps = newRun ? listOf(await api('GET', `/history/runs/${newRun.id}/steps?page=1&size=1000`)) : []
+  const writeRows = newSteps.filter(s => s.step === WRITE_STEP)
+  check('重跑之后 WRITE_UPSERT（步骤 7）补跑成功：这一批 20 条都写了（原先丢下的写回因此补上）',
+    writeRows.length === EXPECTED && writeRows.every(s => s.status === 'SUCCESS'),
+    `rows=${writeRows.length} 其中非 SUCCESS=${writeRows.filter(s => s.status !== 'SUCCESS').length}`)
   const originalRun = await api('GET', `/history/runs/${run.id}`)
-  check('原运行的状态没被改写（REDELIVERED 记在消息步上，不记在运行上）',
-    originalRun.status === 'FAILED', originalRun.status)
-  // 刷新之后那一组可能收起来了：要判「按钮不再铺」得先把它重新点开，否则是空判
-  if (!(await group.isVisible().catch(() => false))) {
-    const again = page.locator('.hc-cnode').filter({ hasText: 'push-register-batch' }).first().locator('.hc-bbadge')
-    if (await again.count() === 1) { await again.click(); await page.waitForTimeout(500) }
-  }
-  const groupAgain = await group.innerText().catch(() => '')
-  check('重开后这一组里写着 REDELIVERED（那一批真的变成「已重发」了）',
-    groupAgain.includes('REDELIVERED'), groupAgain.replace(/\s+/g, ' ').slice(0, 200))
-  check('点过一次之后按钮不再铺（这一批已经不是「有失败的那一批」）',
-    await group.locator('.hc-bredeliver').count() === 0,
-    String(await group.locator('.hc-bredeliver').count()))
-  await page.screenshot({ path: path.join(shots, '143-batch-redelivered.png') })
+  check('原运行的状态没被改写（重跑是新的一条运行）', originalRun.status === 'FAILED', originalRun.status)
+  const pageText = await page.content()
+  check('整页上都不再有「重发这一批」', !pageText.includes(GONE_TEXT))
+  await page.screenshot({ path: path.join(shots, '147-rerun-done.png') })
 
-  // ── ⑤ A2 头行分表（AC2）：父子谱系与批号在**历史页**看得见 ──
+  // ── ⑤ A2 头行分表：拆分链新造出来的那一批仍是「读取批」 ──
   const hlName = 'SH-A2-Bom-Head-Lines'
   const hlSource = listOf(await api('GET', `/jobs?name=${hlName}`)).filter(j => j.name === hlName)[0]
   if (!hlSource) {
     check(`造数脚本里那条头行分表链在（${hlName}）`, false, '先跑 seed-scenario.ps1')
   } else {
-    const hlJob = await cloneJob(hlSource, `__ui143-a2-head-lines-${Date.now()}`, 7)
+    const hlJob = await cloneJob(hlSource, `__ui147-a2-head-lines-${Date.now()}`, 7)
     if (!hlJob) {
       check('克隆那条头行分表链（7 个动作）', false, `${hlName} 的动作读不回来或个数不对`)
     } else {
@@ -337,8 +339,11 @@ async function main() {
         const kidGroup = page.locator('.hc-batch[data-batch-step="6"]')
         await kidGroup.waitFor({ timeout: 10000 })
         const kidHead = (await kidGroup.locator('.hc-bt').innerText()).replace(/\s+/g, ' ')
-        check('组头写清这是读取批、这一批 4 条子件、失败 0 条',
+        check('拆分链仍是**读取批**：这一批 4 条子件、失败 0 条（拆分新造的批号里没有基数变化步，也没有打包消息）',
           kidHead === '读取批 · 一次请求 4 条 · 失败 0 条', kidHead)
+        check('拆分链那一组里既没有打包消息颗、也没有「重跑任务」',
+          await kidGroup.locator('.hc-mchip-packed').count() === 0
+          && await kidGroup.locator('.hc-brerun').count() === 0)
         const kidText = (await kidGroup.innerText()).replace(/\s+/g, ' ')
         check('这一组里就是那 4 个子件（编号与源库子件逐一对应）',
           ['IT-SH-001', 'IT-SH-002', 'IT-SH-003', 'IT-SH-005'].every(k => kidText.includes(k)),
@@ -356,11 +361,11 @@ async function main() {
         await waitForDetail(page)
         await page.locator('[data-od-id="snapshot-panel"] .hc-sbtn').filter({ hasText: '原始文本' }).first().click()
         await page.waitForTimeout(600)
-        const rawSnap = (await page.locator('[data-od-id="snapshot-panel"]').innerText()).replace(/\s+/g, ' ')
+        const rawSnap = await page.locator('[data-od-id="snapshot-panel"]').innerText().catch(() => '')
         check('拆分那一格的数据快照就是那 4 条子件（谱系在快照原文里看得见）',
           ['IT-SH-001', 'IT-SH-002', 'IT-SH-003', 'IT-SH-005'].every(k => rawSnap.includes(k)),
-          rawSnap.slice(0, 200))
-        await page.screenshot({ path: path.join(shots, '143-a2-head-lines.png') })
+          rawSnap.replace(/\s+/g, ' ').slice(0, 200))
+        await page.screenshot({ path: path.join(shots, '147-a2-head-lines.png') })
       }
     }
   }
