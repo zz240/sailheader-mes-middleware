@@ -4,7 +4,7 @@
 
 ## 当前设计（现状）
 
-- **任务串行（[#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，已落地）**：同一个任务同一时刻最多一个运行。已有运行时，后续触发（手动执行 / 外部 API Key 触发 / 定时调度 / 断点重投与整批重发）一律**跳过**并明确告知——四个 HTTP 入口返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」，前端按提示展示），调度触发只记日志、不产生运行行。判据是**进程内的运行中集合**（`service/JobRunGuard.java`，`tryAcquire`/`release`），**不查** `job_run` 里有没有 `RUNNING` 行——进程被强杀时那一行会永远停留。间隔档排期改用 `scheduleWithFixedDelay`（上一次结束后再等间隔）。**已知限制**：互斥只在单进程内有效，多实例部署需改为数据库锁（另开票）。
+- **任务串行（[#146](https://github.com/zz240/sailheader-mes-middleware/issues/146)，已落地）**：同一个任务同一时刻最多一个运行。已有运行时，后续触发（手动执行 / 外部 API Key 触发 / 定时调度 / 断点重投与重跑任务）一律**跳过**并明确告知——四个 HTTP 入口返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」，前端按提示展示），调度触发只记日志、不产生运行行。判据是**进程内的运行中集合**（`service/JobRunGuard.java`，`tryAcquire`/`release`），**不查** `job_run` 里有没有 `RUNNING` 行——进程被强杀时那一行会永远停留。间隔档排期改用 `scheduleWithFixedDelay`（上一次结束后再等间隔）。**已知限制**：互斥只在单进程内有效，多实例部署需改为数据库锁（另开票）。
 - **失败即停（ADR-0003）**：`ErrorHandling.configure`（`service/ErrorHandling.java:26`）对全链 `onException(Exception.class)`；`maximumRedeliveries = job.retryCount`、`redeliveryDelay = job.backoffMs`；最终失败记一条 `FAILED` 消息步并把运行标为 `FAILED`。
   - **总尝试次数（#109）**：`attempt` = 该步的总投递次数，由 `onExceptionOccurred` 自计数（exchange property `edge.failedAttempts`，与所属动作序号 `edge.failedAttemptsStep` 成对读写，读的时候对上号才用——否则前一步骤的重试会漏给后面的步骤）：失败步 = 该步失败次数（末次失败也走异常回调），成功步 = 该步失败次数 + 1。`retryCount=2` 必失败 → 3；`retryCount=0` → 1；重试一次后成功 → 2；前一步骤重试过后再有一次成功的步骤仍是 1。
 - **handled 策略**：MQ 消费主路由 `handled=true`（失败后消费侧不重投队列）；重放/轮询/断点路由 `handled=false`（异常抛回调用方）。

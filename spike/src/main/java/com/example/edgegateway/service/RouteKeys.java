@@ -65,8 +65,8 @@ final class RouteKeys {
     static final String BATCH_EXPECTED = "edge.batchExpected";
     /**
      * 合并动作攒到的那批**成员清单**（#142）：每条只有身份与它自己那一片。
-     * 名字的唯一定义在 {@link MessageHistoryService#BATCH_MANIFEST}——还原、出站失败时的补记、
-     * 以及打包重发那条路由都要用它。**不进报文、不进快照**（绝不能污染发给终端的 JSON）。
+     * 名字的唯一定义在 {@link MessageHistoryService#BATCH_MANIFEST}——还原与出站失败时的补记
+     * 都要用它。**不进报文、不进快照**（绝不能污染发给终端的 JSON）。
      */
     static final String BATCH_MANIFEST = MessageHistoryService.BATCH_MANIFEST;
     /**
@@ -74,11 +74,4 @@ final class RouteKeys {
      * 空批不能往下走——不然每个「没有新数据」的运行都会朝目标端发一份空报文。
      */
     static final String BATCH_EMPTY = "edge.batchEmpty";
-    /**
-     * 这一批的失败**只逐条记**、别记「整批」那一行（#142）：还原那一步失败时置上它。
-     *
-     * <p>摘要行归**出站**那一步（决策 6 的修订）：还原失败时若也记一条 `batch:<批号>` 的行，
-     * 右详情会在这两步各长一个「重发这一批」按钮，而重发只该长在出站那一步（决策 7）。</p>
-     */
-    static final String BATCH_NO_SUMMARY = "edge.batchNoSummary";
 }

@@ -37,7 +37,7 @@ import java.util.Map;
  *   <li>{@link StepLedger}——消息步 / 运行簿记；{@link ActionFragment}——「一种动作一段片段」；</li>
  *   <li>{@link SplitFragment} / {@link AggregateFragment} / {@link RestoreFragment}——基数变化三段；</li>
  *   <li>{@link ReadWriteFragments}——读库分批 / 幂等写 / 响应捕获；</li>
- *   <li>{@link BatchResendRoute}——打包重发路由；{@link ErrorHandling}——全链失败面；</li>
+ *   <li>{@link ErrorHandling}——全链失败面；</li>
  *   <li>{@link RouteKeys}——三边共用的 {@code edge.*} 运行期属性名。</li>
  * </ul>
  * <p>这里的层数记账（{@code openScopes}）是**装配**的事：每开一层就要由内到外 {@code end()} 一次，
@@ -55,7 +55,6 @@ public class RouteGenerator {
     private final JobRunGuard runGuard;
 
     private final StepLedger ledger;
-    private BatchResendRoute batchResendRoute;
     private SplitFragment splitFragment;
     private AggregateFragment aggregateFragment;
     private RestoreFragment restoreFragment;
@@ -78,7 +77,6 @@ public class RouteGenerator {
             ReadSqlBatcher readSqlBatcher,
             StepLedger ledger,
             JobRunGuard runGuard,
-            BatchResendRoute batchResendRoute,
             SplitFragment splitFragment,
             AggregateFragment aggregateFragment,
             RestoreFragment restoreFragment,
@@ -91,7 +89,6 @@ public class RouteGenerator {
         this.readSqlBatcher = readSqlBatcher;
         this.ledger = ledger;
         this.runGuard = runGuard;
-        this.batchResendRoute = batchResendRoute;
         this.splitFragment = splitFragment;
         this.aggregateFragment = aggregateFragment;
         this.restoreFragment = restoreFragment;
@@ -118,7 +115,6 @@ public class RouteGenerator {
                 null,
                 null,
                 null,
-                null,
                 null);
     }
 
@@ -140,19 +136,6 @@ public class RouteGenerator {
             builders.add(buildPollingEntry(job, sorted));
         }
         builders.add(buildResumeRoute(job, sorted));
-        // 合并动作要配**打包重发**路由（#142 / ADR-0017 决策 7）：摘要行落在**出站**那一步，
-        // 所以链上每个出站动作各一条——出口（数据源 / 路径 / 方法 / exchange）都是构建期解析的，归路由。
-        // 没有合并动作的链不建这些（那种链上不存在「一整批」，重发按逐条重投走）。
-        if (sorted.stream().anyMatch(action -> action.getType() == ActionKind.AGGREGATE)) {
-            for (Action action : sorted) {
-                if (action.getType() == ActionKind.HTTP_CALL || action.getType() == ActionKind.MQ_PUBLISH) {
-                    // 配对配置在**还原**那一档上（出口自己不配对），所以这里把指向这个出口的那条还原找出来
-                    OneToManyConfig restore = BatchResendRoute.restoreAfter(sorted, action.getActionIndex());
-                    builders.add(batchResendRoute.build(job, action,
-                            ActionConfig.from(action.getType(), action.getAddition()), restore, dataSourceMapper));
-                }
-            }
-        }
         return builders;
     }
 
@@ -167,7 +150,6 @@ public class RouteGenerator {
         readWriteFragments = new ReadWriteFragments(ledger, dataSourceManager, readSqlBatcher,
                 watermarkStore, messageHistory);
         actionFragment = new ActionFragment(ledger, aggregateFragment, readWriteFragments, dataSourceMapper);
-        batchResendRoute = new BatchResendRoute(ledger, restoreFragment, readWriteFragments);
     }
 
     /**

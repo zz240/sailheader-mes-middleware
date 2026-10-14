@@ -111,8 +111,6 @@ class ActionFragment {
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
-                            // 合并打出来的整批载体：这一步的那一行是**摘要行**（#142）
-                            aggregateFragment.markBatchCarrier(ex);
                             // 出站前先把 context[0] 落在**请求体**上：StepLedger.context 是懒建的（拿当时的
                             // body 当任务输入），等出站后再建就把响应当成了任务输入。链上已有 context 时这里是空操作（#123）
                             StepLedger.context(ex);
@@ -147,8 +145,6 @@ class ActionFragment {
                             ex.setProperty(MessageHistoryService.ACTION_INDEX, index);
                             ex.setProperty(MessageHistoryService.ACTION_NAME, action.getName());
                             ex.setProperty(MessageHistoryService.STEP_INPUT, ex.getMessage().getBody());
-                            // 合并打出来的整批载体：这一步的那一行是**摘要行**（#142）
-                            aggregateFragment.markBatchCarrier(ex);
                             // bodySourceStep 必填（MqPublishConfig.validate）：显式声明发布哪一步的输出
                             Map<Integer, Object> context = StepLedger.context(ex);
                             Integer step = publish.bodySourceStep();

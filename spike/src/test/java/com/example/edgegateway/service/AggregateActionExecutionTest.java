@@ -55,9 +55,11 @@ import static org.mockito.Mockito.when;
  * 票面那几条打在这儿：</p>
  * <ul>
  *   <li><b>只发一次</b>：整批打成一条报文，出站动作因此只发一次，请求体是整批；</li>
- *   <li><b>摘要行落在出站那一步</b>：`message_id = batch:<批号>`，整份请求与整份响应只在它身上；</li>
+ *   <li><b>只按消息粒度记行</b>（#147 删掉了摘要行）：出站那一步记的是合并打出来那条**信封消息自己**的
+ *       标识，整份请求与整份响应都在它身上；整条链上不再有 `message_id LIKE 'batch:%'` 的行；</li>
  *   <li><b>还原沿用原身份</b>：回到原来那几条消息（消息标识不变）、不换批号，每条只存自己那一片；</li>
- *   <li><b>同成同败</b>：出站 5xx → 摘要行 + 每条各一行 FAILED；响应缺一条 → 还原那一步每条 FAILED；</li>
+ *   <li><b>同成同败</b>：出站 5xx → 信封消息那一行 + 每条各一行 FAILED；响应缺一条 → 还原那一步
+ *       每条 FAILED（外加信封消息那一行——失败行一律按消息粒度记）；</li>
  *   <li><b>多目标</b>：两个出站动作 = 同一批各发一次；<b>空批</b>：读不到新数据时一次请求都不发。</li>
  * </ul>
  */
@@ -190,21 +192,21 @@ class AggregateActionExecutionTest {
         assertThat(run.getStatus()).isEqualTo("SUCCESS");
         assertThat(watermarkPuts).as("一批跑完推一次水位").containsExactly(3L);
 
-        // 合并那一步：一行，输入是整批、输出是打包报文（不是摘要行——摘要行在出站那一步）
+        // 合并那一步：一行，输入是整批、输出是打包报文
         List<MessageStep> atPack = stepsAt(run.getId(), 2);
         assertThat(atPack).as("合并只记一行（整批 → 打包报文）").hasSize(1);
         assertThat(atPack.getFirst().getDataSnapshot()).isEqualTo(lastRequest.get());
-        assertThat(atPack.getFirst().getMessageId()).as("打包出来那一条有自己的消息标识，不是 batch: 摘要行")
-                .doesNotStartWith(MessageHistoryService.SUMMARY_MESSAGE_PREFIX);
+        MessageStep envelope = atPack.getFirst();
 
-        // 出站那一步：唯一的一条摘要行——整份请求与整份响应都在它身上
+        // 出站那一步：那一条**信封消息自己**的行——整份请求与整份响应都在它身上（#147 起不再改写成摘要行）
         List<MessageStep> atOutlet = stepsAt(run.getId(), 3);
-        assertThat(atOutlet).as("出站只记那一行整批载体").hasSize(1);
-        MessageStep summary = atOutlet.getFirst();
-        assertThat(summary.getMessageId()).startsWith(MessageHistoryService.SUMMARY_MESSAGE_PREFIX);
-        assertThat(summary.getInputSnapshot()).as("摘要行承载整份请求").isEqualTo(lastRequest.get());
-        assertThat(summary.getDataSnapshot()).as("摘要行承载整份响应").isEqualTo(httpResponse.get());
-        assertThat(summary.getBatchSeq()).isNull();
+        assertThat(atOutlet).as("出站只记那一条整批载体").hasSize(1);
+        MessageStep outletRow = atOutlet.getFirst();
+        assertThat(outletRow.getMessageId()).as("记的是信封消息自己的标识").isEqualTo(envelope.getMessageId());
+        assertThat(outletRow.getMessageId()).as("#147：不再有 batch: 摘要行").doesNotStartWith("batch:");
+        assertThat(outletRow.getInputSnapshot()).as("出站那一行承载整份请求").isEqualTo(lastRequest.get());
+        assertThat(outletRow.getDataSnapshot()).as("出站那一行承载整份响应").isEqualTo(httpResponse.get());
+        assertThat(outletRow.getBatchSeq()).isNull();
 
         // 还原那一步：回到**原来那几条**消息，每条只存自己那一片
         List<MessageStep> fanned = stepsAt(run.getId(), 4);
@@ -215,10 +217,13 @@ class AggregateActionExecutionTest {
                         stepsAt(run.getId(), 1).stream().map(MessageStep::getMessageId).toList());
         assertThat(fanned).allSatisfy(step -> {
             assertThat(step.getStatus()).isEqualTo("SUCCESS");
-            assertThat(step.getBatchId()).as("不换批号：与摘要行同号").isEqualTo(summary.getBatchId());
+            assertThat(step.getBatchId()).as("不换批号：与出站那一行同号").isEqualTo(outletRow.getBatchId());
             assertThat(step.getDataSnapshot()).as("只存自己那一片").contains(step.getBusinessKey());
         });
         assertThat(fanned).extracting(MessageStep::getBatchSeq).containsExactlyInAnyOrder(1, 2, 3);
+
+        assertThat(steps.values()).as("#147：整条链上不再有 batch: 前缀的行").allSatisfy(step ->
+                assertThat(step.getMessageId()).doesNotStartWith("batch:"));
 
         assertThat(customerJdbc.queryForList("select order_no from po_receipt order by order_no", String.class))
                 .as("紧随其后的写库动作逐行落库").containsExactly("PO-1", "PO-2", "PO-3");
@@ -227,7 +232,7 @@ class AggregateActionExecutionTest {
     }
 
     /**
-     * 整合批 5xx（票面 AC）：**出站**那一步失败 → 摘要行 + 这一批**每条各一行** FAILED（同因），
+     * 整合批 5xx（票面 AC）：**出站**那一步失败 → 信封消息那一行 + 这一批**每条各一行** FAILED（同因），
      * 不留「看着成功其实没发出去」的行；水位不推进、一行都不写库。
      */
     @Test
@@ -253,13 +258,18 @@ class AggregateActionExecutionTest {
                 .as("整批没发出去，一行都不该写").isZero();
 
         List<MessageStep> atOutlet = stepsAt(run.getId(), 3);
-        assertThat(atOutlet).as("摘要行 + 这一批每条各一行，全部 FAILED").hasSize(4);
+        assertThat(atOutlet).as("信封消息那一行 + 这一批每条各一行，全部 FAILED").hasSize(4);
         assertThat(atOutlet).allSatisfy(step -> {
             assertThat(step.getStatus()).isEqualTo("FAILED");
             assertThat(step.getError()).as("同因").isNotBlank();
         });
-        assertThat(atOutlet).filteredOn(step -> !step.getMessageId().startsWith("batch:"))
-                .allSatisfy(step -> assertThat(step.getInputSnapshot()).as("每条带自己那一片输入").isNotBlank());
+        String envelopeId = stepsAt(run.getId(), 2).getFirst().getMessageId();
+        assertThat(atOutlet).filteredOn(step -> step.getMessageId().equals(envelopeId))
+                .as("信封消息那一行带的是整份请求").singleElement()
+                .satisfies(step -> assertThat(step.getInputSnapshot()).isEqualTo(lastRequest.get()));
+        assertThat(atOutlet).filteredOn(step -> !step.getMessageId().equals(envelopeId))
+                .as("这一批每条带自己那一片输入").hasSize(3)
+                .allSatisfy(step -> assertThat(step.getInputSnapshot()).isNotBlank());
     }
 
     /**
@@ -281,10 +291,14 @@ class AggregateActionExecutionTest {
         JobRun run = onlyRun();
         assertThat(stepsAt(run.getId(), 3)).as("出站那一步是成功的（请求发了、响应也回来了）")
                 .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("SUCCESS"));
+        String envelopeId = stepsAt(run.getId(), 2).getFirst().getMessageId();
         List<MessageStep> fanned = stepsAt(run.getId(), 4);
-        assertThat(fanned).as("还原给这一批每条各记一行 FAILED").hasSize(3);
+        assertThat(fanned).as("还原给这一批每条各一行 + 信封消息自己那一行（#147：失败行一律按消息粒度记）")
+                .hasSize(4);
         assertThat(fanned).allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("FAILED"));
         assertThat(fanned).anySatisfy(step -> assertThat(step.getError()).contains("PO-2"));
+        assertThat(fanned).filteredOn(step -> step.getMessageId().equals(envelopeId))
+                .as("多出来的那一行是信封消息自己的（#147 之前被「只逐条记」的标志抑制）").hasSize(1);
     }
 
     /**
@@ -371,10 +385,11 @@ class AggregateActionExecutionTest {
 
             JobRun run = onlyRun();
             assertThat(run.getStatus()).isEqualTo("SUCCESS");
-            assertThat(stepsAt(run.getId(), 3)).as("第一个出口：那一行摘要").hasSize(1);
-            assertThat(stepsAt(run.getId(), 4)).as("第二个出口：那一行摘要").hasSize(1);
+            String envelopeId = stepsAt(run.getId(), 2).getFirst().getMessageId();
+            assertThat(stepsAt(run.getId(), 3)).as("第一个出口：信封消息那一行").hasSize(1);
+            assertThat(stepsAt(run.getId(), 4)).as("第二个出口：信封消息那一行").hasSize(1);
             assertThat(stepsAt(run.getId(), 4).getFirst().getMessageId())
-                    .startsWith(MessageHistoryService.SUMMARY_MESSAGE_PREFIX);
+                    .as("#147：记的是信封消息自己的标识，不是 batch: 摘要行").isEqualTo(envelopeId);
             assertThat(stepsAt(run.getId(), 5)).as("还原（按第二个出口的响应）：3 条").hasSize(3);
         } finally {
             second.stop(0);
@@ -428,7 +443,7 @@ class AggregateActionExecutionTest {
         assertThat(httpCalls.get()).as("只有一条也照样发出去").isEqualTo(1);
         assertThat(lastRequest.get()).isEqualTo("{\"items\":[{\"code\":\"PO-9\",\"order_no\":\"PO-9\"}]}");
         JobRun run = onlyRun();
-        assertThat(stepsAt(run.getId(), 3)).as("出站：那一行摘要").hasSize(1);
+        assertThat(stepsAt(run.getId(), 3)).as("出站：信封消息那一行").hasSize(1);
         assertThat(stepsAt(run.getId(), 4)).as("还原：那一条消息").hasSize(1);
         assertThat(customerJdbc.queryForObject("select handle from po_receipt where order_no = 'PO-9'", String.class))
                 .isEqualTo("H9");
