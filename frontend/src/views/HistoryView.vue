@@ -63,7 +63,7 @@
         @retry-step-row="retryStepRow"
         @retry-prev-row="retryPrevStepRow"
         @redeliver="openRedeliver"
-        @rerun-job="onRerunBatch"
+        @rerun-job="onRerunJob"
       />
     </main>
 
@@ -102,6 +102,7 @@ import HistoryListPanel from '../components/history/HistoryListPanel.vue'
 import MessageDetailPanel from '../components/history/MessageDetailPanel.vue'
 import RedeliverDialog from '../components/history/RedeliverDialog.vue'
 import { api, ApiError } from '../api/client'
+import { executeJob } from '../jobs/execute'
 import {
   DEFAULT_MODE, emptyFilters, isStepSelected, listQuery, noSelection, runDetail, runStepsPages,
   runStepsPath, selectRun, selectStep, statusParam, summaryQuery,
@@ -113,7 +114,7 @@ import {
 } from '../history/redeliver'
 import { previousStepOf } from '../history/diff'
 import {
-  RERUN_CONFIRM_BUTTON, RERUN_CONFIRM_CANCEL, RERUN_CONFIRM_TITLE, type BatchRerun,
+  RERUN_CONFIRM_BUTTON, RERUN_CONFIRM_CANCEL, RERUN_CONFIRM_TITLE, type JobRerun,
 } from '../history/batch'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
@@ -364,7 +365,7 @@ function openRedeliver() {
  * 按钮写什么、什么时候铺、确认框里问什么，全在纯模块（`history/batch.ts`）里判；
  * 这里只管**二次确认**、发请求与刷新（点一下就发是不行的：那一次重复请求要让人知道）。
  */
-async function onRerunBatch(target: BatchRerun) {
+async function onRerunJob(target: JobRerun) {
   if (rerunPending.value) return
   try {
     await ElMessageBox.confirm(target.confirm, RERUN_CONFIRM_TITLE, {
@@ -378,17 +379,20 @@ async function onRerunBatch(target: BatchRerun) {
   }
   rerunPending.value = true
   try {
-    const run = await api<Job>(`/jobs/${target.jobId}/execute`, { method: 'POST', body: '{}' })
-    ElMessage.success(`重跑完成：${run.lastRunStatus}${run.lastError ? ' ' + run.lastError : ''}`)
-    await refreshAfterRerun()
-  } catch (e) {
-    const err = e as ApiError
-    // #146：任务正在执行是「这次没跑」的提示，不是失败告警（与任务列表那颗按钮同一个口径）
-    if (err.code === 'JOB_ALREADY_RUNNING') {
-      ElMessage.info(err.message)
+    // 「发请求 + 认错误码」在 `jobs/execute.ts` 里一处写（与任务列表那颗「执行」共用）；
+    // 这里只管自己的成功文案与刷什么
+    const r = await executeJob(target.jobId)
+    if (r.kind === 'running') {
+      // #146：任务正在执行是「这次没跑」的提示，不是失败告警（与任务列表那颗按钮同一个口径）
+      ElMessage.info(r.message)
       return
     }
-    ElMessage.error(err.message)
+    if (r.kind === 'error') {
+      ElMessage.error(r.message)
+      return
+    }
+    ElMessage.success(`重跑完成：${r.run.lastRunStatus}${r.run.lastError ? ' ' + r.run.lastError : ''}`)
+    await refreshAfterRerun()
   } finally {
     rerunPending.value = false
   }
@@ -397,24 +401,16 @@ async function onRerunBatch(target: BatchRerun) {
 /**
  * 重跑之后的刷新（票面：成功后刷新列表与详情）。
  *
- * 与逐条重投那次双刷同一套：① 列表（连同计数条与每运行摘要）；② 这条运行的消息步
- * （右栏的消息 chips / 步骤链 / 单步卡都从它长出来）；③ 按 id 再取当前这一步与上一步的**整行**
- * （同一行的 id 没变，`stepRowKey` 那道去重键不响，只靠那个 watch 会把旧快照一直铺着）。
- *
- * 重跑**不改写**原来那次失败运行（新运行是新的一行），所以选中态照旧；`keepSelectionOnLoad`
- * 只是不让 `load()` 中途把选中收走（与重投那一趟同一个理由）。
+ * <p>与逐条重投那次双刷同一套骨架（骨架与理由见 {@link refreshSelectionKeeping}）：① 列表（连同计数条
+ * 与每运行摘要）；② 这条运行的消息步；③ 当前这一步与上一步的**整行**。两次刷新的差别只在**中间那
+ * 一步**：重跑**不改写**原来那次失败运行（新运行是新的一行），所以这里按**运行标识**各刷各的、
+ * `load()` 与取消息步是串行的。</p>
  */
 async function refreshAfterRerun() {
-  const runId = selectedRun.value?.id ?? null
-  keepSelectionOnLoad = true
-  try {
+  await refreshSelectionKeeping(async (runId) => {
     await load()
     if (runId !== null) await loadRunSteps(runId)
-  } finally {
-    keepSelectionOnLoad = false
-  }
-  retryStepRow()
-  retryPrevStepRow()
+  })
 }
 
 /**
@@ -447,6 +443,37 @@ async function confirmRedeliver() {
 }
 
 /**
+ * 「重投之后」与「重跑之后」两次刷新**共用的那副骨架**（#147 复查合出来的）。
+ *
+ * <p>两次刷新的头尾逐字相同，只有**中间那一步**不一样，所以那一步由调用方当参数传进来
+ * （`middle` 收当前这条运行的标识，自己决定取什么）：</p>
+ *
+ * - **① 头**：把 {@link keepSelectionOnLoad} 立起来再刷，刷完放下。列表刷新时 `syncStepSelection`
+ *   会把「不在这一页了」的选中态收回，而这两趟刷新的用意正是「原来那条**换了状态**、但位置没变」
+ *   （重投后原步是 `REDELIVERED`、重跑后原运行是新的运行），所以别让 `load()` 中途把它收走
+ *   （`load()` 的失败分支会走 `clearSelection()`，那是真把它清掉的，末尾还要再钉一次）。
+ * - **② 中间**：`middle(runId)` —— 重投那一路是「列表与这条运行的消息步并行取」（步骤链、单步卡
+ *   都从消息步长出来，原步那一格的芯片因此当场变成 `REDELIVERED`）；重跑那一路是「先列表、再取消息
+ *   步」（重跑不改写原来那次失败运行，按运行标识各刷各的）。**两条路的这一步一个都不许变**。
+ * - **③ 尾**：按 id 再取当前这一步与上一步的**整行**——同一步的行 id 没变，`stepRowKey` 那道去重键
+ *   不响，只靠那个 watch 会把刷新前那份快照一直铺着。
+ *
+ * <p>**不在这副骨架里的**：重投那一路末尾还要把选中态按原样钉一次（`selection.value = selectStep(...)`）
+ * ——那一步只有重投需要（列表刷新会把不再是 FAILED 的原步收走），所以留在它自己那里。</p>
+ */
+async function refreshSelectionKeeping(middle: (runId: number | null) => Promise<void>) {
+  const runId = selectedRun.value?.id ?? null
+  keepSelectionOnLoad = true
+  try {
+    await middle(runId)
+  } finally {
+    keepSelectionOnLoad = false
+  }
+  retryStepRow()
+  retryPrevStepRow()
+}
+
+/**
  * 重投成功后的**双刷**（票面验收项三：左侧列表与右侧详情同时是刷新后的内容）。
  *
  * 三件事要一起做，少一件就是「一半新一半旧」：
@@ -464,15 +491,11 @@ async function confirmRedeliver() {
  * （`load()` 的失败分支会走 `clearSelection()`，那一趟选中态是真被清掉的）。
  */
 async function refreshAfterRedeliver(target: { step: MessageStep; businessKey: string }) {
-  keepSelectionOnLoad = true
-  try {
+  await refreshSelectionKeeping(async () => {
+    // 与重跑那一路的差别只在这一句：重投把列表与这条运行的消息步**并行**取
     await Promise.all([load(), loadRunSteps(target.step.runId)])
-  } finally {
-    keepSelectionOnLoad = false
-  }
+  })
   selection.value = selectStep(target.step)
-  retryStepRow()
-  retryPrevStepRow()
 }
 
 async function loadJobs() {

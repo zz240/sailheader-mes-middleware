@@ -14,9 +14,25 @@
  * 3. **打包消息**（#147 新立的概念，取代已删除的摘要行）：合并 N→1 打出来的那条**信封消息**。
  *    合并那一步**批号转手**——`AggregateFragment.takeBatch` 现生成一个新批号、并给打包出来的那一条
  *    一个自己的消息标识——所以信封消息是它自己那个批号的**第一步**，而且**独占了那一步**
- *    （成员要等还原那一步才重新出现）。判据因此可以纯从数据判，见 {@link batchGroups}：
- *    **某批号「步骤号最小的那一步」上独占该步、而该批号下还有别的消息标识**的那条消息。
- *    *为什么非要「最小步骤」这一步*：一条读取批 / 拆分批在链中途失败时，那一步可能只留下**一条**
+ *    （成员要等还原那一步才重新出现）。判据因此可以纯从数据判，见 {@link batchGroups}，分两级：
+ *
+ *    - **首选（按批内序号 `batchSeq`）**：该批号下**批内序号为空**的行里若**只有一条不同的消息标识**，
+ *      且该批号下**存在批内序号非空的行** → 那条就是打包消息。依据：合并转批号时把 `edge.batchSeq`
+ *      置空（`AggregateFragment.takeBatch`），而还原（`RestoreFragment.prepareRestore`）与失败补记
+ *      （`StepLedger.recordFailure` 的成员循环）**都按 1..N 重新编号**——发送批里除信封外每一行都带
+ *      非空序号；读取批（`StepLedger.beginMessage` 那条路）与拆分批（`SplitFragment` 按 1..N 编）
+ *      则整批同为空或同为非空，不会被误认。
+ *    - **退路（没有序号可用时）**：该批号**「步骤号最小的那一步」上独占该步、而该批号下还有别的
+ *      消息标识**的那条消息。
+ *
+ *    *为什么首选按序号*：合并那一步**自己**失败时（`AggregateFragment.appendAggregatePack` 挂完
+ *    `BATCH_MANIFEST`、紧接着的 `recordSuccessStep` 落库抛——#127「成功的动作反被判失败」那条路），
+ *    `StepLedger.recordFailure` 会先按信封自己的标识记一行、再按成员清单给这一批**每条**记一行，
+ *    全记在合并这一步上。于是「最小步骤」上出现 N+1 个不同标识，退路判据取不到打包消息——档位从
+ *    发送批掉成读取批、计数多算一条、**「重跑任务」那颗唯一的恢复入口也消失**。序号是那一刻唯一还
+ *    分得开信封与成员的东西（信封那一行的序号是空的）。
+ *
+ *    *退路为什么非要「最小步骤」这一步*：一条读取批 / 拆分批在链中途失败时，那一步可能只留下**一条**
  *    消息的行（失败即停，后面的没跑到）——只按「独占某一步」判就会把这条普通消息误认成打包消息，
  *    档位错成发送批、条数还少算一条；而读取批的最小步骤（读库那一步）与拆分批的最小步骤
  *    （拆分之后第一步）上，那一批的消息都在，谁都不独占。
@@ -38,6 +54,12 @@
  *    是可接受的偏差。多出口（链上两个出站动作）因此也从「每个出口各一颗」收敛成 1 颗。
  *
  * **不在这里判的**：单条消息步能不能断点重投（那是 `history/redeliver.ts` 的 `canRedeliver`，#135 的口径）。
+ *
+ * **已知限制（只记账，不做机制）**：**无还原档**（链上合并之后没有 ONE_TO_MANY 还原）**且这一批成功**时，
+ * 这个批号在库里只剩信封那一行——没有成员行可作锚，两级判据都取不到它（首选那条要求「存在序号非空的行」，
+ * 退路那条要求「还有别的消息标识」），于是这一批只能当「单条 · 不是一批」。改前那一档是
+ * 「发送批 · 一次请求 1 条」，那个 **1 本来也是错的**（成员挂在读取批那个号上）：不是新丢了一条信息，
+ * 而是旧说法本来就不对。
  */
 import type { MessageStep } from '../types'
 
@@ -76,6 +98,8 @@ export interface BatchGroup {
   /**
    * 这一批的**打包消息**（合并 N→1 打出来的那条信封消息）**落在这一组里的那一行**；
    * 这一组里没有它就是 `null`（同一批在别的步骤上仍可能有——它只在自己那一步、以及出站那一步各有一行）。
+   *
+   * 怎么认见文件头第 3 条（两级判据：先按批内序号那个空位，取不到再按最小步骤上独占）。
    */
   packed: MessageStep | null
   /**
@@ -139,6 +163,73 @@ export function batchHead(kind: BatchKind, messages: number, failed: number): st
   return `${kind === 'send' ? '发送批' : '读取批'} · 一次请求 ${messages} 条 · 失败 ${failed} 条`
 }
 
+/**
+ * **一个批号的账**：同一个批号的每一行都记到这一份里，`{@link batchGroups}` 随后的三件事
+ * （认打包消息、算按钮落点、数消息与失败）都从它长出来。
+ *
+ * <p>不导出：这是 `batchGroups` 内部的中间账，界面上没有它的位置（与 `BatchGroup` 那种要画的东西分开）。</p>
+ */
+interface BatchLedger {
+  /** 这一批**最小**的步骤号（认打包消息的退路判据要用，见文件头第 3 条）。 */
+  firstStep: number
+  /** 最小那一步上出现过的**不同消息标识**（最小那一步可能有好几行）。 */
+  idsAtFirstStep: Set<string>
+  /** 这一批下出现过的**不同消息标识**（跨步骤去重）。 */
+  messageIds: Set<string>
+  /** 这一批下**失败过**的不同消息标识（跨步骤去重）。 */
+  failedIds: Set<string>
+  /** 这一批下**批内序号为空**的行所属的不同消息标识（首选判据要用）。 */
+  nullSeqIds: Set<string>
+  /** 这一批下有没有**批内序号非空**的行（首选判据的另一半：没有就说明整批都没这个字段）。 */
+  hasSeq: boolean
+  /** 收一行进这份账（分组那一趟按落库先后逐行调用）。 */
+  record(step: MessageStep): void
+  /**
+   * 首选判据的答案：**序号为空的行里那条唯一的消息**——它就是这个批号的打包消息（信封），
+   * 取不到就 `null`（退给最小步骤那条判据）。
+   *
+   * <p>四种情形都要 `null`：这一批没有序号非空的行（整批都没这个字段，比如读取批 / 拆分批）、
+   * 一条序号为空的都没有、序号为空的有好几条不同的消息、或者这一批下压根没有别的消息标识
+   * （批大小 1 的读库链：那一条既是空序号行又没有别的标识，但它不是打包消息）。</p>
+   */
+  onlyNullSeqMessage(): string | null
+}
+
+/**
+ * 实现 {@link BatchLedger}：闭包持着那几张集合，`batchGroups` 因此不用并排维护六张 Map
+ * （同一批号的账散在六处，加一个维度就要改六处）。
+ */
+function newBatchLedger(firstStep: number): BatchLedger {
+  const ledger: BatchLedger = {
+    firstStep,
+    idsAtFirstStep: new Set(),
+    messageIds: new Set(),
+    failedIds: new Set(),
+    nullSeqIds: new Set(),
+    hasSeq: false,
+    record(step: MessageStep) {
+      if (step.step < ledger.firstStep) {
+        // 见到更小的步骤号：最小步骤换人，重开一个集合（最小的那一步可能有好几行）
+        ledger.firstStep = step.step
+        ledger.idsAtFirstStep = new Set([step.messageId])
+      } else if (step.step === ledger.firstStep) {
+        ledger.idsAtFirstStep.add(step.messageId)
+      }
+      ledger.messageIds.add(step.messageId)
+      if (step.status === 'FAILED') ledger.failedIds.add(step.messageId)
+      // 批内序号：**空**才是信封那一行的标志（合并转批号时把 `edge.batchSeq` 置空，见文件头第 3 条）
+      if (step.batchSeq === null || step.batchSeq === undefined) ledger.nullSeqIds.add(step.messageId)
+      else ledger.hasSeq = true
+    },
+    onlyNullSeqMessage() {
+      if (!ledger.hasSeq || ledger.nullSeqIds.size !== 1) return null
+      if (ledger.messageIds.size <= 1) return null
+      return [...ledger.nullSeqIds][0]
+    },
+  }
+  return ledger
+}
+
 /** 一条运行的消息步**按批分组**（同一步 + 同批号一组），组头文案与档位按**批号**统一判。 */
 export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
   const ordered = [...steps].sort((a, b) => a.id - b.id)
@@ -156,37 +247,31 @@ export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
     group.members.push(step)
   }
 
-  // 批号维度的那几件事：这一批**最小步骤**上是哪条（哪几条）消息、这一批有哪些消息、谁失败过
-  const idsAtFirstStep = new Map<string, Set<string>>()
-  const firstStep = new Map<string, number>()
-  const messageIds = new Map<string, Set<string>>()
-  const failedIds = new Map<string, Set<string>>()
+  // 批号维度的那几件事收在一个「这一批的账」里（下面 {@link BatchLedger}），
+  // 再分三步从它算出打包消息、按钮落点与那一批的计数。
+  const ledgers = new Map<string, BatchLedger>()
   for (const step of ordered) {
     const batchId = normalizeBatchId(step.batchId)
     if (batchId === null) continue
-    const at = firstStep.get(batchId)
-    if (at === undefined || step.step < at) {
-      // 见到更小的步骤号：最小步骤换人，重开一个集合（最小的那一步可能有好几行）
-      firstStep.set(batchId, step.step)
-      idsAtFirstStep.set(batchId, new Set([step.messageId]))
-    } else if (step.step === at) {
-      idsAtFirstStep.get(batchId)!.add(step.messageId)
+    let ledger = ledgers.get(batchId)
+    if (!ledger) {
+      ledger = newBatchLedger(step.step)
+      ledgers.set(batchId, ledger)
     }
-    if (!messageIds.has(batchId)) messageIds.set(batchId, new Set())
-    messageIds.get(batchId)!.add(step.messageId)
-    if (step.status === 'FAILED') {
-      if (!failedIds.has(batchId)) failedIds.set(batchId, new Set())
-      failedIds.get(batchId)!.add(step.messageId)
-    }
+    ledger.record(step)
   }
 
-  // 打包消息：**最小步骤**上独占该步、而这一批下还有别的消息标识的那一条（见文件头第 3 条）。
-  // 一个批号最多一条：最小步骤只有一个，独占它的消息也只能有一条。
+  // 打包消息（判据见文件头第 3 条）：**先**按批内序号判，取不到再退回「最小步骤上独占」。
+  // 一个批号最多一条：首选那条只有一个候选（序号为空的消息只有信封），退路那条的最小步骤也只有一个。
   const packedIds = new Map<string, string>()
-  for (const [batchId, ids] of messageIds) {
-    const atFirstStep = idsAtFirstStep.get(batchId)
-    if (ids.size <= 1 || !atFirstStep || atFirstStep.size !== 1) continue
-    packedIds.set(batchId, [...atFirstStep][0])
+  for (const [batchId, ledger] of ledgers) {
+    const bySeqNeutrality = ledger.onlyNullSeqMessage()
+    if (bySeqNeutrality !== null) {
+      packedIds.set(batchId, bySeqNeutrality)
+      continue
+    }
+    if (ledger.idsAtFirstStep.size !== 1 || ledger.messageIds.size <= 1) continue
+    packedIds.set(batchId, [...ledger.idsAtFirstStep][0])
   }
 
   // 「重跑任务」的落点：该批号里**还带着打包消息的最深那一步**（打包消息在打包与出站两步各有一行，
@@ -213,8 +298,9 @@ export function batchGroups(steps: readonly MessageStep[]): BatchGroup[] {
     const packedId = packedIds.get(batchId) ?? null
     group.packed = packedId === null ? null : group.members.find((member) => member.messageId === packedId) ?? null
     group.rerunStep = rerunSteps.get(batchId) ?? null
-    const ids = messageIds.get(batchId) ?? new Set<string>()
-    const bad = failedIds.get(batchId) ?? new Set<string>()
+    const ledger = ledgers.get(batchId)
+    const ids = ledger?.messageIds ?? new Set<string>()
+    const bad = ledger?.failedIds ?? new Set<string>()
     // **N 条 / 失败 M 条都按批号算、都不含打包消息**（#143 的多算一条就此闭合）
     group.messages = [...ids].filter((id) => id !== packedId).length
     group.failed = [...bad].filter((id) => id !== packedId).length
@@ -275,7 +361,7 @@ export function nodeBatch(
  * <p>与旧按钮的区别是**语义**而不是样式：旧的只把请求重发一遍、不跑下游，还要求使用者自己判断
  * 「失败发生在出站还是下游」；这一颗重跑**整个任务**——水位未推进 ⇒ 从未完成的那一批整批重走。</p>
  */
-export function batchRerun(group: BatchGroup | null, jobId?: number | null): BatchRerun | null {
+export function jobRerun(group: BatchGroup | null, jobId?: number | null): JobRerun | null {
   if (!group || group.kind !== 'send' || group.failed <= 0) return null
   if (!group.packed || group.step !== group.rerunStep || jobId == null) return null
   return { jobId, label: RERUN_LABEL, confirm: rerunConfirmText(group, jobId) }
@@ -285,9 +371,10 @@ export function batchRerun(group: BatchGroup | null, jobId?: number | null): Bat
  * 「重跑任务」那一档里那三样：要跑哪个任务、按钮写什么、确认框里问什么。
  *
  * 文案与判据一处写（与 `history/redeliver.ts` 同一套做法）：界面与真机脚本判的是**同一句话**，
- * 不会界面上说一套、脚本判另一套。
+ * 不会界面上说一套、脚本判另一套。类型名跟着按钮走：#147 起重跑的是**任务**，
+ * 不是哪一批（旧的整批重发已删除）。
  */
-export interface BatchRerun {
+export interface JobRerun {
   /** 要重跑的那个任务（组本身不带任务号，由界面把当前运行的任务标识喂进来）。 */
   jobId: number
   /** 按钮上的字（{@link RERUN_LABEL}）。 */

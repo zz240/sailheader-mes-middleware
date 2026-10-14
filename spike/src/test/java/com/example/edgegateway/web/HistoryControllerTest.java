@@ -9,11 +9,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerExecutionChain;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -31,6 +36,10 @@ class HistoryControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** 实际注册的请求映射（`@WebMvcTest` 按 `HistoryController` 的路由长出来）——「端点不存在」钉在它上面。 */
+    @Autowired
+    private RequestMappingHandlerMapping handlerMapping;
 
     @MockBean
     private MessageHistoryService messageHistoryService;
@@ -292,18 +301,40 @@ class HistoryControllerTest {
      *
      * <p>这是票面第一条验收标准的可执行落点：不再靠「全仓 grep 找不到了」交差。</p>
      *
-     * <p><b>为什么不断言 404</b>：本仓库的全局异常面是刻意的 catch-all（{@code ApiExceptionHandler}
-     * 的 {@code @ExceptionHandler(Exception.class)}，口径是「消灭漏网与 Spring 默认格式」），
-     * 它把 Spring 6.1 对**未匹配路径**抛的 {@code NoResourceFoundException} 也收进统一信封 ——
-     * 所以任何不存在的路径在这个工程里都回 500 + 业务码，而不是 404。能真正钉住「入口不存在」的
-     * 是下面这两条：请求打不到任何重投逻辑（老处理器的第一件事就是解析任务标识）。</p>
+     * <p><b>为什么把断言钉在映射表上而不是响应状态码上</b>：本仓库的全局异常面是刻意的 catch-all
+     * （{@code ApiExceptionHandler} 的 {@code @ExceptionHandler(Exception.class)}，口径是「消灭漏网与
+     * Spring 默认格式」），它把 Spring 6.1 对**未匹配路径**抛的 {@code NoResourceFoundException} 也收进
+     * 统一信封——所以**任何**不存在的路径在这个工程里都回 500 + 业务码，而不是 404。拿 500 当断言，等于
+     * 把「未匹配路径答 500」这个全局缺陷固化成期望：那样连一条错拼的路径都能让用例变绿。能真正钉住
+     * 「入口不存在」的是**映射表里没有这条路径**：{@link RequestMappingHandlerMapping#getHandler} 对
+     * 未匹配的请求返回 {@code null}（映射表由 {@code @WebMvcTest} 从 {@code HistoryController} 实际注册
+     * 的路由长出来，不是手抄的清单）。</p>
+     *
+     * <p><b>全局异常面不在本票范围内</b>（票面 Non-goals）：这里只换掉「入口不存在」这条断言的落点，
+     * 不动 {@code ApiExceptionHandler}、也不改其它用例对它的期望。</p>
      */
     @Test
     void batchRedeliverEndpointNoLongerExists() throws Exception {
-        mockMvc.perform(post("/api/history/batches/5/redeliver"))
-                .andExpect(status().isInternalServerError());
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/history/batches/5/redeliver");
+        assertThat(handlerMapping.getHandler(request))
+                .as("#147：映射表里没有整批重发这条路径，未匹配时 getHandler 返回 null")
+                .isNull();
 
         verify(messageHistoryService, never()).jobIdOfStep(anyLong());
         verify(messageHistoryService, never()).redeliver(anyLong());
+    }
+
+    /**
+     * 与上一条同一个断言的**反面**（正对照，免得上面那条因为映射表整个是空的而假绿）：
+     * 同一张映射表里，端点被删掉之后**还在**的那条重投路径仍然找得到处理器。
+     */
+    @Test
+    void redeliverEndpointIsStillRegistered() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/history/steps/5/redeliver");
+        // getHandler 回的是执行链（处理器 + 拦截器），处理器那一格才是 HandlerMethod
+        HandlerExecutionChain chain = handlerMapping.getHandler(request);
+        assertThat(chain).as("单条重投那条路径仍在映射表里（对照：删掉的是 batches 那条）").isNotNull();
+        assertThat(chain.getHandler()).isInstanceOf(HandlerMethod.class);
+        assertThat(((HandlerMethod) chain.getHandler()).getMethod().getName()).isEqualTo("redeliver");
     }
 }

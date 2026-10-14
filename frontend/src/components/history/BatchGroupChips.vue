@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { batchRerun, type BatchGroup, type BatchRerun } from '../../history/batch'
+import { jobRerun, type BatchGroup, type JobRerun } from '../../history/batch'
 import { NO_BUSINESS_KEY, shortId, statusChip } from '../../history/console'
 import type { MessageStep } from '../../types'
 
@@ -52,11 +52,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'select-step': [step: MessageStep]
-  'rerun-job': [target: BatchRerun]
+  'rerun-job': [target: JobRerun]
 }>()
 
 /** 能不能铺、铺什么、确认框里问什么，全在纯模块里判（这里不重写判据）。 */
-const rerun = computed(() => batchRerun(props.group, props.jobId ?? null))
+const rerun = computed(() => jobRerun(props.group, props.jobId ?? null))
 
 /**
  * 这一行是不是**打包消息**：与组头那颗按钮同一处判据算出来的那一行（按行 id 认，同组里只有它一颗）。

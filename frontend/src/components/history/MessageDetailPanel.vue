@@ -172,7 +172,7 @@ import { computed, ref } from 'vue'
 import BatchGroupChips from './BatchGroupChips.vue'
 import StepDetailCard from './StepDetailCard.vue'
 import {
-  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup, type BatchRerun,
+  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup, type JobRerun,
 } from '../../history/batch'
 import {
   chainNodes, chainSummary, detailPath, jobTitleOf, shortId, stampOf, statusChip,
@@ -224,7 +224,7 @@ const emit = defineEmits<{
   'retry-step-row': []
   'retry-prev-row': []
   redeliver: []
-  'rerun-job': [target: BatchRerun]
+  'rerun-job': [target: JobRerun]
 }>()
 
 const chip = computed(() => statusChip(props.run?.status))

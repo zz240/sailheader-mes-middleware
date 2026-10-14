@@ -317,6 +317,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, ApiError } from '../api/client'
+import { executeJob } from '../jobs/execute'
 import type { Action, DataSource, Job, SiteInfo, ValidationResult } from '../types'
 import FieldMappingWorkbench from '../components/FieldMappingWorkbench.vue'
 
@@ -538,20 +539,20 @@ async function loadActions() {
 }
 
 async function execute(row: Job) {
-  try {
-    const r = await api<Job>(`/jobs/${row.id}/execute`, { method: 'POST', body: '{}' })
-    ElMessage.success(`执行完成：${r.lastRunStatus}${r.lastError ? ' ' + r.lastError : ''}`)
-    await load()
-    await loadReceived()
-  } catch (e) {
-    const err = e as ApiError
-    // #146：任务正在执行是「这次没跑」的提示，不是失败告警
-    if (err.code === 'JOB_ALREADY_RUNNING') {
-      ElMessage.info(err.message)
-      return
-    }
-    ElMessage.error(err.message)
+  // 「发请求 + 认错误码」在 `jobs/execute.ts` 里一处写（与历史页那颗「重跑任务」共用）；
+  // 这里只管自己的成功文案与刷什么
+  const r = await executeJob(row.id)
+  if (r.kind === 'running') {
+    ElMessage.info(r.message)
+    return
   }
+  if (r.kind === 'error') {
+    ElMessage.error(r.message)
+    return
+  }
+  ElMessage.success(`执行完成：${r.run.lastRunStatus}${r.run.lastError ? ' ' + r.run.lastError : ''}`)
+  await load()
+  await loadReceived()
 }
 
 function resetKindFields() {
