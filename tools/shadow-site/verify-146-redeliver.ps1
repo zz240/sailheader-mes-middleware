@@ -1,14 +1,15 @@
-﻿# #146 任务串行真机验收 · 第二轮 B：重投入口（断点重投 / 整批重发）在已有运行时 409
+# #146 任务串行真机验收 · 第二轮 B：重投入口（断点重投）在已有运行时 409
 #
 # 为什么不用真实库里的失败步：本机库中只剩 job 225 有失败步，它链上是 SQL Server 读取 + 真实 MES 投递，
 # 让它真跑会改动真实业务数据。所以这里**自建一条会失败的链**，失败步是自己的：
 #   链 = READ_SQL(mes_db.mes_work_order，只读) → HTTP_CALL(打桩端点，桩端点恒返回 500)
 #   第一次运行：动作 2 失败 → 留下一条可重投的失败消息步（动作 1 是源动作，按口径不可重投）
-#   第二次运行：动作 2 仍要等桩端点 3s，运行期间分别调两个重投接口 → 期望 409
+#   第二次运行：动作 2 仍要等桩端点 3s，运行期间调断点重投接口 → 期望 409；
+#   顺带确认整批重发端点已随 #147 删除（404——那条路径整个去掉，失败恢复统一为重跑任务）
 # 链首为什么必须是 READ_SQL：只有源动作会 beginMessage，消息步才存在；纯 HTTP_CALL 打头的链
 #   跑完只有 job_run、一条消息步都没有（docs/flows/reliability-flow.md 里记的另一条已知缺口）。
 #
-# 断言同时证明「跳过没有副作用」：被拒的那两次重投没有执行，失败步状态仍为 FAILED、也没有多出运行。
+# 断言同时证明「跳过没有副作用」：被拒的那次重投没有执行，失败步状态仍为 FAILED、也没有多出运行。
 #
 # 前置：网关 8080、桩端点 18080 且**返 500**（tools/shadow-site/slow-http.cjs 18080 3000 500）、
 #       容器 edge-gateway-mysql 里有 mes_db 与数据源 sh-mes-db。
@@ -102,14 +103,15 @@ try {
     Write-Host ("    失败步：id={0} step={1} status={2} messageId={3}" -f $failed.id, $failed.step, $failed.status, $failed.messageId)
     Check '失败步在动作 2 上且为 FAILED（可重投的合法前置）' ($failed.status -eq 'FAILED' -and $failed.step -eq 2) ("status=$($failed.status) step=$($failed.step)")
 
-    # ---- 第二次运行：运行期间调两个重投接口 ----
+    # ---- 第二次运行：运行期间调断点重投接口（并确认整批重发端点已不存在） ----
     # 第二次运行的动作 2 要等桩端点 3s：先等它真的进入 RUNNING，再发重投请求，
     # 免得请求落在两次运行之间的空隙上（那验的就不是互斥了）。
     $second = Start-Execute $jobId
     $running = Wait-Running $jobId 30
     Check '第二次运行已进入 RUNNING（重投请求确实落在运行窗口内）' $running
     $redeliver = Api POST "/api/history/steps/$($failed.id)/redeliver" @{}
-    $redeliverBatch = Api POST "/api/history/batches/$($failed.id)/redeliver" @{}
+    # #147 删掉了整批重发那条路径：那个端点不该再存在（下面断言 404），不再有第二个入口要验互斥
+    $batchGone = Api POST "/api/history/batches/$($failed.id)/redeliver" @{}
     $runsAtReject = (Api GET "/api/history/runs?jobId=$jobId" $null).data.total
     $secondDone = $false
     $deadline = (Get-Date).AddSeconds(60)
@@ -122,8 +124,7 @@ try {
     Check '断点重投在运行期间返回 409' ($redeliver.status -eq 409) ("status=$($redeliver.status) code=$($redeliver.code) raw=$($redeliver.raw)")
     Check '断点重投业务码为 JOB_ALREADY_RUNNING' ($redeliver.code -eq 'JOB_ALREADY_RUNNING') ("code=$($redeliver.code)")
     Check '断点重投文案为「任务正在执行，请稍后再试」' ($redeliver.message -eq '任务正在执行，请稍后再试') ("message=$($redeliver.message)")
-    Check '整批重发在运行期间同样返回 409' ($redeliverBatch.status -eq 409) ("status=$($redeliverBatch.status) code=$($redeliverBatch.code)")
-    Check '整批重发业务码为 JOB_ALREADY_RUNNING' ($redeliverBatch.code -eq 'JOB_ALREADY_RUNNING') ("code=$($redeliverBatch.code)")
+    Check '整批重发端点已随 #147 删除（404）' ($batchGone.status -eq 404) ("status=$($batchGone.status) code=$($batchGone.code)")
 
     # ---- 被拒的重投没有副作用：那一步仍是 FAILED，也没有多出运行 ----
     $stillFailed = Api GET "/api/history/steps/$($failed.id)" $null
@@ -139,9 +140,9 @@ try {
     if (Test-Path $AppLog) {
         $tail = @(Get-Content $AppLog -ErrorAction SilentlyContinue | Select-Object -Skip $logMark)
         $rejected = @($tail | Where-Object { $_ -match '任务已有运行，跳过本次重投' })
-        Check '服务层日志里记录了两次「跳过本次重投」' ($rejected.Count -ge 2) ("matched=$($rejected.Count)")
-        Check '这两条日志都带上了当前运行的 runId 与触发来源' (@($rejected | Where-Object { $_ -match 'run=\d+' -and $_ -match 'origin=' }).Count -ge 2) ("lines=$($rejected -join ' | ')")
-        foreach ($line in $rejected | Select-Object -First 2) { Write-Host ("    日志：{0}" -f $line.Trim()) }
+        Check '服务层日志里记录了「跳过本次重投」' ($rejected.Count -ge 1) ("matched=$($rejected.Count)")
+        Check '这条日志带上了当前运行的 runId 与触发来源' (@($rejected | Where-Object { $_ -match 'run=\d+' -and $_ -match 'origin=' }).Count -ge 1) ("lines=$($rejected -join ' | ')")
+        foreach ($line in $rejected | Select-Object -First 1) { Write-Host ("    日志：{0}" -f $line.Trim()) }
     }
 } finally {
     if ($jobId) {

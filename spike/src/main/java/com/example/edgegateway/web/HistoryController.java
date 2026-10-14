@@ -149,28 +149,6 @@ public class HistoryController {
     }
 
     /**
-     * **按批重发**（#142 / ADR-0017 决策 7）：一次点击 = 一次请求。
-     *
-     * <p>{@code id} 是那一批的**摘要行**（{@code message_id = batch:<批号>}）的消息步 id——整份请求与
-     * 整份响应都只在它身上（决策 6），所以重发从它取报文；同批每条消息在新运行里各记一行，
-     * 旧的那一批标 {@code REDELIVERED}。</p>
-     *
-     * <p>#146：与断点续跑同一口径——已有运行在跑时拒绝，不排队。</p>
-     */
-    @PostMapping("/batches/{id}/redeliver")
-    public Map<String, Object> redeliverBatch(@PathVariable Long id) {
-        JobRunGuard.Handle handle = acquireForRedeliver(id);
-        try {
-            JobRun run = messageHistoryService.redeliverBatch(id);
-            return Map.of(
-                    "status", run.getStatus(),
-                    "runId", run.getId());
-        } finally {
-            runGuard.release(handle);
-        }
-    }
-
-    /**
      * 取重投任务的占用；拿不到就抛 409 + {@code JOB_ALREADY_RUNNING}（与手动执行同一个业务码）。
      *
      * <p>任务标识取不到时返回 {@code null} 而不抛：那属于「这条消息步本身有问题」，交给重投逻辑按它

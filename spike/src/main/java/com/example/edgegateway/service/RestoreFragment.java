@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * 还原动作的片段（#145 从 {@code RouteGenerator} 搬出；语义见 #142 / ADR-0017 决策 7）：
- * 把出站拿回来的响应按配对字段**摊回原来那 N 条消息**（1 → N），外加「打包重发」那条路由的收尾。
+ * 把出站拿回来的响应按配对字段**摊回原来那 N 条消息**（1 → N）。
  *
  * <p>与拆分那一档同一套记账：这一层是 split，后续动作追加在它里面逐条跑，收尾时按层数统一退回
  * （层数记账归装配处 {@code RouteGenerator}）。区别在**身份**：拆分会新造消息、换批号；还原沿用
@@ -78,10 +78,8 @@ class RestoreFragment {
                 .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
                 .toList();
         if (!missing.isEmpty()) {
-            // 这一步的失败**只逐条记**（交给统一的失败那条路：它按成员清单给这一批每条记一行 FAILED）——
-            // 不记「整批」那一行，否则右详情会在还原这一步长出一个「重发这一批」按钮，
-            // 而重发只该长在**出站**那一步（#142 / 决策 7）
-            ex.setProperty(RouteKeys.BATCH_NO_SUMMARY, true);
+            // 这一步的失败交给统一的失败那条路：它按成员清单给这一批每条记一行 FAILED，
+            // 外加这一步自己那一条（信封消息那一行）——失败行一律按**消息粒度**记（#147）
             throw new IllegalStateException("还原的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
                     + restore.resultKeyField() + "）");
         }
@@ -110,43 +108,4 @@ class RestoreFragment {
         ex.getMessage().setBody(carrier.body());
     }
 
-    /**
-     * 打包重发成功之后的收尾（#142）：HTTP 按业务键配对后在新运行里记摘要行与这一批每条各一行；
-     * MQ 没有响应，只记这两类行（不配对）。
-     *
-     * <p>配不上就抛——交给统一的记账路（摘要行 + 这一批每条都记 FAILED，同因），与链上那条路同一个口径。</p>
-     */
-    void settleBatchResend(Exchange ex, Action action, OneToManyConfig restore, int index) {
-        List<AggregateBatch.Carrier> carriers = ex.getProperty(RouteKeys.BATCH_MANIFEST, List.class);
-        Long runId = ex.getProperty(MessageHistoryService.RUN_ID, Long.class);
-        String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
-        Long durationMs = ledger.stepDuration(ex);
-        Map<String, Object> paired = Map.of();
-        Object response = null;
-        if (restore != null) {
-            // 这个出口后面挂着还原：响应要按业务键配回这一批每条（配对字段归还原那一档配）
-            response = HttpCallResponse.parse(ResponseTexts.text(ex));
-            messageHistory.requireCaptureFitsSnapshot(index, response);
-            Map<String, Object> matched = AggregateBatch.pair(response, restore.resultKeyField(), carriers);
-            List<String> missing = carriers.stream()
-                    .filter(carrier -> !matched.containsKey(carrier.messageId()))
-                    .map(carrier -> carrier.businessKey() == null ? "（这一条没有业务键）" : carrier.businessKey())
-                    .toList();
-            if (!missing.isEmpty()) {
-                throw new IllegalStateException("重发的响应里没有配对到业务键 " + missing + " 的那一条（配对字段 "
-                        + restore.resultKeyField() + "）");
-            }
-            paired = matched;
-        }
-        messageHistory.recordSuccess(runId, MessageHistoryService.SUMMARY_MESSAGE_PREFIX + batchId, index,
-                action.getName(), ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class), response, null,
-                ledger.attemptsOnSuccess(ex), durationMs, new BatchStamp(batchId, null, null));
-        int seq = 0;
-        for (AggregateBatch.Carrier carrier : carriers) {
-            seq++;
-            messageHistory.recordSuccess(runId, carrier.messageId(), index, action.getName(), carrier.body(),
-                    paired.get(carrier.messageId()), carrier.businessKey(), ledger.attemptsOnSuccess(ex), durationMs,
-                    new BatchStamp(batchId, seq, carrier.parentMessageId()));
-        }
-    }
 }

@@ -78,7 +78,7 @@ npm run dev
   - 任务与动作链配置界面；**八种动作种类**：`READ_SQL`、`WRITE_UPSERT`、`HTTP_CALL`、`MQ_CONSUME`、
     `MQ_PUBLISH`、`FIELD_MAP`、`ONE_TO_MANY`（拆分 / 还原两档）、`AGGREGATE`（合并）；
   - 字段映射：规则树编译成 JSONata 求值，配只读草稿校验与试算；
-  - 消息历史（`job_run` / `message_step` + 批次三格）、断点重投与整批重发；
+  - 消息历史（`job_run` / `message_step` + 批次三格）、断点重投与重跑任务；
   - 外部 API Key 触发、定时调度、模板 / 站点 / 映射历史沉淀。
 - **交付**：单镜像同源运行（前端 `dist` 打进 Spring Boot 镜像），Flyway 版本化迁移 V1–V7。
 - **测试**：后端 `mvn -o -B test` **624 项 0 失败**（H2 内存库，不需要 MySQL / RabbitMQ）；

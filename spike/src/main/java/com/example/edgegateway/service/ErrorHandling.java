@@ -16,7 +16,7 @@ import org.apache.camel.builder.RouteBuilder;
  * </ol>
  *
  * <p>{@code handled} 由入口决定：消费主路由 {@code true}（失败后链还会往下走、进程不退），
- * 重放 / 轮询 / 断点续跑 / 打包重发都是 {@code false}（异常抛回调用方）。</p>
+ * 重放 / 轮询 / 断点续跑都是 {@code false}（异常抛回调用方）。</p>
  */
 final class ErrorHandling {
 

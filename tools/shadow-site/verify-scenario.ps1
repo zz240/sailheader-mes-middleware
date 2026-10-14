@@ -384,16 +384,21 @@ Check 'B6-BATCH that one request carries all 20 codes' ($batchCodes.Count -eq 20
 $bRun = LatestRun $jbatch
 Check 'B6-BATCH the run is recorded SUCCESS' ($bRun -and $bRun.status -eq 'SUCCESS') ("status={0}" -f $bRun.status)
 $bIdx = RunIndex $bRun.id 2
-$bSummary = @($bIdx | Where-Object { "$($_.messageId)" -like 'batch:*' })
-Check 'B6-BATCH the outlet keeps exactly ONE summary row (whole request + whole response)' ($bSummary.Count -eq 1) ("rows={0}" -f $bSummary.Count)
+# #147 deleted the summary row ("batch:<id>"): the outlet now records the packed envelope message's OWN
+# identifier. It is still exactly ONE row carrying the whole request and the whole response.
+$bPack = @($bIdx | Where-Object { $_.step -eq ($jbatchOutlet - 1) }) | Select-Object -First 1
+$bOutlet = @($bIdx | Where-Object { $_.step -eq $jbatchOutlet })
+Check 'B6-BATCH the outlet keeps exactly ONE row for the packed envelope (whole request + whole response)' `
+    ($bOutlet.Count -eq 1 -and "$($bOutlet[0].messageId)" -eq "$($bPack.messageId)" -and "$($bOutlet[0].messageId)" -notlike 'batch:*') `
+    ("rows={0} envelope={1} outlet={2}" -f $bOutlet.Count, $bPack.messageId, $bOutlet[0].messageId)
 $bFan = @($bIdx | Where-Object { $_.step -eq $jbatchRestore })
 Check 'B6-BATCH the fan-out records one row per code (20 rows, all SUCCESS)' ($bFan.Count -eq 20 -and @($bFan | Where-Object { $_.status -ne 'SUCCESS' }).Count -eq 0) ("rows={0}" -f $bFan.Count)
 $bKeys = @($bFan | ForEach-Object { "$($_.businessKey)" })
 Check 'B6-BATCH per-row attribution: every fan-out row carries its own business key (20 distinct)' ((@($bKeys | Select-Object -Unique)).Count -eq 20) ("distinct={0}" -f (@($bKeys | Select-Object -Unique)).Count)
 $bBatchIds = @($bIdx | Where-Object { $_.step -ge 3 } | ForEach-Object { $_.batchId } | Select-Object -Unique)
 $bReadBatch = @($bIdx | Where-Object { $_.step -eq 1 } | ForEach-Object { $_.batchId } | Select-Object -Unique)
-Check 'B6-BATCH batch identity: the packed batch shares ONE batch id (= the summary row), handed over at the merge step' `
-    ($bBatchIds.Count -eq 1 -and "$($bBatchIds[0])" -and $bBatchIds[0] -eq $bSummary[0].batchId -and $bReadBatch.Count -eq 1 -and $bReadBatch[0] -ne $bBatchIds[0]) `
+Check 'B6-BATCH batch identity: the packed batch shares ONE batch id (= the envelope row), handed over at the merge step' `
+    ($bBatchIds.Count -eq 1 -and "$($bBatchIds[0])" -and $bBatchIds[0] -eq $bPack.batchId -and $bReadBatch.Count -eq 1 -and $bReadBatch[0] -ne $bBatchIds[0]) `
     ("packedBatch={0} readBatch={1}" -f ($bBatchIds -join ','), ($bReadBatch -join ','))
 
 # per-row attribution with the snapshots: which code got which handle
@@ -461,9 +466,10 @@ Check 'A2-HL re-run is idempotent (watermark advanced: still 2 head rows + 6 lin
 
 # ---------------------------------------------------------------- B6 batch failure path (#143 AC3)
 # The outlet answers 500 -> the whole batch fails with ONE cause, every code keeps its own row and its own
-# business key, nothing is written back, the watermark does not move. Then one click on "resend this batch"
-# (POST /api/history/batches/{summary row id}/redeliver) sends exactly ONE more request.
-Write-Host 'B6-BATCH-FAIL  outlet 500 -> whole batch FAILED with one cause -> one click = one request'
+# business key, nothing is written back, the watermark does not move. Failure recovery is "re-run the job"
+# (#147 deleted the "resend this batch" endpoint): the watermark never advanced, so executing the job again
+# re-reads this very batch and the target sees exactly ONE more request.
+Write-Host 'B6-BATCH-FAIL  outlet 500 -> whole batch FAILED with one cause -> re-run the job'
 $fault = Invoke-RestMethod -Method Post "$MesMock/__fault" -ContentType 'application/json' -Body '{"mode":"500","count":10}' -TimeoutSec 30
 Check 'B6-BATCH-FAIL the target-side 500 is injected' ("$($fault.fault.mode)" -eq '500') ("fault={0}" -f ($fault.fault | ConvertTo-Json -Compress))
 Reset-BatchJob -JobId $jbatch
@@ -471,9 +477,13 @@ Execute $jbatch | Out-Null
 $fRun = LatestRun $jbatch
 Check 'B6-BATCH-FAIL the run is recorded FAILED' ($fRun -and $fRun.status -eq 'FAILED') ("status={0}" -f $fRun.status)
 $fRows = RunSteps $fRun.id 100 2
-$fSummary = @($fRows | Where-Object { "$($_.messageId)" -like 'batch:*' })
-Check 'B6-BATCH-FAIL the outlet leaves exactly ONE FAILED summary row' ($fSummary.Count -eq 1 -and $fSummary[0].status -eq 'FAILED') ("rows={0} status={1}" -f $fSummary.Count, $fSummary[0].status)
-$fMembers = @($fRows | Where-Object { $_.step -eq $jbatchOutlet -and "$($_.messageId)" -notlike 'batch:*' })
+# #147: there is no summary row any more. The outlet records the packed envelope message's OWN row (exactly
+# one), plus one FAILED row per code of that batch. The envelope row is the one whose messageId is the
+# packed message recorded at the aggregate step (the step just before the outlet).
+$fPack = @($fRows | Where-Object { $_.step -eq ($jbatchOutlet - 1) }) | Select-Object -First 1
+$fEnvelope = @($fRows | Where-Object { $_.step -eq $jbatchOutlet -and "$($_.messageId)" -eq "$($fPack.messageId)" })
+Check 'B6-BATCH-FAIL the outlet leaves exactly ONE FAILED row for the packed envelope' ($fEnvelope.Count -eq 1 -and $fEnvelope[0].status -eq 'FAILED') ("rows={0} status={1}" -f $fEnvelope.Count, $fEnvelope[0].status)
+$fMembers = @($fRows | Where-Object { $_.step -eq $jbatchOutlet -and "$($_.messageId)" -ne "$($fPack.messageId)" })
 Check 'B6-BATCH-FAIL every code in that batch is recorded FAILED (20 rows)' ($fMembers.Count -eq 20 -and @($fMembers | Where-Object { $_.status -ne 'FAILED' }).Count -eq 0) ("rows={0}" -f $fMembers.Count)
 $fCauses = @($fMembers | ForEach-Object { "$($_.error)" } | Select-Object -Unique)
 Check 'B6-BATCH-FAIL all 20 rows share the same cause (attribution: one reason, 20 rows)' ($fCauses.Count -eq 1 -and $fCauses[0] -match '500') ("causes={0}" -f $fCauses.Count)
@@ -486,18 +496,18 @@ Check 'B6-BATCH-FAIL nothing was written back while the outlet was down' ($fWrit
 
 ClearFault
 $sentBefore = @(Received 'id-register').Count
-$resend = Api POST "/api/history/batches/$($fSummary[0].id)/redeliver" @{}
+Execute $jbatch | Out-Null
 $sentAfter = @(Received 'id-register').Count
-Check 'B6-BATCH-FAIL resending the batch sends exactly ONE more request' (($sentAfter - $sentBefore) -eq 1) ("before={0} after={1}" -f $sentBefore, $sentAfter)
-$resendRun = LatestRun $jbatch
-Check 'B6-BATCH-FAIL the resend run is recorded SUCCESS (the button works, not just shows)' ($resendRun.status -eq 'SUCCESS') ("status={0} runId={1}" -f $resendRun.status, $resend.data.runId)
-# Real-machine note (#143): the POST answers the run object it created, so its `status` field still says
-# RUNNING even though the run finished inside that same call. The run row is the truth; the console reads
-# the run back, so the button behaves correctly.
-Write-Host ("    (note: POST answered status={0}; the run row for runId={1} says {2})" -f $resend.data.status, $resend.data.runId, $resendRun.status)
-$fRows2 = RunSteps $fRun.id 100 2
-$fSummary2 = @($fRows2 | Where-Object { "$($_.messageId)" -like 'batch:*' })
-Check 'B6-BATCH-FAIL the old batch is marked REDELIVERED after the resend' ($fSummary2.Count -eq 1 -and $fSummary2[0].status -eq 'REDELIVERED') ("status={0}" -f $fSummary2[0].status)
+Check 'B6-BATCH-FAIL re-running the job sends exactly ONE more request for that batch' (($sentAfter - $sentBefore) -eq 1) ("before={0} after={1}" -f $sentBefore, $sentAfter)
+$rerun = LatestRun $jbatch
+Check 'B6-BATCH-FAIL the re-run is recorded SUCCESS' ($rerun.status -eq 'SUCCESS') ("status={0} runId={1}" -f $rerun.status, $rerun.id)
+Check 'B6-BATCH-FAIL the re-run is a NEW run' ($rerun.id -ne $fRun.id) ("first={0} rerun={1}" -f $fRun.id, $rerun.id)
+$fRunAfter = (Api GET "/api/history/runs/$($fRun.id)").data
+Check 'B6-BATCH-FAIL the original run is still FAILED after the re-run' ($fRunAfter.status -eq 'FAILED') ("status={0}" -f $fRunAfter.status)
+$fWritten2 = Mssql 'SELECT COUNT(*) FROM CustomerERP.dbo.MDM_Code WHERE FHandle IS NOT NULL'
+Check 'B6-BATCH-FAIL the re-run filled the write-back for every one of the 20 codes' ($fWritten2 -match '^\s*20\s*$') ("rows={0}" -f ($fWritten2 -join '|'))
+$fWm2 = MySql "select count(*) from edge_gateway.watermark where job_key='job:$jbatch'"
+Check 'B6-BATCH-FAIL the re-run advanced the watermark past that batch' ("$fWm2" -match '^1$') ("watermark rows={0}" -f $fWm2)
 
 # ---------------------------------------------------------------- field scale: 1000 codes in ONE request (#143 AC5)
 Write-Host 'B6-BULK  1000 codes -> ONE request, the whole payload lands in history'
@@ -519,18 +529,20 @@ Check 'B6-BULK that one request carries all 1000 codes' ($bulkCodesSent -eq 1000
 $bRun2 = LatestRun $jbulk
 Check 'B6-BULK the run is recorded SUCCESS' ($bRun2 -and $bRun2.status -eq 'SUCCESS') ("status={0}" -f $bRun2.status)
 
-# The summary row of a 4000-row run: walk the index (no snapshots, 1000 rows per page) until the batch row shows up.
-$bulkSummaryId = 0
-for ($p = 1; $p -le 6 -and $bulkSummaryId -eq 0; $p++) {
+# The row carrying the whole request of a 4000-row run: walk the index (no snapshots, 1000 rows per page)
+# until the OUTLET row shows up. #147 deleted the summary row, so this is the packed envelope's own row
+# (step 4 = the outlet in the B6 shape, and it is the only row on that step).
+$bulkOutletId = 0
+for ($p = 1; $p -le 6 -and $bulkOutletId -eq 0; $p++) {
     $pageRows = @((Api GET "/api/history/runs/$($bRun2.id)/steps?page=$p&size=1000").data.records)
-    $hit = @($pageRows | Where-Object { "$($_.messageId)" -like 'batch:*' }) | Select-Object -First 1
-    if ($hit) { $bulkSummaryId = $hit.id }
+    $hit = @($pageRows | Where-Object { $_.step -eq 4 }) | Select-Object -First 1
+    if ($hit) { $bulkOutletId = $hit.id }
     if ($pageRows.Count -lt 1000) { break }
 }
-Check 'B6-BULK the outlet keeps one summary row for the whole batch' ($bulkSummaryId -gt 0) ("summaryId={0}" -f $bulkSummaryId)
-if ($bulkSummaryId -gt 0) {
+Check 'B6-BULK the outlet keeps one row for the whole batch (the packed envelope)' ($bulkOutletId -gt 0) ("outletRowId={0}" -f $bulkOutletId)
+if ($bulkOutletId -gt 0) {
     # exactly the call the snapshot panel makes when you open that step in the console
-    $whole = (Api GET "/api/history/steps/$bulkSummaryId").data
+    $whole = (Api GET "/api/history/steps/$bulkOutletId").data
     $payload = "$($whole.inputSnapshot)"
     $payloadItems = @()
     try { $payloadItems = @(($payload | ConvertFrom-Json).codes) } catch { }
