@@ -215,13 +215,12 @@ class StepLedger {
     /**
      * 失败那一刻的收尾：先把运行标成 FAILED，再记失败的那一步（以及合并那一批的每条成员各一行）。
      *
-     * <p>三处口径：</p>
+     * <p>两处口径：</p>
      * <ol>
      *   <li>没产生任何源行时（READ_SQL 在 split 前失败）用**批量占位消息标识**记一条 FAILED 步；</li>
-     *   <li>{@code edge.batchNoSummary} 置上时**只逐条记**（还原失败那一档，摘要行归出站）；</li>
-     *   <li>合并那一批（#142）：请求失败时这一批**每条消息各记一行** FAILED（同因，各自带自己那一片），
-     *       摘要行由上一条路记（那时 MESSAGE_ID 已被置成 {@code batch:<批号>}）。两条路写同一行时是
-     *       upsert，不会重。</li>
+     *   <li>合并那一批（#142）：失败时这一批**每条消息各记一行** FAILED（同因，各自带自己那一片），
+     *       外加这一步自己那一条——{@code MESSAGE_ID} 就是合并打出来那条信封消息的标识（#147）。
+     *       两条路写同一行时是 upsert，不会重。</li>
      * </ol>
      */
     void recordFailure(Exchange ex) {
@@ -234,8 +233,7 @@ class StepLedger {
             messageId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
         }
         Integer index = ex.getProperty(MessageHistoryService.ACTION_INDEX, Integer.class);
-        boolean onlyMembers = Boolean.TRUE.equals(ex.getProperty(RouteKeys.BATCH_NO_SUMMARY, Boolean.class));
-        if (messageId != null && index != null && !onlyMembers) {
+        if (messageId != null && index != null) {
             messageHistory.recordFailure(runId, messageId, index,
                     ex.getProperty(MessageHistoryService.ACTION_NAME, String.class),
                     rootMessage(ex),

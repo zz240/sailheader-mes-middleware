@@ -286,4 +286,24 @@ class HistoryControllerTest {
 
         verify(messageHistoryService, never()).redeliver(anyLong());
     }
+
+    /**
+     * #147：整批重发那条路径在代码与界面上都不存在——那个端点已经删掉，不再有任何处理器。
+     *
+     * <p>这是票面第一条验收标准的可执行落点：不再靠「全仓 grep 找不到了」交差。</p>
+     *
+     * <p><b>为什么不断言 404</b>：本仓库的全局异常面是刻意的 catch-all（{@code ApiExceptionHandler}
+     * 的 {@code @ExceptionHandler(Exception.class)}，口径是「消灭漏网与 Spring 默认格式」），
+     * 它把 Spring 6.1 对**未匹配路径**抛的 {@code NoResourceFoundException} 也收进统一信封 ——
+     * 所以任何不存在的路径在这个工程里都回 500 + 业务码，而不是 404。能真正钉住「入口不存在」的
+     * 是下面这两条：请求打不到任何重投逻辑（老处理器的第一件事就是解析任务标识）。</p>
+     */
+    @Test
+    void batchRedeliverEndpointNoLongerExists() throws Exception {
+        mockMvc.perform(post("/api/history/batches/5/redeliver"))
+                .andExpect(status().isInternalServerError());
+
+        verify(messageHistoryService, never()).jobIdOfStep(anyLong());
+        verify(messageHistoryService, never()).redeliver(anyLong());
+    }
 }

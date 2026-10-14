@@ -77,14 +77,8 @@ public class MessageHistoryService {
     /** 当前消息的**父消息标识**（#139，{@code edge.parentMessageId}）：从哪条消息拆出来的，拆分动作设。 */
     public static final String PARENT_MESSAGE_ID = "edge.parentMessageId";
     /**
-     * **摘要行**的消息标识前缀（#142 / ADR-0017 决策 6）：合并动作上承载整份请求与整份响应的那一行，
-     * 值是 {@code batch:<批号>}（该列非空，且「运行 + 消息 + 步骤」要唯一——批号一次执行一个，够唯一）。
-     * 前端按同一个前缀认它（`frontend/src/history/batch.ts` 的 {@code SUMMARY_MESSAGE_PREFIX}）。
-     */
-    public static final String SUMMARY_MESSAGE_PREFIX = "batch:";
-    /**
-     * 合并那一批的**成员清单**（#142）挂在 exchange 上的属性名：还原、出站失败时的逐条补记、
-     * 以及打包重发那条路由都用它把「这一批哪几条消息、各自那一片是什么」传下去。
+     * 合并那一批的**成员清单**（#142）挂在 exchange 上的属性名：还原与出站失败时的补记
+     * 都用它把「这一批哪几条消息、各自那一片是什么」传下去。
      * 名字的唯一定义在这儿（路由生成器只是引它）。
      */
     public static final String BATCH_MANIFEST = "edge.batchManifest";
@@ -602,127 +596,6 @@ public class MessageHistoryService {
         step.setStatus(REDELIVERED);
         messageStepMapper.updateById(step);
         return step;
-    }
-
-    /**
-     * **按批重发**（#142 / ADR-0017 决策 7）：合并那一步只做整批重发，**一次点击 = 一次请求**。
-     *
-     * <p>拿的是摘要行上存下来的**整份请求**（那一批的报文只存这一份，决策 6），按同一个动作
-     * （同数据源、同路径、同方法）原样再发一次；响应按业务键还原这一批每条消息，在**新运行**里
-     * 摘要行与每条各记一行，旧的摘要行与那一批的消息行标 {@code REDELIVERED}。</p>
-     *
-     * <p><b>为什么不像 {@link #redeliver} 那样重放链</b>：重放会把「发几次」交给链的形状决定，
-     * 而这里要的就是「点一次 = 发一次」——合并之前的步骤仍走逐条重投（{@link #redeliver}），
-     * 合并这一步只认整批。</p>
-     *
-     * @param summaryStepId 那一批的**摘要行**（{@code message_id = batch:<批号>}）的消息步 id
-     */
-    public JobRun redeliverBatch(Long summaryStepId) {
-        MessageStep summary = getStep(summaryStepId);
-        if (summary.getMessageId() == null || !summary.getMessageId().startsWith(SUMMARY_MESSAGE_PREFIX)) {
-            throw new IllegalStateException("这不是合并动作的摘要行（消息标识应为 " + SUMMARY_MESSAGE_PREFIX
-                    + "<批号>）: " + summaryStepId);
-        }
-        if (!FAILED.equals(summary.getStatus()) && !batchHasFailure(summary)) {
-            throw new IllegalStateException("仅整批失败的那一批可重发: " + summaryStepId);
-        }
-        JobRun oldRun = jobRunMapper.selectById(summary.getRunId());
-        Job job = oldRun == null ? null : jobMapper.selectById(oldRun.getJobId());
-        if (job == null || job.getStatus() == null || job.getStatus() != 1) {
-            throw BusinessException.of(BusinessCode.JOB_NOT_ENABLED, "任务未启用，无法重发这一批");
-        }
-        if (!hasBatchOutlet(job.getId(), summary.getStep())) {
-            throw new IllegalStateException("这一步不是出站动作（摘要行只落在 HTTP_CALL / MQ_PUBLISH 那一步上）："
-                    + summaryStepId);
-        }
-        List<MessageStep> members = batchMembers(summary);
-        if (members.isEmpty()) {
-            throw new IllegalStateException("这一批没有消息行，无法重发: " + summaryStepId);
-        }
-        Object request = parseJson(summary.getInputSnapshot());
-        List<AggregateBatch.Carrier> carriers = new ArrayList<>();
-        for (MessageStep member : members) {
-            carriers.add(new AggregateBatch.Carrier(member.getMessageId(), member.getBusinessKey(),
-                    member.getBatchSeq(), member.getParentMessageId(),
-                    parseSnapshot(member.getInputSnapshot()), Map.of(), member.getMessageId(), 1, false));
-        }
-        JobRun newRun = startRun(job.getId(), request);
-        try (ProducerTemplate producer = camelContext.createProducerTemplate()) {
-            Exchange result = producer.request(
-                    "direct:job-" + job.getId() + "-batch-resend-" + summary.getStep(), ex -> {
-                ex.getMessage().setBody(request);
-                ex.setProperty(RUN_ID, newRun.getId());
-                ex.setProperty(STEP_INPUT, request);
-                // 新运行里那两行记成「摘要行 + 这一批的每条」：消息标识与批号沿用原批（同一个批次的重发）
-                ex.setProperty(MESSAGE_ID, summary.getMessageId());
-                ex.setProperty(BATCH_MSG_ID, summary.getBatchId());
-                ex.setProperty(BATCH_MANIFEST, carriers);
-            });
-            failIfExchangeFailed(result);
-        } catch (Exception e) {
-            finishRun(newRun.getId(), FAILED, rootMessage(e));
-            throw new IllegalStateException("重发这一批失败: " + rootMessage(e), e);
-        }
-        finishRun(newRun.getId(), SUCCESS, null);
-        // 旧的那一批（摘要行 + 每条消息行）标 REDELIVERED：一次点击重发的就是它们
-        summary.setStatus(REDELIVERED);
-        messageStepMapper.updateById(summary);
-        for (MessageStep member : members) {
-            member.setStatus(REDELIVERED);
-            messageStepMapper.updateById(member);
-        }
-        return newRun;
-    }
-
-    /**
-     * 这一批的**消息行**（同运行 + 同批号、去掉摘要行），取**最后记过的那一步**、按攒批序号排。
-     *
-     * <p>为什么要「最后那一步」而不是摘要行那一步：失败可能落在**下游**——出站成功、还原那一步配不上时，
-     * 每条消息的行记在**还原**那一步上。重发要按那些行把「各自那一片」重新装回承运单。</p>
-     */
-    private List<MessageStep> batchMembers(MessageStep summary) {
-        List<MessageStep> rows = messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
-                        .eq(MessageStep::getRunId, summary.getRunId())
-                        .eq(MessageStep::getBatchId, summary.getBatchId()))
-                .stream()
-                .filter(row -> row.getMessageId() != null && !row.getMessageId().startsWith(SUMMARY_MESSAGE_PREFIX))
-                .toList();
-        int lastStep = rows.stream().mapToInt(MessageStep::getStep).max().orElse(Integer.MIN_VALUE);
-        return rows.stream()
-                .filter(row -> row.getStep() == lastStep)
-                .sorted(Comparator.comparing(MessageStep::getBatchSeq,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
-    }
-
-    /**
-     * 这一批里有没有失败的行（跨步骤看）：出站那一步失败时摘要行自己就是 FAILED；
-     * **下游（还原）那一步失败**时摘要行是 SUCCESS，但这一批整体没成——重发要重新打一次请求
-     * （拿旧响应重新配一遍没有意义：同一份响应配第二次还是同一份结果）。
-     */
-    private boolean batchHasFailure(MessageStep summary) {
-        return messageStepMapper.selectList(new LambdaQueryWrapper<MessageStep>()
-                        .eq(MessageStep::getRunId, summary.getRunId())
-                        .eq(MessageStep::getBatchId, summary.getBatchId()))
-                .stream()
-                .anyMatch(row -> FAILED.equals(row.getStatus()));
-    }
-
-    /**
-     * 这一步是不是**出站动作**、而且这条链上真有合并动作（决定有没有「打包重发」那条路由可用）：
-     * 摘要行落在出站那一步（ADR-0017 决策 6 的修订），所以重发也只认那一步。
-     */
-    private boolean hasBatchOutlet(Long jobId, Integer step) {
-        if (step == null) {
-            return false;
-        }
-        List<Action> actions = actionMapper.selectList(new LambdaQueryWrapper<Action>()
-                .eq(Action::getJobId, jobId));
-        boolean outlet = actions.stream()
-                .filter(a -> step.equals(a.getActionIndex()))
-                .anyMatch(a -> a.getType() == ActionKind.HTTP_CALL || a.getType() == ActionKind.MQ_PUBLISH);
-        boolean hasAggregate = actions.stream().anyMatch(a -> a.getType() == ActionKind.AGGREGATE);
-        return outlet && hasAggregate;
     }
 
     /**

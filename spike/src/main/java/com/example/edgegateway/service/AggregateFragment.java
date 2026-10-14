@@ -96,7 +96,6 @@ class AggregateFragment {
             StepLedger.putContext(ex, index, packed);
             ex.setProperty(RouteKeys.BATCH_MANIFEST, carriers);
             // 这一行是「整批 → 打包报文」：输入是整批（每条各自那一片），输出是打包出来的那一条报文。
-            // **整份请求 / 整份响应**那一行（摘要行）归**出站**动作记（决策 6 的修订）
             ledger.recordSuccessStep(ex, action, wholeBatch, packed);
         });
     }
@@ -152,31 +151,13 @@ class AggregateFragment {
         }
         if (!carriers.isEmpty()) {
             // 批号在这一步**转手**；打包出来那一条消息带新号，它自己的消息标识现生成——
-            // 摘要行的 `batch:<批号>` 留给**出站**那一步（ADR-0017 决策 6 的修订）
+            // 出站那一步记的就是**这条信封消息自己的**标识（#147 起不再改写成摘要行）
             ex.setProperty(MessageHistoryService.BATCH_MSG_ID, ElementMessageFactory.newBatchId());
             ex.setProperty(MessageHistoryService.MESSAGE_ID, UUID.randomUUID().toString());
             ex.setProperty(MessageHistoryService.BATCH_SEQ, null);
             ex.setProperty(MessageHistoryService.PARENT_MESSAGE_ID, null);
         }
         return carriers;
-    }
-
-    /**
-     * 认出「这一条是合并打出来的整批载体」：出站动作（{@code HTTP_CALL} / {@code MQ_PUBLISH}）
-     * 执行前调它，把这一行的消息标识换成**摘要行**的 {@code batch:<批号>}——整份请求与整份响应因此
-     * 只落在这一行上（ADR-0017 决策 6 的修订：摘要行归**出站**那一步，不再归合并）。
-     *
-     * <p>没有成员清单（链上没合并动作）时什么都不做：普通出站动作照旧记自己那条消息的行。</p>
-     */
-    void markBatchCarrier(Exchange ex) {
-        if (ex.getProperty(RouteKeys.BATCH_MANIFEST) == null) {
-            return;
-        }
-        String batchId = ex.getProperty(MessageHistoryService.BATCH_MSG_ID, String.class);
-        if (batchId != null) {
-            ex.setProperty(MessageHistoryService.MESSAGE_ID,
-                    MessageHistoryService.SUMMARY_MESSAGE_PREFIX + batchId);
-        }
     }
 
     /** 运行结束（成功或失败）时清理该运行仍挂着的攒批：未完成批次的数据不应残留在实例上。 */

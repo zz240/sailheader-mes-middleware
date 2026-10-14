@@ -31,7 +31,7 @@ public class JobRunGuard {
     public static final String ORIGIN_EXTERNAL = "external";
     /** 定时调度触发。 */
     public static final String ORIGIN_SCHEDULE = "schedule";
-    /** 消息重投 / 整批重发（历史页那两个入口）。 */
+    /** 消息重投（历史页那一个入口）。 */
     public static final String ORIGIN_REDELIVER = "redeliver";
 
     /** jobId → 当前占用者。值即那次占用的凭据，释放时必须原样交回。 */

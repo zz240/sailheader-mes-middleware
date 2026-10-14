@@ -69,8 +69,8 @@ sequenceDiagram
   **不查** `job_run` 里有没有 `RUNNING` 行：进程被强杀时那一行永久停留，任务将再也无法触发。
 - 四个触发入口都取了这道占用：手动执行（`JobExecutionService.execute`，`service/JobExecutionService.java:47`）、
   外部 API Key 触发（复用同一个方法，只是来源标为 `external`）、定时调度
-  （`JobScheduler.fire`，`service/JobScheduler.java:96`）、断点重投与整批重发
-  （`web/HistoryController.java` 的两个入口，重投会再开一次运行）。
+  （`JobScheduler.fire`，`service/JobScheduler.java:96`）、断点重投与重跑任务
+  （`web/HistoryController.java` 的重投入口 + 任务执行入口，重投会再开一次运行）。
 - 响应契约：四个 HTTP 入口在已有运行时返回 `409` + 业务码 `JOB_ALREADY_RUNNING`（文案「任务正在执行，请稍后再试」），
   信封沿用 `ApiExceptionHandler`；前端手动执行按**提示**展示（`JobsView.vue`），不当失败告警。调度触发只记一条日志，
   不产生运行行、不改任务状态。
@@ -94,10 +94,11 @@ sequenceDiagram
     日志有一条 `JobScheduler` 的「跳过本次调度触发」，并**跨线程**读到了占用凭据上的回填值
     （`job=252 origin=manual run=3140`——占用由 HTTP 线程取、由调度线程读）；下一次到点照常执行
     （证明 `scheduleWithFixedDelay` 没改坏）。
-  - **重投入口**（`verify-146-redeliver.ps1`，17/17）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
-    在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver` 与 `POST /api/history/batches/{id}/redeliver`
-    → 均 `409` + `JOB_ALREADY_RUNNING`，两条跳过日志都带 runId；被拒后那条消息步仍是 `FAILED`、运行行没有增加
-    （跳过没有副作用），空闲后重投不再 `409`。
+  - **重投入口**（`verify-146-redeliver.ps1`，16/16）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
+    在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver`
+    → `409` + `JOB_ALREADY_RUNNING`，跳过日志带 runId；被拒后那条消息步仍是 `FAILED`、运行行没有增加
+    （跳过没有副作用），空闲后重投不再 `409`。失败恢复的另一半是**重跑任务**（水位未推进即整批重走）：
+    `POST /api/history/batches/{id}/redeliver` 那条整批重发端点已由 #147 删除。
   - 断言「链首必须是源动作才会记消息步」（本票外的那条已知缺口）在夹具构造时被再次实测到：纯 `HTTP_CALL` 打头的链
     跑完只有 `job_run`、一条消息步都没有。
 
