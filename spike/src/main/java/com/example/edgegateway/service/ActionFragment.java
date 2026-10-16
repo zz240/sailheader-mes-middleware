@@ -124,7 +124,7 @@ class ActionFragment {
                             .when(ex -> !Boolean.TRUE.equals(ex.getProperty(RouteKeys.SKIP_FLAG, Boolean.class)))
                                 .marshal().json()
                                 .to(url)
-                                .process(ex -> readWriteFragments.captureResponse(ex, action, index))
+                                .process(ex -> readWriteFragments.captureResponse(ex, action, index, call, method, url))
                         .endChoice()
                         .end();
             }

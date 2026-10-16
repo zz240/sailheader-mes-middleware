@@ -1,6 +1,7 @@
 package com.example.edgegateway.service;
 
 import com.example.edgegateway.WatermarkStore;
+import com.example.edgegateway.config.action.HttpCallConfig;
 import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.config.action.WriteUpsertConfig;
 import com.example.edgegateway.mapping.JsonataFieldMapper;
@@ -151,16 +152,27 @@ class ReadWriteFragments {
      * 一次**成功**的调用被判成整链失败。想继续往下传响应，就显式引用本动作序号
      * （下一步 FIELD_MAP 的 {@code sourceStep}，或后续动作的取源参数）。</p>
      *
+     * <p><b>成功条件断言（#148）</b>插在「取到响应」之后、「写上下文与记账」之前：目标端
+     * 200 但响应体写业务错时，这一步必须判失败。抛在 {@link StepLedger#recordSuccessStep} 之前，
+     * 所以该步只有一行 FAILED（由 {@code ErrorHandling} 的 {@code onException} 写），不会先记一行 SUCCESS；
+     * 断言没过也就走不到还原与写回，不会拿一份业务无效的响应去配对。</p>
+     *
+     * <p>出站地址与 HTTP 方法由建片段时算好的那份传进来（{@code ActionFragment} 建路由时已解析过一次，
+     * 断言失败信息里要用的就是它），这里不重算。</p>
+     *
      * <p>失败面不变：4xx/5xx 由 Camel HTTP 组件抛 {@code HttpOperationFailedException}，根本走不到这里
-     * （不写 context、不执行后续写回），按 ADR-0003 失败即停 + 重试退避。</p>
+     * （不写 context、不执行后续写回），按 ADR-0003 失败即停 + 重试退避；断言失败按普通异常走同一套退避。</p>
      */
-    void captureResponse(Exchange ex, Action action, int index) {
+    void captureResponse(Exchange ex, Action action, int index, HttpCallConfig call, String method, String url) {
         Object request = ex.getProperty(MessageHistoryService.STEP_INPUT, Object.class);
         String raw = ResponseTexts.text(ex);
         // 捕获内容不做截断：装不下就立即失败（可读错误），绝不写半截 JSON（#123 口径 4；列容量本身是 #141=MEDIUMTEXT）
         messageHistory.requireCaptureFitsSnapshot(index, raw);
+        Object response = HttpCallResponse.parse(raw);
+        // 在记账之前断言：不满足即抛，该步只有一行 FAILED
+        HttpSuccessAssert.check(method, url, call.successPath(), call.successExpect(), response, raw);
         Map<Integer, Object> context = StepLedger.context(ex);
-        context.put(index, HttpCallResponse.parse(raw));
+        context.put(index, response);
         ex.setProperty(RouteKeys.CONTEXT, context);
         ex.getMessage().setBody(request);
         // data_snapshot 语义不变（input = 请求、data = 响应）：记响应原文，不记解析后的对象

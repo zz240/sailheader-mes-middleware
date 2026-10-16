@@ -104,7 +104,7 @@ for (Action a : sorted(actions)) {
 | `READ_SQL` | 读水位（配置在动作上）→ `to(sql:..)` → 算新水位 → `split(body())` → 每行存 `context[序号]` |
 | `FIELD_MAP` | processor：从 `context[sourceStep]` 取源 → 规则映射 → 存 `context[序号]` |
 | `WRITE_UPSERT` | processor：取 body → 组装 `INSERT ... ON DUPLICATE KEY UPDATE` → jdbc 执行 |
-| `HTTP_CALL` | `marshal().json()` → 设 method/鉴权头 → `to(baseUrl + path)` → processor：响应解析进 `context[序号]` + 消息体还原为本次请求体（#123/#126，失败面不变：非 2xx 抛异常、不写 context） |
+| `HTTP_CALL` | `marshal().json()` → 设 method/鉴权头 → `to(baseUrl + path)` → processor：**成功条件断言（#148）** → 响应解析进 `context[序号]` + 消息体还原为本次请求体（#123/#126，失败面不变：非 2xx 抛异常、不写 context） |
 | `MQ_PUBLISH` | `marshal().json()` → `to(spring-rabbitmq:name?routingKey=..)` |
 | `ONE_TO_MANY`（拆分档） | processor：解析来源那片数组 → 换号（新批号 + 记下父消息标识）→ `split(每元素)`：每条子消息存 `context[本序号] = 自己那个元素`，并起自己的消息标识 / 业务键 / 批内序号 → 按开过的层数 `end()` |
 | `AGGREGATE` | processor：把这条消息记成一张承运单（攒批键 = 运行 + 动作序号）→ 在**批 exchange 上同步判齐**（凑不满立即失败、绝不发半批）→ 打包 `{"<bodyField>": [ …每条各自那一片… ]}` → 过容量闸 → 批号转手，链上只留打包出来那一条消息（空批 / 整批被续投跳过时挂 `edge.batchEmpty`，由一层 filter 拦截，后面连出站都不跑） |

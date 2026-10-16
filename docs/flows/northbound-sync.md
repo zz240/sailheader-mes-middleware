@@ -52,7 +52,7 @@ sequenceDiagram
 | 算新水位 | 取批内 max | `ReadSqlBatcher.newBatchWatermark` | SEQUENCE 取 max(id)；TIMESTAMP 取 max(updated_at) 转 epoch 毫秒（**不用墙钟 now**） | 批内进度 | — |
 | 拆分 | 每行一子交换 | `split(bodyExpression())` | Camel split（循环内） | `List<Map>` → `Map` | — |
 | 映射 | 源→目标 | FIELD_MAP（`service/ActionFragment.java:55` 那段片段） | `JsonataRuleCompiler.compile`（`mapping/JsonataRuleCompiler.java:35`）+ `JsonataFieldMapper.apply`（`mapping/JsonataFieldMapper.java:46`） | 上下文 → 目标对象 | 编译失败→400；求值异常→FAILED 消息步 |
-| 推送 | HTTP 出站 | HTTP_CALL（`service/ActionFragment.java:95` 那段片段） | `composeUrl`（`service/ReadWriteFragments.java:177`）+ `marshal().json()` + `.to(url)` + `captureResponse`（`service/ReadWriteFragments.java:161`，响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→抛异常→重试/FAILED 消息步 |
+| 推送 | HTTP 出站 | HTTP_CALL（`service/ActionFragment.java:95` 那段片段） | `composeUrl`（`service/ReadWriteFragments.java:185`）+ `marshal().json()` + `.to(url)` + `captureResponse`（`service/ReadWriteFragments.java:166`，先过成功条件断言（#148，不满足即失败且不写 context）再解析响应进 `context[本动作序号]`、消息体还原为请求体，#123/#126） | `Map`→JSON→HTTP；响应 → `context[序号]` | 非 2xx→抛异常→重试/FAILED 消息步；成功条件不满足→同上（错误信息含响应原文片段） |
 | 水位回写 | **每批**成功后推进 | `updateWatermark`（split 结束后、循环内） | `WatermarkStore.put(批内水位)` | — | 批失败只丢该批：水位停在上一成功批，重跑补读 |
 
 > 水位首跑语义：`watermark` 表无记录时按初始值 0 处理——SEQUENCE 读 `id > 0` 即**首次全量**（不会跳过首行），

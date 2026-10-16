@@ -170,6 +170,15 @@
               <el-option label="PUT" value="PUT" />
             </el-select>
           </el-form-item>
+          <el-form-item label="成功字段路径">
+            <el-input v-model="kindForm.successPath" placeholder="留空 = 不看响应体；如 code / data.status" />
+          </el-form-item>
+          <el-form-item label="期望值">
+            <el-input v-model="kindForm.successExpect" placeholder="留空 = 该字段有值即算成功；如 0 / OK" />
+          </el-form-item>
+          <el-alert type="info" :closable="false" show-icon
+            title="对端「永远 200、业务结果写在响应体里」时用它判成败"
+            description="留空 = 不看响应体（现状）。只写路径 = 该字段必须存在。两格都写 = 必须相等（按字符串比较，响应里的数字 0 与这里写的 0 等价）。不满足即判这一步失败：重试退避 → 失败消息步 → 运行失败 → 水位不推进，修好后重跑任务整批重走。" />
         </template>
 
         <template v-if="actionForm.type === 'MQ_CONSUME'">
