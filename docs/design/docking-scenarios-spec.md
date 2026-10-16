@@ -117,7 +117,7 @@ MES 侧收单替身要能：记录每一次请求（供逐字段核对）、按�
 - **怎么算对上**：① 工单张数与源一致；② 每张的工序行数与源一致、`FSeq` 升序；③ 已下发工单**内容变更**后再下发 → 更新而非新增（头行都要）。
 - **失败与边界**：一张工单的下发行写失败（整条消息失败，不应半张落库）；`FPlanStart` 时区与格式（`DATE` 转换 + 时区）。
 
-> **落库形态的硬约束（A2/A3 共有）**：`ReadWriteFragments.upsert`（`service/ReadWriteFragments.java:123`，#145 之前这个方法在 `RouteGenerator` 里）把消息体当 `Map` 写一行，所以默认是**一条消息 = 一行、一张表**。头表 + 行表有三种做法：
+> **落库形态的硬约束（A2/A3 共有）**：`ReadWriteFragments.upsert`（`service/ReadWriteFragments.java:124`，#145 之前这个方法在 `RouteGenerator` 里）把消息体当 `Map` 写一行，所以默认是**一条消息 = 一行、一张表**。头表 + 行表有三种做法：
 > ① **读源时展平**：`READ_SQL` 用 join 把子行摊成一行一行（头字段冗余在每行上），逐行 upsert 进行表；头表由另一条任务（或同链再读一次）负责。现场常见做法，零产品改动。
 > ② **读源时聚合**：源库侧 `JSON_ARRAYAGG` / `FOR JSON PATH` 把子件折成一列字符串，映射侧 `$parse` 还原成数组——一份报文一条消息（推 HTTP 可以；要落**行表**仍得再拆）。
 > ③ **链上拆分（拆分档，#140 已落地）**：把报文里那片数组摊成 N 条子消息，此后逐条 `WRITE_UPSERT` 落行表；头行由链上另一个动作写。配置与整条批量链的配法见 `docs/action-chain-design.md` §1 / `docs/user-guide.md`「批量接口怎么做」，决策见 `docs/adr/0017-cardinality-change-and-message-history.md`。

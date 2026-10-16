@@ -91,7 +91,7 @@ sequenceDiagram
 | READ_SQL | 数据源、SQL（可含 `{watermark}`）、水位策略、水位列、批大小 | `config/action/ReadSqlConfig.java:28` |
 | ONE_TO_MANY（拆分） | `mode:"split"`、`sourceStep`、`sourcePath`、`elementKey`（必填）、`keepParent` | `config/action/OneToManyConfig.java:35` |
 | AGGREGATE | `bodyField`（整批包成 `{"<bodyField>":[…]}`） | `config/action/AggregateConfig.java:20` |
-| HTTP_CALL | 数据源（根地址）、`path`、`method` | `config/action/HttpCallConfig.java:11` |
+| HTTP_CALL | 数据源（根地址）、`path`、`method`；可选**成功条件** `successPath` / `successExpect`（#148） | `config/action/HttpCallConfig.java:28` |
 | ONE_TO_MANY（还原） | `mode:"restore"`、`sourceStep`（填出站那一步）、`resultKeyField`、`attachAs` | `config/action/OneToManyConfig.java:35` |
 | WRITE_UPSERT | 数据源、`tableName`、`idempotencyKey` | `config/action/WriteUpsertConfig.java:11` |
 
