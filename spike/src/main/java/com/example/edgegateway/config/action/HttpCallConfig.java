@@ -51,10 +51,28 @@ public record HttpCallConfig(
         if (dataSourceId == null) {
             throw new IllegalArgumentException("HTTP 调用动作需要 dataSourceId");
         }
-        // #148：期望值必须跟一个取值路径一起用——只有期望值的话，运行期不知道该去响应体哪里取值
+        // #148：期望值必须跟一个取值路径一起用——规则本体在下面的静态入口里，写时与运行期共用同一份
+        requireSuccessPathWithExpect(successPath, successExpect);
+    }
+
+    /**
+     * 成功条件两格的自洽规则（#148）：留空 {@code successPath} 就不许单独写 {@code successExpect}——
+     * 只有期望值，运行期不知道该去响应体的哪里取值。
+     *
+     * <p>规则的**唯一一份实现**在这里（配置类自己说了算自己的合法性；运行期只能反过来依赖它），两个点共用：
+     * 写端点的 {@link #validate()}（{@code ActionService.add/update} → 400）与运行期的
+     * {@code service/HttpSuccessAssert}。后者的闸不能删：规则若从别的路进了数据库（老行 / 导入），
+     * 运行期必须显式失败而不是静默放行；两处共用同一个条件与同一句错误信息，也不会各自漂移。</p>
+     */
+    public static void requireSuccessPathWithExpect(String successPath, String successExpect) {
         if (isBlank(successPath) && !isBlank(successExpect)) {
             throw new IllegalArgumentException("成功条件需要 successPath（successExpect 要跟一个取值路径一起用）");
         }
+    }
+
+    /** 空白文本判定：配置期与运行期（{@code service/HttpSuccessAssert}）共用这一份。 */
+    public static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     @Override
@@ -78,10 +96,6 @@ public record HttpCallConfig(
             map.put("successExpect", successExpect);
         }
         return map;
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 
     private static void rejectUnknownKeys(Map<String, Object> map, Set<String> allowed) {

@@ -96,8 +96,46 @@ class HttpSuccessAssertTest {
     @Test
     void missingPathFails() {
         assertThatThrownBy(() -> check("handle", null, "{\"code\":\"0\"}"))
+                .as("只判存在时取不到值：说清「响应里这个路径没有值」，而不是含糊地说条件不满足")
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("handle=null");
+                .hasMessageContaining("响应 handle 没有取到值")
+                .hasMessageContaining("成功条件「handle 必须存在」不满足");
+    }
+
+    @Test
+    void missingValueWithExpectationNamesThePathThatHadNoValue() {
+        assertThatThrownBy(() -> check("code", "0", "{\"msg\":\"编号重复\"}"))
+                .as("有期望值但路径取不到：同样说清是「没有值」，而不是拿 null 去比")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("响应 code 没有取到值")
+                .hasMessageContaining("成功条件 code=0 不满足")
+                .hasMessageContaining("编号重复");
+    }
+
+    // ---------- 对象 / 数组不是值（配置错误，不比） ----------
+
+    @Test
+    void objectValueIsAConfigErrorNotAComparison() {
+        assertThatThrownBy(() -> check("data", "OK", "{\"data\":{\"status\":\"OK\"}}"))
+                .as("路径指到对象上：成功条件只判标量，对象/数组一律判失败")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("目标端业务失败")
+                .hasMessageContaining("POST " + URL)
+                .hasMessageContaining("data 取到的是对象而不是一个值")
+                .hasMessageContaining("配置错误")
+                .hasMessageContaining("前 200 字符");
+        assertThatThrownBy(() -> check("data", "{status=OK}", "{\"data\":{\"status\":\"OK\"}}"))
+                .as("期望值写成对象的 Java toString 也不判成功——那只是碰巧相等（F1 要治的正是这个）")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("取到的是对象");
+    }
+
+    @Test
+    void arrayValueIsAConfigErrorEvenWhenOnlyExistenceIsRequired() {
+        assertThatThrownBy(() -> check("results", null, "{\"results\":[{\"handle\":\"H1\"}]}"))
+                .as("只判存在也不行：路径指的是数组，成功条件判的是标量")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("results 取到的是数组而不是一个值");
     }
 
     // ---------- 空响应体 ----------
@@ -136,7 +174,7 @@ class HttpSuccessAssertTest {
         // 非 JSON 文本按原样字符串进上下文：拿它的键去取只会取不到（那就是失败）
         assertThatThrownBy(() -> check("code", "0", "ok"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("code=null");
+                .hasMessageContaining("响应 code 没有取到值");
     }
 
     @Test

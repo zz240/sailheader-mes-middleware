@@ -260,7 +260,10 @@ class HttpSuccessAssertExecutionTest {
 
         JobRun run = runNumber(1);
         assertThat(run.getStatus()).isEqualTo("FAILED");
-        assertThat(run.getError()).contains("handle=null").contains("有值");
+        assertThat(run.getError())
+                .as("只判存在那档：说清「响应里这个路径没有值」+「该字段必须存在」，不写含糊的「有值 不满足」")
+                .contains("响应 handle 没有取到值")
+                .contains("成功条件「handle 必须存在」不满足");
         assertThat(stepsAt(run.getId(), STEP_CALL)).hasSize(1)
                 .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("FAILED"));
     }
@@ -338,9 +341,9 @@ class HttpSuccessAssertExecutionTest {
      * 断言失败按普通异常走：{@code retryCount} / {@code backoffMs} 生效，每一次投递都记在 {@code attempt} 上
      * （与 {@code RouteGeneratorAttemptTest} 同口径）。
      *
-     * <p>这里只断言"重投真的发生了几次"，<b>不断言目标端收到几次</b>：响应已经是 200、挂在断言上的失败
-     * 属于「出站之后」的错，重投复用同一份响应，不会重新发一次请求；只有失败发生在**出站自己**时
-     * （4xx/5xx / 连不上）才会重发。这个区别是既有行为，不由本票改变。</p>
+     * <p>重投**不会重发请求**，这一点是断言的、不是注释里说说：断言节点挂在 {@code .to(url)} **之后**，
+     * Camel 的 redelivery 只重跑失败的那个节点，出站那一步不在其中——所以这一步尝试 3 次、目标端只被联系 1 次。
+     * 只有失败发生在**出站自己**时（4xx/5xx / 连不上）才会重发。这个区别是既有行为，不由本票改变。</p>
      */
     @Test
     void assertionFailureIsRetriedLikeAnyOtherException() throws Exception {
@@ -358,6 +361,9 @@ class HttpSuccessAssertExecutionTest {
                     assertThat(step.getAttempt()).as("重试 2 次 = 一共尝试 3 次").isEqualTo(3);
                     assertThat(step.getStatus()).isEqualTo("FAILED");
                 });
+        assertThat(httpCalls.get())
+                .as("断言在出站之后：重投 3 次也只联系目标端 1 次（Camel redelivery 只重跑失败的那个节点）")
+                .isEqualTo(1);
         assertThat(stepsAt(run.getId(), STEP_WRITE)).as("重试耗尽仍未通过，下游不执行").isEmpty();
         assertThat(watermarkPuts).as("水位不推进").isEmpty();
     }
