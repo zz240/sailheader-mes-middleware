@@ -1,0 +1,3 @@
+# git 钩子必须是 LF：Windows 上 CRLF 会让 /bin/sh 把 \r 当成命令的一部分，钩子直接失败。
+# 其它文件不动换行策略，避免一次全仓重新规范化。
+.githooks/* text eol=lf

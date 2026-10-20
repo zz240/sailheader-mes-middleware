@@ -22,9 +22,21 @@ $mvn = Join-Path $repo '.tools\apache-maven-3.9.9\bin\mvn.cmd'
 $scratch = Join-Path $repo '.scratch\test-runner'
 $m2 = Join-Path $env:USERPROFILE '.m2\repository'
 
-$mvnArgs = @('-o', 'test')
+# 仓库内的 Maven 副本不进版本库（.tools/ 已 gitignore）；没有它就退回 PATH 上的 mvn（CI 走这条）。
+# 离线模式只对本地副本开：CI 的干净环境要联网拉依赖。
+$offline = Test-Path $mvn
+if (-not $offline) {
+    $found = Get-Command mvn.cmd -ErrorAction SilentlyContinue
+    if (-not $found) { $found = Get-Command mvn -ErrorAction SilentlyContinue }
+    if (-not $found) { throw '找不到 mvn：既没有 .tools\apache-maven-3.9.9，PATH 上也没有' }
+    $mvn = $found.Source
+}
+$offlineFlag = @()
+if ($offline) { $offlineFlag = @('-o') }
+
+$mvnArgs = $offlineFlag + @('test')
 if ($Selectors.Count -gt 0) {
-    $mvnArgs = @('-o', "-Dtest=$($Selectors -join ',')", 'test')
+    $mvnArgs = $offlineFlag + @("-Dtest=$($Selectors -join ',')", 'test')
 }
 
 Push-Location $spike
@@ -38,9 +50,11 @@ try {
     # ---- 方式 2：进程内 JUnit Platform ----
     Write-Host '[run-tests] Surefire 不可用（沙箱拒绝 fork？），回退到进程内 runner' -ForegroundColor Yellow
 
-    & $mvn -o -q '-DskipTests' 'test-compile'
+    $compileArgs = $offlineFlag + @('-q', '-DskipTests', 'test-compile')
+    & $mvn @compileArgs
     if ($LASTEXITCODE -ne 0) { throw 'test-compile 失败，先修编译错误' }
-    & $mvn -o -q 'dependency:build-classpath' "-Dmdep.outputFile=$scratch\cp.txt" '-Dmdep.includeScope=test'
+    $cpArgs = $offlineFlag + @('-q', 'dependency:build-classpath', "-Dmdep.outputFile=$scratch\cp.txt", '-Dmdep.includeScope=test')
+    & $mvn @cpArgs
     if ($LASTEXITCODE -ne 0) { throw 'dependency:build-classpath 失败' }
 
     $deps = (Get-Content "$scratch\cp.txt" -Raw).Trim()

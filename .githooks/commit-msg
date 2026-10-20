@@ -1,0 +1,40 @@
+#!/bin/sh
+# 提交信息守卫。两件事：
+#   ① 剥掉开头混进来的 UTF-8 BOM —— 本机 write 工具默认写 BOM，`git commit -F 文件`
+#      会把 BOM 当成正文第一段写进提交信息（2026-10-19 #147/#148 那 14 个提交就是这么中招的）。
+#   ② 校验首行格式 `type(scope): 主题`，规则见 CODING_STANDARDS.md「提交信息」。
+#
+# 启用：git config core.hooksPath .githooks
+#      或跑一次：pwsh -File tools/install-hooks.ps1
+# 临时绕过：git commit --no-verify
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+
+# ---- ① BOM ----
+head3=$(head -c 3 "$msg_file" | od -An -tx1 | tr -d ' \n')
+if [ "$head3" = "efbbbf" ]; then
+    tail -c +4 "$msg_file" > "$msg_file.bomstrip" && mv "$msg_file.bomstrip" "$msg_file"
+    echo "[commit-msg] 已剥掉提交信息开头的 BOM"
+fi
+
+# ---- ② 首行格式 ----
+subject=$(head -n 1 "$msg_file")
+case "$subject" in
+    "Merge "*|"Revert "*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+
+if ! printf '%s' "$subject" | grep -Eq '^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([^)]+\))?: .+'; then
+    cat >&2 <<'EOF'
+[commit-msg] 提交信息首行格式不对。
+
+    期望：type(scope): 主题
+    举例：fix(mapping): #147 拆分动作空数组不再落死信
+    type：feat fix docs refactor perf test build ci chore
+
+    规则见 CODING_STANDARDS.md「提交信息」一节。
+    临时绕过：git commit --no-verify
+EOF
+    exit 1
+fi
+
+exit 0
