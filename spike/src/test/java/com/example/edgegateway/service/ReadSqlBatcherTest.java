@@ -123,10 +123,10 @@ class ReadSqlBatcherTest {
     @Test
     void timestampNewWatermarkUsesBatchMaxUpdatedAtNotWallClock() {
         ReadSqlConfig read = timestamp("updated_at");
-        long t1 = LocalDateTime.of(2026, 8, 14, 10, 0, 0).atZone(SHANGHAI).toInstant().toEpochMilli();
         long t2 = LocalDateTime.of(2026, 8, 14, 11, 0, 0).atZone(SHANGHAI).toInstant().toEpochMilli();
         List<Map<String, Object>> batch = List.of(
-                row("updated_at", new Timestamp(t1)), row("updated_at", new Timestamp(t2)));
+                row("updated_at", Timestamp.valueOf("2026-08-14 10:00:00")),
+                row("updated_at", Timestamp.valueOf("2026-08-14 11:00:00")));
         // 不用墙钟 now：水位 = 批内 max(updated_at) 对应的 epoch
         assertThat(batcher.newBatchWatermark(read, batch, 0L, SHANGHAI)).isEqualTo(t2);
     }
@@ -170,10 +170,26 @@ class ReadSqlBatcherTest {
     @Test
     void toEpochMillisHandlesCommonColumnReadings() {
         long epoch = LocalDateTime.of(2026, 8, 14, 10, 0, 0).atZone(SHANGHAI).toInstant().toEpochMilli();
-        assertThat(batcher.toEpochMillis(new Timestamp(epoch), SHANGHAI)).isEqualTo(epoch);
+        // 时间列按墙上时间（不带时区）读进来，按任务时区解释
+        assertThat(batcher.toEpochMillis(Timestamp.valueOf("2026-08-14 10:00:00"), SHANGHAI)).isEqualTo(epoch);
         assertThat(batcher.toEpochMillis(epoch, SHANGHAI)).isEqualTo(epoch);
         assertThat(batcher.toEpochMillis(LocalDateTime.of(2026, 8, 14, 10, 0, 0), SHANGHAI)).isEqualTo(epoch);
         assertThat(batcher.toEpochMillis("2026-08-14 10:00:00", SHANGHAI)).isEqualTo(epoch);
+    }
+
+    @Test
+    void timestampColumnInterpretedInJobZoneRegardlessOfJvmZone() {
+        // 源库的时间列是「不带时区的墙上时间」：读进来必须按任务时区解释。
+        // 曾经用 Timestamp.getTime()（JVM 默认时区），服务器跑 UTC、任务配 Asia/Shanghai 时
+        // 水位整体偏 8 小时，下一批查不到任何行，链路静默停在第一批 —— 这条测试把它钉住。
+        java.util.TimeZone previous = java.util.TimeZone.getDefault();
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+            long millis = batcher.toEpochMillis(Timestamp.valueOf("2026-08-14 10:00:00"), SHANGHAI);
+            assertThat(batcher.formatTimeBound(millis, SHANGHAI)).isEqualTo("2026-08-14 10:00:00");
+        } finally {
+            java.util.TimeZone.setDefault(previous);
+        }
     }
 
     @Test

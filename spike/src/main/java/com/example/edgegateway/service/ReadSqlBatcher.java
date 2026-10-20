@@ -120,7 +120,10 @@ public class ReadSqlBatcher {
             return n.longValue();
         }
         if (raw instanceof java.sql.Timestamp ts) {
-            return ts.getTime();
+            // 源库的时间列当作「不带时区的墙上时间」，按任务时区解释，与 formatTimeBound 对称。
+            // 用 ts.getTime() 会按 JVM 默认时区解释：服务器跑 UTC、任务配 Asia/Shanghai 时，
+            // 水位整体偏 8 小时，下一批一条也查不到，链路静默停在第一批。
+            return ts.toLocalDateTime().atZone(zone).toInstant().toEpochMilli();
         }
         if (raw instanceof java.util.Date d) {
             return d.getTime();
