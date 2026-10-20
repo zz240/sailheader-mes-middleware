@@ -27,7 +27,8 @@
 `STATUS_DLL_INIT_FAILED`。**本机根因是 DSH 的 `workspace-write` 沙箱，不是机器坏了**：
 同一条命令改成 `danger-full-access` 就正常起。表现为任何 pwsh 调用返回 `(no output)` + `[exit code: 3221225794]`。
 
-- 处置：把这条命令用 `danger-full-access` 重试一次（审批一次即可），**不要连试多次**。
+- 处置：用 `danger-full-access` 重试一次（需要审批）。如果本会话不允许升级（审批被关掉），
+  就请用户把会话权限改成 full access —— **不要连试多次，也不要猜别的命令能绕过**。
 - 另外两个本机事实：
   - `pwsh` 实际是 **Windows PowerShell 5.1**，不是 PowerShell 7。
   - 执行策略禁止跑未签名脚本：先 `Set-ExecutionPolicy -Scope Process Bypass -Force`，
