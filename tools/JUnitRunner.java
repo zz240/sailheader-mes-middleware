@@ -25,9 +25,13 @@ public final class JUnitRunner {
     public static void main(String[] args) throws Exception {
         var builder = request();
         for (String arg : args) {
-            builder.selectors(arg.contains(".") && Character.isUpperCase(arg.charAt(arg.lastIndexOf('.') + 1))
-                    ? selectClass(arg)
-                    : selectPackage(arg));
+            if (arg == null || arg.isBlank()) {
+                continue;
+            }
+            int dot = arg.lastIndexOf('.');
+            boolean looksLikeClass = dot > 0 && dot < arg.length() - 1
+                    && Character.isUpperCase(arg.charAt(dot + 1));
+            builder.selectors(looksLikeClass ? selectClass(arg) : selectPackage(arg));
         }
         LauncherDiscoveryRequest discovery = builder.build();
         SummaryGeneratingListener listener = new SummaryGeneratingListener();

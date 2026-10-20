@@ -39,8 +39,8 @@
 - **`.ps1` 必须 UTF-8 with BOM**。PowerShell 5.1 会把无 BOM 的 UTF-8 当 GBK 读：中文变乱码，
   字符串字面量还会被吞掉，语法直接报错（实测报 `@(...)` 里 `意外的标记 ")"`）。
 - **`.md` / `.yml` / `.githooks/*` 不要 BOM**：sh 脚本带 BOM 会解释失败。
-- `write` 工具**新建**文件时会加 BOM；**覆盖**一个已存在的无 BOM 文件时保持原样。
-  所以新建 `.md`/`.yml` 后要去 BOM，新建 `.ps1` 正好（`tools/install-hooks.ps1` 负责这件事）。
+- `write` 工具**新建**文件时会加 BOM；**`edit` 重写已有文件时会丢掉 BOM**——所以改完 `.ps1` 必须把 BOM 补回来，
+  否则 PowerShell 5.1 读成 GBK，中文注释吞掉引号，报一堆 `意外的标记 ")"`。`tools/install-hooks.ps1` 会补。
 
 ### 2. 沙箱拒绝 fork：`CreatePipe error=5`
 

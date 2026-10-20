@@ -42,9 +42,20 @@ if ($Selectors.Count -gt 0) {
 Push-Location $spike
 try {
     # ---- 方式 1：Surefire ----
-    & $mvn @mvnArgs
-    if ($LASTEXITCODE -eq 0) {
+    # 只有"Surefire 根本跑不起来"才该回退。测试真的失败时必须原样以非零退出，别把失败掩盖成环境问题。
+    # 捕获输出期间临时放宽 ErrorActionPreference：PowerShell 5.1 会把原生命令的 stderr 当成可终止错误。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $surefireOut = (& $mvn @mvnArgs 2>&1 | Out-String)
+    $mvnExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    Write-Host $surefireOut
+    if ($mvnExit -eq 0) {
         exit 0
+    }
+    if ($surefireOut -match 'Tests run:') {
+        Write-Host '[run-tests] 测试有失败（Surefire 正常跑完了）——直接返回失败，不进入回退 runner' -ForegroundColor Red
+        exit $mvnExit
     }
 
     # ---- 方式 2：进程内 JUnit Platform ----
