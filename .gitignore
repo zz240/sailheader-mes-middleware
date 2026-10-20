@@ -18,3 +18,8 @@ sailheader-mes-middleware-design/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 本地草稿与工具产物（不进版本库）
+.scratch/
+spike/.scratch/
+.archify/
