@@ -24,13 +24,14 @@ public record HttpCallConfig(
         String method,
         Integer bodySourceStep,
         String successPath,
-        String successExpect
+        String successExpect,
+        Integer timeoutMs
 ) implements ActionConfig {
 
     public static HttpCallConfig from(Map<String, Object> addition) {
         Map<String, Object> map = addition == null ? Map.of() : addition;
         rejectUnknownKeys(map, Set.of("dataSourceId", "path", "method", "bodySourceStep",
-                "successPath", "successExpect"));
+                "successPath", "successExpect", "timeoutMs"));
         Object id = map.get("dataSourceId");
         return new HttpCallConfig(
                 id == null ? null : Long.valueOf(id.toString()),
@@ -38,7 +39,8 @@ public record HttpCallConfig(
                 ConfigValues.str(map.get("method")),
                 map.get("bodySourceStep") == null ? null : Integer.valueOf(map.get("bodySourceStep").toString()),
                 ConfigValues.str(map.get("successPath")),
-                ConfigValues.str(map.get("successExpect")));
+                ConfigValues.str(map.get("successExpect")),
+                map.get("timeoutMs") == null ? null : Integer.valueOf(map.get("timeoutMs").toString()));
     }
 
     @Override
@@ -53,6 +55,9 @@ public record HttpCallConfig(
         }
         // #148：期望值必须跟一个取值路径一起用——规则本体在下面的静态入口里，写时与运行期共用同一份
         requireSuccessPathWithExpect(successPath, successExpect);
+        if (timeoutMs != null && timeoutMs <= 0) {
+            throw new IllegalArgumentException("HTTP 调用动作的 timeoutMs 必须是正整数（单位毫秒）");
+        }
     }
 
     /**
@@ -94,6 +99,9 @@ public record HttpCallConfig(
         }
         if (!isBlank(successExpect)) {
             map.put("successExpect", successExpect);
+        }
+        if (timeoutMs != null) {
+            map.put("timeoutMs", timeoutMs);
         }
         return map;
     }

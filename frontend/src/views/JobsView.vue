@@ -170,6 +170,10 @@
               <el-option label="PUT" value="PUT" />
             </el-select>
           </el-form-item>
+          <el-form-item label="超时（毫秒）">
+            <el-input-number v-model="kindForm.timeoutMs" :min="1" :max="600000" :step="500"
+              placeholder="留空 = 组件默认（不超时）；等对端回包的上限" />
+          </el-form-item>
           <el-form-item label="成功字段路径">
             <el-input v-model="kindForm.successPath" placeholder="留空 = 不看响应体；如 code / data.status" />
           </el-form-item>

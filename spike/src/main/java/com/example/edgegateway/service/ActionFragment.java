@@ -97,7 +97,7 @@ class ActionFragment {
                 DataSource ds = dataSourceMapper.selectById(call.dataSourceId());
                 HttpDataSourceConfig http = (HttpDataSourceConfig)
                         DataSourceConfig.from(ds.getType(), ds.getAddition());
-                String url = readWriteFragments.composeUrl(ds.getAddress(), call.path());
+                String url = readWriteFragments.withTimeout(readWriteFragments.composeUrl(ds.getAddress(), call.path()), call.timeoutMs());
                 String method = call.method() == null || call.method().isBlank() ? "POST" : call.method();
                 String auth = http.token() == null || http.token().isBlank() ? null : "Bearer " + http.token();
                 yield current

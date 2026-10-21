@@ -193,6 +193,20 @@ class ReadWriteFragments {
     }
 
     /**
+     * 把超时并进端点 URI。
+     *
+     * <p>注意：URI 上 `?x=y` 这一段是 **Camel 的端点参数**，由 Camel 消费、**不会发给目标端**；
+     * 参数名对应 {@code HttpEndpoint#setResponseTimeout}。所以目标端收到的请求里看不到它
+     * （这和"把查询参数发给对方"是两件事）。</p>
+     */
+    String withTimeout(String url, Integer timeoutMs) {
+        if (timeoutMs == null || timeoutMs <= 0) {
+            return url;
+        }
+        return url + (url.contains("?") ? "&" : "?") + "responseTimeout=" + timeoutMs;
+    }
+
+    /**
      * 取动作选定的客户库连接池并确保其已登记为 {@code edge-ds-<id>} bean（懒建），
      * 供 READ_SQL 的 {@code #edge-ds-<id>} 与 WRITE_UPSERT 的 {@link JdbcTemplate} 使用。
      * 数据源缺失或不是关系库时注册期即失败，避免把读写错误落到错误库。
