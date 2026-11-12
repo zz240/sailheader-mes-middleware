@@ -71,8 +71,8 @@ npm run dev
 
 ## 状态
 
-- 文档分层：用户看 `docs/user-guide.md`；开发者看 `docs/features/`（每个功能的现状 + 决策时间线）；
-  决策"为什么"在 `docs/adr/`；业务↔代码走查在 `docs/flows/`；历史草案已归档到 `docs/archive/`。
+- 文档：**先看 [`docs/README.md`](docs/README.md)**（按「我要做什么」分类的总索引）。用户手册是
+  `docs/user-guide.md`；功能现状在 `docs/features/`；决策「为什么」在 `docs/adr/`；业务↔代码走走在 `docs/flows/`。
 - **已落地**：
   - 数据源（HTTP / MySQL / SQL Server / RabbitMQ，**连接级**：地址与鉴权在数据源，表 / 队列 / 路径在动作）；
   - 任务与动作链配置界面；**八种动作种类**：`READ_SQL`、`WRITE_UPSERT`、`HTTP_CALL`、`MQ_CONSUME`、
@@ -81,9 +81,10 @@ npm run dev
   - 消息历史（`job_run` / `message_step` + 批次三格）、断点重投与重跑任务；
   - 外部 API Key 触发、定时调度、模板 / 站点 / 映射历史沉淀。
 - **交付**：单镜像同源运行（前端 `dist` 打进 Spring Boot 镜像），Flyway 版本化迁移 V1–V7。
-- **测试**：后端 `mvn -o -B test` **624 项 0 失败**（H2 内存库，不需要 MySQL / RabbitMQ）；
+- **测试**：后端全量跑 `pwsh -File tools/run-tests.ps1`（H2 内存库，不需要 MySQL / RabbitMQ）；
   前端纯模块自测（`node --experimental-strip-types`，不依赖浏览器）；
   真机脚本在 `tools/shadow-site/`（影子站点 + MES 替身）与 `tools/ui/`（Playwright 页面级）。
+  用例数不写进 README，以 CI 或本地跑出来的结果为准。
 - **已知债务**：目录名 `spike/`（见上「命名提醒」）；`RouteGenerator` 曾是改动热点（#145 已按片段与簿记拆开：装配 400 行 + `StepLedger` / 各片段类，最长的 `StepLedger` 318 行）；
   链一致性只校验 `sourceStep` 的**存在性与先后**，不校验语义漂移（重排后同序号换动作仍会放行）。
 
