@@ -152,13 +152,6 @@ export interface Page<T> {
   records: T[]
 }
 
-export interface Template {
-  id: number
-  name: string
-  version: string
-  configJson: Record<string, any>
-}
-
 export interface SiteInfo {
   id: number
   name: string
