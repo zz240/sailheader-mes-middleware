@@ -6,7 +6,7 @@ import com.example.edgegateway.config.action.FieldMappingRule;
 import com.example.edgegateway.mapping.DatePatterns;
 import com.example.edgegateway.mapping.JsonataFunctions;
 import com.example.edgegateway.mapping.TransformType;
-import com.example.edgegateway.mapping.suggest.SourceField;
+import com.example.edgegateway.web.dto.SourceField;
 import com.example.edgegateway.web.dto.MappingDraftRequest;
 import com.example.edgegateway.web.dto.MappingDraftRequest.TargetFieldSpec;
 

@@ -164,7 +164,6 @@ export interface SiteInfo {
   name: string
   timezone: string
   hasApiKey: boolean
-  suggester: string
 }
 
 export interface ProbeField {
@@ -177,18 +176,6 @@ export interface ProbeField {
 export interface ProbeResult {
   sourceKey: string
   fields: ProbeField[]
-}
-
-export interface MappingSuggestion {
-  sourcePath: string
-  targetName: string
-  score: number
-  transform: string
-  datePattern?: string | null
-  constant?: string | null
-  enumMap?: Record<string, any> | null
-  matchSource: string
-  children?: MappingSuggestion[] | null
 }
 
 export interface ValidationIssue {

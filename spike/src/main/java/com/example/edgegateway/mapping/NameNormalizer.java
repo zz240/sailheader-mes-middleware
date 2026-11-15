@@ -1,4 +1,4 @@
-package com.example.edgegateway.mapping.suggest;
+package com.example.edgegateway.mapping;
 
 import java.util.LinkedHashSet;
 import java.util.Map;

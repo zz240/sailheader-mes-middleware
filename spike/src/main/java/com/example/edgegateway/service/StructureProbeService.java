@@ -6,8 +6,9 @@ import com.example.edgegateway.config.action.ActionConfig;
 import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
-import com.example.edgegateway.mapping.suggest.SourceField;
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.mapping.SqlTableExtractor;
+import com.example.edgegateway.web.dto.SourceField;
+import com.example.edgegateway.web.dto.SourceStructure;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
 import com.example.edgegateway.model.DataSource;
@@ -103,7 +104,7 @@ public class StructureProbeService {
                     ActionKind.READ_SQL, action.getAddition() == null ? Map.of() : action.getAddition());
             if (config.dataSourceId() != null && config.dataSourceId().equals(dataSourceId)
                     && config.sql() != null) {
-                String table = MappingHistoryService.extractTable(config.sql());
+                String table = SqlTableExtractor.extractTable(config.sql());
                 if (table != null) {
                     return table;
                 }

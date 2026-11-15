@@ -11,9 +11,6 @@
           <el-tag :type="row.hasApiKey ? 'success' : 'info'">{{ row.hasApiKey ? '已设置' : '未设置' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="suggester" label="建议器覆盖" width="130">
-        <template #default="{ row }">{{ row.suggester || '默认(rule)' }}</template>
-      </el-table-column>
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="generateKey(row)">生成/重置 API Key</el-button>

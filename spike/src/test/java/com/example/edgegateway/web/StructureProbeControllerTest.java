@@ -1,7 +1,7 @@
 package com.example.edgegateway.web;
 
-import com.example.edgegateway.mapping.suggest.SourceField;
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.web.dto.SourceField;
+import com.example.edgegateway.web.dto.SourceStructure;
 import com.example.edgegateway.model.DataSource;
 import com.example.edgegateway.service.DataSourceService;
 import com.example.edgegateway.service.StructureProbeService;
