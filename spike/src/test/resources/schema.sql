@@ -47,14 +47,6 @@ CREATE TABLE IF NOT EXISTS job_action (
     CONSTRAINT uk_action_job_index UNIQUE (job_id, action_index)
 );
 
-CREATE TABLE IF NOT EXISTS template (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    version VARCHAR(64) NOT NULL,
-    config_json TEXT,
-    CONSTRAINT uk_template_name_version UNIQUE (name, version)
-);
-
 CREATE TABLE IF NOT EXISTS watermark (
     job_key VARCHAR(64) PRIMARY KEY,
     wm_value BIGINT NOT NULL

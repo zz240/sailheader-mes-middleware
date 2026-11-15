@@ -21,7 +21,7 @@
  *
  *   三、**页面级那条多余滚动条消失**（ADR-0016 风险④ / #129 实测）：`tokens.css` 的 `body`
  *       自带浏览器默认的 8px 外边距，四个页面实测都是 `htmlScrollH = innerH + 16`。
- *       归零之后四个页面（`/history` `/jobs` `/data-sources` `/templates`）在 1366×900 上
+ *       归零之后四个页面（`/history` `/jobs` `/data-sources` `/sites`）在 1366×900 上
  *       都是 `documentElement.scrollHeight == innerHeight`。
  *
  * 跑法（playwright 是本目录自带的，先 `npm i` 一次就行）：
@@ -54,7 +54,7 @@ const VIEWPORTS = [360, 390, 430, 600, 820, 1024, 1366, 1440, 1920]
  */
 const NARROW = [360, 390, 430, 600, 820]
 /** 四个页面都要没有页面级滚动条（ADR-0016 风险④）。 */
-const PAGES = ['/history', '/jobs', '/data-sources', '/templates']
+const PAGES = ['/history', '/jobs', '/data-sources', '/sites']
 const DESKTOP = { width: 1366, height: 900 }
 
 function check(name, cond, detail = '') {
