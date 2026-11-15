@@ -48,3 +48,11 @@
 - 刻意口径（超时只当失败判据 / 合并之前的单条重投立刻发 / 容量闸显式失败不写半截）**不是 bug**，清单见 docs/action-chain-design.md 末节
 - 决策基线：docs/adr/0017-cardinality-change-and-message-history.md（文末有 #142 / #143 两节落地记录；决策 6 的摘要行与决策 7 的整批重发已由 [#147](https://github.com/zz240/sailheader-mes-middleware/issues/147) 作废，该 ADR 只追加状态、正文未改）
 - 失败恢复：**重跑任务**（水位未推进即整批重走，含下游）；合并之前的单条仍走断点重投（#147）。整批重发那条路径整体删除，随它一起走的还有 `BatchResendRoute` 与收尾那两个入口 `settleBatchResend` / `markBatchCarrier`（`AggregateFragment` 的摘要行记账同批删除）
+
+## 术语细节
+
+**调度（Schedule）**：任务自动触发的结构化配置（不自动 / 间隔 / 每天 / 每周），内部编译为 fixedRate 或 cron 并结合时区；不对用户展示或编辑 cron 表达式。
+_Avoid_: 定时器, cron 表达式
+
+**任务输入（Job Input）**：手动执行任务时通过接口传入的 JSON，作为动作链的第一个数据来源。
+_Avoid_: tempData, 入参

@@ -4,7 +4,7 @@
 
 相关形态：[标量行映射](scalar-row-mapping.md)、[数组 / 层级映射](array-mapping.md)、[总览](README.md)。
 本文件只讲「一个目标字段由多段拼起来」这一种形态；数组行 / 组节点本身的展开、`$root` 跨层引用、
-手写 JSONata 与建议器都在各自文件里。
+手写 JSONata 在各自文件里。
 
 ## 场景说明
 
@@ -275,8 +275,7 @@ mvn -f spike/pom.xml test -Dtest=JsonataRuleCompilerTest,MappingDraftValidationS
 （现在只剩 35 行导航与旧编号对照），所以下面 M 开头的搬迁条目核对的是 **git 历史里的旧正文**
 （`git diff -- docs/flows/transform-flow.md` 能看到删掉的 101 行）。旧正文的建议表里**没有**一条属于本形态：
 `C6` / `P6` / `P7` / `P8` 是标量行、`P9` 与「映射历史 INDEX 子规则不入库」是数组、`F1` 与 `F2/F6`–`F9`
-是建议器——它们各自搬到 [标量行映射](scalar-row-mapping.md)、[数组 / 层级映射](array-mapping.md)、
-[建议器](suggester.md)，本文件只交叉引用。属于本形态的既有结论是旧正文里的
+它们各自搬到 [标量行映射](scalar-row-mapping.md)、[数组 / 层级映射](array-mapping.md)，本文件只交叉引用。属于本形态的既有结论是旧正文里的
 「关键实现」一行与「覆盖样例」一行，以及散在功能页与测试里的空片段口径，即 M1–M3。
 
 | 现象 | 建议 | 理由 | 类型 | 涉及功能 | 状态 |

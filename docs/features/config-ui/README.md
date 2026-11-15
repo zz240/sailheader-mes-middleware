@@ -4,7 +4,7 @@ Vue 3 + TS + Vite + Element Plus 独立前端工程；工程分离、部署合�
 
 ## 当前设计（现状）
 
-- **技术栈（ADR-0006）**：`frontend/` 独立工程（Vue 3 + TypeScript + Vite + Element Plus + vue-router）；页面：数据源 / 任务（含映射编辑器）/ 消息历史 / 模板 / 站点，路由在 `frontend/src/router/index.ts`。
+- **技术栈（ADR-0006）**：`frontend/` 独立工程（Vue 3 + TypeScript + Vite + Element Plus + vue-router）；页面：数据源 / 任务（含映射编辑器）/ 消息历史 / 站点，路由在 `frontend/src/router/index.ts`。
 - **API 客户端**：`frontend/src/api/client.ts` 统一走 `/api` 前缀、解包 `{code,message,data}` 信封，`code!=OK` 抛 `ApiError(code,message)`；`/mock` 代理到后端 mock 端点。
 - **表单特化**：数据源/动作按类型渲染字段（六种 ActionKind 各自表单）；字段映射的配置整份在**全屏抽屉**里（`FieldMappingWorkbench.vue`），动作表上的「编辑映射」是它唯一的入口，动作弹窗里只留一句提示（#107 起旧的三栏 + 多级表格 + 推荐面板编辑器已删）。
 - **开发期**：Vite dev server 5173 代理 `/api`、`/mock` → 8080，热更新；**部署期**：Docker 多阶段构建（node 构建 dist → 拷入 Spring Boot 镜像），单镜像、同源、无 CORS。
@@ -37,7 +37,7 @@ dense utility 那套是给字段映射这类技术工具定的，表单型页面
 
 ## 待办 / 已知限制
 
-- 消息历史/模板/站点页面为表格 + 弹窗，交互相对简单。
+- 消息历史/站点页面为表格 + 弹窗，交互相对简单。
 - 动作弹窗里 FIELD_MAP 没有可编辑的配置：**新建**时点「保存」只能发一份空规则，后端会以「字段映射动作需要至少一条映射规则」拒掉（请走「去配字段映射」）；**已有**动作点「保存」会把编辑器里那份映射原样带上（按钮上写「改名称 / 序号顺便保存映射」）——它是改名称 / 序号唯一能存下去的办法。
 - 第 1、2 期落地前，编辑器的 384 行自绘样式与五个业务页面的组件库默认外观**会有过渡期不一致**（ADR-0013「结果」一节写明了这是分期的代价）。
 

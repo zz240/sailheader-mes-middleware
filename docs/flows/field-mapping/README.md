@@ -20,7 +20,6 @@
 | 数组 / 层级 | 数组行选来源数组 + 子行相对路径 + 「外层 · 」引用 → 目标数组 | [array-mapping.md](array-mapping.md) |
 | 拼接 / 片段 | 一个目标字段多段拼起来，每段各挂一个转换（#112） | [concat-part-mapping.md](concat-part-mapping.md) |
 | 手写表达式 | `mode=EXPRESSION`：整段 JSONata，跳过规则树校验 | [expression-mode.md](expression-mode.md) |
-| 建议器 | 结构探测 → 归一化 → 相似度 → 历史复用 → 转换推断（当前无 UI 入口） | [suggester.md](suggester.md) |
 
 ### 交互清单（形态无关的那几条）
 
@@ -158,4 +157,3 @@ node --experimental-strip-types frontend/src/mapping/checks.ts
 | N3 `docs/flows/northbound-sync.md:54-55`、`notify-push.md:45-46`、`southbound-sync.md:46-47` 把 `appendFragment` 当成动作类型的注解（「FIELD_MAP（`appendFragment`）」）——它是 `RouteGenerator` 的**私有**路由拼装方法（#145 之后已搬到 `service/ActionFragment.java:52` 的 `append`，由 `RouteGenerator.appendChain:314` 调用），不是动作类型，也不能用来区分动作 | 三份文件里把那处括号删掉或改成「经 `appendChain` → `ActionFragment.append` 拼装」，别让读者以为存在一个叫 `appendFragment` 的动作种类 | 动作类型只有 `ActionKind` 那几种；这类注解会被当成契约抄进新文档 | 文档偏差 | 配置流 / 字段映射 | **本轮已改这三份**（#145 顺手把括号换成新位置：`ActionFragment.java:55` / `:95` / `:133`） |
 | N4 `AGENTS.md` 的 token 预算一节写「最大文件 `frontend/src/mapping/checks.ts`（1610 行）、`MappingDraftValidationServiceTest`（1272 行）」「`MappingRowList.vue`（约 755 行）」——这三份在 #113/#114/#117 之后都长了；本轮按**整文件行数（含空行）**数是 **1706 / 1309 / 775** | 下次动 `AGENTS.md` 时把三个数更新，并注明口径「含空行的整文件行数」：`Get-Content <f> \| Measure-Object -Line` 会**漏掉空行**，同一份文件它数出 1547 / 1118 / 696——口径不写清就会越改越乱 | 预算一节是用来决定「先读哪一份」的，数字错了选文件就错 | 文档偏差 | 字段映射 | 待评估 |
 | N5 「校验不是实时的」（改完行要再点一次「校验配置」，行状态不随编辑失效）是 #98 的决定，但第二轮（#113）之后行上同时挂着前端自己的提醒（清掉的行那条），两种来源的状态容易让人以为已经重新校验过 | 保持现状；已在各形态文件与本总览里写明「行状态只由后端那一次结果给、前端提醒不冒充结论」 | 没跑过的草稿不该冒充跑过 | 文档偏差 | 字段映射 | 已闭环（本轮：写明口径） |
-| N6 旧文档与旧索引把建议端点写成 `POST /api/suggestions`——真实路径是 `POST /api/mapping-suggestions`（`web/SuggestionController.java:15`）；结构探测端点也不是 `/api/structure-probe`，而是 `/api/data-sources/{id}/probe`、`/api/probe/sample`、`/api/data-sources/{id}/suggest-table`（`web/StructureProbeController.java:29、48、54`） | 本总览与 [README.md](../README.md) 索引已改成真实路径；其余旧引用见 [建议器](suggester.md) 的 N1 | 照旧文档敲 curl 会 404，排查成本白花 | 文档偏差 | 字段映射 | 已闭环（本轮：总览与索引） |
