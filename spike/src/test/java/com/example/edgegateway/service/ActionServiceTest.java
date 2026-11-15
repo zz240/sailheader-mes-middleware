@@ -27,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,7 +35,6 @@ class ActionServiceTest {
     private ActionMapper actionMapper;
     private JobMapper jobMapper;
     private DataSourceMapper dataSourceMapper;
-    private MappingHistoryService mappingHistoryService;
     private MappingSampleService mappingSampleService;
     private RouteLifecycle routeLifecycle;
     private ActionService service;
@@ -46,10 +44,9 @@ class ActionServiceTest {
         actionMapper = mock(ActionMapper.class);
         jobMapper = mock(JobMapper.class);
         dataSourceMapper = mock(DataSourceMapper.class);
-        mappingHistoryService = mock(MappingHistoryService.class);
         mappingSampleService = mock(MappingSampleService.class);
         routeLifecycle = mock(RouteLifecycle.class);
-        service = new ActionService(actionMapper, jobMapper, dataSourceMapper, mappingHistoryService,
+        service = new ActionService(actionMapper, jobMapper, dataSourceMapper,
                 mappingSampleService, routeLifecycle);
         when(actionMapper.selectList(any())).thenReturn(List.of());
     }
@@ -300,38 +297,6 @@ class ActionServiceTest {
                 FieldMappingConfig.from(clearedDraft));
 
         assertThat(service.add(1L, request).getType()).isEqualTo(ActionKind.FIELD_MAP);
-    }
-
-    @Test
-    void fieldMappingSaveRecordsMappingHistory() {
-        Job job = new Job();
-        job.setId(1L);
-        when(jobMapper.selectById(1L)).thenReturn(job);
-        when(actionMapper.selectCount(any())).thenReturn(0L);
-        when(actionMapper.insert(any(Action.class))).thenReturn(1);
-
-        ActionRequest request = new ActionRequest("map", ActionKind.FIELD_MAP, 2,
-                FieldMappingConfig.from(Map.of("rules", List.of(Map.of(
-                        "source", "order_no", "target", "sheet_no", "transform", "STRING")))));
-
-        service.add(1L, request);
-
-        verify(mappingHistoryService).recordFromAction(
-                org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any());
-    }
-
-    @Test
-    void readSqlSaveDoesNotRecordMappingHistory() {
-        Job job = new Job();
-        job.setId(1L);
-        when(jobMapper.selectById(1L)).thenReturn(job);
-        when(actionMapper.selectCount(any())).thenReturn(0L);
-        when(actionMapper.insert(any(Action.class))).thenReturn(1);
-        when(dataSourceMapper.selectById(7L)).thenReturn(new DataSource());
-
-        service.add(1L, readRequest(1, 7L));
-
-        verify(mappingHistoryService, never()).recordFromAction(any(), any());
     }
 
     @Test

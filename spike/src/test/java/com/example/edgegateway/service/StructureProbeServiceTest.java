@@ -1,7 +1,7 @@
 package com.example.edgegateway.service;
 
-import com.example.edgegateway.mapping.suggest.SourceField;
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.web.dto.SourceField;
+import com.example.edgegateway.web.dto.SourceStructure;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.Action;

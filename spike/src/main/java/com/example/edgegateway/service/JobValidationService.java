@@ -8,8 +8,9 @@ import com.example.edgegateway.config.datasource.JdbcDataSourceConfig;
 import com.example.edgegateway.service.sql.SqlDialects;
 import com.example.edgegateway.config.action.ReadSqlConfig;
 import com.example.edgegateway.mapping.TransformType;
-import com.example.edgegateway.mapping.suggest.NameNormalizer;
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.mapping.NameNormalizer;
+import com.example.edgegateway.mapping.SqlTableExtractor;
+import com.example.edgegateway.web.dto.SourceStructure;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.model.Action;
 import com.example.edgegateway.model.ActionKind;
@@ -165,7 +166,7 @@ public class JobValidationService {
         ReadSqlConfig config = (ReadSqlConfig) ActionConfig.from(ActionKind.READ_SQL, addition(read));
         DataSource ds = config.dataSourceId() == null ? null
                 : dataSourceMapper.selectById(config.dataSourceId());
-        String table = MappingHistoryService.extractTable(config.sql());
+        String table = SqlTableExtractor.extractTable(config.sql());
         if (ds == null || table == null) {
             return;
         }

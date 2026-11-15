@@ -2,7 +2,6 @@ package com.example.edgegateway.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.edgegateway.config.action.ActionConfig;
-import com.example.edgegateway.config.action.FieldMappingConfig;
 import com.example.edgegateway.mapper.ActionMapper;
 import com.example.edgegateway.mapper.DataSourceMapper;
 import com.example.edgegateway.mapper.JobMapper;
@@ -32,7 +31,6 @@ public class ActionService {
     private final ActionMapper actionMapper;
     private final JobMapper jobMapper;
     private final DataSourceMapper dataSourceMapper;
-    private final MappingHistoryService mappingHistoryService;
     private final MappingSampleService mappingSampleService;
     private final RouteLifecycle routeLifecycle;
 
@@ -40,13 +38,11 @@ public class ActionService {
             ActionMapper actionMapper,
             JobMapper jobMapper,
             DataSourceMapper dataSourceMapper,
-            MappingHistoryService mappingHistoryService,
             MappingSampleService mappingSampleService,
             RouteLifecycle routeLifecycle) {
         this.actionMapper = actionMapper;
         this.jobMapper = jobMapper;
         this.dataSourceMapper = dataSourceMapper;
-        this.mappingHistoryService = mappingHistoryService;
         this.mappingSampleService = mappingSampleService;
         this.routeLifecycle = routeLifecycle;
     }
@@ -64,7 +60,6 @@ public class ActionService {
         checkDataSourceReference(request.addition());
         Action action = toAction(jobId, request);
         actionMapper.insert(action);
-        recordMappingHistory(jobId, request);
         rebuildRoutesIfEnabled(jobId);
         return action;
     }
@@ -80,7 +75,6 @@ public class ActionService {
         checkDataSourceReference(request.addition());
         apply(action, request);
         actionMapper.updateById(action);
-        recordMappingHistory(action.getJobId(), request);
         rebuildRoutesIfEnabled(action.getJobId());
         return action;
     }
@@ -158,14 +152,6 @@ public class ActionService {
         action.setJobId(jobId);
         apply(action, request);
         return action;
-    }
-
-    /** 字段映射动作保存/更新后，把最终确认的映射规则沉淀进映射历史。 */
-    private void recordMappingHistory(Long jobId, ActionRequest request) {
-        if (request.type() == ActionKind.FIELD_MAP) {
-            mappingHistoryService.recordFromAction(
-                    jobId, ((FieldMappingConfig) request.addition()).rules());
-        }
     }
 
     /**

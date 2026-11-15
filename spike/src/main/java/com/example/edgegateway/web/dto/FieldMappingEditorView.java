@@ -1,7 +1,5 @@
 package com.example.edgegateway.web.dto;
 
-import com.example.edgegateway.mapping.suggest.SourceField;
-
 import java.util.List;
 
 /**
@@ -47,7 +45,7 @@ public record FieldMappingEditorView(
     /**
      * 目标字段清单（编辑器那一侧）：来源是连库探测、粘进来的一份样例（#118），或库里存过的那份（#119）。
      *
-     * <p>fields 形状与结构探测契约（{@code mapping.suggest.SourceStructure}）一致，编辑器那一侧两边走同一份
+     * <p>fields 形状与结构探测契约（{@link SourceStructure}）一致，编辑器那一侧两边走同一份
      * 折算；多一个 `sampledFirstItem`：粘的是一整个数组时只按第 1 条推，界面据此注明。</p>
      *
      * @param sourceKey 与来源那侧的 `sourceKey` 同一个口径：`paste` = 这一次粘的，`stored` = 库里存过的那份

@@ -33,8 +33,7 @@ public class SiteController {
                         "id", s.getId(),
                         "name", s.getName(),
                         "timezone", s.getTimezone() == null ? "" : s.getTimezone(),
-                        "hasApiKey", s.getApiKey() != null && !s.getApiKey().isBlank(),
-                        "suggester", s.getSuggester() == null ? "" : s.getSuggester()))
+                        "hasApiKey", s.getApiKey() != null && !s.getApiKey().isBlank()))
                 .toList();
     }
 
@@ -48,8 +47,7 @@ public class SiteController {
                 "id", site.getId(),
                 "name", site.getName(),
                 "timezone", site.getTimezone() == null ? "" : site.getTimezone(),
-                "hasApiKey", site.getApiKey() != null && !site.getApiKey().isBlank(),
-                "suggester", site.getSuggester() == null ? "" : site.getSuggester());
+                "hasApiKey", site.getApiKey() != null && !site.getApiKey().isBlank());
     }
 
     @PostMapping("/{id}/api-key")

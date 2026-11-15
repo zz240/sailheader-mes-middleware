@@ -1,6 +1,6 @@
 package com.example.edgegateway.web;
 
-import com.example.edgegateway.mapping.suggest.SourceStructure;
+import com.example.edgegateway.web.dto.SourceStructure;
 import com.example.edgegateway.service.FieldMappingEditorService;
 import com.example.edgegateway.service.MappingDraftValidationService;
 import com.example.edgegateway.service.MappingTrialService;

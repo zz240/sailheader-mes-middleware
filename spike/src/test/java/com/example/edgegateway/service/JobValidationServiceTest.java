@@ -92,8 +92,8 @@ class JobValidationServiceTest {
         when(dataSourceMapper.selectById(7L)).thenReturn(mysqlDs());
         when(connectionTester.test(any())).thenReturn(new ConnectionTester.TestResult(true, "ok"));
         when(probeService.probeFromDb(any(), any(), anyBoolean())).thenReturn(
-                new com.example.edgegateway.mapping.suggest.SourceStructure("db:po_order",
-                        List.of(new com.example.edgegateway.mapping.suggest.SourceField(
+                new com.example.edgegateway.web.dto.SourceStructure("db:po_order",
+                        List.of(new com.example.edgegateway.web.dto.SourceField(
                                 "order_no", "VARCHAR", false, List.of("PO-1")))));
     }
 

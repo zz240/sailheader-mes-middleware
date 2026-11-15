@@ -1,7 +1,5 @@
 package com.example.edgegateway.web.dto;
 
-import com.example.edgegateway.mapping.suggest.SourceField;
-
 import java.util.List;
 import java.util.Map;
 
