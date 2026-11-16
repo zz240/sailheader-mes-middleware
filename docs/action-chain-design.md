@@ -114,51 +114,22 @@ for (Action a : sorted(actions)) {
 
 错误处理保持现状：路由级 `onException`（retryCount/backoffMs 重试）+ 消息步记录（`edge.actionIndex` 按动作定位），不做改动。
 
-## 4. 迁移路径
+## 4. 当时的实施计划（已完成，只留指针）
 
-存量 `job_action` 按 addition 内容推断新种类：
+DS-8 的迁移路径、影响面清单、实施顺序与验收场景已全部落地（#140–#144）。过程记录不再维护：
 
-| 现状（REMOTE_ACCESS + addition） | 迁移为 |
-|---|---|
-| `sql` 非空，数据源 MYSQL | `READ_SQL`（水位策略/列从 Job 移入动作 addition） |
-| `tableName` 非空 | `WRITE_UPSERT` |
-| 数据源 HTTP | `HTTP_CALL` |
-| 数据源 RABBITMQ 且为链首 | `MQ_CONSUME` |
-| `FIELD_MAPPING` | `FIELD_MAP`（sourceStep = 前一个动作序号，sourcePath = 原 source） |
+- 结果与时间线 → `docs/features/job-action-chain/README.md`
+- 取舍与后果 → `ADR-0017`
 
-JobRequest 移除 `watermarkType`/`watermarkColumn`（移到 READ_SQL 动作，对应 DS-7 任务表单瘦身）。
+要改动作种类或链上语义，读上面三节（§1–§3）和 §5、§6，那才是仍在生效的口径。
 
-## 5. 影响面清单
-
-- `model`：`ActionType` → `ActionKind`（新增枚举 + 存量数据迁移 SQL）
-- `config`：`ActionConfig` 拆为每种动作一个 record（ReadSql/WriteUpsert/HttpCall/MqConsume/MqPublish/FieldMapConfig），各自 validate（DS-2 延伸）
-- `mapping`：`FieldMappingRule` 加 sourceStep；`FieldMapper` 改上下文解析
-- `service`：`RouteGenerator` 重写为片段组合；`JobValidationService` 按种类校验；`MappingHistoryService` sourceKey 从 READ_SQL/MQ_CONSUME 推导；`JobService` 移除水位字段校验
-- `web`：`ActionRequest/ActionView`、`JobRequest/JobView`（水位字段移除）
-- `frontend`：动作表单按种类特化（DS-7），字段映射 sourceStep 选择器
-- `test`：RouteGeneratorTest 按片段组合重写 + 每种类单测 + "读→映射→写→发消息"组合端到端测试
-
-## 6. 实施顺序
-
-1. 动作语义化（枚举 + config records + 迁移 SQL），保持现有两条链路等价；
-2. 上下文列表 + FieldMapper 改造；
-3. 片段组合生成器（用现有测试对照，行为不变）；
-4. 水位迁移到读动作 + 任务表单瘦身；
-5. 前端动作表单特化（DS-7）+ `MQ_PUBLISH` 新动作端到端验证（目标场景："同步的同时发消息"）。
-
-## 7. 验收场景
-
-- 现有北向/南向链路行为不变（回归测试）；
-- 新场景：MySQL 读 → 字段映射 → HTTP 写 MES + `MQ_PUBLISH` 发送同一份映射结果到客户队列，一条任务完成"同步 + 通知"；
-- 动作链任意位置插入动作不再被静默忽略（校验期明确报错或正常参与路由）。
-
-## 8. 已确认决策（2026-08-19）
+## 5. 已确认决策（2026-08-19）
 
 1. `ActionType` 升级为显式 `ActionKind` 枚举，不做"REMOTE_ACCESS + operation 字段"的混合形态。
 2. 字段规则的 `sourceStep` 使用 action_index；动作重排时前端联动改写依赖规则（或校验期报警）。
 3. MVP 限制：一条链最多一个 `MQ_CONSUME` + 一个带水位的 `READ_SQL`，超出在配置期校验拦截。
 
-## 9. 刻意的选择：这几条**不是 bug**（别去修）
+## 6. 刻意的选择：这几条**不是 bug**（别去修）
 
 基数变化这条链上有四处「看着别扭、其实是有意的」口径。完整的「为什么」在 ADR-0017，这里列成一张清单，
 免得下一个人把它们当缺陷修掉：

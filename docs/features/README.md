@@ -1,43 +1,46 @@
-# 功能演化页（Features）
+# 功能页（Features）
 
-按**功能**聚合的决策时间线，是开发者理解“某个功能为什么长这样”的导航入口。
+一句话：每个功能一页，回答「**怎么用 + 现在是什么**」。为什么长这样，看 `docs/adr/`。
 
-- 现状（用户视角）：[docs/user-guide.md](../user-guide.md)
-- 术语：仓库根 `GLOSSARY.md`
-- 决策详情：`docs/adr/`（正式记录）与 `docs/archive/code-review-notes.md`（历史流水账，已冻结）；本目录**只引用不复制**
+## 从哪里开始
 
-## 维护规则（每次变更 5 分钟）
-
-1. **归类**：改动影响哪个功能（可多个）；
-2. **用户侧**：更新 `docs/user-guide.md` 对应功能行（功能 → 入口 → 验收）；
-3. **演进侧**：受影响功能页时间线**加一行**（日期/事件/为什么/锚点）；
-4. **方向性变化**：写新 ADR，旧 ADR 标 Superseded/Amends 并互链；
-5. **提交带锚点**：commit 消息写 `T#` / `DS#`，让时间线可反查。
-
-> ADR 约定（2026-08-27 确认）：**轻量可改**——允许在旧 ADR 追加状态与 `Amended by` / `Superseded by` 链接，不重写决策正文。
-
-> 检查：每个里程碑核对 user-guide 功能行、功能页“现状”段、ADR 状态三者一致。
-
-## 页面格式要求
-
-每个功能页必须包含 **「当前设计（现状）」** 一节，让新开发者**读这一页就能直接干活**，不需要先翻全部 ADR：
-
-- 数据模型与字段（Job/Action/JobRun/MessageStep 等实体）；
-- 核心规则与约束（必填项、链约束、handled 策略等）；
-- 关键流程（路由怎么生成、重投怎么跑、映射怎么执行）；
-- 代码位置（哪些类/文件）；
-- 待办与已知限制。
-
-ADR 只提供“为什么”，现状细节写在本页；发现页面与代码不一致时，更新页面（页面以代码为准）。
+| 我想 | 去哪 |
+|---|---|
+| 先看系统整体长什么样 | 根 `README.md` 的「它为什么长这样」 |
+| 照着配一条链 | `docs/user-guide.md` |
+| 查一个词是什么意思 | 根 `GLOSSARY.md` |
+| 知道当初为什么这么选 | `docs/adr/` |
 
 ## 功能索引
 
-| 功能 | 演化页 | 相关决策 |
+| 功能 | 页面 | 相关决策 |
 |---|---|---|
-| 数据源 | [data-source](data-source/) | DS-2/3/4/6，ADR-0007 |
-| 任务与动作链 | [job-action-chain](job-action-chain/) | DS-7/8/9 |
-| 字段映射 | [field-mapping](field-mapping/) | DS-2/5/10，ADR-0005 |
-| 可靠性（失败/消息历史/重投） | [reliability](reliability/) | ADR-0003 / ADR-0009 |
-| 配置界面与部署形态 | [config-ui](config-ui/) | DS-5，ADR-0006 |
-| API 契约 | [api-contract](api-contract/) | DS-1 |
-| 通信模型（南北向） | [transport](transport/) | ADR-0002，DS-9 |
+| 数据源 | [data-source](data-source/README.md) | ADR-0007 / ADR-0014 |
+| 任务与动作链 | [job-action-chain](job-action-chain/README.md) | ADR-0017、ADR-0015 |
+| 字段映射 | [field-mapping](field-mapping/README.md) | ADR-0005 / ADR-0011 / ADR-0012 |
+| 可靠性（失败/重试/历史/重投） | [reliability](reliability/README.md) | ADR-0003 / ADR-0009 / ADR-0017 |
+| 配置界面与部署形态 | [config-ui](config-ui/README.md) | ADR-0006 / ADR-0013 |
+| API 契约 | [api-contract](api-contract/README.md) | — |
+| 通信模型（南北向） | [transport](transport/README.md) | ADR-0002 / ADR-0010 |
+
+## 页面怎么写
+
+结构见 `AGENTS.md` 的「文档规范 · 功能页模板」。三条最容易忘的：
+
+- **正文不写类名**，类名只在末尾「代码位置」表里。
+- **票号只在决策时间线**，正文不写 `#123`。
+- **限制与绕法**用两张表：做不到的、要注意的。
+
+## 维护规则
+
+每次改动，五分钟做完：
+
+1. **归类**：这次改了哪个功能，可能不止一个。
+2. **用户侧**：`docs/user-guide.md` 对应那一行要不要改。
+3. **功能页**：受影响页的时间线加一行（日期 / 事件 / 为什么 / 锚点）。
+4. **方向性变化**：写新 ADR；旧 ADR 只追加状态行，不改正文。
+5. **删功能**：删页面、更新本索引，**再查所有页的「限制与绕法」**——那里最容易留下描述死功能的条目。
+
+> ADR 的约定：轻量可改。允许在旧 ADR 追加状态与 `Amended by` / `Superseded by` 链接，不重写决策正文。
+
+> 里程碑时核对一次：user-guide 的功能行、功能页的现状、ADR 的状态，三者说的是不是同一件事。

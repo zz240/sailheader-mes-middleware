@@ -1,33 +1,65 @@
 # 通信模型（南北向）
 
-南向典型形态 = MQ 消费入口；北向典型形态 = 边缘出站 HTTP；方向只是业务标签。
+一句话：云端主动连不到边缘，所以两个方向用了两种不同的传输。方向是**业务标签**，不约束传输形态。
 
-## 当前设计（现状）
+## 什么时候用哪种
 
-- **非对称模型（ADR-0002）**：云上无法主动连边缘 → 南向入口用 MQ 订阅消费；边缘主动出站 HTTP → 北向推送。**典型形态，非强制绑定**。
-- **入口决定路由形态（DS-9 澄清）**：不做方向↔入口一致性校验；入口由链首动作种类决定：
-  - MQ_CONSUME 链首 → `spring-rabbitmq:<exchange>?exchangeType=<t>&queues=<queue>&routingKey=<rk>&autoDeclare=true`（exchange 名/类型/binding key 取动作侧配置，缺省=数据源名/direct/queue，ADR-0010；autoDeclare 声明 exchange+queue+binding）；
-  - READ_SQL 链首 → timer + direct 轮询；
-  - 手动执行/重投 → `direct:job-<id>` 重放。
-- **sourceKey（映射历史隔离）**：按**实际源动作**推导（MQ_CONSUME → `mq:<queue>`、READ_SQL → `db:<table>`），与 direction 解耦。
-- **反例场景**：MQ 消费入口 + NORTH 方向（客户发 MQ → 边缘消费 → 推 MES HTTP）已被 DS-9 端到端验证支持。
-- **代码位置**：`service/RouteGenerator.java`（buildConsumerEntry / buildPollingEntry / buildReplay，只做装配）、`service/ActionFragment.java`（每种动作一段片段）、`service/MappingHistoryService.java`（sourceKey）。
+| 方向 | 数据往哪流 | 典型传输 | 谁发起 |
+|---|---|---|---|
+| 南向 | 云上 MES → 客户侧 | 边缘订阅 MQ | 边缘（订阅后等消息） |
+| 北向 | 客户侧 → 云上 MES | 边缘出站 HTTP | 边缘（主动推） |
 
-## 待办 / 已知限制
+典型不等于强制。"MQ 消费打头 + 推 HTTP"的组合是允许的，已端到端验证过。
 
-- **消费者 exchange 绑定**：已支持（ADR-0010 / #80-83）——exchange 名称/类型（direct/topic/fanout/headers）+ binding key（routingKey，topic 模式串；fanout 由 broker 忽略，可不填）由 `MQ_CONSUME` 动作配置，缺省兼容（数据源名 + direct + routingKey=queue），存量任务零影响；剩余边界见下；
-- 边界（ADR-0010）：一个端点 = 一个 exchange 名 + 一个类型 + 一个 binding key（同队列多绑定/多队列不同 key → V2 自建 `RabbitAdmin` 声明 Exchange+Queue+Binding）；`args`（`arg.exchange.*`/`arg.queue.*` 如队列持久化）暂不透传；`autoDeclare=false` 集中管理拓扑同属 V2；
-- MQ 生产（MQ_PUBLISH）要求显式 exchange（amq.default 不可靠，实测结论 d7790b1）。
+## 入口决定什么
+
+链首是哪种动作，决定路由怎么起：
+
+| 链首动作 | 路由怎么起 |
+|---|---|
+| MQ 消费 | 订阅队列 |
+| 读 SQL | 定时轮询 |
+| 其它 | 只能手动执行或重投 |
+
+方向不参与这个判断——不会因为标了"北向"就要求 HTTP 打头。
+
+## 消费端的三个配置
+
+| 配置 | 缺省 |
+|---|---|
+| exchange 名 | 数据源名 |
+| exchange 类型（direct / topic / fanout / headers） | direct |
+| 绑定键 | 队列名 |
+
+一个入口 = 一个 exchange + 一个类型 + 一个绑定键。
+
+## 实现要点
+
+- 消费者声明走 `autoDeclare=true`：exchange、queue、binding 一起建。
+- 发送（MQ 发布）**必须显式写 exchange**：`amq.default` 实测不可靠。
+- 队列持久化这类 `args` 暂不透传。
+
+## 限制与绕法
+
+| 做不到 | 什么情况 | 怎么办 |
+|---|---|---|
+| 同队列多绑定 | 一个队列要收多个 routing key | 拆成多个消费动作；或等 V2 |
+| 多队列不同键 | 一个消费动作要覆盖多个队列 | 同上 |
+| 集中管理拓扑 | 想关掉 autoDeclare、由外部先声明 | 同上，V2 才做 |
+| 透传队列参数 | 要设持久化、TTL | 同上 |
+
+## 代码位置
+
+| 区域 | 类 | 职责 |
+|---|---|---|
+| 路由装配 | `RouteGenerator` | 三种入口：订阅、轮询、重放 |
+| 动作片段 | `ActionFragment`、`ReadWriteFragments` | 每种动作在路由里做什么 |
+| 端点参数 | `RouteKeys` | `edge.*` 运行期属性名 |
 
 ## 决策时间线
 
-| 日期 | 事件 | 为什么 | 被谁修正 | 锚点 |
-|---|---|---|---|---|
-| 08-16 | 南向 MQ + 北向出站 HTTP 非对称模型 | 云上够不到边缘；MES 已有 HTTP 入站 | 语义被 DS-9 澄清 | ADR-0002 |
-| 08-21 | 方向显式声明，不做方向↔入口校验 | 反例：MQ 消费入口 + 北向推送完全可能 | — | DS-9 / 67ee48c |
-| 09-07 | 消费者 exchange 绑定可配（名称/类型/binding 归动作，缺省兼容） | MES 发布方实际使用与数据源名不一致的 exchange/topic，现状收不到且静默不生效 | — | ADR-0010 / #80-83 |
-
-## 当前生效
-
-- 入口由链首动作决定（MQ_CONSUME 消费 / READ_SQL 轮询 / direct 重放）
-- 方向 = 业务标签，不绑定传输形态
+| 日期 | 事件 | 为什么 | 锚点 |
+|---|---|---|---|
+| 08-16 | 南向 MQ + 北向出站 HTTP 的非对称模型 | 云上够不到边缘；MES 已有 HTTP 入站 | ADR-0002 |
+| 08-21 | 方向显式声明，不做方向↔入口校验 | 反例：MQ 消费入口 + 北向推送完全可能 | ADR-0002 |
+| 09-07 | 消费端 exchange 绑定可配（名称/类型/绑定键归动作） | MES 发布方用的 exchange 与数据源名不一致，现状收不到、且静默不生效 | ADR-0010 |

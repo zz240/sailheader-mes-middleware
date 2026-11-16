@@ -144,3 +144,4 @@ curl -X POST http://<网关地址>:8080/api/external/jobs/<任务ID>/trigger `
 - 配了合并、目标端却收到 N 次请求：检查出站动作（`HTTP_CALL` / `MQ_PUBLISH`）有没有排在 `AGGREGATE` **后面**——排在前面就是逐条发；
 - 批量动作失败、错误说报文装不下：把**读库那一步的批大小**调小（见 §4 的「快照容量限制」）；
 - 单独重投一条批量数据、对端只收到 1 条：这是有意的——它自己形成一个只有一条的上游批，立刻发，不挂在那里等（ADR-0017 决策 5）。
+- READ_SQL 一直返回 0 行、任务却显示成功：`{watermark}` 是**整个**水位谓词，不是值。写 `WHERE id > {watermark}` 会被替换成 `id > id > :#lastId`，MySQL 静默返回空。应写成 `WHERE {watermark}`。
