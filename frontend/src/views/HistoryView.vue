@@ -115,7 +115,7 @@ import {
 import { previousStepOf } from '../history/diff'
 import {
   RERUN_CONFIRM_BUTTON, RERUN_CONFIRM_CANCEL, RERUN_CONFIRM_TITLE, type JobRerun,
-} from '../history/batch'
+} from '../history/rerun'
 import type { Job, JobRun, MessageStep, Page, RunsSummary, RunSummary } from '../types'
 
 /** 断点重投接口的应答（后端只回这两格：原步的新状态与它的 id）。 */
@@ -355,14 +355,14 @@ function openRedeliver() {
 }
 
 /**
- * **重跑任务**（#147）：批组头上那颗按钮——失败恢复只有这一条路。
+ * **重跑任务**（#147 / #157）：失败运行头上那颗按钮——失败恢复只有这一条路。
  *
  * 与任务列表上那颗「执行」（`views/JobsView.vue` 的 `execute`）是**同一个接口、同一套错误处理**：
  * 水位只在一批全部成功之后才推进，所以重跑会从**未完成的那一批**整批重走
- * （重读 → 重打包 → 重出站 → 还原 → 写回）——原先「出站成功、下游失败」丢下的写回因此被补上；
+ * （重读 → 重打包 → 重出站 → 跑完后面的步骤）——原先「出站成功、下游失败」丢下的写回因此被补上；
  * 代价是目标端会再收到一次该批请求（至少一次交付 + 目标端按业务键去重）。
  *
- * 按钮写什么、什么时候铺、确认框里问什么，全在纯模块（`history/batch.ts`）里判；
+ * 按钮写什么、什么时候铺、确认框里问什么，全在纯模块（`history/rerun.ts`）里判；
  * 这里只管**二次确认**、发请求与刷新（点一下就发是不行的：那一次重复请求要让人知道）。
  */
 async function onRerunJob(target: JobRerun) {
