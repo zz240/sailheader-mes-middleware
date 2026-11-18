@@ -71,7 +71,7 @@ record 不可用），`DataSourceConfig.from` / `ActionConfig.from` 用 `rejectU
 | 环节 | 入（怎么造） | 出 | 验证 |
 |---|---|---|---|
 | 建 HTTP 数据源 | `POST /api/data-sources` `{"name":"mes-api","siteId":1,"type":"HTTP","address":"http://localhost:9099","addition":{"token":"mock-token"}}` | `data_source` 一行 | 201 + 列表可见 |
-| 建非法数据源（失败） | 缺 `password` 的 MYSQL：`{"type":"MYSQL","addition":{"url":"...","username":"u"}}` | 400 | `message` 定位字段 |
+| 建非法数据源（失败） | 缺 `password` 的 MYSQL：`{"type":"MYSQL","addition":{"username":"u"}}` | 400 | `message` 定位字段 |
 | 建未知键（失败） | `{"type":"HTTP","addition":{"token":"x","foo":1}}` | 400 | `未知字段: foo` |
 | 校验任务 | `POST /api/jobs/{id}/validate` | `{valid,errors,warnings}` | `READ_SQL` 需连接/只读 SQL 通过，北向字段存在性给 warnings |
 | 启用 | `PUT /api/jobs/{id}/status {"status":1}` | Camel 路由注册 | `RouteRegistry` 日志 / `GET /actuator/camelroutes`（若有） |
@@ -91,4 +91,4 @@ curl -X PUT http://localhost:8080/api/jobs/{id}/status -H "Content-Type: applica
 | C2 `RabbitMqDataSourceConfig` 仍强制 `queue` | 已在 **745bb99**（数据源连接级统一）实施：数据源仅 `host/port/username/password`（默认值），`queue` 进动作（`MqConsumeConfig` 必填/`MqPublishConfig` 可选）；写入 `queue` 得 400 未知字段（`DataSourceConfigTest` 断言）；`DataSourceAdditionMigration` 清存量。本次仅修正 `model/DataSource.java` 遗留 javadoc | 与 ADR-0007 一致：数据源=连接实例，资源在动作 | 设计改进/缺陷 | 数据源 | 已闭环 |
 | C4 `job` 表残流水位列（`watermark_type`/`watermark_column`，745bb99 前的存量库） | 已引入 Flyway（`flyway-core`+`flyway-mysql`）版本化迁移：`db/migration/V2__drop_job_watermark_columns.sql` 启动时自动删列，存量库 baseline-version=1 只跑增量；代码侧（init.sql/schema.sql/Job 实体/`types.ts`/任务表单）已在 745bb99/9737fe7 清理 | 水位已迁到 READ_SQL 动作，属迁移残留；旧库无迁移机制，由 Flyway 接管 | 文档偏差 | 数据源/配置界面 | 已闭环 |
 | 文档原称"MySQL 密码经 AES 加密落库"，但代码无 AES/Cipher/MasterKey | 改为与实现一致的"明文落库" | `features/data-source` 页存在敏感字段脱敏待办，需文档与代码一致 | 文档偏差 | 数据源 | 已闭环 |
-| 数据源 addition 原为 JSON textarea | 已改为按类型特化表单（以 address 为准 + 高级 JSON 兜底） | `config-ui` 页已列入时间线 | 业务改进 | 配置界面 | 已闭环 |
+| 数据源 addition 原为 JSON textarea | 已改为按类型特化表单（以 address 为准）；原「高级 JSON 兜底」已换成「从 JSON 粘贴」一次性导入 | `config-ui` 页已列入时间线 | 业务改进 | 配置界面 | 已闭环 |

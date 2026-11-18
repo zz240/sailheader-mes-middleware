@@ -18,12 +18,13 @@
 操作步骤：
 
 1. 打开「数据源」页，点「新建数据源」；
-2. 填：名称、站点 ID、类型（HTTP / MySQL / RabbitMQ）、地址；
-3. 按类型填 `addition`（JSON）：
-   - **HTTP**：地址填根地址（如 `http://localhost:9099`）；addition 填 `{"token":"..."}`（可选，Bearer 鉴权）
-   - **MySQL**：地址填 `jdbc:mysql://host:3306/库名`；addition 必填 `{"url":"jdbc:...","username":"...","password":"..."}`
-   - **RabbitMQ**：地址填 `amqp://host:5672`（或 `host:5672`）；addition 可填 `{"host":"...","port":5672,"username":"guest","password":"guest"}`（有默认值）
-4. 保存后可用「测试连通性」验证；「结构探测」输入表名或样例 JSON 查看字段列表（供后续映射用）。
+2. 填：名称、站点 ID、类型（HTTP / MySQL / SQL Server / RabbitMQ）、地址；
+3. 按类型填鉴权（表单是特化的，不用手写 JSON）：
+   - **HTTP**：地址填根地址（如 `http://localhost:9099`）；Token 可选，走 Bearer 鉴权
+   - **MySQL / SQL Server**：地址填 JDBC 串（`jdbc:mysql://host:3306/库名` / `jdbc:sqlserver://host:1433;databaseName=库名`）；用户名、密码必填
+   - **RabbitMQ**：地址填 `amqp://host:5672`（或 `host:5672`）；Host / Port / 用户名 / 密码都有默认值
+4. 手上已有一整份 `addition` 时，点「从 JSON 粘贴」一次填满上面的格子；它只填表单，保存仍走同一套校验。
+5. 保存后可用「测试连接」验证；「结构探测」输入表名或样例 JSON 查看字段列表（供后续映射用）。
 
 ## 2. 任务
 

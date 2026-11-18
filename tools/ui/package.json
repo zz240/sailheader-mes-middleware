@@ -12,7 +12,8 @@
     "check:fast-config": "node fast-config-105.cjs",
     "check:manual-rows": "node manual-rows-102.cjs",
     "check:array-mapping": "node array-mapping-101.cjs",
-    "check:remove-old-editor": "node remove-old-editor-107.cjs"
+    "check:remove-old-editor": "node remove-old-editor-107.cjs",
+    "check:data-source-json-import": "node data-source-json-import-155.cjs"
   },
   "devDependencies": {
     "playwright": "~1.59.1"
