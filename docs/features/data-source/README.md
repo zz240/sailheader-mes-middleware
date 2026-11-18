@@ -1,45 +1,70 @@
 # 数据源
 
-数据源 = **连接实例**（地址 + 鉴权），不绑定具体表/队列/接口路径（那些在动作里配）。
+一句话：数据源只存**连到哪、用什么身份**。具体读哪张表、发哪个路径、订阅哪个队列，都在动作里配。
 
-## 当前设计（现状）
+## 怎么配
 
-- **模型**：`DataSource(id, siteId, name, type, address, addition)`，`type` ∈ HTTP/MYSQL/RABBITMQ。
-- **连接级（ADR-0007）**：
-  - HTTP：`address` 为根地址（scheme://host:port），`addition` 仅 `{"token":"..."}`（可选，Bearer 鉴权）；`path`/`method` 在动作里配，RouteGenerator 拼 base+path；
-  - MySQL：`address` 为 jdbc 串，`addition` 仅 `username/password`（`url` 取 `address`，已去冗余）；
-  - RabbitMQ：`address` 为 broker，`addition` `host/port/username/password` 有默认值（localhost/5672/guest/guest）；`queue` 在动作里配。
-- **强类型校验（DS-2）**：`DataSourceConfig` sealed interface（HTTP/MySQL/RabbitMQ 各自 record），`from()` 拒绝未知键（400）、`validate()` 做必填与取值校验；`DataSourceRequest` 按 `type` 手工分派（Jackson EXTERNAL_PROPERTY 对 record 不可用）。
-- **敏感字段存储**：MySQL 密码等目前为**明文**落库（代码无 AES/Cipher/MasterKey 实现，也无 `EDGE_MASTER_KEY`）；响应同样回显明文。凭证脱敏（DS-3）、密钥丢失恢复（DS-4）均未做。
-- **结构探测**：`StructureProbeService` 连库读表结构，失败回退样例 JSON；返回字段列表（名称/类型/可空/样例）供映射编辑器用。
-- **代码位置**：`config/datasource/DataSourceConfig*.java`（类型化配置）、`service/DataSourceService.java`、`service/ConnectionTester.java`、`service/StructureProbeService.java`、`web/DataSourceController.java`。
+1. 站点 → 数据源 → 新建，选类型。
+2. 填地址与鉴权；手上已有一整份 `addition` 时点「从 JSON 粘贴」，一次填满表单的格子。
+3. 点「测试连接」确认连得上；需要字段清单时点「结构探测」，它会连库读表结构。
+
+## 四种类型，各填什么
+
+| 类型 | 地址填什么 | 鉴权 / 其它 |
+|---|---|---|
+| MySQL | JDBC 串 | 用户名、密码 |
+| SQL Server | JDBC 串 | 用户名、密码，外加方言 |
+| HTTP | 根地址（`scheme://host:port`） | token 可选，走 Bearer |
+| RabbitMQ | broker 地址 | host / port / 用户名 / 密码，都有默认值 |
+
+表名、接口路径、队列名**不在这里**——那是动作的事。这样同一个库被十个动作复用，凭证只存一处。
+
+## 数据结构
+
+`DataSource(id, siteId, name, type, address, addition)`。
+
+| 字段 | 说明 |
+|---|---|
+| `type` | `HTTP` / `MYSQL` / `SQLSERVER` / `RABBITMQ` |
+| `address` | 地址。库是 JDBC 串，HTTP 是根地址，MQ 是 broker |
+| `addition` | 按类型强类型化的其余配置；**出现不认识的字段直接拒**，不静默忽略 |
+
+## 实现要点
+
+- 结构探测连库读表结构，读不到时回退成样例 JSON，编辑器照样能用。
+- 连接测试只建连接、不做查询。
+- 凭证目前是**明文落库**，响应也回显明文——脱敏和密钥恢复都还没做。
+
+## 限制与绕法
+
+| 注意 | 会看到什么 | 怎么办 |
+|---|---|---|
+| 凭证明文 | 库里和接口响应里都能读到密码 | 内部使用；要脱敏得先做主密钥那一套 |
+| 密钥丢失 | 主密钥变了，改和删都报 500 | 目前没有自救路径 |
+| 探测失败 | 字段清单是空的 | 编辑器里「粘贴 JSON」顶一份 |
+
+## 代码位置
+
+| 区域 | 类 | 职责 |
+|---|---|---|
+| 类型化配置 | `config/datasource/DataSourceConfig` | 每种类型一个 record，各自校验 |
+| 服务 | `service/DataSourceService` | 增删改查 |
+| 连通性 | `service/ConnectionTester` | 「连接测试」 |
+| 结构探测 | `service/StructureProbeService` | 读表结构；失败回退样例 |
+| 接口 | `web/DataSourceController` | `/api/data-sources` |
 
 ## 决策时间线
 
-| 日期 | 事件 | 为什么 | 被谁修正 | 锚点 |
-|---|---|---|---|---|
-| 08-19 | addition 类型化（按 type 分派强类型校验） | 每种数据源有独特处理方式；未知键/值级校验有缺口 | — | DS-2 / da5afc9 |
-| 08-19 | 数据源粒度统一为连接级（方案 A） | MySQL 连接级、MQ/HTTP 资源级导致凭证重复、模板不统一 | — | DS-6 / ADR-0007 / 213e0db |
-| 08-18 | 响应脱敏（凭证不出网） | 明文密码随响应回前端 | 暂缓（内部使用） | DS-3 |
-| 08-18 | 密钥丢失恢复端点 | master key 不匹配时 update/delete 全 500 无自救路径 | 暂缓（同 DS-3） | DS-4 |
+| 日期 | 事件 | 为什么 | 锚点 |
+|---|---|---|---|
+| 08-19 | addition 类型化（按 type 分派强类型校验） | 每种数据源有独特处理方式，未知键/值级校验有缺口 | DS-2 |
+| 08-19 | 数据源粒度统一为连接级 | MySQL 连接级、MQ/HTTP 资源级，导致凭证重复、模板不统一 | ADR-0007 |
+| 08-18 | 响应脱敏（凭证不出网） | 明文密码随响应回前端 | DS-3，暂缓 |
+| 08-18 | 密钥丢失恢复端点 | 主密钥不匹配时改删全 500，没有自救路径 | DS-4，暂缓 |
+| 10-14 | SQL Server 作为独立类型 | 客户侧用 SQL Server 的不少，SQL 方言与 MySQL 不同 | ADR-0014 |
+| 11-18 | 删掉原始 JSON 编辑框，改为「从 JSON 粘贴」一次性导入 | 四种类型的键已全在表单里，原框成了第二份真相，也是唯一绕过类型化校验的入口 | #155 |
 
-## 待办 / 已知限制
+## 术语细节
 
-- 凭证脱敏（DS-3）、密钥丢失恢复（DS-4）：暂缓未做；
-- （已清除）MySQL `url` 与 `address` 冗余已于 08-30 去掉。
-
-## 决策时间线
-
-| 日期 | 事件 | 为什么 | 被谁修正 | 锚点 |
-|---|---|---|---|---|
-| 08-19 | addition 类型化（按 type 分派强类型校验） | 每种数据源有独特处理方式；未知键/值级校验有缺口 | — | DS-2 / da5afc9 |
-| 08-19 | 数据源粒度统一为连接级（方案 A） | MySQL 连接级、MQ/HTTP 资源级导致凭证重复、模板不统一 | — | DS-6 / ADR-0007 / 213e0db |
-| 08-18 | 响应脱敏（凭证不出网） | 明文密码随响应回前端 | 暂缓（内部使用） | DS-3 |
-| 08-18 | 密钥丢失恢复端点 | master key 不匹配时 update/delete 全 500 无自救路径 | 暂缓（同 DS-3） | DS-4 |
-
-## 当前生效
-
-- 连接级模型（ADR-0007）
-- typed addition + 未知键/值级校验（DS-2）
-- MySQL `url` 冗余已消除（url 取 address，08-30）
-- 凭证脱敏/密钥恢复：未做（待办）
+**结构探测（Structure Probe）**：连接数据源后读取其结构信息（字段列表、类型、样例值、主键），用于辅助配置。
+_Avoid_: 元数据扫描, 表结构读取

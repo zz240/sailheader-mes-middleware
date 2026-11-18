@@ -18,12 +18,13 @@
 操作步骤：
 
 1. 打开「数据源」页，点「新建数据源」；
-2. 填：名称、站点 ID、类型（HTTP / MySQL / RabbitMQ）、地址；
-3. 按类型填 `addition`（JSON）：
-   - **HTTP**：地址填根地址（如 `http://localhost:9099`）；addition 填 `{"token":"..."}`（可选，Bearer 鉴权）
-   - **MySQL**：地址填 `jdbc:mysql://host:3306/库名`；addition 必填 `{"url":"jdbc:...","username":"...","password":"..."}`
-   - **RabbitMQ**：地址填 `amqp://host:5672`（或 `host:5672`）；addition 可填 `{"host":"...","port":5672,"username":"guest","password":"guest"}`（有默认值）
-4. 保存后可用「测试连通性」验证；「结构探测」输入表名或样例 JSON 查看字段列表（供后续映射用）。
+2. 填：名称、站点 ID、类型（HTTP / MySQL / SQL Server / RabbitMQ）、地址；
+3. 按类型填鉴权（表单是特化的，不用手写 JSON）：
+   - **HTTP**：地址填根地址（如 `http://localhost:9099`）；Token 可选，走 Bearer 鉴权
+   - **MySQL / SQL Server**：地址填 JDBC 串（`jdbc:mysql://host:3306/库名` / `jdbc:sqlserver://host:1433;databaseName=库名`）；用户名、密码必填
+   - **RabbitMQ**：地址填 `amqp://host:5672`（或 `host:5672`）；Host / Port / 用户名 / 密码都有默认值
+4. 手上已有一整份 `addition` 时，点「从 JSON 粘贴」一次填满上面的格子；它只填表单，保存仍走同一套校验。
+5. 保存后可用「测试连接」验证；「结构探测」输入表名或样例 JSON 查看字段列表（供后续映射用）。
 
 ## 2. 任务
 
@@ -124,13 +125,9 @@
 
 > 旧 `dead_letter` 已弃用（无迁移）；新数据从 `job_run`/`message_step` 开始累积。
 
-## 7. 模板
+## 7. 站点与外部触发
 
-「模板」页：新建模板填名称 + `configJson`（`{"job":{...},"actions":[...]}`），支持导出/导入/版本管理，用于把固定部分沉淀复用。
-
-## 8. 站点与外部触发
-
-「站点」页：站点名称、时区、建议器覆盖；可生成 **API Key（仅显示一次，妥善保存）**。
+「站点」页：站点名称、时区；可生成 **API Key（仅显示一次，妥善保存）**。
 
 外部系统触发任务：
 
@@ -140,7 +137,7 @@ curl -X POST http://<网关地址>:8080/api/external/jobs/<任务ID>/trigger `
   -d '{"字段":"值"}'
 ```
 
-## 9. 常见问题
+## 8. 常见问题
 
 - 消息“消失”但任务显示成功：检查 HTTP_CALL 动作的数据源是不是指向了网关自己（SPA 兜底会返回 200），目标应是真实接口或 mock；
 - 队列收不到：确认 MQ_CONSUME 的队列名与发布方一致，任务已启用；
@@ -148,3 +145,4 @@ curl -X POST http://<网关地址>:8080/api/external/jobs/<任务ID>/trigger `
 - 配了合并、目标端却收到 N 次请求：检查出站动作（`HTTP_CALL` / `MQ_PUBLISH`）有没有排在 `AGGREGATE` **后面**——排在前面就是逐条发；
 - 批量动作失败、错误说报文装不下：把**读库那一步的批大小**调小（见 §4 的「快照容量限制」）；
 - 单独重投一条批量数据、对端只收到 1 条：这是有意的——它自己形成一个只有一条的上游批，立刻发，不挂在那里等（ADR-0017 决策 5）。
+- READ_SQL 一直返回 0 行、任务却显示成功：`{watermark}` 是**整个**水位谓词，不是值。写 `WHERE id > {watermark}` 会被替换成 `id > id > :#lastId`，MySQL 静默返回空。应写成 `WHERE {watermark}`。

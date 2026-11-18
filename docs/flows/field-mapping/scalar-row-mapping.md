@@ -13,7 +13,7 @@
 - **入口**：动作表上的「编辑映射」（`frontend/src/views/JobsView.vue:117`）打开全屏抽屉 `FieldMappingWorkbench.vue`；新建 FIELD_MAP 从同一个入口进（`JobsView.vue:322`）。
 - **落点**：`job_action.addition` 这个 MySQL JSON 列里的 `rules`（`model/Action.java:30`、`config/action/FieldMappingConfig.toMap` :343）。编译产物与表达式**不落库**（`docs/features/field-mapping/README.md:124`）。
 
-**不归本篇**：数组行 / 组节点 / 子行 → [数组 / 层级映射](array-mapping.md)；拼接片段 → [拼接片段映射](concat-part-mapping.md)；`mode=EXPRESSION` 手写 JSONata → [手写 JSONata 模式](expression-mode.md)；映射建议器 → [建议器](suggester.md)。本篇只在被交叉引用处各写一句。
+**不归本篇**：数组行 / 组节点 / 子行 → [数组 / 层级映射](array-mapping.md)；拼接片段 → [拼接片段映射](concat-part-mapping.md)；`mode=EXPRESSION` 手写 JSONata → [手写 JSONata 模式](expression-mode.md)。本篇只在被交叉引用处各写一句。
 
 ### 交互清单
 
@@ -140,7 +140,6 @@ sequenceDiagram
 - **要走通编辑器那一段，需要一份来源样例**：来源清单来自「链上更早那个动作**最近一次成功运行**的消息步快照」（`FieldMappingEditorService.latestSnapshot` :181，查 `message_step`），所以至少要有一次成功的上游运行；**MQ 消费动作不记成功步**，所以 MQ 打头的任务在编辑器里没有来源样例（`docs/features/field-mapping/README.md:107`）。
 - **目标字段清单**要连库探测写目标那张表（`probeTargetFields` :81），故需要一个配好数据源的 `WRITE_UPSERT` 动作；HTTP / MQ 做目标时探不出结构（`docs/features/field-mapping/README.md:26`），此时行全部靠手输目标字段。
 - **MQ**（`application.yml:22` `localhost:5672`）只在「投一条消息跑完整链路」时才需要；只想看编译产物与保存那道门不需要。
-- **Ollama**（`application.yml:37` `localhost:11434`）属于建议器，与本篇无关。
 
 ## 测试数据与造数指导
 
@@ -282,4 +281,3 @@ node --experimental-strip-types frontend/src/mapping/checks.ts
 | **N1 旧走查文档的代码行号大量失效**（`docs/flows/transform-flow.md`）：`JsonataRuleCompiler.compile` 标 `:35`（实为 `:36`）、`JsonataFieldMapper.apply` 标 `:46`（实为 `:46` ✓，但 `JsonataFunctions`「四次 parse」标 `:53-57` 实为 `:62-85`、`ofPattern` 标 `:35` 实为 `:63`、`$number` 标 `:139` 实为 `:179`）；文中「`MappingDraftValidation.Issue`」这个类型不存在（后端是 `Problem`，前端是 `draft.ts` 的 `DraftIssue`）；时序图把「保存动作」画成编辑器直接调 `RouteGenerator`，漏了 `POST/PUT` 这一跳与 `ActionService` | 本节已按当前工作树重核行号；`transform-flow.md` 及其行号引用在总览/收尾时统一处理（不要在旧文里零散改） | 行号失效会把排查带偏；调用链画错会让人以为前端直连路由层 | 文档偏差 | 字段映射 | 待评估 |
 | **N2 本形态里 `MappingRowList.vue` 已是最大的编辑器文件**（含空行的整文件行数：`MappingRowList.vue` 775 行、`FieldMappingWorkbench.vue` 669 行装配层）；AGENTS.md「Token budget」一节仍写「`MappingRowList.vue`（约 755 行）」「`FieldMappingWorkbench.vue` 只剩 655 行」——那是用 `Measure-Object -Line`（漏空行）数的 | 把 AGENTS.md 里这两处「约 N 行」改成 `read` 口径的真实行数（775 / 669），或去掉行数只留文件名 | 行数是用来说服人「该拆哪个文件」的判据，偏小会让人以为还能再塞 | 文档偏差 | 字段映射 / 文档 | 待评估 |
 | **N3 `MappingIndexParams.vue` 的起始值输入框没有下限**（`MappingIndexParams.vue:27` 的 `el-input-number` 没给 `min`），「空 → 1」只保证空值回落（:22）；后端也没有 `startAt >= 1` 的校验（`FieldMappingConfig.collectProblems` :238-244 只查 INDEX 的位置与 `source` 恒等 `$index`），编译期直接 `$i + startAt`（`JsonataRuleCompiler.indexExpr` :321-325） | 待评估：要么给输入框加 `min=1`，要么在后端补一条 `startAt < 1` 的结构校验（两边选一处，别各写一条） | 起始值填 0 或负数能存下去，行号从 0 / 负数起算——不报错，只是结果不是用户想要的 | 缺陷 | 字段映射 | 待评估 |
-| **N4 建议器给出的 `datePattern` 至今仍是 `ISO-8601`**：`TransformInferrer` 那个候选名不是合法格式串，所以**采用了也存不下去**（#111 那条配置期校验会拒）；它不属于本形态（建议器见 [建议器](suggester.md)），这里只记一条交叉引用——与 `transform-flow.md` 建议表 F1 的建议 A 同一条 | 接回建议器之前把它改成合法 pattern（如 `yyyy-MM-dd'T'HH:mm:ss`） | 现在比原来「存下去、跑起来炸」好，但只要接回界面，第一天就会重演 | 缺陷 | 字段映射 / 建议器 | 待评估 |
