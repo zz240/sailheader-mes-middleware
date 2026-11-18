@@ -146,6 +146,13 @@
 .hc-dbody { padding: 12px 14px 16px; }
 .hc-dhead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .hc-dhead h2 { margin: 0; font-size: 14.5px; font-weight: 620; letter-spacing: -.01em; }
+/* 失败运行头上的「重跑任务」（#147 / #157）：任务级动作，不依赖批分组；与组头那句同一个色系 */
+.hc-rrun {
+  margin-left: auto; height: 24px; padding: 0 10px; border: 1px solid var(--accent-line); border-radius: 6px;
+  background: var(--accent-soft); color: var(--fg); font-size: 12px; cursor: pointer;
+}
+.hc-rrun:hover { background: var(--accent-line); }
+.hc-rrun:disabled { opacity: .6; cursor: default; }
 .hc-dsub {
   font-family: var(--font-mono); font-size: 11px; color: var(--muted);
   margin-top: 4px; display: flex; gap: 9px; flex-wrap: wrap;
@@ -258,14 +265,6 @@
 .hc-batch .hc-bhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hc-batch .hc-bt { font-size: 12px; font-weight: 620; }
 .hc-batch .hc-bchips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-/* 发送批（合并那一档）组头上的「重跑任务」：**一次点击 = 重跑整个任务**（#147）。
-   它只长在含打包消息那一行、且只在该批失败时铺（判据在 `history/batch.ts`），所以与旁边那句组头同一个色系 */
-.hc-batch .hc-brerun {
-  height: 24px; padding: 0 10px; border: 1px solid var(--accent-line); border-radius: 6px;
-  background: var(--accent-soft); color: var(--fg); font-size: 12px; cursor: pointer;
-}
-.hc-batch .hc-brerun:hover { background: var(--accent-line); }
-.hc-batch .hc-brerun:disabled { opacity: .6; cursor: default; }
 /* 打包消息那颗 chip（合并 N→1 打出来的那条信封消息，#147）：与消息 chip 并排，但一眼看得出来它不是一条消息 */
 .hc-mchip.hc-mchip-packed { border-style: dashed; }
 .hc-mchip .hc-mpacked { font-size: 10.5px; color: var(--muted); }

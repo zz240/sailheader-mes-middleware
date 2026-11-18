@@ -99,7 +99,7 @@ sequenceDiagram
   - **重投入口**（`verify-146-redeliver.ps1`，17/17）：自建 `READ_SQL → HTTP_CALL(恒 500)` 链造出真实的失败消息步，
     在其所属任务再次运行期间调 `POST /api/history/steps/{id}/redeliver`
     → `409` + `JOB_ALREADY_RUNNING`，跳过日志带 runId；被拒后那条消息步仍是 `FAILED`、运行行没有增加
-    （跳过没有副作用），空闲后重投不再 `409`。失败恢复的另一半是**重跑任务**（水位未推进即整批重走）：
+    （跳过没有副作用），空闲后重投不再 `409`。失败恢复的另一半是**重跑任务**（失败运行头上的按钮；水位未推进即整批重走）：
     `POST /api/history/batches/{id}/redeliver` 那条整批重发端点已由 #147 删除。
   - 断言「链首必须是源动作才会记消息步」（本票外的那条已知缺口）在夹具构造时被再次实测到：纯 `HTTP_CALL` 打头的链
     跑完只有 `job_run`、一条消息步都没有。

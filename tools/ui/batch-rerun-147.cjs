@@ -50,7 +50,7 @@ const OUTLET_STEP = 4
 const WRITE_STEP = 7
 /** 这一批几条码（= 造数脚本那一条链读出来的行数）。 */
 const EXPECTED = 20
-/** 确认弹窗里必须出现的那两句（文案在 `frontend/src/history/batch.ts` 的 `rerunConfirmText`，一处写）。 */
+/** 确认弹窗里必须出现的那两句（文案在 `frontend/src/history/rerun.ts` 的 `rerunConfirmText`，一处写）。 */
 const CONFIRM_SAYS = ['未完成的那一批', '目标端会再收到一次该批请求']
 /** 已删除的那条路径在界面上一个字都不该剩（#147）。 */
 const GONE_TEXT = '重发这一批'
@@ -229,6 +229,15 @@ async function main() {
   await memberRow.click()
   await waitForDetail(page)
 
+  // 入口（#157）：按钮在**失败的运行头**上，不依赖批分组——先把这一颗验掉。
+  const button = page.locator('.hc-rrun')
+  check('失败运行头上铺了「重跑任务」', await button.count() === 1, String(await button.count()))
+  check('按钮上就是「重跑任务」四个字', (await button.innerText()).trim() === '重跑任务', await button.innerText())
+  check('按钮可点（不是置灰摆样子）', !(await button.isDisabled()), String(await button.isDisabled()))
+  check('按钮的无障碍标签说清「整批重走、目标端会再收到一次」',
+    (await button.getAttribute('aria-label') || '').includes('目标端会再收到一次'), await button.getAttribute('aria-label'))
+  await page.screenshot({ path: path.join(shots, '147-rerun-entry.png') })
+
   // 落点（#147 的裁决）：一个批号只铺**一颗**「重跑任务」，落在「该批号里最深的、还带着打包消息的
   // 那一步」——出站失败这一档就是**出站那一步（步骤 4）**。合并那一步（步骤 3）那一组里也有打包消息
   // 那一行，但它**不该**有按钮；所以先点**信封那一条**的步骤 3 行，把那一组点开看一眼。
@@ -245,9 +254,9 @@ async function main() {
   check('合并那一步那一组里也有打包消息那一行（信封只有它一行）',
     await aggregateGroup.locator('.hc-mchip-packed').count() === 1,
     String(await aggregateGroup.locator('.hc-mchip-packed').count()))
-  check('但那一组**不铺**「重跑任务」：一个批号只铺一颗，落在出站那一步（#147 的落点口径）',
-    await aggregateGroup.locator('.hc-brerun').count() === 0,
-    String(await aggregateGroup.locator('.hc-brerun').count()))
+  check('组头上不再铺「重跑任务」（#157：入口在失败的运行头上，批组只画这一批）',
+    await aggregateGroup.locator('.hc-rrun').count() === 0,
+    String(await aggregateGroup.locator('.hc-rrun').count()))
 
   // 回到失败成员那一行，看出站那一步那一组（按钮真正的落点）
   await memberRow.click()
@@ -273,14 +282,6 @@ async function main() {
     `${packedCount} / ${packedCount ? await packed.innerText() : ''}`)
   check('界面上不再有「重发这一批」那颗按钮', await group.locator('.hc-bredeliver').count() === 0,
     String(await group.locator('.hc-bredeliver').count()))
-
-  const button = group.locator('.hc-brerun')
-  check('组头铺了「重跑任务」', await button.count() === 1, String(await button.count()))
-  check('按钮上就是「重跑任务」四个字', (await button.innerText()).trim() === '重跑任务', await button.innerText())
-  check('按钮可点（不是置灰摆样子）', !(await button.isDisabled()), String(await button.isDisabled()))
-  check('按钮的无障碍标签说清「整批重走、目标端会再收到一次」',
-    (await button.getAttribute('aria-label') || '').includes('目标端会再收到一次'), await button.getAttribute('aria-label'))
-  await page.screenshot({ path: path.join(shots, '147-rerun-entry.png') })
 
   // ── ③ 修好目标端，点按钮：先二次确认，再调任务执行接口 ──
   await fault(null)
@@ -366,7 +367,7 @@ async function main() {
           kidHead === '读取批 · 一次请求 4 条 · 失败 0 条', kidHead)
         check('拆分链那一组里既没有打包消息颗、也没有「重跑任务」',
           await kidGroup.locator('.hc-mchip-packed').count() === 0
-          && await kidGroup.locator('.hc-brerun').count() === 0)
+          && await kidGroup.locator('.hc-rrun').count() === 0)
         const kidText = (await kidGroup.innerText()).replace(/\s+/g, ' ')
         check('这一组里就是那 4 个子件（编号与源库子件逐一对应）',
           ['IT-SH-001', 'IT-SH-002', 'IT-SH-003', 'IT-SH-005'].every(k => kidText.includes(k)),

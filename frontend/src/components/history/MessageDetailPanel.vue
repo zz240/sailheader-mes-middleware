@@ -21,6 +21,16 @@
           <h2>运行 #{{ run.id }}</h2>
           <span class="hc-st" :class="`hc-st-${chip.kind}`">{{ chip.label }}</span>
           <span class="hc-ps">{{ jobTitle }}</span>
+          <!-- 失败恢复的唯一入口（#147 / #157）：挂在**失败的运行**上，不再依赖批分组。
+               按钮写什么、什么时候铺、确认框里问什么，全在 `history/rerun.ts` 里判。 -->
+          <button
+            v-if="rerun"
+            class="hc-rrun"
+            type="button"
+            :disabled="rerunPending"
+            :aria-label="`${rerun.label}：从这条运行未完成的那一批整批重走，目标端会再收到一次该批请求`"
+            @click="emit('rerun-job', rerun)"
+          >{{ rerun.label }}</button>
         </div>
         <div class="hc-dsub">
           <span>开始 <b>{{ stampOf(run.startedAt) }}</b></span>
@@ -141,10 +151,7 @@
             <BatchGroupChips
               v-if="openGroup"
               :group="openGroup"
-              :pending="rerunPending"
-              :job-id="runJobId"
               @select-step="emit('select-step', $event)"
-              @rerun-job="emit('rerun-job', $event)"
             />
           </div>
 
@@ -172,8 +179,9 @@ import { computed, ref } from 'vue'
 import BatchGroupChips from './BatchGroupChips.vue'
 import StepDetailCard from './StepDetailCard.vue'
 import {
-  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup, type JobRerun,
+  BATCH_BADGE, SINGLE_NOTE, batchGroups, batchKey, nodeBatch, type BatchGroup,
 } from '../../history/batch'
+import { runRerun, type JobRerun } from '../../history/rerun'
 import {
   chainNodes, chainSummary, detailPath, jobTitleOf, shortId, stampOf, statusChip,
   type ChainNode, type HistorySelection, type RunDetail,
@@ -214,7 +222,7 @@ const props = defineProps<{
   prevStepRowError: string
   /** 断点重投正在路上（#135）：入口按钮 pending 且不可连点。 */
   redeliverPending?: boolean
-  /** 这一批的**重跑任务**正在路上（#147）：发送批组头上那个按钮 pending。 */
+  /** 这条运行的**重跑任务**正在路上（#147 / #157）：失败运行头上那颗按钮 pending，别让人连点两下发两遍。 */
   rerunPending?: boolean
 }>()
 
@@ -231,10 +239,9 @@ const chip = computed(() => statusChip(props.run?.status))
 const jobTitle = computed(() => (props.run ? jobTitleOf(props.jobs, props.run.jobId) : ''))
 
 /**
- * 当前这条运行的**任务标识**（#147）：组头上那颗「重跑任务」要它——重跑是任务级的动作，
- * 而批组本身不带任务号。取不到（这条运行还没取回来）时传 `null`，纯模块那边就不铺按钮。
+ * 失败运行上的「重跑任务」（#147 / #157）：**失败 + 拿得到任务标识**才铺，判据在 `history/rerun.ts`。
  */
-const runJobId = computed(() => props.run?.jobId ?? null)
+const rerun = computed(() => runRerun(props.run))
 
 /** 链上的一格 + 它属于哪一批（两样在这里对上；分组与「这一步画成什么」都判在 `history/batch.ts`）。 */
 interface ChainEntry {

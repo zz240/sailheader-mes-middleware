@@ -14,14 +14,14 @@
  *      消息标识」。首选那级是「合并那一步**自己**失败」那一档唯一还分得开信封与成员的东西（第 3d 节）；
  *   4. 单条那档：某一步上这条消息**自己一组** → `单条 · 不是一批`，且**没有数据时不下结论**；
  *   5. 链上哪一格画徽标：**这一步换了号**才画，中间那些步骤不画（决策 2）；
- *   6. 失败恢复那一档：**发送批、这一批有失败、而且拿得到任务标识**才铺「重跑任务」（#147），
- *      而且一个批号只铺**一颗**——落在「该批号里最深的、还带着打包消息的那一步」那一组；
+ *   6. `jobRerun` 已搬走（#157）：失败恢复的入口在**失败的运行**上，判据与文案见
+ *      `history/rerun.ts` + `rerun-checks.ts`；批分组这里不再判按钮。
  *   7. **已知限制**（第 3d 节末）：无还原档且这一批**成功**时只剩信封一行，没有成员行可作锚，
  *      两级判据都取不到它 → 只能按「单条 · 不是一批」画（只记账，不做机制）。
  */
 import {
-  BATCH_BADGE, RERUN_LABEL, SINGLE_NOTE, batchGroupAt, batchGroups, batchHead, batchKey,
-  jobRerun, nodeBatch, normalizeBatchId, type BatchGroup,
+  BATCH_BADGE, SINGLE_NOTE, batchGroupAt, batchGroups, batchHead, batchKey,
+  nodeBatch, normalizeBatchId,
 } from './batch.ts'
 import type { MessageStep } from '../types.ts'
 
@@ -219,8 +219,6 @@ eq('合并那一步自己失败：信封（序号为空那一条）仍被认成�
 eq('组头不多算一条：一次请求 20 条、失败 20 条（信封在合并这一步也有一行，但它不计）',
   [mergeStepFailed[0].messages, mergeStepFailed[0].failed, mergeStepFailed[0].head],
   [20, 20, '发送批 · 一次请求 20 条 · 失败 20 条'])
-eq('唯一那颗「重跑任务」落在合并那一步（这一批只有这一步）',
-  [mergeStepFailed[0].rerunStep, rerunSteps(mergeStepFailed)], [3, [3]])
 
 // 首选判据不能把**读取批 / 拆分批**误认成发送批：那两档整批同为空（读库那条路不写序号）或
 // 同为非空（拆分按 1..N 编），任一条都不满足「空序号那一条唯一 + 存在序号非空的行」。
@@ -250,8 +248,6 @@ eq('无还原档、出站失败：这一批仍是发送批、20 条消息全失�
     noRestoreOutletFailed.find((g) => g.step === 4)?.messages,
     noRestoreOutletFailed.find((g) => g.step === 4)?.failed],
   ['send', 'send', 20, 20])
-eq('那颗「重跑任务」只铺一颗，落在出站那一步（信封最深的那一行在那儿）',
-  rerunSteps(noRestoreOutletFailed), [4])
 eq('打包消息认在那两组的含它那一行上（合并那一步也有它）',
   [noRestoreOutletFailed.find((g) => g.step === 3)?.packed?.messageId,
     noRestoreOutletFailed.find((g) => g.step === 4)?.packed?.messageId],
@@ -321,71 +317,6 @@ eq('组里找不到这一步（步骤号对不上）同样是「不下结论」'
 eq('查一组也走同一处判据（步骤号 + 批号都要对上）',
   [batchGroupAt(chainGroups, first)?.total, batchGroupAt(chainGroups, third)?.batchId],
   [2, 'batch-D'])
-
-/* ── 6. 失败恢复那一档：重跑任务（#147） ─────────────────────────── */
-
-/** 这一次运行里铺了几颗「重跑任务」、落在哪几步（一个批号只该有一颗，见本节后半那几条）。 */
-function rerunSteps(groups: BatchGroup[]): number[] {
-  return groups.filter((group) => jobRerun(group, 7) !== null).map((group) => group.step)
-}
-
-eq('读取批那一档不铺「重跑任务」（合并之前的步骤仍是逐条断点重投）',
-  jobRerun(oneReadBatch[0], 7), null)
-eq('单条那档更不铺', jobRerun(batchGroups([singleStep])[0], 7), null)
-eq('没有组就什么都不铺', jobRerun(null, 7), null)
-eq('发送批且这一批有失败：铺「重跑任务」，要的是**任务标识**（不是哪一行）',
-  [jobRerun(outletGroup ?? null, 7)?.jobId, jobRerun(outletGroup ?? null, 7)?.label],
-  [7, RERUN_LABEL])
-eq('那颗按钮上的字就是「重跑任务」', RERUN_LABEL, '重跑任务')
-const confirm = jobRerun(outletGroup ?? null, 7)?.confirm ?? ''
-ok('确认文案说清「从未完成的那一批继续」', confirm.includes('未完成的那一批'), confirm)
-ok('确认文案点明目标端会再收到一次该批请求', confirm.includes('目标端会再收到一次该批请求'), confirm)
-ok('确认文案带上这一批的条数与失败数', confirm.includes('20 条消息') && confirm.includes('20 条失败'), confirm)
-eq('发送批全成时不铺（没什么可重跑的）',
-  jobRerun(mergeOk.find((g) => g.step === 4) ?? null, 7), null)
-eq('取不到任务标识时不铺（`MessageDetailPanel` 那条「拿不到 jobId 就别铺按钮」）',
-  [jobRerun(outletGroup ?? null, null), jobRerun(outletGroup ?? null, undefined)], [null, null])
-eq('打包那一行不在这一组时也不铺（还原那一组分不到按钮）',
-  [jobRerun(acrossSteps[0], 7)?.label, jobRerun(acrossSteps[1], 7)], [RERUN_LABEL, null])
-
-/* 落点：一个批号只铺**一颗**，落在「该批号里**最深的、还带着打包消息的那一步**」（#147 的裁决） */
-
-eq('出站失败：整个运行只铺一颗，落在**出站那一步**（第 4 步）',
-  rerunSteps(mergeFailed), [4])
-eq('打包那一步那一组（第 3 步）自己没有按钮，尽管打包消息那一行就在它里面',
-  jobRerun(aggregateGroup ?? null, 7), null)
-
-// 还原失败那档：信封在第 3、4、5 步各一行——还原那一步它也有一行，所以「最深的那一步」是还原，
-// 按钮跟着失败发生的地方走（这一档落到还原那一步是可接受的偏差）
-const restoreFailed = batchGroups([
-  step({ id: 1, messageId: 'e-1', step: 3, batchId: 'batch-F' }),
-  step({ id: 2, messageId: 'e-1', step: 4, batchId: 'batch-F' }),
-  step({ id: 3, messageId: 'e-1', step: 5, batchId: 'batch-F', status: 'FAILED' }),
-  step({ id: 4, messageId: 'm-1', step: 5, batchId: 'batch-F', status: 'FAILED' }),
-  step({ id: 5, messageId: 'm-2', step: 5, batchId: 'batch-F', status: 'FAILED' }),
-])
-eq('还原失败：仍然只铺一颗，落在**还原那一步**（第 5 步）', rerunSteps(restoreFailed), [5])
-eq('那一批的档位与计数不受落点口径影响（还是发送批、2 条消息、失败 2 条）',
-  [restoreFailed.find((g) => g.step === 5)?.kind, restoreFailed.find((g) => g.step === 5)?.messages,
-    restoreFailed.find((g) => g.step === 5)?.failed],
-  ['send', 2, 2])
-
-// 多出口（链上两个出站动作）：信封在第 3（合并）、4、5（两个出站）步各一行，成员在还原之后的第 6 步。
-// 改前是「每个出口各一颗重发按钮」，#147 把它收敛成一颗。
-const twoOutlets = batchGroups([
-  step({ id: 1, messageId: 'e-1', step: 3, batchId: 'batch-G' }),
-  step({ id: 2, messageId: 'e-1', step: 4, batchId: 'batch-G' }),
-  step({ id: 3, messageId: 'e-1', step: 5, batchId: 'batch-G' }),
-  step({ id: 4, messageId: 'm-1', step: 6, batchId: 'batch-G', status: 'FAILED' }),
-  step({ id: 5, messageId: 'm-2', step: 6, batchId: 'batch-G' }),
-])
-eq('多出口：整个运行里只有一颗「重跑任务」（多出口各自一颗重发按钮那件事就此消失）',
-  rerunSteps(twoOutlets), [5])
-eq('打包那一条行在几步上有，就只在最深那一步铺（第 3、4 步都不铺）',
-  [jobRerun(twoOutlets.find((g) => g.step === 3) ?? null, 7),
-    jobRerun(twoOutlets.find((g) => g.step === 4) ?? null, 7)], [null, null])
-eq('读取批 / 单条那两档一颗都没有',
-  [rerunSteps(oneReadBatch), rerunSteps(batchGroups([singleStep]))], [[], []])
 
 /* ── 7. 归一与计数那两句 ─────────────────────────────────────────── */
 

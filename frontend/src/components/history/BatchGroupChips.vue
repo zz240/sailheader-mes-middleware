@@ -1,20 +1,9 @@
 <template>
-  <!-- 一组 chip（#139）：组头 + 同批每一行一颗。组头那句与「能不能重跑任务」都由 `history/batch.ts` 判
-       （组在这里不判口径）。「重跑任务」的落点：**一个批号只铺一颗**，落在「该批号里还带着打包消息的
-       **最深**那一步」那一组（判据见 `history/batch.ts` 的 `BatchGroup#rerunStep` 与文件头第 5 条），
-       且只在该批失败时铺（#147）。合并那一步那一组虽然长着打包消息那一行，但**不铺**——多出口也只有一颗
-       （再往后的还原/写回那几组里，最深的那个带打包消息的步才是落点）。 -->
+  <!-- 一组 chip（#139）：组头 + 同批每一行一颗。组头那句由 `history/batch.ts` 判（组在这里不判口径）。
+       「重跑任务」不在组头上（#157：入口搬到失败的运行上），这里只管画这一批。 -->
   <div class="hc-batch" :data-batch-step="group.step">
     <div class="hc-bhead">
       <span class="hc-bt">{{ group.head }}</span>
-      <button
-        v-if="rerun"
-        class="hc-brerun"
-        type="button"
-        :disabled="pending"
-        :aria-label="`${rerun.label}：从这一批未完成的位置整批重走，目标端会再收到一次该批请求`"
-        @click="emit('rerun-job', rerun)"
-      >{{ rerun.label }}</button>
     </div>
     <div class="hc-bchips">
       <button
@@ -36,30 +25,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { jobRerun, type BatchGroup, type JobRerun } from '../../history/batch'
+import { type BatchGroup } from '../../history/batch'
 import { NO_BUSINESS_KEY, shortId, statusChip } from '../../history/console'
 import type { MessageStep } from '../../types'
 
 const props = defineProps<{
   /** 链上点开的那一组（分组口径全在 `history/batch.ts`，这里只管画）。 */
   group: BatchGroup
-  /** 这一批的重跑在路上（按钮按在原地，别让人连点两下发两遍）。 */
-  pending?: boolean
-  /** 当前这条运行的**任务标识**（`run.jobId`）；取不到就不铺按钮——重跑是任务级的动作，跑谁得说得出来。 */
-  jobId?: number | null
 }>()
 
 const emit = defineEmits<{
   'select-step': [step: MessageStep]
-  'rerun-job': [target: JobRerun]
 }>()
 
-/** 能不能铺、铺什么、确认框里问什么，全在纯模块里判（这里不重写判据）。 */
-const rerun = computed(() => jobRerun(props.group, props.jobId ?? null))
-
 /**
- * 这一行是不是**打包消息**：与组头那颗按钮同一处判据算出来的那一行（按行 id 认，同组里只有它一颗）。
+ * 这一行是不是**打包消息**：与组头同源的那一行（按行 id 认，同组里只有它一颗）。
  */
 function isPacked(member: MessageStep): boolean {
   return props.group.packed?.id === member.id
