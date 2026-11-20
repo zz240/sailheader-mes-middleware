@@ -99,10 +99,10 @@ function Remove-JobByName {
 }
 
 function New-ScenarioJob {
-    param([string]$Name, [string]$Direction, [string]$Remarks, $Actions)
+    param([string]$Name, [string]$Remarks, $Actions)
     Remove-JobByName -Name $Name
     $job = Invoke-Api POST '/api/jobs' @{
-        name = $Name; siteId = $SiteId; status = 0; direction = $Direction
+        name = $Name; siteId = $SiteId; status = 0
         scheduleType = 'NONE'; retryCount = 1; backoffMs = 500
         timezone = 'Asia/Shanghai'; remarks = $Remarks
     }
@@ -173,7 +173,7 @@ $a5 = @(
     @{ name = 'push-mes'; type = 'HTTP_CALL'; addition = @{
         dataSourceId = $dsMesHttp; path = '/mes/api/purchase-order'; method = 'POST' } }
 )
-$a5Id = New-ScenarioJob -Name 'SH-A5-PO-to-MES' -Direction 'NORTH' -Remarks 'A5 customer ERP (SQL Server) purchase order -> MES' -Actions $a5
+$a5Id = New-ScenarioJob -Name 'SH-A5-PO-to-MES' -Remarks 'A5 customer ERP (SQL Server) purchase order -> MES' -Actions $a5
 
 # ---------- A2 south: MES master data -> CustomerERP.dbo.t_Item (MERGE) ----------
 $a2 = @(
@@ -193,7 +193,7 @@ $a2 = @(
     @{ name = 'upsert-items'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsSqlServer; tableName = 'dbo.t_Item'; idempotencyKey = 'FNumber' } }
 )
-$a2Id = New-ScenarioJob -Name 'SH-A2-Item-to-CustomerERP' -Direction 'SOUTH' -Remarks 'A2 MES master data -> customer ERP t_Item (MERGE)' -Actions $a2
+$a2Id = New-ScenarioJob -Name 'SH-A2-Item-to-CustomerERP' -Remarks 'A2 MES master data -> customer ERP t_Item (MERGE)' -Actions $a2
 
 # ---------- A3 south: MES work orders -> CustomerERP.dbo.MFG_WorkOrder ----------
 $a3 = @(
@@ -212,7 +212,7 @@ $a3 = @(
     @{ name = 'upsert-wo'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsSqlServer; tableName = 'dbo.MFG_WorkOrder'; idempotencyKey = 'FBillNo' } }
 )
-$a3Id = New-ScenarioJob -Name 'SH-A3-WorkOrder-to-CustomerERP' -Direction 'SOUTH' -Remarks 'A3 MES work order -> customer ERP MFG_WorkOrder' -Actions $a3
+$a3Id = New-ScenarioJob -Name 'SH-A3-WorkOrder-to-CustomerERP' -Remarks 'A3 MES work order -> customer ERP MFG_WorkOrder' -Actions $a3
 
 # ---------- A4 north: SQL Server work reports -> MES (composite business key flattened) ----------
 $a4 = @(
@@ -233,7 +233,7 @@ $a4 = @(
     @{ name = 'push-report'; type = 'HTTP_CALL'; addition = @{
         dataSourceId = $dsMesHttp; path = '/mes/api/report'; method = 'POST' } }
 )
-$a4Id = New-ScenarioJob -Name 'SH-A4-Report-to-MES' -Direction 'NORTH' -Remarks 'A4 work report (SQL Server) -> MES; composite key FBillNo+FSeq flattened into reportKey' -Actions $a4
+$a4Id = New-ScenarioJob -Name 'SH-A4-Report-to-MES' -Remarks 'A4 work report (SQL Server) -> MES; composite key FBillNo+FSeq flattened into reportKey' -Actions $a4
 
 # ---------- A7 north: QC/test report, 240 detail rows flattened, 5 pages of 50 ----------
 # QC-SH-0003 (the 3000-row report) is left to the big-payload variant below, so this one stays at 240 rows.
@@ -259,7 +259,7 @@ $a7 = @(
     @{ name = 'push-qc'; type = 'HTTP_CALL'; addition = @{
         dataSourceId = $dsMesHttp; path = '/mes/api/qc-report'; method = 'POST' } }
 )
-$a7Id = New-ScenarioJob -Name 'SH-A7-QC-to-MES' -Direction 'NORTH' -Remarks 'A7 QC/test report: 240 detail rows flattened (header denormalised per row)' -Actions $a7
+$a7Id = New-ScenarioJob -Name 'SH-A7-QC-to-MES' -Remarks 'A7 QC/test report: 240 detail rows flattened (header denormalised per row)' -Actions $a7
 
 # ---------- B6 north: one-object-one-code registration + handle write-back ----------
 # #123: the HTTP response is addressable on the chain as context[<HTTP_CALL index>], so the handle the
@@ -282,7 +282,7 @@ $b6 = @(
     @{ name = 'write-handle'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsSqlServer; tableName = 'dbo.MDM_Code'; idempotencyKey = 'FCode' } }
 )
-$b6Id = New-ScenarioJob -Name 'SH-B6-ID-Register' -Direction 'NORTH' -Remarks 'B6 one-object-one-code registration + FHandle write-back from the chain response (#123)' -Actions $b6
+$b6Id = New-ScenarioJob -Name 'SH-B6-ID-Register' -Remarks 'B6 one-object-one-code registration + FHandle write-back from the chain response (#123)' -Actions $b6
 
 # ---------- entry variant 1: MES pushes master data over MQ -> customer SQL Server ----------
 # Same target as A2 but the entry is MQ_CONSUME (the MES side initiates), so this proves the MQ entry
@@ -301,7 +301,7 @@ $a2mq = @(
     @{ name = 'upsert-items-mq'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsSqlServer; tableName = 'dbo.t_Item'; idempotencyKey = 'FNumber' } }
 )
-$a2mqId = New-ScenarioJob -Name 'SH-A2MQ-Item-to-CustomerERP' -Direction 'SOUTH' -Remarks 'A2 entry variant: MES pushes master data on MQ -> SQL Server MERGE' -Actions $a2mq
+$a2mqId = New-ScenarioJob -Name 'SH-A2MQ-Item-to-CustomerERP' -Remarks 'A2 entry variant: MES pushes master data on MQ -> SQL Server MERGE' -Actions $a2mq
 
 # ---------- entry variant 2: work terminal POSTs straight to the gateway ----------
 # Chain head is FIELD_MAP, so the trigger body becomes the chain-head input (context[0] -> sourceStep 0).
@@ -317,7 +317,7 @@ $a4push = @(
     @{ name = 'push-report-push'; type = 'HTTP_CALL'; addition = @{
         dataSourceId = $dsMesHttp; path = '/mes/api/report'; method = 'POST' } }
 )
-$a4pushId = New-ScenarioJob -Name 'SH-A4PUSH-Report-to-MES' -Direction 'NORTH' -Remarks 'A4 entry variant: terminal POSTs to /api/external/jobs/{id}/trigger' -Actions $a4push
+$a4pushId = New-ScenarioJob -Name 'SH-A4PUSH-Report-to-MES' -Remarks 'A4 entry variant: terminal POSTs to /api/external/jobs/{id}/trigger' -Actions $a4push
 
 # ---------- B1: device point -> cloud push + local board upsert ----------
 # The bridge (tools/shadow-site/modbus-bridge.cjs) posts ONE point per trigger call; the chain head is
@@ -338,7 +338,7 @@ $b1 = @(
     @{ name = 'upsert-board'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsBoardDb; tableName = 'dev_metric'; idempotencyKey = 'metric_key' } }
 )
-$b1Id = New-ScenarioJob -Name 'SH-B1-DEVICE-UP' -Direction 'NORTH' -Remarks 'B1 device point: push to cloud, then upsert into local board db (the field shape that used to NPE; #126 fixed, no order swap needed)' -Actions $b1
+$b1Id = New-ScenarioJob -Name 'SH-B1-DEVICE-UP' -Remarks 'B1 device point: push to cloud, then upsert into local board db (the field shape that used to NPE; #126 fixed, no order swap needed)' -Actions $b1
 
 # ---------- A7 big-payload variant: the WHOLE report in one message ----------
 # Source side aggregates the detail rows into one JSON string (FOR JSON PATH); the EXPRESSION mapping
@@ -354,7 +354,7 @@ $a7big = @(
     @{ name = 'push-qc-whole'; type = 'HTTP_CALL'; addition = @{
         dataSourceId = $dsMesHttp; path = '/mes/api/qc-report'; method = 'POST' } }
 )
-$a7bigId = New-ScenarioJob -Name 'SH-A7BIG-Whole-Report' -Direction 'NORTH' -Remarks 'A7 big-payload variant: whole report (up to 3000 lines) aggregated in SQL, $parse + $map, one message per report' -Actions $a7big
+$a7bigId = New-ScenarioJob -Name 'SH-A7BIG-Whole-Report' -Remarks 'A7 big-payload variant: whole report (up to 3000 lines) aggregated in SQL, $parse + $map, one message per report' -Actions $a7big
 
 # ---------- B6 batch variant: the whole read batch in ONE request (#143) ----------
 # #142 made this shape possible: READ_SQL (a batch of codes) -> FIELD_MAP (one payload per code)
@@ -391,12 +391,12 @@ function New-B6BatchActions {
 }
 
 $b6batch = New-B6BatchActions -Sql 'select FID, FCode, FObjectType, FObjectNo, FBatch from dbo.MDM_Code where {watermark}'
-$b6batchId = New-ScenarioJob -Name 'SH-B6-Register-Batch' -Direction 'NORTH' -Remarks 'B6 batch variant (#143): 20 codes registered in ONE request, per-row handle write-back' -Actions $b6batch
+$b6batchId = New-ScenarioJob -Name 'SH-B6-Register-Batch' -Remarks 'B6 batch variant (#143): 20 codes registered in ONE request, per-row handle write-back' -Actions $b6batch
 
 # Same shape at the field scale (the B6 spec says 1000 codes per request). The BULK- rows are inserted and
 # dropped by verify-scenario.ps1; the prefix filter keeps this job independent of the 20 seeded codes.
 $b6bulk = New-B6BatchActions -Sql "select FID, FCode, FObjectType, FObjectNo, FBatch from dbo.MDM_Code where {watermark} and FCode like 'BULK-%'"
-$b6bulkId = New-ScenarioJob -Name 'SH-B6-Register-Bulk' -Direction 'NORTH' -Remarks 'B6 batch variant at 1000-row scale (#143): one request carries the whole read batch' -Actions $b6bulk
+$b6bulkId = New-ScenarioJob -Name 'SH-B6-Register-Bulk' -Remarks 'B6 batch variant at 1000-row scale (#143): one request carries the whole read batch' -Actions $b6bulk
 
 # ---------- A2 head-and-lines variant: one report -> one head row + N line rows (#143) ----------
 # The shape the spec calls A2 head-and-lines: the SQL joins head and lines and aggregates the lines into
@@ -435,7 +435,7 @@ $a2hl = @(
     @{ name = 'write-lines'; type = 'WRITE_UPSERT'; addition = @{
         dataSourceId = $dsBoardDb; tableName = 'bom_line_t'; idempotencyKey = 'FLineKey' } }
 )
-$a2hlId = New-ScenarioJob -Name 'SH-A2-Bom-Head-Lines' -Direction 'SOUTH' -Remarks 'A2 head-and-lines variant (#143): one report -> one head row + N line rows (SPLIT)' -Actions $a2hl
+$a2hlId = New-ScenarioJob -Name 'SH-A2-Bom-Head-Lines' -Remarks 'A2 head-and-lines variant (#143): one report -> one head row + N line rows (SPLIT)' -Actions $a2hl
 
 Write-Host ''
 Write-Host ("ready. job ids: A5={0} A2={1} A3={2} A4={3} A7={4} B6={5} A2MQ={6} A4PUSH={7} B1={8} A7BIG={9}" -f $a5Id, $a2Id, $a3Id, $a4Id, $a7Id, $b6Id, $a2mqId, $a4pushId, $b1Id, $a7bigId)

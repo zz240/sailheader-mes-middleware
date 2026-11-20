@@ -14,7 +14,6 @@ export interface Job {
   siteId: number
   name: string
   status: number
-  direction?: 'NORTH' | 'SOUTH' | null
   scheduleType?: 'NONE' | 'INTERVAL' | 'DAILY' | 'WEEKLY' | null
   intervalValue?: number | null
   intervalUnit?: 'MINUTES' | 'HOURS' | null

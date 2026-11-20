@@ -3,7 +3,6 @@ package com.example.edgegateway.service;
 import com.example.edgegateway.mapper.JobMapper;
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleType;
-import com.example.edgegateway.model.SyncDirection;
 import com.example.edgegateway.web.dto.JobRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +30,7 @@ class JobServiceTest {
     }
 
     private JobRequest request(String name) {
-        return new JobRequest(name, 1L, 0, SyncDirection.NORTH, ScheduleType.NONE,
+        return new JobRequest(name, 1L, 0, ScheduleType.NONE,
                 null, null, null, null, "Asia/Shanghai", 3, 1000L, "备注");
     }
 
@@ -66,18 +65,8 @@ class JobServiceTest {
     }
 
     @Test
-    void rejectsMissingDirection() {
-        JobRequest req = new JobRequest("job", 1L, 0, null, ScheduleType.NONE,
-                null, null, null, null, null, 0, 0L, null);
-
-        assertThatThrownBy(() -> service.create(req))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("方向");
-    }
-
-    @Test
     void rejectsNonPositiveIntervalValue() {
-        JobRequest req = new JobRequest("job", 1L, 0, SyncDirection.NORTH, ScheduleType.INTERVAL,
+        JobRequest req = new JobRequest("job", 1L, 0, ScheduleType.INTERVAL,
                 0, "MINUTES", null, null, null, 0, 0L, null);
 
         assertThatThrownBy(() -> service.create(req))
@@ -87,7 +76,7 @@ class JobServiceTest {
 
     @Test
     void rejectsInvalidIntervalUnit() {
-        JobRequest req = new JobRequest("job", 1L, 0, SyncDirection.NORTH, ScheduleType.INTERVAL,
+        JobRequest req = new JobRequest("job", 1L, 0, ScheduleType.INTERVAL,
                 5, "SECONDS", null, null, null, 0, 0L, null);
 
         assertThatThrownBy(() -> service.create(req))
@@ -97,7 +86,7 @@ class JobServiceTest {
 
     @Test
     void rejectsInvalidDailyTime() {
-        JobRequest req = new JobRequest("job", 1L, 0, SyncDirection.NORTH, ScheduleType.DAILY,
+        JobRequest req = new JobRequest("job", 1L, 0, ScheduleType.DAILY,
                 null, null, "25:99", null, null, 0, 0L, null);
 
         assertThatThrownBy(() -> service.create(req))
@@ -107,7 +96,7 @@ class JobServiceTest {
 
     @Test
     void rejectsWeeklyWithoutWeekday() {
-        JobRequest req = new JobRequest("job", 1L, 0, SyncDirection.NORTH, ScheduleType.WEEKLY,
+        JobRequest req = new JobRequest("job", 1L, 0, ScheduleType.WEEKLY,
                 null, null, "09:00", null, null, 0, 0L, null);
 
         assertThatThrownBy(() -> service.create(req))
@@ -122,7 +111,7 @@ class JobServiceTest {
             inv.getArgument(0, Job.class).setId(1L);
             return 1;
         });
-        JobRequest req = new JobRequest("job", 1L, 0, SyncDirection.NORTH, ScheduleType.DAILY,
+        JobRequest req = new JobRequest("job", 1L, 0, ScheduleType.DAILY,
                 null, null, "08:30", null, "Asia/Shanghai", 0, 0L, null);
 
         Job saved = service.create(req);
@@ -139,7 +128,7 @@ class JobServiceTest {
             inv.getArgument(0, Job.class).setId(1L);
             return 1;
         });
-        JobRequest req = new JobRequest("job", 1L, 1, SyncDirection.NORTH, ScheduleType.NONE,
+        JobRequest req = new JobRequest("job", 1L, 1, ScheduleType.NONE,
                 null, null, null, null, null, 0, 0L, null);
 
         service.create(req);

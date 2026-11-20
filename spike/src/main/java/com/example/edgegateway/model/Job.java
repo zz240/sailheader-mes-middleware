@@ -50,9 +50,6 @@ public class Job {
 
     private String remarks;
 
-    /** 业务方向（DS-9）：创建任务时用户显式声明，不再从链入口推断。 */
-    private SyncDirection direction;
-
     /** 最近一次运行结果：SUCCESS / FAILED；每次运行结束由 JobLastRunWriter 统一回写，配置接口不维护。 */
     private String lastRunStatus;
 
@@ -184,14 +181,6 @@ public class Job {
 
     public String getRemarks() {
         return remarks;
-    }
-
-    public SyncDirection getDirection() {
-        return direction;
-    }
-
-    public void setDirection(SyncDirection direction) {
-        this.direction = direction;
     }
 
     public void setRemarks(String remarks) {

@@ -59,7 +59,7 @@ class JobControllerTest {
             "{\"name\":\"po-sync\",\"siteId\":1,\"status\":0,"
                     + "\"scheduleType\":\"INTERVAL\",\"intervalValue\":30,\"intervalUnit\":\"MINUTES\","
                     + "\"timezone\":\"Asia/Shanghai\","
-                    + "\"direction\":\"NORTH\",\"retryCount\":3,\"backoffMs\":1000,\"remarks\":\"备注\"}";
+                    + "\"retryCount\":3,\"backoffMs\":1000,\"remarks\":\"备注\"}";
 
     @Test
     void createsJob() throws Exception {
