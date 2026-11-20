@@ -148,7 +148,7 @@ Check '夹具数据源可用' ($null -ne $dsId)
 
 $job = Api POST '/api/jobs' @{
     name = "verify-146-serial-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-    siteId = [long]$SiteId; direction = 'NORTH'; scheduleType = 'NONE'
+    siteId = [long]$SiteId; scheduleType = 'NONE'
     retryCount = 1; backoffMs = 200; remarks = 'verify #146'
 }
 $jobId = $job.data.id

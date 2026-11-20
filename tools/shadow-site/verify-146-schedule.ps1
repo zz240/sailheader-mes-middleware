@@ -34,7 +34,7 @@ Check '取到桩端点数据源' ($null -ne $dsId) ("dsId=$dsId")
 
 $job = Api POST '/api/jobs' @{
     name = "verify-146-sched-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-    siteId = [long]$SiteId; direction = 'NORTH'; scheduleType = 'INTERVAL'
+    siteId = [long]$SiteId; scheduleType = 'INTERVAL'
     intervalValue = 1; intervalUnit = 'MINUTES'; retryCount = 0; backoffMs = 200; remarks = 'verify #146 schedule'
 }
 $jobId = $job.data.id

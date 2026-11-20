@@ -2,17 +2,15 @@ package com.example.edgegateway.web.dto;
 
 import com.example.edgegateway.model.Job;
 import com.example.edgegateway.model.ScheduleType;
-import com.example.edgegateway.model.SyncDirection;
 
 import java.time.LocalDateTime;
 
-/** 任务接口响应体（水位策略已移至 READ_SQL 动作，DS-7）；cron 已内部化、不对外展示。 */
+/** 任务接口响应体（水位策略已移至 READ_SQL 动作，DS-7）；cron 已内部化、不对外展示；方向已删除（#159）。 */
 public record JobView(
         Long id,
         Long siteId,
         String name,
         Integer status,
-        SyncDirection direction,
         ScheduleType scheduleType,
         Integer intervalValue,
         String intervalUnit,
@@ -33,7 +31,6 @@ public record JobView(
                 job.getSiteId(),
                 job.getName(),
                 job.getStatus(),
-                job.getDirection(),
                 job.getScheduleType(),
                 job.getIntervalValue(),
                 job.getIntervalUnit(),

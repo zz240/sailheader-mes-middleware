@@ -113,7 +113,7 @@ $readSql = "select h.FBOMNo, h.FMoldNo, h.FVersion, h.FModifyDate, " +
 $assemble = '$merge([$s_1, {"lines": $parse($s_1.lines_json)}])'
 
 $job = Api POST '/api/jobs' @{
-    name = $JobName; siteId = $SiteId; status = 0; direction = 'SOUTH'
+    name = $JobName; siteId = $SiteId; status = 0
     scheduleType = 'NONE'; retryCount = 1; backoffMs = 500
     timezone = 'Asia/Shanghai'; remarks = 'split action real-machine check (#140): one report -> head row + N line rows'
 }

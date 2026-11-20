@@ -105,9 +105,6 @@ public class JobService {
         if (request.siteId() == null) {
             throw new IllegalArgumentException("站点不能为空");
         }
-        if (request.direction() == null) {
-            throw new IllegalArgumentException("任务需要声明方向（NORTH/SOUTH）");
-        }
     }
 
     private Job toEntity(JobRequest request) {
@@ -120,7 +117,6 @@ public class JobService {
         job.setSiteId(request.siteId());
         job.setName(request.name());
         job.setStatus(request.status() == null ? 0 : request.status());
-        job.setDirection(request.direction());
         // 校验 + 收敛扁平字段；非法调度在此抛 IllegalArgumentException（消息可定位）
         ScheduleConfig schedule = ScheduleConfig.of(
                 request.scheduleType(), request.intervalValue(), request.intervalUnit(),

@@ -78,7 +78,7 @@ try {
 
     $job = Api POST '/api/jobs' @{
         name = "verify-146-redeliver-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-        siteId = [long]$SiteId; direction = 'NORTH'; scheduleType = 'NONE'
+        siteId = [long]$SiteId; scheduleType = 'NONE'
         retryCount = 0; backoffMs = 200; remarks = 'verify #146 redeliver'
     }
     $jobId = $job.data.id

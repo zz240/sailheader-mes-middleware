@@ -45,12 +45,6 @@
             <el-option v-for="s in sites" :key="s.id" :value="s.id" :label="`#${s.id} ${s.name}（${s.timezone || '默认时区'}）`" />
           </el-select>
         </el-form-item>
-        <el-form-item label="方向">
-          <el-select v-model="jobForm.direction" placeholder="选择方向" style="width: 100%">
-            <el-option label="北向（客户 → MES）" value="NORTH" />
-            <el-option label="南向（MES → 客户）" value="SOUTH" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="调度">
           <el-select v-model="jobForm.scheduleType" style="width: 100%">
             <el-option label="不自动" value="NONE" />
@@ -347,7 +341,7 @@ const jobFormVisible = ref(false)
 const editingJob = ref<Job | null>(null)
 const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const jobForm = reactive({
-  name: '', siteId: 1, direction: 'NORTH' as 'NORTH' | 'SOUTH',
+  name: '', siteId: 1,
   scheduleType: 'NONE', intervalValue: 30, intervalUnit: 'MINUTES' as 'MINUTES' | 'HOURS',
   scheduleTime: '00:00', scheduleWeekday: 1, timezone: '',
   retryCount: 0, backoffMs: 1000,
@@ -482,7 +476,7 @@ function openCreate() {
   editingJob.value = null
   const first = sites.value[0]
   Object.assign(jobForm, {
-    name: '', siteId: first?.id ?? 1, direction: 'NORTH',
+    name: '', siteId: first?.id ?? 1,
     scheduleType: 'NONE', intervalValue: 30, intervalUnit: 'MINUTES',
     scheduleTime: '00:00', scheduleWeekday: 1, timezone: first?.timezone ?? '',
     retryCount: 0, backoffMs: 1000,
@@ -494,7 +488,7 @@ function openEdit(row: Job) {
   editingJob.value = row
   const site = sites.value.find(s => s.id === row.siteId)
   Object.assign(jobForm, {
-    name: row.name, siteId: row.siteId, direction: row.direction ?? 'NORTH',
+    name: row.name, siteId: row.siteId,
     scheduleType: row.scheduleType ?? 'NONE',
     intervalValue: row.intervalValue ?? 30,
     intervalUnit: row.intervalUnit ?? 'MINUTES',
@@ -510,7 +504,6 @@ async function saveJob() {
   const isTimeBased = jobForm.scheduleType === 'DAILY' || jobForm.scheduleType === 'WEEKLY'
   const body = {
     name: jobForm.name, siteId: jobForm.siteId, status: editingJob.value?.status ?? 0,
-    direction: jobForm.direction,
     scheduleType: jobForm.scheduleType || 'NONE',
     intervalValue: jobForm.scheduleType === 'INTERVAL' ? jobForm.intervalValue : null,
     intervalUnit: jobForm.scheduleType === 'INTERVAL' ? jobForm.intervalUnit : null,
