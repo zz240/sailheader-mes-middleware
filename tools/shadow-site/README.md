@@ -242,8 +242,10 @@ node tools/shadow-site/modbus-bridge.cjs                       # 采集桥（管
 ```
 
 替身与固件共用一张寄存器表（`modbus-device.cjs` ↔ `esp32/modbus_device.ino`）：`0..1` uptime、`2` 状态字
-（bit0 运行 / bit1 传感器故障 / bit2 刚重启）、`3` 温度 ×100、`4` 电流 ×100、`5` 电压 ×100、`6` 轮询计数。
-换成真机只需把桥的 `DEVICE_HOST` 指到 ESP32 的 IP。
+（bit0 运行 / bit1 传感器故障 / bit2 刚重启）、`3` 温度 ×100、`4` 电流 ×100、`5` 电压 ×100、`6` 轮询计数、
+`7` 湿度 ×100（DHT11；桥的点位表目前只映射 `3~6`，这一格先留着）。
+换成真机只需把桥的 `DEVICE_HOST` 指到 ESP32 的 IP、`DEVICE_PORT` 改成 `502`（软替身才是 `1502`）。
+接线、烧录、接网关的完整分步手册见 [esp32/README.md](esp32/README.md)。
 
 **实测结果**（2 台设备 × 4 点位，5 s 一周期）：
 
