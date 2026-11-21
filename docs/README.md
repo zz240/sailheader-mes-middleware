@@ -28,7 +28,6 @@
 | 写测试、做评审 | [agents/testing.md](agents/testing.md) 与 [../CODING_STANDARDS.md](../CODING_STANDARDS.md) | 测试规约与代码规范 |
 | 让 agent 在这个仓库干活 | [../AGENTS.md](../AGENTS.md) | 入口、token 预算、交付流程 |
 | 查外部事实、选型与实测依据 | [research/](research/) | 调研与实测，只读参考 |
-| 看历史草案 | [archive/](archive/) | 过期内容，不再维护 |
 
 ## 一层一句话
 
@@ -40,13 +39,12 @@
 | `adr/` | 冻结 | 决策与取舍，只追加状态 |
 | `design/` | 活 | 设计稿、对接场景规格 |
 | `research/` | 只读 | 外部事实、选型与实测 |
-| `archive/` | 冻结 | 过期草案 |
 | `agents/` | 活 | 给 agent 的操作规程 |
 
 ## 约定
 
 1. 活文档：`features/`、`flows/`、`design/`、`user-guide.md`。代码变了要跟着改。
-2. 冻结文档：`adr/`、`archive/`。只追加状态与 Amended by 链接，不改正文。
+2. 冻结文档：`adr/`。只追加状态与 Amended by 链接，不改正文。
 3. **代码引用默认写符号，不写行号**：Java 写 `类名#方法名`（方法不确定就只写类名），前端写模块名（如 `useMappingDraft.ts`）。符号在仓库里必须唯一，不唯一的补一层目录。
 4. **行号只留给入口**：每个流程最多两处，写成 `全路径:行号` 并在后面标「（入口）」。其余一律用符号。判据：要跳过去看一眼的用行号，要读一遍理解的用类名。
 5. 提到另一份文档时给相对链接，不要只说「见走查文档」。索引靠链接，不靠记忆。

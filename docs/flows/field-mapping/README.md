@@ -88,7 +88,7 @@ sequenceDiagram
 - **错误** = 这份草稿现在存下去后端会拒，只有两类：**结构错**（`FieldMappingConfig.problems()`，
   `config/action/FieldMappingConfig.java:87`，`validate():67` 抛的就是它拼起来的那一条）与**链问题**
   （`ChainConsistencyValidator`）。#113 起编译期才发现的重复目标字段 / 前缀冲突也在这里报，#114 起目标字段路径
-  不合法（`a..b` / `.a` / `.`）同样在这里报——以前它们只在启用重建路由时炸。
+  不合法（`a..b` / `.a` / `.`）同样在这里报——以前它们只在启用重建路由时才暴露。
 - **警告** = 能存能跑、结果大概不是你要的：依赖目标清单与来源样例的六条（`service/MappingSampleChecks.java`
   `unknownSources:69` / `missingRequiredTargets:91` / `uncoveredEnumValues:104` / `textIntoNumberTarget:117` /
   `emptyConcatParts:138` / `datePatternWarnings:160`）+ 顶层漏写 `sourceStep` 的提示

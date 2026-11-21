@@ -216,7 +216,7 @@ curl -X POST http://localhost:8080/api/jobs/1/validate
 
 预期：`POST /api/field-mapping-editor/validate` 返回 `valid:false`，`errors[0].message` 含「日期格式串不合法: ISO-8601（Unknown pattern letter: I）」（`MappingDraftValidationServiceTest.anIllegalDatePatternIsAnErrorThatBlocksSaving` :671、`FieldMappingEditorControllerTest.reportsAnIllegalDatePatternAsAnError` :77）。换成 `YYYY-MM-DD` 也拦（陷阱字母），文案里带「拿 2026-08-21 试一下会写成 2026-08-233」。
 
-② **非数字进 INT** —— 配置期**不报错**，校验也**不试算**（#98 D9），只有消息真跑起来才炸：
+② **非数字进 INT** —— 配置期**不报错**，校验也**不试算**（#98 D9），只有消息真跑起来才失败：
 
 ```json
 {"sourceStep":1,"source":"qty","target":"bom.qty","transform":"INT"}

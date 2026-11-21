@@ -37,8 +37,8 @@
 
 ## 文档
 
-- 活文档：`docs/features/**`、`docs/flows/**`、`README.md`、`docs/user-guide.md`——里面的 `file:line` 要跟着代码改。
-- 冻结的历史：`docs/adr/**`、`docs/archive/**`——只允许追加状态与「Amended by」链接，**不改正文**。
+- 活文档：`docs/features/**`、`docs/flows/**`、`README.md`、`docs/user-guide.md`——里面的代码引用（类名/模块名）要跟着代码改。
+- 冻结的历史：`docs/adr/**`——只允许追加状态与「Amended by」链接，**不改正文**。
 - 随代码走的约定放 `docs/agents/`；`AGENTS.md` 放全局规则与指针，细则放这里与 `docs/agents/`。
 
 ## 判断题（没有工具替你判）

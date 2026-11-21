@@ -69,7 +69,7 @@
 
 ## 这个形状是怎么来的
 
-上面那些结论（递归树、`children`、`$root.`）看起来像是某天拍定的。其实是被几条约束一步步逼出来的。这一段是**现在的重建**，不是当时的会议记录。
+上面那些结论（递归树、`children`、`$root.`）看起来像是某天定下的。其实是被几条约束一步步逼出来的。这一段是**现在的重建**，不是当时的会议记录。
 
 **约束一：来源和目标都是嵌套的。** 订单里有明细，明细里还有子件；MES 那边的结构又是另一层嵌套。所以规则必须能表达层级，不能只表达「A 字段 → B 字段」这种平面对应。**如果只能平面对应，明细就只能靠代码展开。**
 
@@ -286,7 +286,7 @@ sequenceDiagram
 | 09-15 | 日期格式手输 + 格式串合法性校验（配置期错误 + 按样例的警告） | 非法格式串运行时必然抛错而三层都不查；只加输入框等于把一个必然抛错的位置暴露到界面上 | — | #111 / DatePatterns、JsonataFunctions.canFormat、MappingSampleChecks.datePatternWarnings |
 | 09-15 | **片段转换：拼接的每段能挂一个转换，存储形状第一次变化** | 客户要的复合值（`BOM-20260821-0001`、`A-启用`）要先加工再拼；做不到就整行走手写 JSONata——而那条路是给深层重排准备的 | — | #112 / ADR-0012 决策 1 / parts.ts、MappingDateParams、MappingEnumParams |
 | 09-16 | **拆开 2187 行的 `FieldMappingWorkbench.vue`（五个缝，行为零变化）** | 一张票只要动编辑器里一块，实施的人就得把整份读进来，而这份读取常驻在这之后每一次模型调用的上下文里（#111/#112 实测约 35k token） | — | #117 / MappingSourcePanel、MappingRowList、MappingIssuesPanel、MappingExpressionEditor、useWorkbenchState.ts、useMappingDraft.ts |
-| 09-16 | **校验两档落地：只有结构错与链问题拦保存，一行上的全部问题都列在行上，保存 400 带全部并把编译期错前移** | 一行的全部问题要一次看全（改一条点一次来回好几轮）；清掉的行不该再拦保存；重复目标/前缀冲突在停用状态下能存进去、启用时才炸——门和事实不一致 | — | #113 / ADR-0012 决策 4 / FieldMappingConfig、MappingDraftValidationService、MappingSampleChecks、MappingRowList.vue、fast-config.ts |
+| 09-16 | **校验两档落地：只有结构错与链问题拦保存，一行上的全部问题都列在行上，保存 400 带全部并把编译期错前移** | 一行的全部问题要一次看全（改一条点一次来回好几轮）；清掉的行不该再拦保存；重复目标/前缀冲突在停用状态下能存进去、到启用时才失败——门和事实不一致 | — | #113 / ADR-0012 决策 4 / FieldMappingConfig、MappingDraftValidationService、MappingSampleChecks、MappingRowList.vue、fast-config.ts |
 | 09-16 | **来源字段样例多了一条路：粘一份来源数据 JSON，与「从运行记录探测」并列** | 来源清单只有「链上更早那个动作最近一次成功运行的输出」一条路：冷启动没有运行记录、MQ 打头的任务不记成功步，左边永远是空的，只能凭记忆手打路径，打错了不报错 | — | #115 / ADR-0012 决策 5 / FieldMappingEditorService.sourceFieldsFromSample、MappingPasteSampleDialog.vue、sample.ts |
 | 09-16 | **目标字段清单也能粘一份 JSON（与连库探测并列），必填一律当不必填** | 同一个「从 JSON 推结构」的能力在来源侧跑顺了，就按 ADR-0012 决策 5 那句复用过来；HTTP / MQ 做目标时连库探不了（#98 H3），目标字段只能照着一份目标数据一个个敲 | 顺手删掉未引用的端点 `POST /api/sample-fields` 与 `FieldPathExtractor` | #118 / ADR-0012 决策 5 / FieldMappingEditorService.targetFieldsFromSample、MappingRowList.vue、sample.ts |
 | 09-16 | **粘一次就留着：粘进来的那份点保存时落库（`mapping_sample`），下次打开优先用它** | 最需要样例的正是探不出结构的那批任务（冷启动、MQ 打头、HTTP / MQ 做目标）——样例只活在内存里等于关掉就没了；试算（#116）又要拿这份样例真跑，不留住那个页面一打开就是空的 | **修订 ADR-0012 决策 5**「样例只在编辑器里存在，不落库」那半句（ADR-0011 决策 11 的后半句）；探测那份仍然不落库 | #119 / MappingSampleService.java、V3__mapping_sample.sql、FieldMappingEditorService、sample.ts |

@@ -1,89 +1,106 @@
-# 3b3e0caf-7ccc-4f1b-89d1-0110c1e9eecf implementation handoff
+# 设计交付单：字段映射画布
 
-This archive is the source of truth for turning the design into production code. Start from `field-mapping-canvas.html`, then preserve the visual system, responsive behavior, and interactions found in the exported files.
+> 由设计导出工具生成，原文为英文，2026-11-18 译为中文。文件名、视口尺寸、代码标识保持原样。
+>
+> **译者注**：文中引用的 HTML 与 `DESIGN-MANIFEST.json` 在 `.scratch/message-history-design/` 下，未进版本库。仓库里长期保留的是 [field-mapping-canvas-brief.md](field-mapping-canvas-brief.md)（设计说明）与 [tokens-draft.css](tokens-draft.css)（令牌草稿）。
 
-## Implementation target
-- Build production UI from the exported design, not a loose reinterpretation.
-- Preserve typography scale, spacing rhythm, color tokens, border radii, shadows, motion timing, and component states.
-- Replace static placeholders only when the target app has real data or functional equivalents.
-- Keep generated product UI free of OpenDesign chrome, preview labels, or design-process annotations.
-- Treat this handoff as a visual contract: if implementation choices conflict, match the exported pixels and behavior first, then refactor internals.
+这份交付单是"把设计变成生产代码"的**唯一依据**。从 `field-mapping-canvas.html` 入场，然后照导出文件里看到的视觉体系、响应式行为和交互来做。
 
-## Source map
-- Primary entry: `field-mapping-canvas.html`
-- HTML screens detected: 3
-- Stylesheets detected: 0
-- Script/component files detected: 0
-- Supporting assets detected: 1
+## 实现目标
 
-## Responsive contract
-Validate the implementation across this 2025–2026 viewport matrix:
-- Mobile compact: 360×800
-- Mobile standard: 390×844
-- Mobile large: 430×932
-- Foldable / small tablet: 600×960
-- Tablet portrait: 820×1180
-- Tablet landscape: 1024×768
-- Laptop: 1366×768
-- Desktop: 1440×900
-- Wide desktop: 1920×1080
+- 用导出设计做生产界面，不要自己重新诠释一遍。
+- 保留字号阶梯、间距节奏、颜色令牌、圆角、阴影、动效时长、组件各状态。
+- 静态占位内容只在目标应用有真实数据或等价功能时才替换。
+- 生产界面里不许留 OpenDesign 的外壳、预览标签、设计过程批注。
+- 把这份交付单当**视觉契约**：实现与设计冲突时，先对上导出的像素和行为，再重构内部。
 
-For responsive web exports, treat these as a modern breakpoint system for one adaptive web experience, not three fixed screenshots. Do not split responsive web into unrelated native app screens unless the project explicitly includes native targets. Use semantic layout thresholds, fluid `clamp()` type/spacing, and container queries where component width matters more than viewport width. Preserve any CSS media queries, container queries, fluid `clamp()` scales, and layout changes already present in the exported files.
+## 源文件清单
 
-## Design fidelity contract
-- Extract reusable tokens before writing components: background, surface, foreground, muted text, border, accent, radius, shadow, spacing, type scale, and motion duration/easing.
-- Map product screens, in-app modules/components, optional landing page, and optional OS widget surfaces before coding. Keep these surfaces separate in the target architecture.
-- Match layout geometry: max-widths, gutters, grid columns, card proportions, sticky/fixed elements, and viewport-specific navigation.
-- Preserve real copy, labels, and data shown in the export. Do not replace specific text with generic marketing filler.
-- Preserve interactive affordances: hover, focus, pressed, disabled, loading, validation, copy/share, tab/accordion, modal/sheet, and keyboard states where present.
-- Preserve accessibility semantics when converting: headings stay hierarchical, controls remain buttons/links/inputs, focus states stay visible.
-- Do not keep prototype-only annotations, frame labels, or OpenDesign chrome in the production UI.
+- 主入口：`field-mapping-canvas.html`
+- 检出 HTML 界面：3 个
+- 检出样式表：0 个
+- 检出脚本/组件文件：0 个
+- 检出配套资源：1 个
 
-## CJX-ready UX contract
-- Use `DESIGN-MANIFEST.json` as the machine-readable map for screens, app modules, OS widgets, landing pages, tokens, interactions, and viewport checks.
-- Screen-file-first: when multiple user-facing surfaces exist, implement each HTML screen as its own route/file. Treat `index.html` as a launcher/overview when the manifest marks it that way, not as a combined final UI.
-- If `landing.html`, app screens, platform screens, or OS widget files exist, preserve those boundaries in the target app instead of merging them into one page.
-- A single self-contained `field-mapping-canvas.html` is acceptable only when the export truly contains one user-facing screen and its CSS/JS are structured enough to extract tokens, components, states, and behavior.
-- If separate `css/` or `js/` files exist, treat them as source of truth for token/component/interactions before porting to React, Vue, SwiftUI, Compose, or another target stack.
-- In-app modules/components are product UI blocks inside the app. OS widgets are home-screen/lock-screen/quick-access surfaces outside the app. Do not merge those concepts.
+## 响应式契约
 
-## Color and brand contract
-- Use the exported design tokens and product/domain context as the color source of truth.
-- Do not introduce warm beige / cream / peach / pink / orange-brown background washes unless they are already explicit brand/reference colors in the export.
-- No obvious token stylesheet was detected; sample colors from the entry file and convert them into named tokens before coding.
+在 2025–2026 的视口矩阵上逐档验证：
 
-## Implementation sequence for AI coding tools
-1. Open `field-mapping-canvas.html` and `DESIGN-MANIFEST.json`; identify every screen file, launcher/overview file, app module, and interaction before coding.
-2. If multiple HTML screens exist, map them to separate routes/surfaces first; do not merge `landing.html`, product app screens, platform screens, or OS widgets into one route.
-3. Extract a token table from CSS/root styles and inline styles before building framework components.
-4. Build product screens and domain-specific in-app modules from largest layout regions down to controls; avoid starting with isolated atoms that lose spatial intent.
-5. Port responsive behavior across the modern viewport matrix and test each semantic breakpoint before cleanup.
-6. Port interactions and states, then replace static placeholders only with real app data or functional equivalents.
-7. Keep optional landing page and OS widget surfaces as separate surfaces if present.
-8. Compare final screenshots against the export at 360×800, 390×844, 430×932, 820×1180, 1024×768, 1366×768, 1440×900, and 1920×1080 before declaring done.
+- 手机紧凑：360×800
+- 手机标准：390×844
+- 手机大屏：430×932
+- 折叠屏 / 小平板：600×960
+- 竖屏平板：820×1180
+- 横屏平板：1024×768
+- 笔记本：1366×768
+- 桌面：1440×900
+- 宽屏桌面：1920×1080
 
-## Entry points
+把这几档当成**一套自适应网页的断点体系**，不是三张固定截图。不要把响应式网页拆成几个互不相干的原生界面，除非项目明确有原生端。用语义化的布局阈值、`clamp()` 流体字号与间距，组件宽度比视口宽度更要紧的地方用容器查询。导出文件里已有的媒体查询、容器查询、`clamp()` 阶梯和布局变化，一律保留。
+
+## 设计保真契约
+
+- **先提令牌，再写组件**：背景、表面、前景、弱化文字、边框、强调色、圆角、阴影、间距、字号阶梯、动效时长与缓动。
+- **先画清界面分区，再动手**：产品页面、应用内模块/组件、可选的落地页、可选的操作系统小组件，各自分开，在目标架构里也保持分开。
+- **对齐布局几何**：最大宽度、 gutter、栅格列数、卡片比例、吸顶/固定元素、各视口下的导航形态。
+- **保留真实文案与数据**：不要把具体文字换成营销套话。
+- **保留交互反馈**：悬停、聚焦、按下、禁用、加载、校验、复制/分享、标签页/手风琴、弹窗/抽屉、键盘操作。
+- **保留无障碍语义**：标题层级不变，控件仍是按钮/链接/输入框，焦点态可见。
+- **不要留**原型批注、画框标签、OpenDesign 外壳。
+
+## 给 AI 编码工具的契约
+
+- 用 `DESIGN-MANIFEST.json` 当机器可读的地图：界面、应用模块、系统小组件、落地页、令牌、交互、视口检查。
+- **一个界面一个文件**：有多个面向用户的界面时，每个 HTML 各自一个路由/文件。`index.html` 若在清单里被标成启动页，就按启动页做，不要当成合并后的最终界面。
+- 若存在 `landing.html`、应用界面、平台界面或系统小组件文件，在目标应用里**保持这些边界**，不要合并成一个页面。
+- 只有一个自包含的 `field-mapping-canvas.html` 是可接受的——但前提是导出里真的只有一个面向用户的界面，且 CSS/JS 结构足够拆出令牌、组件、状态和行为。
+- 若有独立的 `css/` 或 `js/`，在移植到 React、Vue、SwiftUI、Compose 或其它技术栈之前，以它们为令牌/组件/交互的事实依据。
+- **应用内模块**是应用里的产品界面块；**系统小组件**是桌面/锁屏/快捷入口这类应用之外的界面。两者不要混。
+
+## 颜色与品牌
+
+- 以导出的设计令牌和产品/领域语境作为颜色依据。
+- 不要引入暖米色 / 奶油 / 蜜桃 / 粉 / 橙棕这类背景洗色，除非导出里本来就是明确的品牌色或参考色。
+- 本次未检出成体系的令牌样式表：从入口文件里取样颜色，在写代码前转成有名字的令牌。
+
+## 实施顺序
+
+1. 先打开 `field-mapping-canvas.html` 和 `DESIGN-MANIFEST.json`，把每个界面文件、启动页、应用模块、交互都认全了再动手。
+2. 有多个 HTML 界面时，先各自映射成独立路由/界面，不要把落地页、产品界面、平台界面、系统小组件并成一个路由。
+3. 写框架组件之前，先从 CSS 根样式和内联样式里抽一张令牌表。
+4. 从**最大的布局区域往下做**到控件，不要一上来抠原子组件——那样会丢掉空间意图。
+5. 按视口矩阵移植响应式行为，清理之前逐档测过每个语义断点。
+6. 移植交互与状态，然后才用真实数据或等价功能替换静态占位。
+7. 有落地页或系统小组件时，保持它们是独立界面。
+8. 收工前，把成品的截图与导出在 360×800、390×844、430×932、820×1180、1024×768、1366×768、1440×900、1920×1080 逐档对比。
+
+## 入口文件
+
 - `field-mapping-canvas.html`
 - `field-mapping-studio.html`
 - `field-mapping-workbench.html`
 
-## Styles
-- None detected
+## 样式
 
-## Scripts/components
-- None detected
+- 未检出
 
-## Assets and supporting files
+## 脚本与组件
+
+- 未检出
+
+## 配套资源
+
 - `field-mapping-canvas-brief.md`
 
-## Coding checklist for AI tools
-1. Inspect `field-mapping-canvas.html` and `DESIGN-MANIFEST.json` first and identify reusable components before coding.
-2. Implement each user-facing screen file as its own route/surface; keep launcher, landing, app, platform, and OS widget files separate.
-3. Extract design tokens into the target stack: colors, type scale, spacing, radius, shadows, and motion.
-4. Implement layout with real 2025–2026 responsive breakpoints, fluid type/spacing, and container-query-aware component behavior; test with no horizontal overflow.
-5. Preserve interactive controls, hover/focus/pressed states, form behavior, validation, and copy actions where present.
-6. Implement domain-specific in-app modules with real states; do not flatten them into generic cards.
-7. Keep landing page, product screens, and OS widget/quick-access surfaces separate when present.
-8. Confirm the production result visually matches the exported design before refactoring internals.
-9. Reject implementation shortcuts that flatten the design into generic cards, generic gradients, placeholder stats, or framework-default typography.
-10. If a detail is ambiguous, keep the exported HTML/CSS/JS behavior rather than inventing a new pattern.
+## 编码检查清单
+
+1. 先看 `field-mapping-canvas.html` 和 `DESIGN-MANIFEST.json`，认出可复用组件再写代码。
+2. 每个面向用户的界面文件做成独立路由/界面；启动页、落地页、应用、平台、系统小组件各归各的。
+3. 把设计令牌抽进目标技术栈：颜色、字号阶梯、间距、圆角、阴影、动效。
+4. 布局用真实的响应式断点、流体字号与间距、容器查询感知的组件行为；测到没有横向溢出。
+5. 保留交互控件、悬停/聚焦/按下状态、表单行为、校验、复制操作。
+6. 领域相关的应用内模块要带真实状态，不要压成通用卡片。
+7. 落地页、产品界面、系统小组件/快捷入口，有就保持分开。
+8. 重构内部之前，先确认成品在视觉上和导出对得上。
+9. 拒绝这些偷懒做法：把设计压成通用卡片、通用渐变、占位统计数字、框架默认字体。
+10. 细节拿不准时，**保持导出文件的 HTML/CSS/JS 行为**，不要自己发明一套新样式。
