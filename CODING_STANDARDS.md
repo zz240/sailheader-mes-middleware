@@ -26,7 +26,7 @@
   - `toMap()`：只写非 null 字段，键顺序稳定
 - 分层：`web`（Controller + `web/dto`）/ `service` / `mapper` / `model`。Controller 只做参数与响应封装，业务判断不进 Controller。
 - 数据库：Flyway 迁移 `V<n>__<snake_case>.sql`，**只增不改**，必须幂等（可重复执行不报错）。
-- 测试：JUnit 5 + AssertJ；方法名英文、javadoc 中文。测试用 H2，不依赖本地 MySQL。
+- 测试：JUnit 5 + AssertJ，用 H2；规约见 `docs/agents/testing.md`。
 
 ## 前端（`frontend/`，Vue 3 + TS + Vite + Element Plus）
 
@@ -39,7 +39,7 @@
 
 - 活文档：`docs/features/**`、`docs/flows/**`、`README.md`、`docs/user-guide.md`——里面的 `file:line` 要跟着代码改。
 - 冻结的历史：`docs/adr/**`、`docs/archive/**`——只允许追加状态与「Amended by」链接，**不改正文**。
-- 随代码走的约定放 `docs/agents/`；`AGENTS.md` 只放指针，不放细节。
+- 随代码走的约定放 `docs/agents/`；`AGENTS.md` 放全局规则与指针，细则放这里与 `docs/agents/`。
 
 ## 判断题（没有工具替你判）
 

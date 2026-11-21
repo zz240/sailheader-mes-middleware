@@ -1,20 +1,16 @@
 # AGENTS
 
-## Agent skills
+## Agent 技能
 
-### Issue tracker
+### 议题跟踪
 
-Issues and specs live in GitHub Issues of `zz240/sailheader-mes-middleware`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+议题与规格都放在 `zz240/sailheader-mes-middleware` 的 GitHub Issues 里，用 `gh` 命令行操作；分诊标签的映射也在这份里。见 `docs/agents/issue-tracker.md`。
 
-### Triage labels
+### 领域文档
 
-Five canonical triage roles mapped to default labels in this repo's local tracker. See `docs/agents/triage-labels.md`.
+词汇表在仓库根目录的 `GLOSSARY.md`，决策记录在 `docs/adr/`。
 
-### Domain docs
-
-Single-context: `GLOSSARY.md` at the repo root plus `docs/adr/` for decisions. See `docs/agents/domain.md`.
-
-### Vocabulary
+### 术语
 
 技能自造的工程术语（接缝、深模块、前沿、曳光弹…）有中文对照表：`docs/agents/vocabulary.md`。用中文回话时，这些词首次出现要给一句白话解释并保留英文原名，同一个概念始终用表里的中文名。
 
@@ -28,7 +24,7 @@ Single-context: `GLOSSARY.md` at the repo root plus `docs/adr/` for decisions. S
 
 ### 环境与命令
 
-怎么跑测试、本机已知故障（`pwsh` 报 `0xC0000142`、沙箱拒绝 fork、BOM 混进提交信息）：`docs/agents/dev-environment.md`。**新会话开工前先看这一节，别重新试错。**
+本机已知故障与坑（`pwsh` 报 `0xC0000142`、沙箱拒绝 fork、BOM 混进提交信息）：`docs/agents/dev-environment.md`。**新会话开工前先看这一节，别重新试错。** 跑测试、起服务的命令见 `README.md`「快速运行」与 `docs/agents/testing.md`。
 
 ## 文档规范
 
@@ -82,9 +78,9 @@ Single-context: `GLOSSARY.md` at the repo root plus `docs/adr/` for decisions. S
 4. 有没有还在描述**已经删掉的功能**？（删功能时必查「限制与绕法」）
 5. 类名是不是只出现在「代码位置」？
 
-## Token budget
+## Token 预算
 
-账单几乎全是「每一步重读整段上下文」：成本随**步数**平方增长，不是某一步塞爆（实测数字见 `docs/agents/token-budget.md`）。四条动作句：
+账单几乎全是「每一步重读整段上下文」：成本随**步数**平方增长，不是某一步塞爆（实测数字见 `docs/research/token-budget.md`）。四条动作句：
 
 - **一轮并发多个工具。** 互不依赖的读、grep、命令合进同一条消息；等子代理不用轮询，结束会通知。目标每步 ≥2.5 个工具。
 - **先定位、再读窗口。** 先 grep 找类名/字段，再 `read` 带 `offset`/`limit`。看不清结构（路由模型、状态机、递归嵌套）时，先写一次性探针把结构打出来，别拿"编译—跑测试"当探照灯——#140 里 `RouteGenerator.java` 吃了 70 次 `edit`，就是少了这一步。

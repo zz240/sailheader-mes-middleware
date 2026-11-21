@@ -24,10 +24,10 @@
 | 知道当初为什么这么设计 | [adr/](adr/) | 决策记录，正文冻结，只追加状态 |
 | 配对接场景、写实施规格 | [design/docking-scenarios-spec.md](design/docking-scenarios-spec.md) | 三条公共约束 + 场景规格 |
 | 对着原型还原视觉 | [design/DESIGN-HANDOFF.md](design/DESIGN-HANDOFF.md) | 字段映射画布的视觉契约；ADR-0013 / ADR-0016 把它当依据引用 |
-| 跑测试、装钩子、环境出问题 | [agents/dev-environment.md](agents/dev-environment.md) | 本机坑与命令 |
+| 跑测试、装钩子、环境出问题 | [../README.md](../README.md)「快速运行」 + [agents/dev-environment.md](agents/dev-environment.md) | 命令在 README；本机坑在 agents |
 | 写测试、做评审 | [agents/testing.md](agents/testing.md) 与 [../CODING_STANDARDS.md](../CODING_STANDARDS.md) | 测试规约与代码规范 |
 | 让 agent 在这个仓库干活 | [../AGENTS.md](../AGENTS.md) | 入口、token 预算、交付流程 |
-| 查外部事实与选型依据 | [research/](research/) | 调研报告，只读参考 |
+| 查外部事实、选型与实测依据 | [research/](research/) | 调研与实测，只读参考 |
 | 看历史草案 | [archive/](archive/) | 过期内容，不再维护 |
 
 ## 一层一句话
@@ -39,7 +39,7 @@
 | `flows/` | 活 | 数据怎么流、跑到哪些类、怎么造数 |
 | `adr/` | 冻结 | 决策与取舍，只追加状态 |
 | `design/` | 活 | 设计稿、对接场景规格 |
-| `research/` | 只读 | 外部事实与选型调研 |
+| `research/` | 只读 | 外部事实、选型与实测 |
 | `archive/` | 冻结 | 过期草案 |
 | `agents/` | 活 | 给 agent 的操作规程 |
 

@@ -1,24 +1,6 @@
-# 开发环境与命令
+# 开发环境：本机已知故障与坑
 
-> 这份文档的用途：**新会话第一件事不用重新试错**。下面每条都是在本机真实撞过的。
-
-## 怎么跑
-
-| 目的 | 命令 |
-|---|---|
-| 全量后端测试（677 项） | `pwsh -File tools/run-tests.ps1` |
-| 只跑某几个测试类 | `pwsh -File tools/run-tests.ps1 MessageHistoryServiceTest JobServiceTest` |
-| 前端类型检查 + 构建 | `cd frontend; npm run build`（= `vue-tsc --noEmit && vite build`） |
-| 起后端（8080） | `cd spike; ..\.tools\apache-maven-3.9.9\bin\mvn.cmd spring-boot:run` |
-| 起前端（5173，代理 /api） | `cd frontend; npm run dev` |
-| 起依赖（MySQL + RabbitMQ） | `cd spike; docker compose up -d mysql rabbitmq` |
-| 界面验收脚本 | `node tools/ui/<名字>.cjs`（Playwright，依赖在 `tools/ui/node_modules`） |
-| 场景验收脚本 | `pwsh -File tools/shadow-site/verify-*.ps1` |
-
-- Maven 用仓库内的私有副本 `.tools/apache-maven-3.9.9`（**已 gitignore，不进版本库**）。
-  没有它就退回 PATH 上的 `mvn`（CI 走这条）。`tools/run-tests.ps1` 会自动判断，并据此决定是否加 `-o`（离线）。
-- 测试工作目录恒定为 `spike/`：有依赖相对路径的用例（`RuleMappingSuggesterEvalTest`）。脚本里已经 `Push-Location`。
-- 冒烟：北向 `GET http://localhost:8080/mock/mes/received`；南向往队列 `mes.to.edge` 发一条 JSON。
+> 这份只记**本机特有、试一次就会浪费一轮**的东西。命令不在这里重复，见文末「命令在哪」。
 
 ## 已知故障
 
@@ -29,6 +11,8 @@
 
 - 处置：用 `danger-full-access` 重试一次（需要审批）。如果本会话不允许升级（审批被关掉），
   就请用户把会话权限改成 full access —— **不要连试多次，也不要猜别的命令能绕过**。
+- 2026-11 起有的会话把 shell 工具换成了 `win_bash`：它只在 `danger-full-access` 下可用；
+  别在 `workspace-write` 下试，结论同上。
 - 另外两个本机事实：
   - `pwsh` 实际是 **Windows PowerShell 5.1**，不是 PowerShell 7。
   - 执行策略禁止跑未签名脚本：先 `Set-ExecutionPolicy -Scope Process Bypass -Force`，
@@ -36,8 +20,10 @@
 
 ### 1b. 脚本编码：`.ps1` 要带 BOM，其余不要
 
-- **`.ps1` 必须 UTF-8 with BOM**。PowerShell 5.1 会把无 BOM 的 UTF-8 当 GBK 读：中文变乱码，
+- **新写的 `.ps1` 必须 UTF-8 with BOM**。PowerShell 5.1 会把无 BOM 的 UTF-8 当 GBK 读：中文变乱码，
   字符串字面量还会被吞掉，语法直接报错（实测报 `@(...)` 里 `意外的标记 ")"`）。
+- **已知例外**：`tools/shadow-site/seed-scenario.ps1` 与 `verify-146-redeliver.ps1` 目前无 BOM；
+  跑之前先补 BOM，或改用 PowerShell 7。
 - **`.md` / `.yml` / `.githooks/*` 不要 BOM**：sh 脚本带 BOM 会解释失败。
 - `write` 工具**新建**文件时会加 BOM；**`edit` 重写已有文件时会丢掉 BOM**——所以改完 `.ps1` 必须把 BOM 补回来，
   否则 PowerShell 5.1 读成 GBK，中文注释吞掉引号，报一堆 `意外的标记 ")"`。`tools/install-hooks.ps1` 会补。
@@ -76,6 +62,13 @@ Surefire 需要 `cmd.exe` 管道才能 fork JVM，受限沙箱会拒绝。`tools
   $env:TMP  = $env:TEMP
   cd frontend; npm run build
   ```
+
+## 命令在哪
+
+- 起服务、起依赖、构建：`README.md`「快速运行」。
+- 跑测试：`docs/agents/testing.md`。
+- 界面验收脚本：`tools/ui/README.md`。
+- 场景验收脚本：`tools/shadow-site/README.md`。
 
 ## 一次性安装钩子
 

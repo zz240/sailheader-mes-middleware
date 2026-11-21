@@ -41,3 +41,17 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --repo zz240/sailheader-mes-middleware --add-assignee @me` — the session's first write.
 - **Resolve**: `gh issue comment <n> --repo zz240/sailheader-mes-middleware --body "<answer>"`, then `gh issue close <n> --repo zz240/sailheader-mes-middleware`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+## Triage labels
+
+Five canonical triage roles, mapped to the label strings used in this repo's tracker:
+
+| Label in mattpocock/skills | Label in our tracker | Meaning |
+| --- | --- | --- |
+| `needs-triage` | `needs-triage` | Maintainer needs to evaluate this issue |
+| `needs-info` | `needs-info` | Waiting on reporter for more information |
+| `ready-for-agent` | `ready-for-agent` | Fully specified, ready for an AFK agent |
+| `ready-for-human` | `ready-for-human` | Requires human implementation |
+| `wontfix` | `wontfix` | Will not be actioned |
+
+When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string. If the tracker's labels diverge, the right-hand column wins; edit it to match the tracker, not the skill's vocabulary.
